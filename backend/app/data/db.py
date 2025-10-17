@@ -111,7 +111,7 @@ def get_db() -> Generator[ORMSession, None, None]:
                         logger.exception("DB COMMIT failed -> ROLLBACK")
                         raise
             else:
-                # 纯读请求：显示回滚以结束事务
+                # 纯读请求：显式回滚以结束事务
                 db.rollback()
     except Exception:
         # 任意异常 → 兜底回滚

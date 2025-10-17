@@ -1,12 +1,14 @@
 // src/features/platform/oauth/pages/OAuthAppsPage.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useAppSelector } from '../../../../app/hooks.js'
+import { parseBoolLike } from '../../../../utils/booleans.js'
 import { listProviderApps } from '../../oauth/service.js'
 import NewAppModal from '../components/NewAppModal.jsx'
 
 export default function OAuthAppsPage() {
   const me = useAppSelector(s => s.session?.data)
-  const isPlatformAdmin = !!(me?.isPlatformAdmin ?? me?.is_platform_admin)
+  const adminFlag = me?.isPlatformAdmin ?? me?.is_platform_admin
+  const isPlatformAdmin = parseBoolLike(adminFlag)
   const isOwner = (me?.role || '').toLowerCase() === 'owner'
   const canCreate = isPlatformAdmin && isOwner
 
@@ -43,7 +45,7 @@ export default function OAuthAppsPage() {
 
       <p className="small-muted" style={{marginTop:-4, marginBottom:12}}>
         仅平台管理员可见。表中不回显 Client Secret；<b>更新</b>时 Client Secret 留空代表不变。
-      </p >
+      </p>
 
       {err && <div className="alert alert--error" style={{marginBottom:10}}>{err}</div>}
 
@@ -57,7 +59,7 @@ export default function OAuthAppsPage() {
               <Th w={260}>Client ID (App ID)</Th>
               <Th w={380}>Redirect URI</Th>
               <Th w={90}>Enabled</Th>
-              <Th w={120}>Key Ver</Th>
+              <Th w={120}>Key Version</Th>
               <Th w={200}>Updated</Th>
               <Th w={160}>操作</Th>
             </tr>

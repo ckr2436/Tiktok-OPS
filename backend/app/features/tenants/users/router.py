@@ -366,10 +366,8 @@ class ResetPasswordResponse(BaseModel):
     ok: bool
 
 def _hash_password_or_fail(raw: str) -> str:
-    # 与现有安全模块对齐，兼容两种常见命名
+    # 与现有安全模块对齐，仅保留统一命名
     from app.core import security as sec  # type: ignore
-    if hasattr(sec, "get_password_hash"):
-        return sec.get_password_hash(raw)  # type: ignore[attr-defined]
     if hasattr(sec, "hash_password"):
         return sec.hash_password(raw)  # type: ignore[attr-defined]
     # 没有可用的哈希函数时，明确报错（避免明文入库）

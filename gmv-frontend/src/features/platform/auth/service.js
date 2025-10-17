@@ -1,7 +1,6 @@
 // src/features/platform/auth/service.js
 import http from '../../../core/httpClient.js';
-
-function toBool(v){ return !!v; }
+import { parseBoolLike } from '../../../utils/booleans.js';
 
 export function parseSessionPayload(p = {}) {
   return {
@@ -11,11 +10,11 @@ export function parseSessionPayload(p = {}) {
     display_name: p.display_name ?? null,
     usercode: p.usercode ?? null,
     // 兼容后端不同字段命名
-    is_platform_admin: toBool(p.is_platform_admin ?? p.isPlatformAdmin),
-    isPlatformAdmin: toBool(p.is_platform_admin ?? p.isPlatformAdmin),
+    is_platform_admin: parseBoolLike(p.is_platform_admin ?? p.isPlatformAdmin),
+    isPlatformAdmin: parseBoolLike(p.is_platform_admin ?? p.isPlatformAdmin),
     workspace_id: p.workspace_id ?? p.current_workspace_id ?? p.default_workspace_id ?? null,
     role: p.role ?? p.tenantRole ?? null,
-    is_active: toBool(p.is_active ?? true),
+    is_active: parseBoolLike(p.is_active ?? true),
   };
 }
 
@@ -31,7 +30,7 @@ async function initPlatformOwner({ email, password }) {
 
 async function login({ username, password, remember, workspace_id }) {
   // 支持 workspace_id（可空）
-  const body = { username, password, remember: !!remember };
+  const body = { username, password, remember: parseBoolLike(remember) };
   if (workspace_id) body.workspace_id = Number(workspace_id);
   const res = await http.post('/platform/auth/login', body);
   return parseSessionPayload(res?.data ?? {});

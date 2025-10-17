@@ -25,8 +25,6 @@ def hash_password(password: str) -> str:
         base64.urlsafe_b64encode(salt).decode().rstrip("="),
         base64.urlsafe_b64encode(dk).decode().rstrip("="),
     )
-
-
 def verify_password(password: str, encoded: str) -> bool:
     try:
         scheme, iter_s, salt_b64, hash_b64 = encoded.split("$", 3)
@@ -126,9 +124,28 @@ def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _clean_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    ip = value.strip()
+    if not ip:
+        return None
+    if ip.lower() in {"unknown", "null", "none"}:
+        return None
+    return ip
+
+
 def client_ip(req: Request) -> str | None:
-    xff = req.headers.get("x-forwarded-for") or req.headers.get("x-real-ip")
-    if xff:
-        return xff.split(",")[0].strip()
-    return req.client.host if req.client else None
+    for header_name in ("x-forwarded-for", "x-real-ip"):
+        header_val = req.headers.get(header_name)
+        if not header_val:
+            continue
+        first = header_val.split(",")[0]
+        cleaned = _clean_ip(first)
+        if cleaned:
+            return cleaned
+
+    if req.client:
+        return _clean_ip(getattr(req.client, "host", None))
+    return None
 
