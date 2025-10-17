@@ -1,5 +1,7 @@
 // src/components/layout/menus.js
 
+import { parseBoolLike } from '../../utils/booleans.js'
+
 // 判断公司管理员
 function isCompanyAdmin(session) {
   const role = (session?.role || '').toLowerCase();
@@ -14,7 +16,8 @@ export function buildMenus(session) {
   const wsId = session?.workspace_id || '';
 
   // 兼容服务端字段命名 isPlatformAdmin / is_platform_admin
-  const isPlatformAdmin = !!(session?.isPlatformAdmin ?? session?.is_platform_admin);
+  const adminFlag = session?.isPlatformAdmin ?? session?.is_platform_admin;
+  const isPlatformAdmin = parseBoolLike(adminFlag);
 
   if (isPlatformAdmin) {
     // 平台管理员：仅平台级入口

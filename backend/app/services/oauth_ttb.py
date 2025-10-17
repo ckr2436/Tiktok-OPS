@@ -574,7 +574,7 @@ def update_oauth_account_alias(
 
 # === 追加到 app/services/oauth_ttb.py 末尾，作为公共取凭据的辅助 ===
 
-def get_app_credentials_for_auth_id(db: Session, auth_id: int) -> tuple[str, str, str]:
+def get_credentials_for_auth_id(db: Session, auth_id: int) -> tuple[str, str, str]:
     """
     返回 (app_id, app_secret_plain, redirect_uri)
     - 严格密文解密（使用 provider|client_id|redirect_uri 作为 AAD）

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from '../../../../components/ui/Modal.jsx'
 import { upsertProviderApp } from '../../oauth/service.js'
 import { useAppSelector } from '../../../../app/hooks.js'
+import { parseBoolLike } from '../../../../utils/booleans.js'
 
 /**
  * 通用弹窗：创建/编辑 Provider App
@@ -17,7 +18,8 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
   const me = useAppSelector(s => s.session?.data)
 
   // 兼容 isPlatformAdmin / is_platform_admin
-  const isPlatformAdmin = !!(me?.isPlatformAdmin ?? me?.is_platform_admin)
+  const adminFlag = me?.isPlatformAdmin ?? me?.is_platform_admin
+  const isPlatformAdmin = parseBoolLike(adminFlag)
   const isOwner = (me?.role || '').toLowerCase() === 'owner'
   const canOperate = isPlatformAdmin && isOwner  // 后端 upsert 要求平台 Owner
 

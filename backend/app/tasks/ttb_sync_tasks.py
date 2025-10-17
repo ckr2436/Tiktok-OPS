@@ -17,7 +17,7 @@ from app.core.errors import APIError
 
 from app.services.oauth_ttb import (
     get_access_token_for_auth_id,      # ✅ 保持不变
-    get_app_credentials_for_auth_id,   # ✅ 使用你文件里存在的函数名
+    get_credentials_for_auth_id,       # ✅ 使用统一命名
 )
 from app.services.ttb_api import TTBApiClient
 from app.services.ttb_sync import TTBSyncService
@@ -105,7 +105,7 @@ def task_sync_advertisers(workspace_id: int, auth_id: int, params: Dict):
                 return {"error": "another advertisers job running for this binding"}
             # ✅ 对齐你的 oauth_ttb.py：分别取 token 与 app 的 client_id/secret
             token = get_access_token_for_auth_id(db, int(auth_id))
-            app_id, secret, _redirect_uri = get_app_credentials_for_auth_id(db, int(auth_id))
+            app_id, secret, _redirect_uri = get_credentials_for_auth_id(db, int(auth_id))
 
             client = TTBApiClient(access_token=token, qps=float(getattr(settings, "TTB_QPS", 10.0)))
             svc = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
