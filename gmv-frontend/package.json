@@ -1,0 +1,29 @@
+{
+  "name": "gmv-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "postbuild": "cp src/pages/terms.md public/terms.md && cp src/pages/privacy.md public/privacy.md",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "2.9.0",
+    "axios": "1.12.2",
+    "classnames": "2.5.1",
+    "marked": "^16.4.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-redux": "9.2.0",
+    "react-router-dom": "7.9.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "vite": "7.1.9"
+  }
+}
