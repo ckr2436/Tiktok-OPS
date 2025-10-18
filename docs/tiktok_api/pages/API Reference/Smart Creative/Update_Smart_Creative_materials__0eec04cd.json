@@ -1,0 +1,367 @@
+{
+  "title": "Update Smart Creative materials",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/ad/aco/update/",
+  "method": "POST",
+  "category_path": [
+    "Smart Creative"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowed format: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID. Note : Pass the ID of an ad group that you have enabled Smart Creative for. The creative_material_mode for the ad group should be SMART_CREATIVE ."
+      },
+      {
+        "name": "patch_update",
+        "required": true,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to use incremental update mode. For example, to update the ad texts by using incremental update mode, configure the following settings only: Set patch_update to true . Set title_list to the new ad texts. Pass the required fields, including the Header parameters, advertiser_id , and adgroup_id ."
+      },
+      {
+        "name": "media_info_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "List of media information."
+      },
+      {
+        "name": "media_info",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Material information."
+      },
+      {
+        "name": "video_info",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Video information."
+      },
+      {
+        "name": "video_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when video_info is passed. Video ID. You can get the video ID when you upload a video using the /file/video/ad/upload/ endpoint. Note : To ensure a smooth integration journey, we recommned that you use /file/video/ad/upload/ ( with upload_type as UPLOAD_BY_VIDEO_ID ) to bind video ID with your advertiser ID."
+      },
+      {
+        "name": "file_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video name."
+      },
+      {
+        "name": "image_info",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Image information. When you want to upload image materials ( video_info is NOT included in the request), this field will be used as image materials. When you want to upload video materials ( video_info is included in the request), this field will be used as the video cover. Only one picture can be submitted in each image_info object."
+      },
+      {
+        "name": "web_uri Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when image_info is passed. Image ID. You can find the image ID in the response after you upload an image via the /file/image/ad/upload/ endpoint."
+      },
+      {
+        "name": "file_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image name. If image material is used, this field is used to form ad's name."
+      },
+      {
+        "name": "aigc_disclosure_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when identity_type within common_material is CUSTOMIZED_USER . Whether to turn on the AIGC (Artificial Intelligence Generated Content) self-disclosure toggle to indicate the ad contains AI-generated content. After the toggle is turned on, your ad will carry an \"Advertiser labeled as Al-generated\" label when viewed in full. Enum values: SELF_DISCLOSURE : To turn on the toggle to declare that the ad contains AI-generated content. NOT_DECLARED : To not declare that the ad contains AI-generated content. Default value: NOT_DECLARED . To learn about the supported advertising objectives and ad formats for the toggle and the detailed steps for using the toggle, see AIGC self-disclosure toggle . Note : You can only update this field when you update the video ( video_id )."
+      },
+      {
+        "name": "tiktok_item_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok post to be used as an ad (Spark Ad). Pass in the tiktok_item_id you get from the response of the /tt_video/info/ and /identity/video/get/ endpoints. Note : By using Spark Ads, you confirm that you have the rights to use the music in the videos for commercial purposes. Once you pass in tiktok_item_id , you don't have to pass in the objects image_info , video_info , and title_list ."
+      },
+      {
+        "name": "identity_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID for Spark Ads."
+      },
+      {
+        "name": "identity_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type for Spark Ads. Enum values: AUTH_CODE , TT_USER . For details about identities, see Identities ."
+      },
+      {
+        "name": "title_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "List of ad titles (also called ad texts). Ad titles are shown to your audience as part of your ad creative, to deliver the message you intend to communicate to them."
+      },
+      {
+        "name": "title Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when title_list is passed. Ad title (ad text). If you don't know how to create effective ad texts, you can try the Smart Text feature, which generates ad text recommendations based on the industry and language. An ad text must be 12-40 characters long and cannot contain emoji. Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character."
+      },
+      {
+        "name": "call_to_action_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Call-to-action list. Note : You can include at most three call-to-action texts ( call_to_action ) in each call_to_action_list object."
+      },
+      {
+        "name": "call_to_action Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when call_to_action_list is passed. Call-to-action text. For enum values, see Enumeration - Call-to-action ."
+      },
+      {
+        "name": "deeplink_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "List of deeplinks. Length range: [0,1]. Note : Only one deeplink and corresponding deeplink_type can be submitted in each deeplink_list object."
+      },
+      {
+        "name": "deeplink",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The specific location where you want your audience to go if they have your app installed."
+      },
+      {
+        "name": "deeplink_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The deeplink type. Enum values differs based on campaign objectives. Enum values: NORMAL (supported in Traffic, Conversion), DEFERRED_DEEPLINK (supported in App Install). The default value is NORMAL . For an ad that will be included in an iOS 14 campaign, this field cannot be set to DEFERRED_DEEPLINK ."
+      },
+      {
+        "name": "display_name_list Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Display names. Note : You can pass only one app_name or landing_page_name into each display_name_list object."
+      },
+      {
+        "name": "app_name Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "App name that is displayed in the ad. If not specified, the name in the app store will be used. Number of characters allowed: 1-40. If the name in the app store exceeds 40 characters, you must pass in a new app name with this field."
+      },
+      {
+        "name": "landing_page_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The display name of the landing page, required when the promotion type is landing page. Length limit: 1-40 characters."
+      },
+      {
+        "name": "avatar_icon_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Avatar image list. Note : When you pass in identity_id in media_info or common_material , you don't need to pass in this object, and when you do, it'll be ignored. You can only pass in only one avatar image ID ( web_uri )."
+      },
+      {
+        "name": "avatar_icon",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Avatar image."
+      },
+      {
+        "name": "web_uri",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the avatar image. It can be uploaded through the Upload an image endpoint (picture ratio requirement is 1: 1)"
+      },
+      {
+        "name": "page_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Page ID list."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when page_list is passed. Page ID. To obtain pages within your ad account, use /page/get/ . To create instant pages, use Instant Page Editor SDK ."
+      },
+      {
+        "name": "card_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Card ID list. Length range: [0,1]."
+      },
+      {
+        "name": "card_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Display Card ID, Gift Code Sticker ID, Countdown Sticker ID, or Download Card ID. To learn about how to get a Display Card ID or Download Card ID, please see Cards . To learn about how to get a Countdown Sticker ID, see Stickers ."
+      },
+      {
+        "name": "common_material",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Common material."
+      },
+      {
+        "name": "ad_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad name. Set as \" \" (Empty string) for it to be automatically generated. The format of auto-generated ad name is: creative name + creation time (e.g. adcreative20210111190739). Character limit is 512 and cannot contain emoji. Note : Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character. If you don't specify ad name here, you will not be able to change the name via /ad/aco/update/ endpoint."
+      },
+      {
+        "name": "call_to_action_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the CTA portfolio that you want to use in your ads. A CTA portfolio is a group of auto-optimized CTAs. For details about auto-optimized CTAs, see CTA recommendations > Dynamic CTAs . Note : If both this field and call_to_action_list are specified, call_to_action_list will be ignored."
+      },
+      {
+        "name": "creative_authorized",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether you grant displaying some of your ads in our TikTok for Business Creative Center. Only valid for non-US advertisers, the default value is false . Note : creative_authorized can only be used for video ads."
+      },
+      {
+        "name": "playable_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Playable material url, valid only in Pangle placement. You can get the url via the /playable/get/ endpoint. Note that all ads in the same ad group share the same playable material."
+      },
+      {
+        "name": "fallback_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Fallback Type. If the audience do not have the app installed, you can have them fall back to install the app, or to view a specific web page. Enum values: APP_INSTALL , WEBSITE , UNSET . If website is chosen, you need to specify the url via landing_page_urls field. Note : Not applicable for Deferred Deeplink."
+      },
+      {
+        "name": "tracking_info",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Tracking information."
+      },
+      {
+        "name": "impression_tracking_urls",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Default Impression Tracking URL. URL generated by your data partner to track impression events in your ads. Generally you can find and copy the URL from their platform. If the partner ID for the App ( app_id specified at the ad group level ) that you want to track is 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field. If you do, this field will be ignored. You can obtain the partner ID of an App through partner_id returned from /app/list/ or /app/info/ . If self-attribution has been enabled for the App ( app_id specified at the ad group level ) that you want to track and the partner ID for the App is not 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field because this field will default to the Default Impression Tracking URL you have configured for the App, and updates to the URL are not supported. You can check whether self-attribution has been enabled for the App through self_attribution_enabled returned from /app/list/ or /app/info/ . You can pass in only one URL."
+      },
+      {
+        "name": "click_tracking_urls",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Click Tracking URL. URL generated by your data partner to track click events in your ads. Generally you can find and copy the URL from their platform. If the partner ID for the App ( app_id specified at the ad group level ) that you want to track is 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field. If you do, this field will be ignored. You can obtain the partner ID of an App through partner_id returned from /app/list/ or /app/info/ . If self-attribution has been enabled for the App ( app_id specified at the ad group level ) that you want to track and the partner ID for the App is not 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field because this field will default to the Click Tracking URL you have configured for the App, and updates to the URL are not supported. You can check whether self-attribution has been enabled for the App through self_attribution_enabled returned from /app/list/ or /app/info/ . You can pass in only one URL. Currently Pangle does not support DCM, Sizmek or Flashtalking."
+      },
+      {
+        "name": "tracking_pixel_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The pixel ID that you'd like to track. You can use this field to track offsite events. It supports the campaign objectives for both Auction ads ( REACH , VIDEO_VIEWS , TRAFFIC , WEB_CONVERSIONS , LEAD_GENERATION , APP_PROMOTION , PRODUCT_SALES , ENGAGEMENT ) and Reach & Frequency ads ( RF_REACH ). For Auction objectives If pixel_id is specified at the ad group level and you want to use pixel to track offsite events, then the pixel ID you pass in the tracking_pixel_id field must be the same ID that you specified in the pixel_id field for the ad group. Otherwise, you can pass in any pixel ID that you'd like to track in the tracking_pixel_id field. Note : This field is an allowlist feature if your campaign objective is ENGAGEMENT / PRODUCT_SALES (when product_source = CATALOG / STORE and shopping_ads_type = VIDEO ) / APP_PROMOTION (when app_promotion_type = APP_RETARGETING ). If you want to use the field, please reach out to your TikTok representative. For Reach & Frequency objectives You can pass in any pixel ID that you'd like to track in the tracking_pixel_id field."
+      },
+      {
+        "name": "tracking_app_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the application that you want to track. You can use this field to track offsite app events. This field supports the campaign objectives for both Auction ads ( REACH , VIDEO_VIEWS , TRAFFIC , WEB_CONVERSIONS , LEAD_GENERATION , APP_PROMOTION , PRODUCT_SALES , ENGAGEMENT ) and Reach & Frequency ads ( RF_REACH ). If app_id is specified at the ad group level and you want to track offsite app events, then the application ID you pass via this field must be the same ID that you specified at the ad group level. Otherwise, you can pass in any application ID that you'd like to track via this field. You can get application ID ( app_id ) via /app/list/ . Note : This field is currently an allowlist-only feature for the advertising objectives APP_PROMOTION , PRODUCT_SALES , and ENGAGEMENT . If you would like to access it for these three objectives, please contact your TikTok representative. Otherwise, you will get an error."
+      },
+      {
+        "name": "tracking_offline_event_set_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Offline Event set IDs that you want to track. You can use this field to track and measure offline activity from people that see or interact with your ads. Max size: 50. See here to learn more about how to create and manage Offline Event sets. Note : Offline Events Tracking is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. If you are allowlisted for Offline Events Tracking, then existing auto-tracking Offline Event sets have to be tracked under a newly created ad: You can omit this parameter, then this field will automatically default to the IDs of all the existing auto-tracking Offline Event sets under the advertiser account, or You can manually pass in this parameter. You need to specify via this field at least all the existing auto-tracking Offline Event set IDs, and non-auto-tracking ones are optional. To get the IDs of current auto-tracking Offline Event sets, call /offline/get/ to get all Offline Event set IDs and then select all the auto-tracking ones according to the returned auto_tracking parameter. An Offline Event set that has been changed from an auto-tracking one into a non-auto-tracking one, or has been deleted, is not regarded as one of the current auto-tracking Offline Event sets. This field supports the following campaign objectives: REACH , VIDEO_VIEWS , TRAFFIC , LEAD_GENERATION , APP_PROMOTION , WEB_CONVERSIONS , and ENGAGEMENT ."
+      },
+      {
+        "name": "identity_id conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID. Required when you are not using Spark Ads ( tiktok_item_id )."
+      },
+      {
+        "name": "identity_type conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Required when you are not using Spark Ads ( tiktok_item_id ). The only supported value is CUSTOMIZED_USER ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Update one video creative of a Smart Creative ad",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/ad/aco/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"adgroup_id\": \"{{adgroup_id}}\",\n    \"patch_update\":true,\n    \"media_info_list\": [\n        {\n            \"media_info\": {\n                \"video_info\": {\n                    \"video_id\": \"{{video_id}}\" //updated video\n                    },\n                    \"image_info\": [\n                        {\n                        \"web_uri\": \"{{web_uri}}\" //updated video cover\n                        }\n                    ]\n                }\n        },\n        {   \n            \"media_info\": {\n                \"video_info\": {\n                    \"video_id\": \"{{video_id}}\" //original video \n                    },\n                \"image_info\": [\n                    {\n                        \"web_uri\": \"{{web_uri}}\" //original video cover\n                    }\n                ]\n            }\n        }\n    ]\n}'"
+      },
+      {
+        "title": "Update the ad texts of a Smart Creative ad",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/ad/aco/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"adgroup_id\": \"{{adgroup_id}}\",\n    \"patch_update\":true,\n    \"title_list\": [\n        {\n            \"title\": \"{{title}}\",\n            \"title\": \"{{title}}\"\n        }\n    ]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"call_to_action_list\": [],\n        \"deeplink_list\": [\n            {\n                \"deeplink_type\": \"NORMAL\",\n                \"deeplink\": \"\"\n            }\n        ],\n        \"media_info_list\": [\n            {\n                \"media_info\": {\n                    \"image_info\": [\n                        {\n                            \"web_uri\": \"{{web_uri}}\"\n                        }\n                    ],\n                    \"video_info\": {\n                        \"video_id\": \"{{video_id}}\"\n                    }\n                }\n            },\n            {\n                \"media_info\": {\n                    \"image_info\": [\n                        {\n                            \"web_uri\": \"{{web_uri}}\"\n                        }\n                    ],\n                    \"video_info\": {\n                        \"video_id\": \"{{video_id}}\"\n                    }\n                }\n            }\n        ],\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"common_material\": {\n            \"fallback_type\": null,\n            \"tracking_info\": {\n                \"click_tracking_urls\": [],\n                \"tracking_app_id\": null,\n                \"tracking_offline_event_set_ids\": [\n                    \"{{tracking_offline_event_set_ids}}\",\n                    \"{{tracking_offline_event_set_ids}}\"\n                ],\n                \"impression_tracking_urls\": [],\n                \"vast_moat_enabled\": false,\n                \"tracking_pixel_id\": \"0\"\n            },\n            \"identity_type\": \"CUSTOMIZED_USER\",\n            \"is_smart_creative\": true,\n            \"creative_authorized\": false,\n            \"call_to_action_id\": \"{{call_to_action_id}}\",\n            \"playable_url\": \"\",\n            \"identity_id\": \"{{identity_id}}\",\n            \"ad_name\": null\n        },\n        \"card_list\": null,\n        \"avatar_icon_list\": [\n            {\n                \"avatar_icon\": {\n                    \"web_uri\": \"{{web_uri}}\"\n                }\n            }\n        ],\n        \"adgroup_id\": \"{{adgroup_id}}\",\n        \"display_name_list\": [\n            {\n                \"app_name\": \"\",\n                \"landing_page_name\": \"{{landing_page_name}}\"\n            }\n        ],\n        \"title_list\": [\n            {\n                \"material_operation_status\": \"ENABLE\",\n                \"title\": \"{{title}}\",\n                \"material_id\": \"{{material_id}}\"\n            }\n        ],\n        \"landing_page_urls\": [\n            {\n                \"landing_page_url\": \"{{landing_page_url}}\"\n            }\n        ],\n        \"page_list\": null\n    }\n}'"
+    }
+  }
+}

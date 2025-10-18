@@ -1,0 +1,11 @@
+{
+  "title": "Get synchronous catalog product diagnostic information",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Diagnostics"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

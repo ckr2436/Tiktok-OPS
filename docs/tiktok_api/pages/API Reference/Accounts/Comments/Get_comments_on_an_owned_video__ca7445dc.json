@@ -1,0 +1,102 @@
+{
+  "title": "Get comments on an owned video",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/list/",
+  "method": "POST",
+  "category_path": [
+    "Accounts",
+    "Comments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for owned TikTok video to list comments (and comment replies) on. This can be accessed via the /business/video/list/ endpoint."
+      },
+      {
+        "name": "comment_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of IDs for comments or comment replies that you want to filter the results by. Max size: 30."
+      },
+      {
+        "name": "include_replies",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to include replies to the top-level comments in the results. If you set this field to true , each top-level comment will be returned with their corresponding replies. The maximum number of replies for each comment is three. The returned comments and replies will be sorted by smart sorting algorithm by default. Default value: false . To get all the replies to a comment, use /business/comment/reply/list/ ."
+      },
+      {
+        "name": "status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The visibility status of comments (and comment replies) that you want to filter the results by. Enum values : PUBLIC : Comments (and comment replies) that are publicly viewable by all TikTok users. ALL : Video owner's comments (and comment replies) that are both hidden from view as well as publicly viewable by all TikTok users. Default value : ALL"
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Specific field to sort comments (and comment replies) by. Enum values : likes : Sort comments (and comment replies) by the number of likes in the specified sort_order . replies : Sort comments (and comment replies) by the number of replies in the specified sort_order . create_time : Sort comments (and comment replies) chronologically in the specified sort_order . By default, the comments will be returned in a random order. Note : If the number of comments on the owned video exceeds 500, the first 500 comments will be returned according to the specified sorting, and the remaining comments will be returned in reverse order based on the number of likes. Also, the comments beyond the first 500 and the first 500 comments themselves are not deduplicated and may contain duplicates."
+      },
+      {
+        "name": "sort_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Specific field to sort comments (and comment replies) by. Enum values : asc : Sort comments (and comment replies) in ascending order by the specified sort_field . desc : Sort comments (and comment replies) in descending order by the specified sort_field . smart : Sort comments (and comment replies) using algorithms. Default value: smart"
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Cursor for pagination. If the response parameter has_more is true , pass the returned cursor in this parameter in the subsequent request to receive the next page of results. Default value : 0"
+      },
+      {
+        "name": "max_count",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The maximum number of comments that will be returned for each page of data. Default value : 20 Minimum value : 1 Maximum value : 30 Note : Due to our trust and safety policies, it is possible that the endpoint returns less than the max_count number of comments even if the response parameter has_more is true ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get all comments on an owned video",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/comment/list/?business_id={{business_id}}&video_id={{video_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get specified comments on an owned video",
+        "curl": "curl --location --request GET \"https://business-api.tiktok.com/open_api/v1.3/business/comment/list/?business_id={{business_id}}&video_id={{video_id}}&comment_ids=[\"{{comment_id}}\",\"{{comment_id}}\"]\" \\\n--header \"Access-Token: {{Access-Token}}\""
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"comments\": [\n            {\n                \"user_id\": \"{{user_id}}\",\n                \"unique_identifier\": \"{{unique_identifier}}\",\n                \"profile_image\": \"{{profile_image}}\",\n                \"replies\": 0,\n                \"username\": \"{{username}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"liked\": false,\n                \"comment_id\": \"{{comment_id}}\",\n                \"status\": \"HIDDEN\",\n                \"create_time\": \"1681790814\",\n                \"pinned\": false,\n                \"likes\": 0,\n                \"owner\": true,\n                \"video_id\": \"{{video_id}}\",\n                \"text\": \"{{text}}\"\n            },\n            {\n                \"user_id\": \"{{user_id}}\",\n                \"unique_identifier\": \"{{unique_identifier}}\",\n                \"profile_image\": \"{{profile_image}}\",\n                \"replies\": 0,\n                \"username\": \"{{username}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"liked\": false,\n                \"comment_id\": \"{{comment_id}}\",\n                \"status\": \"HIDDEN\",\n                \"create_time\": \"1681790814\",\n                \"pinned\": false,\n                \"likes\": 0,\n                \"owner\": true,\n                \"video_id\": \"{{video_id}}\",\n                \"text\": \"{{text}}\"\n            },\n            {\n                \"user_id\": \"{{user_id}}\",\n                \"unique_identifier\": \"{{unique_identifier}}\",\n                \"profile_image\": \"{{profile_image}}\",\n                \"replies\": 1,\n                \"username\": \"{{username}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"liked\": true,\n                \"comment_id\": \"{{comment_id}}\",\n                \"status\": \"PUBLIC\",\n                \"create_time\": \"{{create_time}}\",\n                \"pinned\": false,\n                \"likes\": 1,\n                \"owner\": true,\n                \"video_id\": \"{{video_id}}\",\n                \"text\": \"{{text}}\"\n            }\n        ],\n        \"has_more\": false,\n        \"cursor\": 3\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "title": "Get details of a popular hashtag",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/discovery/detail/",
+  "method": "GET",
+  "category_path": [
+    "Discovery"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Pass one of the advertiser IDs returned via advertiser_ids from /oauth2/access_token/ ."
+      },
+      {
+        "name": "discovery_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of discovery item. Currently, we only support HASHTAG ."
+      },
+      {
+        "name": "hashtag_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Hashtag ID. Pass in a hashtag ID that is returned via the /discovery/trending_list/ endpoint. If the hashtag you provide isn't included in the list returned by the /discovery/trending_list/ endpoint, you will receive an empty list in response. Example: 4268426520694 ."
+      },
+      {
+        "name": "country_code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Location code. Specify the same country_code as the one you input in the /discovery/trending_list/ endpoint. If the country_code you provide is not associated with the hashtag, we will return an error. See Location code for the supported values. Example: DE ."
+      },
+      {
+        "name": "date_range",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The timeframe in which the items have been popular. Specify the same date_range as the one you input in the /discovery/trending_list/ endpoint. If the date_range you provide is not associated with the hashtag, we will return an error. Enum values: 1DAY : last 1 day. 7DAY : last 7 days. 30DAY : last 30 days. 120DAY : last 120 days."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/discovery/detail/?advertiser_id={{advertiser_id}}&discovery_type=HASHTAG&hashtag_id={{hashtag_id}}&country_code=US&date_range=7DAY' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"hashtag_status\": \"ONLINE\",\n        \"posts\": 31927,\n        \"hashtag_id\": \"{{hashtag_id}}\",\n        \"audience_insights\": {\n            \"audience_ages\": [\n                {\n                    \"percentage\": 0.36926615840545485,\n                    \"age\": \"25-34\"\n                },\n                {\n                    \"percentage\": 0.3550167061571056,\n                    \"age\": \"18-24\"\n                },\n                {\n                    \"percentage\": 0.2757171047811277,\n                    \"age\": \"35+\"\n                }\n            ]\n        },\n        \"hashtag_name\": \"tattoo\",\n        \"views_global_lifetime\": 157770993216,\n        \"posts_global_lifetime\": 12543346,\n        \"views\": 216408760,\n        \"top_country_list\": [\n            \"US\",\n            \"MX\",\n            \"BR\",\n            \"VN\",\n            \"ID\"\n        ],\n        \"trending_history\": [\n            {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n            },\n            ...\n            {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n            },\n            {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n            }\n        ]\n    }\n}"
+    }
+  }
+}

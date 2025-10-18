@@ -1,0 +1,67 @@
+{
+  "title": "Update the name of a video",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/video/ad/update/",
+  "method": "POST",
+  "category_path": [
+    "Video"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Use application/json"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "file_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video name. Length limit: 1 - 100 characters. If another video uses the same file name under the same advertiser_id , there will be a millisecond timestamp added at the end. If the file name contains more than 100 characters, only the first 100 characters will be used."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video ID."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\",\n    \"file_name\": \"FILE_NAME\",\n    \"video_id\": \"VIDEO_ID\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/file/video/ad/update/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {},
+        "request_id": "2020063011514801023125104012818"
+      }
+    }
+  }
+}

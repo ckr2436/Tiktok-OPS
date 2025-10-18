@@ -1,0 +1,85 @@
+{
+  "title": "Get additional interest categories by ID",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/interest_keyword/get/",
+  "method": "GET",
+  "category_path": [
+    "Tools",
+    "Get additional interest categories"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "keyword_query",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Information of the additional interest category you want to get. Max size = 50."
+      },
+      {
+        "name": "keyword_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional interest category ID."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional interest category language. Default value: en . Supported languages: fr , id , it , ja , ms , ar , vi , en , ru , es , th , tr , hi , zh , de , ko ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "audience_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The audience type that you want to filter by. Enum values: GENERAL_INTEREST : General interest. The audiences have a general, long-term interest in a video category. PURCHASE_INTENTION : Purchase intent. The audiences' recent behavior suggests they may buy something related to a content category. Default value: GENERAL_INTEREST ."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "2021081206012901024503714416ABA90A",
+        "data": {
+          "keywords": [
+            {
+              "keyword_id": "2027755677",
+              "status": "EFFECTIVE",
+              "keyword": "movie app"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

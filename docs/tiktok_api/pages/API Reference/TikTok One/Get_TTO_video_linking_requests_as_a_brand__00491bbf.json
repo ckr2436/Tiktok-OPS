@@ -1,0 +1,76 @@
+{
+  "title": "Get TTO video linking requests as a brand",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/campaign/link/status/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TTO Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The IDs of existing TTO Creator Marketplace campaigns to filter the results by. To obtain a list of TTO Creator Marketplace campaigns, use /tto/tcm/campaign/ . Max size: 50."
+      },
+      {
+        "name": "handle_names",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The creator handle names to filter the results by. Max size: 50."
+      },
+      {
+        "name": "campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of the TTO Creator Marketplace campaign. Enum values: CAMPAIGN : A campaign with a campaign-level invite link . BRAND_LINK : A campaign with a brand-level invite link . If this field is not specified, all campaigns will be returned."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-50. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/campaign/link/status/?tto_tcm_account_id={{tto_tcm_account_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_number\": 2,\n            \"total_size\": 1\n        },\n        \"video_infos\": [\n            {\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"last_reminded_timestamp\": \"2025-02-07T21:44:57Z\",\n                \"number_of_requests\": 1,\n                \"status\": \"APPROVE\",\n                \"campaign_type\": \"CAMPAIGN\",\n                \"video_id\": \"{{video_id}}\"\n            },\n            {\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"last_reminded_timestamp\": \"2025-02-07T21:12:44Z\",\n                \"number_of_requests\": 1,\n                \"status\": \"REVOKE\",\n                \"campaign_type\": \"CAMPAIGN\",\n                \"video_id\": \"{{video_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Get estimated info of R&F ad groups",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/adgroup/rf/estimated/info/",
+  "method": "GET",
+  "category_path": [
+    "Reach & Frequency"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser id"
+      },
+      {
+        "name": "adgroup_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Ad group ids"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"adgroup_ids=[\\\"ADGROUP_IDS\\\"]\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/adgroup/rf/estimated/info/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"estimated_info\": [\n            {\n                \"adgroup_id\": 123,\n                \"daily_cost\": [\n                    {\n                        \"date\": \"2020-08-07\",\n                        \"cost\": 3587.5169107559\n                    },\n                    {\n                        \"date\": \"2020-08-08\",\n                        \"cost\": 3565.1767601342\n                    }\n                ],\n                \"frequency_per_person\": [\n                    {\n                        \"percentage\": 0.28,\n                        \"frequency\": 1\n                    },\n                    {\n                        \"percentage\": 0.72,\n                        \"frequency\": 2\n                    }\n                ]\n            }\n        ]\n    }\n    \"request_id\": \"8ED342\"\n}"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "title": "Get identities for GMV Max Campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/identity/get/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "store_authorized_bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that is authorized to access the TikTok Shop ( store_id )."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/identity/get/?advertiser_id={{advertiser_id}}&store_id={{store_id}}&store_authorized_bc_id={{store_authorized_bc_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n  \"code\": 0,\n  \"message\": \"OK\",\n  \"request_id\": \"{{request_id}}\",\n  \"data\": {\n    \"identity_list\": [\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": true,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"TTS_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": false,\n        \"store_id\": \"{{store_id}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"TT_USER\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": false,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\",\n        \"user_name\": \"{{user_name}}\"\n      }\n    ]\n  }\n}"
+    }
+  }
+}

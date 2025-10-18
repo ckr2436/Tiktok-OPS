@@ -1,0 +1,59 @@
+{
+  "title": "Download leads",
+  "endpoint": "https://business-api.tiktok.comstatus",
+  "method": "GET",
+  "category_path": [
+    "Leads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If leads are under an ad account, you must specify the advertiser ID."
+      },
+      {
+        "name": "library_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If leads are under a Business Center, you must specify the ID of the form library that contains the leads."
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Task ID"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/page/lead/task/download/?advertiser_id={{advertiser_id}}&task_id={{task_id}}' \\\n--header 'Access-Token: ACCESS_TOKEN' \\\n--header 'x-lead-region: eu'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"task_id=TASK_ID\" \\\nhttps://ads.tiktok.com/open_api/v1.3/page/lead/task/download/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "title": "Get popular hashtags",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/discovery/trending_list/",
+  "method": "GET",
+  "category_path": [
+    "Discovery"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Pass one of the advertiser IDs returned via advertiser_ids from /oauth2/access_token/ ."
+      },
+      {
+        "name": "discovery_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of discovery item. Currently, we only support HASHTAG ."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Location code. Default value: US . See Location code for the supported values."
+      },
+      {
+        "name": "category_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The name of the hashtag industry category. To learn about the enum values, see Hashtag industry category names . You can pass either a level-1 category name or a level-2 category name. Default value: ALL . Example: FOOD_AND_BEVERAGE . If you pass category_name and industry_id at the same time, industry_id will be ignored."
+      },
+      {
+        "name": "date_range",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The timeframe in which the items have been popular. Enum values: 1DAY : last 1 day. 7DAY : last 7 days. 30DAY : last 30 days. 120DAY : last 120 days. Default value: 7DAY ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/discovery/trending_list/?advertiser_id={{advertiser_id}}&discovery_type=HASHTAG&category_name=ALL&country_code=US&date_range=7DAY' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"posts\": 44585,\n                \"rank_change\": \"0\",\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"{{hashtag_name}}\",\n                \"views_global_lifetime\": 136840398711,\n                \"posts_global_lifetime\": 26055679,\n                \"rank_position\": \"1\",\n                \"views\": 836896026,\n                \"top_country_list\": [\n                    \"US\",\n                    \"TH\",\n                    \"ID\",\n                    \"VN\",\n                    \"PH\"\n                ],\n                 \"trending_history\": [\n                {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n                },\n                ...\n                {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n                },\n                {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n                }\n             ]\n            },\n            {\n                \"posts\": 148372,\n                \"rank_change\": \"0\",\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"fashion\",\n                \"views_global_lifetime\": 303784465772,\n                \"posts_global_lifetime\": 39054276,\n                \"rank_position\": \"2\",\n                \"views\": 508388428,\n                \"top_country_list\": [\n                    \"US\",\n                    \"VN\",\n                    \"ID\",\n                    \"MX\",\n                    \"GB\"\n                ],\n                \"trending_history\": [\n                {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n                },\n                ...\n                {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n                },\n                {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n                }\n             ]\n            },\n            {\n            ...\n            }\n        ],\n        \"filter_info\": {\n            \"country_code\": \"US\",\n            \"date_range\": \"7DAY\",\n            \"category_name\": \"ALL\"\n        }\n    }\n}"
+    }
+  }
+}

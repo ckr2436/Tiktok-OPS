@@ -1,0 +1,42 @@
+{
+  "title": "Get the post privacy settings of a TikTok account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/video/settings/",
+  "method": "GET",
+  "category_path": [
+    "Accounts",
+    "Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/video/settings/?business_id={{business_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"comment_disabled\": false,\n        \"duet_disabled\": false,\n        \"max_video_post_duration_sec\": 600,\n        \"privacy_level_options\": [\n            \"PUBLIC_TO_EVERYONE\",\n            \"MUTUAL_FOLLOW_FRIENDS\",\n            \"SELF_ONLY\"\n        ],\n        \"stitch_disabled\": false\n    }\n}"
+    }
+  }
+}

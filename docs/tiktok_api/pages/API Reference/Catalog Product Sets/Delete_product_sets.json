@@ -1,0 +1,11 @@
+{
+  "title": "Delete product sets",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Product Sets"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

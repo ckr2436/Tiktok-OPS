@@ -1,0 +1,75 @@
+{
+  "title": "Upload a playable creative",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/playable/upload/",
+  "method": "POST",
+  "category_path": [
+    "Playable Ads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowable value: \"multipart/form-data\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "upload_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The way you upload your playable ads. Default value: UPLOAD_BY_FILE . Enum values: UPLOAD_BY_FILE , UPLOAD_BY_FILE_ID ."
+      },
+      {
+        "name": "playable_package Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "file",
+        "description": "Playable Ad asset package Format description: 1. The format is ZIP, and the size is no more than 5MB 2. PlayableJS-SDK has been accessed, and the calling method is window.openAppStore(); 3. The main HTML file needs to be named index.html and located in the primary directory 4. The Playable Ad playback orientation field should be stored in the config.json file, located in the first directory, the value is 0 ( BOTH ), 1 ( PORTRAIT ), 2 ( LANDSCAPE ) 5. File names only support uppercase and lowercase letters, numbers, minus signs and underscores 6. The mraid.js format is not allowed in the package. 7. The package is not allowed to load dynamic material over an external network 8. JS redirection is not allowed in the asset package. 9. The asset file does not allow an HTTP request 10. Files with empty contents are not allowed in the asset package"
+      },
+      {
+        "name": "file_id conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The file_id of the file that you want to upload. This field is for files that are uploaded to the file repository. You can get file_id via the Upload Files endpoint. This field is required when upload_type is UPLOAD_BY_FILE_ID ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/playable/upload/' \\\n--header \"Access-Token:xxx\" \\\n--form 'advertiser_id=ADVERTISER_ID' \\\n--form 'playable_package=@PLAYABLE_PACKAGE_PATH'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS / 1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "playable_id": "6765"
+        }
+      }
+    }
+  }
+}

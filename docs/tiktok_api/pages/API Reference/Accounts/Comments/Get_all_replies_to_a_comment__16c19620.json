@@ -1,0 +1,91 @@
+{
+  "title": "Get all replies to a comment",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/list/",
+  "method": "POST",
+  "category_path": [
+    "Accounts",
+    "Comments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for owned TikTok video to list comments on. This can be accessed via the /business/video/list/ endpoint as the item_id for each video listed."
+      },
+      {
+        "name": "comment_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for comment on an owned TikTok video to list replies on. This can be accessed via the /business/comment/list/ endpoint as the comment_id for each comment listed."
+      },
+      {
+        "name": "status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Enumerated status of comment reply visibility. Enum values : PUBLIC : Comment replies are publicly viewable by all TikTok users. ALL : Comment replies are both hidden from view as well as publicly viewable by all TikTok users. Default value : ALL ."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Specific field to sort comment replies by. Enum values : likes : Sort comment replies by the number of likes in the specified sort_order . replies : Sort comment replies by the number of replies in the specified sort_order . create_time : Sort comment replies chronologically in the specified sort_order . By default, the comment replies will be returned in a random order."
+      },
+      {
+        "name": "sort_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Specific field to sort comment replies by. Enum values : asc : Sort comment replies in ascending order by the specified sort_field . desc : Sort comment replies in descending order by the specified sort_field . By default, the comment replies will be sorted according to semantics."
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Cursor for pagination. If the response parameter has_more is true, pass the returned cursor in this parameter in the subsequent request to receive the next page of results. Default value : 0."
+      },
+      {
+        "name": "max_count",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The maximum number of comment replies that will be returned for each page of data. Default value : 20. Minimum value : 0. Maximum value : 30. Note : Due to our trust and safety policies, it is possible that the endpoint returns less than the max_count number of comments even if the response parameter has_more is true."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/list/?business_id={{business_id}}&video_id={{video_id}}&comment_id={{comment_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"cursor\": 2,\n        \"has_more\": false,\n        \"comments\": [\n            {\n                \"profile_image\": \"{{profile_image}}\",\n                \"user_id\": \"{{user_id}}\",\n                \"text\": \"{{text}}\",\n                \"likes\": 0,\n                \"username\": \"{{username}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"parent_comment_id\": \"{{parent_comment_id}}\",\n                \"owner\": true,\n                \"status\": \"PUBLIC\",\n                \"liked\": false,\n                \"video_id\": \"{{video_id}}\",\n                \"unique_identifier\": \"{{unique_identifier}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"comment_id\": \"{{comment_id}}\"\n            },\n            {\n                \"profile_image\": \"{{profile_image}}\",\n                \"user_id\": \"{{user_id}}\",\n                \"text\": \"{{text}}\",\n                \"likes\": 0,\n                \"username\": \"{{username}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"parent_comment_id\": \"{{parent_comment_id}}\",\n                \"owner\": true,\n                \"status\": \"PUBLIC\",\n                \"liked\": false,\n                \"video_id\": \"{{video_id}}\",\n                \"unique_identifier\": \"{{unique_identifier}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"comment_id\": \"{{comment_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

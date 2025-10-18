@@ -1,0 +1,94 @@
+{
+  "title": "Update a Billing Group",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/billing_group/update/",
+  "method": "POST",
+  "category_path": [
+    "BC Billing Groups"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "billing_group_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the billing group you'd like to edit"
+      },
+      {
+        "name": "new_billing_group_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "New billing group name"
+      },
+      {
+        "name": "new_billing_group_emails",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of emails for the billing group. If this field is provided, this new list of emails will overwrite the billing group's existing emails"
+      },
+      {
+        "name": "add_advertiser_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of ad account IDs you want to add to this billing group"
+      },
+      {
+        "name": "delete_advertiser_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of ad account IDs you want to remove from this billing group"
+      },
+      {
+        "name": "is_primary",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to set this billing group as the default billing group for the Business Center"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"bc_id\": \"BC_ID\",\n    \"billing_group_id\": \"BILLING_GROUP_ID\",\n    \"new_billing_group_name\": \"NEW_BILLING_GROUP_NAME\",\n    \"new_billing_group_emails\": \"NEW_BILLING_GROUP_EMAILS\",\n    \"add_advertiser_ids\": [\n        \"ADD_ADVERTISER_IDS\"\n    ],\n    \"delete_advertiser_ids\": [\n        \"DELETE_ADVERTISER_IDS\"\n    ],\n    \"is_primary\": \"IS_PRIMARY\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/billing_group/update/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

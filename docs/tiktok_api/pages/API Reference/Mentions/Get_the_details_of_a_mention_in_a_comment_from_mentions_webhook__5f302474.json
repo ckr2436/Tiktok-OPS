@@ -1,0 +1,62 @@
+{
+  "title": "Get the details of a mention in a comment from mentions webhook",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/mention/comment/get/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "comment_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the comment or reply that mentions a business in the comment text. Pass the comment_id as obtained from comment_id within the content of the mentions webhook event ."
+      },
+      {
+        "name": "item_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the post on which the comment was published. Pass the post ID as obtained from video_id within the content of the mentions webhook event ."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If fields is not set, only the default fields will be returned. Default value: [\"comment_id\",\"comment_text\"] . Supported fields : item_id : Unique identifier for the post. video_link : A generic URL for the post. video_likes : Total number of likes on the post. thumbnail_url : The URL of the post thumbnail. commenter_handle_name : The handle name of the user who made the comment. comment_id : Unique identifier for the comment. comment_type : The type of comment. comment_text : The comment text that mentions the business's handle. comment_create_time : The time when the comment was posted. comment_likes : Total number of likes for the comment."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/mention/comment/get/?business_id={{business_id}}&comment_id={{comment_id}}&item_id={{item_id}}&fields=[\"item_id\",\"video_link\",\"caption\",\"video_likes\",\"thumbnail_url\",\"commenter_handle_name\",\"comment_id\",\"comment_type\",\"comment_text\",\"comment_create_time\",\"comment_likes\"]' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"comment\":\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"video_likes\": 101,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"commenter_handle_name\": \"{{commenter_handle_name}}\",\n                \"comment_id\": \"{{comment_id}}\",\n                \"comment_likes\": 0,\n                \"comment_text\": \"{{comment_text}}\",\n                \"comment_create_time\": \"2025-04-29 06:11:59 +0000 UTC\",\n                \"comment_type\": \"COMMENT\"\n            }\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Get info about images",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/image/ad/info/",
+  "method": "GET",
+  "category_path": [
+    "Images"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "image_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Image ID list. Up to 100 IDs per request. Note : If you obtain the image IDs of thumbnails for ads created on TikTok Ads Manager using the /ad/get/ endpoint, they are not supported. This is because these thumbnails have not been uploaded to the Asset Library and linked to your ad account."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/file/image/ad/info/?advertiser_id={{advertiser_id}}&image_ids=[\"{{image_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"is_carousel_usable\": true,\n                \"size\": 39779,\n                \"format\": \"jpeg\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"displayable\": false,\n                \"width\": 750,\n                \"material_id\": \"{{material_id}}\",\n                \"image_url\": \"{{image_url}}\",\n                \"file_name\": \"{{file_name}}\",\n                \"image_id\": \"{{image_id}}\",\n                \"signature\": \"{{signature}}\",\n                \"height\": 422\n            }\n        ]\n    }\n}"
+    }
+  }
+}

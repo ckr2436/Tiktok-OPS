@@ -1,0 +1,12 @@
+{
+  "title": "Metrics in GMV Max Campaign reports",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "GMV Max",
+    "Run a GMV Max Campaign report"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

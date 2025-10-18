@@ -1,0 +1,49 @@
+{
+  "title": "Get benchmarks for a business category",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/benchmark/",
+  "method": "GET",
+  "category_path": [
+    "Accounts",
+    "Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "business_category",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business category. For enum values, see List of values for business_category . Example: ART_AND_CRAFTS ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/benchmark/?business_id={{business_id}}&business_category=ART_AND_CRAFTS' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"average_comments\": 625.6003,\n        \"average_engagement_rate\": 0.0449,\n        \"average_follower_count\": 1592.5344,\n        \"average_follower_growth\": 24.9218,\n        \"average_likes\": 22618.7106,\n        \"average_shares\": 1161.3881,\n        \"average_video_count\": 138.9494,\n        \"average_video_views\": 353527.9227,\n        \"business_category\": \"Art & Crafts\"\n    }\n}"
+    }
+  }
+}

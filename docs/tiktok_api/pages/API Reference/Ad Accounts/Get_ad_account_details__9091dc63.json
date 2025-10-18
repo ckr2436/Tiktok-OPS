@@ -1,0 +1,48 @@
+{
+  "title": "Get ad account details",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/",
+  "method": "GET",
+  "category_path": [
+    "Ad Accounts"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of advertiser IDs to query. You can obtain Advertiser IDs through the /oauth2/advertiser/get/ endpoint."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of information to be returned. If not specified, all information excluding company_name_editable is returned by default. Supported values: telephone_number , contacter , currency , cellphone_number , timezone , advertiser_id , role , company , status , description , rejection_reason , address , name , language , industry , license_no , email , license_url , country , balance , create_time , display_timezone , owner_bc_id , company_name_editable . See the Response section for detailed information on each field. Note : If you include company_name_editable in the value of this field, only company_name_editable along with advertiser_id will be returned and other values will be ignored."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/advertiser/info/?advertiser_ids={{advertiser_ids}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"company\": \"{{company}}\",\n                \"address\": null,\n                \"status\": \"STATUS_ENABLE\",\n                \"contacter\": null,\n                \"license_province\": null,\n                \"license_city\": null,\n                \"currency\": \"USD\",\n                \"promotion_area\": \"0\",\n                \"promotion_center_city\": null,\n                \"cellphone_number\": null,\n                \"timezone\": \"Etc/GMT+8\",\n                \"description\": \"{{description}}\",\n                \"rejection_reason\": \"\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"license_no\": \"{{license_no}}\",\n                \"promotion_center_province\": null,\n                \"name\": \"{{name}}\",\n                \"industry\": \"{{industry}}\",\n                \"telephone_number\": null,\n                \"license_url\": \"{{license_url}}\",\n                \"role\": \"ROLE_CHILD_ADVERTISER\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"create_time\": {{create_time}},\n                \"owner_bc_id\": \"{{owner_bc_id}}\",\n                \"language\": \"zh\",\n                \"email\": null,\n                \"country\": \"CN\",\n                \"balance\": 0.0,\n                \"brand\": null,\n                \"display_timezone\": \"America/Los_Angeles\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

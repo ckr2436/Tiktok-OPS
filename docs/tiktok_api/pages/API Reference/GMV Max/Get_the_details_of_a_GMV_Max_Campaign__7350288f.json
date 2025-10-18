@@ -1,0 +1,48 @@
+{
+  "title": "Get the details of a GMV Max Campaign",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/info/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of a GMV Max Campaign. To create a GMV Max Campaign and obtain the campaign ID, use /campaign/gmv_max/create/ . To filter existing GMV Max Campaigns within your ad account, use /gmv_max/campaign/get/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/info/?advertiser_id={{advertiser_id}}&campaign_id={{campaign_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"age_groups\": [\n            \"AGE_18_24\",\n            \"AGE_25_34\",\n            \"AGE_35_44\",\n            \"AGE_45_54\",\n            \"AGE_55_100\"\n        ],\n        \"budget\": 300,\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"custom_anchor_video_list\": [],\n        \"deep_bid_type\": \"VO_MIN_ROAS\",\n        \"identity_list\": [\n            {\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"TT_USER\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            }\n        ],\n        \"item_group_ids\": [\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\",\n            \"{{item_group_id}}\"\n        ],\n        \"item_list\": [],\n        \"location_ids\": [\n            \"1643084\"\n        ],\n        \"operation_status\": \"DISABLE\",\n        \"optimization_goal\": \"VALUE\",\n        \"placements\": [\n            \"PLACEMENT_TIKTOK\"\n        ],\n        \"product_specific_type\": \"CUSTOMIZED_PRODUCTS\",\n        \"product_video_specific_type\": \"AUTO_SELECTION\",\n        \"affiliate_posts_enabled\": true,\n        \"roas_bid\": 2,\n        \"schedule_end_time\": \"{{schedule_end_time}}\",\n        \"schedule_start_time\": \"{{schedule_start_time}}\",\n        \"schedule_type\": \"SCHEDULE_START_END\",\n        \"shopping_ads_type\": \"PRODUCT\",\n        \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n        \"store_id\": \"{{store_id}}\"\n    }\n}"
+    }
+  }
+}

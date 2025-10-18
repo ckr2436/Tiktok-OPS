@@ -1,0 +1,11 @@
+{
+  "title": "Get event source binding info of a catalog",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Event Sources"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

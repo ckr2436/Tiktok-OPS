@@ -1,0 +1,12 @@
+{
+  "title": "Default settings for All-in-One Spark Ads",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Spark Ads Recommendation",
+    "Create a campaign, an ad group, and a Spark Ad in one step"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

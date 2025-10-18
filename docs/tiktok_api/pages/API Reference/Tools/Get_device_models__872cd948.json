@@ -1,0 +1,41 @@
+{
+  "title": "Get device models",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/device_model/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/tool/device_model/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202206302151270102452421061A5D0C58\",\n    \"data\": {\n        \"device_models\": [\n            {\n                \"child_device_ids\": [\n                    \"101001\",\n                    \"101002\",\n                    \"101003\",\n                    \"101004\",\n                    \"101005\",\n                    \"101006\",\n                    \"101007\",\n                    \"101008\",\n                    \"101009\",\n                    \"101010\",\n                    \"101011\",\n                    \"101012\",\n                    \"101013\",\n                    \"101014\",\n                    \"101015\",\n                    \"101016\",\n                    \"101017\",\n                    \"101018\",\n                    \"101019\",\n                    \"101020\",\n                    \"101021\",\n                    \"101022\",\n                    \"101023\",\n                    \"101024\",\n                    \"101025\",\n                    \"101026\"\n                ],\n                \"os_type\": \"ANDROID\",\n                \"device_meta_name\": \"MEIZU\",\n                \"is_active\": false,\n                \"level\": \"BRAND\",\n                \"device_meta_id\": \"101\"\n            },\n            ...\n        ]\n    }\n}"
+    }
+  }
+}

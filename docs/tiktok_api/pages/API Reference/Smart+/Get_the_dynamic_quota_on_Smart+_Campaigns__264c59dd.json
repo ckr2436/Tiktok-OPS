@@ -1,0 +1,41 @@
+{
+  "title": "Get the dynamic quota on Smart+ Campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/spc/quota/get/",
+  "method": "GET",
+  "category_path": [
+    "Smart+"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/spc/quota/get/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-token: {{Access-token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"active_campaign_ids\": [\n            \"{{active_campaign_id}}\",\n            \"{{active_campaign_id}}\"\n        ],\n        \"total_quota\": 50,\n        \"used_quota\": 2\n    }\n}"
+    }
+  }
+}

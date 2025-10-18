@@ -1,0 +1,48 @@
+{
+  "title": "Get enabled hashtags for a Business Account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/mention/hashtag/manage/list/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "username",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The username (handle) of the Business Account."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/mention/hashtag/manage/list/?business_id={{business_id}}&username={{username}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"hashtag_list\": [\n            {\n                \"create_date\": \"2025-05-21\",\n                \"hashtag\": \"{{hashtag}}\"\n            },\n            {\n                \"create_date\": \"2025-05-21\",\n                \"hashtag\": \"{{hashtag}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

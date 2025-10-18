@@ -1,0 +1,48 @@
+{
+  "title": "Get authorized TTO Creator Marketplace accounts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/oauth2/tcm/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of your developer application. To find the App ID , navigate to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "secret",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Secret of your developer application. To find the Secret , navigate to My Apps > App Detail > Basic Information ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/oauth2/tcm/?app_id={{app_id}}&secret={{secret}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"tto_tcm_account_ids\": [\n            \"{{tto_tcm_account_id}}\"\n        ]\n    }\n}"
+    }
+  }
+}

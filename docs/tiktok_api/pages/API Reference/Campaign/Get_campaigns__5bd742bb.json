@@ -1,0 +1,202 @@
+{
+  "title": "Get campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/get/",
+  "method": "GET",
+  "category_path": [
+    "Campaign"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Fields that you want to get. When not specified, all fields are returned by default. For allowed fields, see the fields under list in the Response section."
+      },
+      {
+        "name": "exclude_field_types_in_response",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The type of fields that you want to remove from the response. Allowed enum values: NULL_FIELD : Fields with null values."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filters on the data. Example: filtering={\"objective_type\":\"APP_PROMOTION\"}"
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by campaign IDs. Max size: 100."
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by campaign name. Fuzzy match is supported."
+      },
+      {
+        "name": "campaign_system_origins",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by campaign origins (campaign sources). Enum values: PROMOTE : The campaign is a Promote campaign created through the TikTok mobile App. TT_ADS_PLATFORM : The campaign is a non-Promote campaign created through the API or in TikTok Ads Manager. Default value: [\"TT_ADS_PLATFORM\"] . Only the following settings can be retrieved for a Promote campaign: advertiser_id campaign_id create_time campaign_name operation_status secondary_status To learn more about the availability of and the supported filters for Promote campaigns, see Promote campaigns ."
+      },
+      {
+        "name": "primary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Primary status. For enum values, see Enumeration-Primary Status ."
+      },
+      {
+        "name": "secondary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by campaign secondary status. For enum values, see Enumeration- Campaign Status - Secondary Status . Note : This field is not returned in the sandbox environment because the campaign is not actually delivered. See Supported secondary statuses for a primary status to learn about the valid values you can pass in via secondary_status for the primary status you specify."
+      },
+      {
+        "name": "objective_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by advertising objective. See Enumeration-Advertising Objective for enum values."
+      },
+      {
+        "name": "sales_destination",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sales destination, the destination where you want to drive your sales. Enum values: TIKTOK_SHOP : TikTok Shop. Drive sales on your TikTok Shop. WEBSITE : Website. Drive sales on your website. APP : App. Drive sales on your app (product catalog required). WEB_AND_APP : Website and app. Drive sales on both your website and your app."
+      },
+      {
+        "name": "buying_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by buying types. Enum values: AUCTION : Auction ads. RESERVATION_RF : Reservation Reach & Frequency ads and TikTok Pulse ads. RESERVATION_TOP_VIEW : Reservation TopView ads. Default value: [\"AUCTION\", \"RESERVATION_RF\"] . To learn more about the availability of TopView ads in the API, see TopView . Note : The enum value RESERVATION_TOP_VIEW cannot be combined with other values. To filter TopView ads, set this field to [\"RESERVATION_TOP_VIEW\"] ."
+      },
+      {
+        "name": "is_smart_performance_campaign",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Filter by whether the campaign is an automated campaign type. Supported values: true : The campaign is either a Smart+ Campaign or a Smart Performance Web Campaign. false : The campaign is a standard campaign type. Note : If you do not specify this field, you will get all campaigns."
+      },
+      {
+        "name": "creative_campaign_type",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by whether the campaign is a Smart+, Search Ads Campaign, or neither. Enum values: SPC : To filter Smart+ Campaigns. SEARCH_CAMPAIGN : To filter Search Ads Campaigns. OTHER : To filter non-Smart+ non-Search Ads Campaigns. If you do not specify this field, you will get all campaigns."
+      },
+      {
+        "name": "split_test_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Filter by whether split test has been enabled for the campaign or not. true : Only get campaigns with enabled split test, false : Only get disabled campaigns. Note : If you do not specify this field, you will get all campaigns."
+      },
+      {
+        "name": "campaign_product_source",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by product source of the campaign. Enum values: CATALOG : Catalog. STORE : TikTok Shop, or TikTok Showcase. If you pass in this field, the results will only include campaigns with the Product Sales advertising objective ( objective_type = PRODUCT_SALES ). The objective_type filter, if specified at the same time, can only be set as PRODUCT_SALES ."
+      },
+      {
+        "name": "optimization_goal",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Optimization goal. Enum values: Enumeration - Optimization Goal ."
+      },
+      {
+        "name": "campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Use this field to filter regular campaigns or iOS 14 campaigns. Enum values: REGULAR_CAMPAIGN , IOS14_CAMPAIGN . To learn about how to create an iOS 14 campaign, see Create an iOS 14 campaign ."
+      },
+      {
+        "name": "creation_filter_start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by lower range of campaign creation time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Campaigns created later than this time will be returned. Suggestion: A time range within 6 months is suggested when applying a creation time filter, to ensure that the success and speed of the task won't be affected."
+      },
+      {
+        "name": "creation_filter_end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by higher range of campaign creation time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Campaigns created earlier than this time will be returned. Suggestion: A time range within 6 months is suggested when applying a creation time filter, to ensure that the success and speed of the task won't be affected."
+      },
+      {
+        "name": "gmv_max_promotion_types Deprecated",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "GMV Max Campaign type. Enum values: PRODUCT_GMV_MAX : Product GMV Max Campaign . LIVE_GMV_MAX : Live GMV Max Campaign . Note : To filter GMV Max Campaigns, use /gmv_max/campaign/get/ ."
+      },
+      {
+        "name": "store_ids Deprecated",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when the value of gmv_max_promotion_types contains LIVE_GMV_MAX or PRODUCT_GMV_MAX . A list of TikTok Shop IDs. Max size: 10. Note : To filter GMV Max Campaigns, use /gmv_max/campaign/get/ ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10. Value range: 1-1,000."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/get/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"secondary_status\": \"CAMPAIGN_STATUS_ENABLE\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"is_smart_performance_campaign\": false,\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"is_new_structure\": true,\n                \"campaign_type\": \"REGULAR_CAMPAIGN\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"roas_bid\": 0,\n                \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"operation_status\": \"ENABLE\",\n                \"objective\": \"LANDING_PAGE\",\n                \"objective_type\": \"TRAFFIC\",\n                \"budget\": {{budget}},\n                \"create_time\": \"{{create_time}}\",\n                \"deep_bid_type\": null\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1,\n            \"total_number\": 1\n        }\n    }\n}"
+    }
+  }
+}

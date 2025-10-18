@@ -1,0 +1,37 @@
+{
+  "title": "Get Authorized Account Insights",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tcm/creator/authorized/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. Use /tt_user/oauth2/token/ and /tt_user/oauth2/refresh_token/ endpoint to get or renew an access token."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "creator_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Open ID of the TikTok creator."
+      },
+      {
+        "name": "fields",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If not set, returns the default fields ( profile_image and display_name ). To retrieve certain fields in the response, you must have specific permissions. You can check the 'Required permission' column for each field in the response schema to determine the permissions needed. To confirm that you have the necessary permission scope, you can check the scope returned by the /tt_user/token_info/get/ endpoint. If the required permission has not been granted to you, follow the steps outlined in Get authorization from creators (New) to enable the TikTok account user to reauthorize your app with the permission. Enum values: profile_image display_name followers_count handle_name bio is_on_vacation vacation_start_date vacation_end_date creator_rate location topics creator_badges audience_countries audience_genders audience_ages audience_locales audience_device audience_usage average_views average_views_benchmark six_seconds_views_rate six_seconds_views_rate_benchmark engagement_rate engagement_rate_benchmark engagements_benchmark completion_rate completion_rate_benchmark followers_growth_rate followers_growth_rate_benchmark average_likes average_shares average_comments sponsored_video"
+      }
+    ]
+  },
+  "response": {}
+}

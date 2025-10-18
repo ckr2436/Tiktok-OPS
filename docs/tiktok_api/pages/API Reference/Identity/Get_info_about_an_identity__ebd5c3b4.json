@@ -1,0 +1,62 @@
+{
+  "title": "Get info about an identity",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/identity/info/",
+  "method": "GET",
+  "category_path": [
+    "Identity"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: CUSTOMIZED_USER , AUTH_CODE , TT_USER , BC_AUTH_TT . See Identities for details."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that a TikTok Account User in Business Center identity is associated with. Required when identity_type is BC_AUTH_TT ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/identity/info/?advertiser_id={{advertiser_id}}&identity_type=TT_USER&identity_id={{identity_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"identity_info\": {\n            \"available_status\": \"AVAILABLE\",\n            \"can_manage_message\": true,\n            \"can_pull_video\": true,\n            \"can_push_video\": true,\n            \"can_use_live_ads\": true,\n            \"display_name\": \"{{display_name}}\",\n            \"identity_id\": \"{{identity_id}}\",\n            \"identity_type\": \"TT_USER\",\n            \"profile_image_url\": \"{{profile_image_url}}\"\n        }\n    }\n}"
+    }
+  }
+}

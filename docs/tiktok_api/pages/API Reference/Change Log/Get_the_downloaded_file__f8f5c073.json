@@ -1,0 +1,48 @@
+{
+  "title": "Get the downloaded file",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/changelog/task/download/",
+  "method": "GET",
+  "category_path": [
+    "Change Log"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Task ID"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"task_id=TASK_ID\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/changelog/task/download/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"changelog\": \"{'file_data': b'Budget changes,2\\\\r\\\\nBid changes,0\\\\r\\\\nStatus changes,0\\\\r\\\\n\\\\r\\\\nTime,log_object_type,Object ID,Object,Operator,Source,App ID,Activity details\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},Budget & Schedule,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Change \\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Budget\\\"\\\", \\\"\\\"before_after\\\"\\\": [{\\\"\\\"before\\\"\\\": \\\"\\\"b\\\\'50.00 USD\\\\'\\\"\\\", \\\"\\\"after\\\"\\\": \\\"\\\"b\\\\'20.00 USD\\\\'\\\"\\\"}]}]\\\"\n    \\\\r\\\\n2024-10-04 15:21,Ad group,{{object_id}},On/Off Status,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Delete\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Campaign\\\"\\\"}]\\\"\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},Ad group,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Create\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Ad group\\\"\\\"}]\\\"\n    \\\\r\\\\n2024-10-04 15:21,Ad group,{{object_id}},Settings,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Change \\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Name\\\"\\\", \\\"\\\"before_after\\\"\\\": [{\\\"\\\"before\\\"\\\": \\\"\\\"b\\\\'{{adgroup_name}}'\\\"\\\", \\\"\\\"after\\\"\\\": \\\"\\\"b\\\\'{{adgroup_name}}'\\\"\\\"}]}]\\\"\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},Ad group,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Create\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Ad group\\\"\\\"}]\\\"\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},On/Off Status,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Delete\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Ad group\\\"\\\"}]\\\"\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},Settings,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Change \\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Name\\\"\\\", \\\"\\\"before_after\\\"\\\": [{\\\"\\\"before\\\"\\\": \\\"\\\"b\\\\'{{adgroup_name}}'\\\"\\\", \\\"\\\"after\\\"\\\": \\\"\\\"b\\\\'{{adgroup_name}}'\\\"\\\"}]}]\\\"\n    \\\\r\\\\n2024-10-04 15:21,Ad group,{{object_id}},On/Off Status,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Delete\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Campaign\\\"\\\"}]\\\"\\\\r\\\\n2024-10-04 15:21,Ad group,{{object_id}},On/Off Status,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Delete\\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Ad group\\\"\\\"}]\\\"\n    \\\\r\\\\n2024-10-04 15:21,Ad group,{{object_id}},Budget & Schedule,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Change \\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Budget\\\"\\\", \\\"\\\"before_after\\\"\\\": [{\\\"\\\"before\\\"\\\": \\\"\\\"b\\\\'50.00 USD\\\\'\\\"\\\", \\\"\\\"after\\\"\\\": \\\"\\\"b\\\\'20.00 USD\\\\'\\\"\\\"}]}]\\\"\n    \\\\r\\\\n2024-10-04 15:20,Ad group,{{object_id}},Targeting,m**********t@gmail.com,Marketing API,{{app_id}},\\\"[{\\\"\\\"action\\\"\\\": \\\"\\\"Change \\\"\\\", \\\"\\\"name\\\"\\\": \\\"\\\"Smart audience\\\"\\\", \\\"\\\"before_after\\\"\\\": [{\\\"\\\"before\\\"\\\": \\\"\\\"b\\\\'On\\\\'\\\"\\\", \\\"\\\"after\\\"\\\": \\\"\\\"b\\\\'Off\\\\'\\\"\\\"}]}]\\\"\\\\r\\\\n', \n    'file_name': '{{file_name}}'}\",\n        \"status\": \"SUCCESS\"\n    }\n}"
+    }
+  }
+}

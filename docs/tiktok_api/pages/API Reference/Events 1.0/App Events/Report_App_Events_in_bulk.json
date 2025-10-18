@@ -1,0 +1,12 @@
+{
+  "title": "Report App Events in bulk",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "App Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

@@ -1,0 +1,90 @@
+{
+  "title": "Get mentioned posts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/mention/video/list/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If fields is not set, only the default fields will be returned. Default value: [\"item_id\",\"caption\"] . Supported fields : item_id : Unique identifier for the post. create_time : Unix/epoch date-time when the post was posted. video_link : A generic URL for the post. caption : The description for the post. likes : Total number of likes on the post. comments : Total number of comments on the post. shares : Total number of times the post has been shared. thumbnail_url : The URL of the post thumbnail. views : Total number of views the post has received. reach : Total number of unique viewers who viewed the post. creator_handle_name : The handle name of the creator who published the post."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The field to sort the result by. Enum values: CREATE_TIME : The field create_time . LIKES : The field likes . COMMENTS : The field comments . SHARES : The field shares . Default value: CREATE_TIME ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC : Ascending. DESC : Descending. Default value: DESC ."
+      },
+      {
+        "name": "number_of_days",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The lookback period for the results, measured in days. Value range: 1-90. Default value: 90. For instance, if you set this field to 90, the results for the last 90 days will be retrieved."
+      },
+      {
+        "name": "regions",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The regions of mentioned posts that you want to filter the results by. If you specify this field, only the mentioned posts published by TikTok users registered in the specified regions will be returned. If this field is not specified, all mentioned posts will be returned. To learn about the allowed values for this field, refer to List of values for regions ."
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Cursor for pagination. The position of the results that you want to retrieve from. For instance, setting cursor to 10 means you want to retrieve the next page of results after the 10th position. If the response parameter has_more is true , pass the returned cursor in this parameter in the subsequent request to receive the next page of results. Default value: 0."
+      },
+      {
+        "name": "max_count",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The maximum number of comments to be returned for each page of data. Default value: 100. Value range: 1-100. Note : Due to our trust and safety policies, it is possible that the endpoint returns less than the max_count number of comments even if the response parameter has_more is true ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/mention/video/list/?business_id={{business_id}}&fields=[\"item_id\", \"video_link\", \"caption\", \"likes\", \"comments\", \"shares\", \"create_time\",\"thumbnail_url\",\"views\",\"reach\",\"creator_handle_name\"]&sort_field=SHARES&sort_type=DESC&number_of_days=90&regions=[\"US\"]' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"has_more\": false,\n        \"cursor\": 100,\n        \"videos\": [\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"likes\": 50,\n                \"item_id\": \"{{item_id}}\",\n                \"create_time\": \"1689481495\",\n                \"shares\": 253,\n                \"comments\": 101,\n                \"caption\": \"{{caption}}\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"views\": 2000,\n                \"reach\": 2000,\n                \"creator_handle_name\": \"{{creator_handle_name}}\"\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"likes\": 100,\n                \"item_id\": \"{{item_id}}\",\n                \"create_time\": \"1689481495\",\n                \"shares\": 53,\n                \"comments\": 151,\n                \"caption\": \"{{caption}}\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"views\": null,\n                \"reach\": null,\n                \"creator_handle_name\": \"{{creator_handle_name}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

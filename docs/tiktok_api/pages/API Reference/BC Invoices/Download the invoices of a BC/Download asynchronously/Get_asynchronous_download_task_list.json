@@ -1,0 +1,13 @@
+{
+  "title": "Get asynchronous download task list",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "BC Invoices",
+    "Download the invoices of a BC",
+    "Download asynchronously"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

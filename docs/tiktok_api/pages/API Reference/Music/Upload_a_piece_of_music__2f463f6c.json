@@ -1,0 +1,121 @@
+{
+  "title": "Upload a piece of music",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/music/upload/",
+  "method": "POST",
+  "category_path": [
+    "Music"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. If upload_type is UPLOAD_BY_FILE , use multipart/form-data . If upload_type is UPLOAD_BY_FILE_ID , use application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "music_scene",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The scenario where the piece of music is used. Enum values: CREATIVE_ASSET : Creative Tools. CAROUSEL_ADS : Non-Shopping Ads - Carousel format. CATALOG_CAROUSEL : Shopping Ads (VSA) - Carousel format. Default value: CREATIVE_ASSET ."
+      },
+      {
+        "name": "upload_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL , you need to pass in either upload_type or material_action . When music_scene is set to CREATIVE_ASSET or not passed, this field is optional and defaults to UPLOAD_BY_FILE . The way you upload your music. Enum values: UPLOAD_BY_FILE : To upload a piece of music via file. UPLOAD_BY_FILE_ID : To upload a piece of music via file ID."
+      },
+      {
+        "name": "material_action Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL , you need to pass in either upload_type or material_action . Not supported when music_scene is set to CREATIVE_ASSET or not passed. The type of operation you want to perform on a piece of music. You need to pass in material_id as well. Enum values: ADD_TO_LIKED : To add a piece of music to the Liked list. ADD_TO_HISTORY : To add a piece of music to the History list. REMOVE_FROM_LIKED : To remove a piece of music from the Liked list. Note : The Liked list of an ad account can have up to 1,000 pieces of music. When the limit is reached, you cannot set this field to ADD_TO_LIKED to add more music to the Liked list."
+      },
+      {
+        "name": "music_file Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "file",
+        "description": "Required when upload_type is UPLOAD_BY_FILE or not specified. Music file. Note : When music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL , the customized music file that you specify through this field should meet the following specifications requirements: File Type: MP3. File Size: no greater than 10 MB."
+      },
+      {
+        "name": "music_signature Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when upload_type is UPLOAD_BY_FILE or not specified. Music MD5 (used for server verification)."
+      },
+      {
+        "name": "file_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when upload_type is passed. Music name. Length limit: 1-100 characters. The default is the local file name."
+      },
+      {
+        "name": "file_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when upload_type is UPLOAD_BY_FILE_ID . The file_id of the file that you want to upload. This field is for files that are uploaded to the file repository. You can get file_id via the Upload Files endpoints. Note : When music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL , the ID that you specify through this field should correspond to a customized music file that meets the following specifications requirements: File Type: MP3. File Size: no greater than 10 MB."
+      },
+      {
+        "name": "material_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL and material_action is passed. Not supported when music_scene is set to CREATIVE_ASSET or not passed. Material ID for the piece of music, which is used for adding music to the Liked list or History list, or for removing music from the Liked list. To obtain a valid material ID , you can: upload a piece of customized music for Carousel Ads through this endpoint, OR retrieve the material IDs of music for Carousel Ads under an ad account via material_id returned by /file/music/get/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://ads.tiktok.com/open_api/v1.3/file/music/upload/' \\\n--header 'Access-Token: 3redfsdqewrefdv' \\\n--header 'Content-Type: multipart/form-data' \\\n--form 'advertiser_id=\"9999999\"' \\\n--form 'upload_type=\"UPLOAD_BY_FILE\"' \\\n--form 'music_file=@\"/home/Desktop/test.mp3\"' \\\n--form 'music_signature=\"34retrgdsfdaadzx\"' \\\n--form 'file_name=\"test_file\"'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "copyright": "MUSIC_FORBID_VIDEO_ALLOW",
+          "url": "https://p9-dy.byteimg.com/obj/iesmusic-cn-local/v1/m/42b00000ca0384107766",
+          "file_name": "music_name_test",
+          "music_id": "6836297245562994693",
+          "material_id": "6836297245562994693",
+          "sources": [
+            "USER"
+          ],
+          "create_time": "2020-12-06T07:08:09Z",
+          "modify_time": "2020-12-06T07:08:09Z",
+          "signature": "e360fd0e868c3183a0da849d38726739"
+        },
+        "request_id": "2020120607080801011515319101A3194C"
+      }
+    }
+  }
+}

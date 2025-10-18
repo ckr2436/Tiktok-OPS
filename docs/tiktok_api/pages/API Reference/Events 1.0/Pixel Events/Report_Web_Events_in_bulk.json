@@ -1,0 +1,12 @@
+{
+  "title": "Report Web Events in bulk",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "Pixel Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

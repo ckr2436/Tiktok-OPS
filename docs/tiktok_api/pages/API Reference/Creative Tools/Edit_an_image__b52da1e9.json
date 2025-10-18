@@ -1,0 +1,87 @@
+{
+  "title": "Edit an image",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/image/edit/",
+  "method": "POST",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "image_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image ID."
+      },
+      {
+        "name": "edit_method",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Editing method. Supported methods: fix_size , only_gauss_pad , and gauss_padding_reserve_score . Default value: fix_size . See the \"Image editing methods\" section to learn about the differences between the editing methods."
+      },
+      {
+        "name": "width",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Width of edited image."
+      },
+      {
+        "name": "height",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Height of edited image."
+      },
+      {
+        "name": "image_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image name after editing. If the name is not set, this will be automatically generated."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "format": "jpeg",
+          "image_url": "http://p1.ipstatp.com/large/ad-site-i18n/202006215d0de2e725f892ed4e31beb4",
+          "file_name": "file_name_test2",
+          "height": 394,
+          "width": 394,
+          "create_time": "2020-06-21T08:30:54Z",
+          "modify_time": "2020-06-30T11:50:15Z",
+          "signature": "d96d4e822020e862ed43e1d0bd104fda",
+          "image_id": "ad-site-i18n/202006215d0de2e725f892ed4e31beb4",
+          "size": 22305
+        },
+        "request_id": "2020063011501401023125104013052"
+      }
+    }
+  }
+}

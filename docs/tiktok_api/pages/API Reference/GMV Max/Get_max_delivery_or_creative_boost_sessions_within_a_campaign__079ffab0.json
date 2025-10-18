@@ -1,0 +1,48 @@
+{
+  "title": "Get max delivery or creative boost sessions within a campaign",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/session/list/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the Product GMV Max Campaign. To create a Product GMV Max Campaign and obtain the campaign ID, use /campaign/gmv_max/create/ and set shopping_ads_type to PRODUCT . To filter existing Product GMV Max Campaigns within your ad account, use /gmv_max/campaign/get/ and set filtering to {\"gmv_max_promotion_types\":[\"PRODUCT_GMV_MAX\"]} ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/session/list/?advertiser_id={{advertiser_id}}&campaign_id={{campaign_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"session_list\": [\n            {\n                \"bid_type\": \"NO_BID\",\n                \"budget\": {{budget}},\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"product_list\": [\n                    {\n                        \"spu_id\": \"{{spu_id}}\"\n                    }\n                ],\n                \"schedule_end_time\": \"{{schedule_end_time}}\",\n                \"schedule_start_time\": \"{{schedule_start_time}}\",\n                \"schedule_type\": \"SCHEDULE_FROM_NOW\",\n                \"session_id\": \"{{session_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

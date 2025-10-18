@@ -1,0 +1,80 @@
+{
+  "title": "Check the names of files",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/name/check/",
+  "method": "GET",
+  "category_path": [
+    "Files"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "files Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "If you want to check whether a single file name has been used as video or image name, file_name and file_type are required. If you want to check whether multiple file names have been used as video or image names, files is required. Information about the file names to check. Max size: 20."
+      },
+      {
+        "name": "file_name Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when files is passed. File name."
+      },
+      {
+        "name": "file_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "File type. Enum values: VIDEO (video), IMAGE (image). Default value: VIDEO ."
+      },
+      {
+        "name": "file_name Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If you want to check whether a single file name has been used as video or image name, file_name and file_type are required. If you want to check whether multiple file names have been used as video or image names, files is required. File name."
+      },
+      {
+        "name": "file_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If you want to check whether a single file name has been used as video or image name, file_name and file_type are required. If you want to check whether multiple file names have been used as video or image names, files is required. File type. Enum values: VIDEO (video), IMAGE (image). Default value: VIDEO ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Check whether a single file name is duplicate",
+        "curl": "curl --location --request GET  'https://business-api.tiktok.com/open_api/v1.3/file/name/check/?advertiser_id={{advertiser_id}}&file_name={{file_name}}&file_type={{file_type}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Check whether multiple file names are duplicate",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/file/name/check/?advertiser_id={{advertiser_id}}&files=[{\"file_name\":\"{{file_name}}\",\"file_type\":\"VIDEO\"},{\"file_name\":\"{{file_name}}\",\"file_type\":\"VIDEO\"}]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"duplicate\": false\n    }\n}"
+    }
+  }
+}

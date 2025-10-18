@@ -1,0 +1,11 @@
+{
+  "title": "Get identities with Showcase permission under an ad account",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Showcase"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

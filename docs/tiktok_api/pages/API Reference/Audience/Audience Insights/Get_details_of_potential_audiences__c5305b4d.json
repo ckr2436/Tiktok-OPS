@@ -1,0 +1,179 @@
+{
+  "title": "Get details of potential audiences",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/audience/insight/info/",
+  "method": "POST",
+  "category_path": [
+    "Audience",
+    "Audience Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed value: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "custom_audience_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "You need pass in either locations or custom_audience_id in the request. Custom audience ID. Note : When custom_audience_id is specified, either selected_audience or locations cannot be used. Otherwise, an error will occur. The audience ID you input must belong to your specified advertisers."
+      },
+      {
+        "name": "locations Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "Object[]",
+        "description": "You need pass in either locations or custom_audience_id in the request. Locations. Max size : 5 Note : When locations is specified, custom_audience_id cannot be used. Otherwise, an error will occur."
+      },
+      {
+        "name": "country_code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Country code. See Appendix-Location IDs for details."
+      },
+      {
+        "name": "location_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Location IDs. By default, all location IDs under the specified country code are selected. The location IDs you input must fall within the range of the specified country code."
+      },
+      {
+        "name": "dimensions",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Use this field to control which API response dimensions are returned. Enum values: age , gender , country , top_regions , operating_system , operating_system_version , device_price , top_interests , bottom_interests , engagement , ad_interest_categories , and top_hashtags . Note : Currently, you can input only one dimension for each API call."
+      },
+      {
+        "name": "selected_audience",
+        "required": false,
+        "type": "object",
+        "raw_type": "Object",
+        "description": "The audience you want to filter for."
+      },
+      {
+        "name": "top_regions_country_code Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required if you have input top_regions in the dimensions field and specified locations . When the dimension is top_regions , the corresponding return fields will contain the sub-regions within the country you specified in locations ."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Codes of the languages that you want to target. For the list of language codes supported, see Enumeration - Language Code . You can also get language codes via /tool/language/ ."
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Age groups you want to target. For enum values, see Enumeration - Age Group ."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Genders that you want to target. Enum values: GENDER_FEMALE , GENDER_MALE . If you don't pass anything, it means that you want to target both males and females."
+      },
+      {
+        "name": "device_price_ranges",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer[]",
+        "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50."
+      },
+      {
+        "name": "min_ios_version",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Minimum iOS version. For enum values, see Enumeration - Minimum iOS Version ."
+      },
+      {
+        "name": "min_android_version",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Minimum Android version. For enum values, see Enumeration - Minimum Android Version ."
+      },
+      {
+        "name": "operating_systems Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required if you've specified either min_ios_version or min_android_version . Device operating systems that you want to target. Enum values: ANDROID , IOS . Only one value is allowed. If you don't pass anything, it means that you want to target both Android and iOS systems."
+      },
+      {
+        "name": "interest_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Interest classification. Use /tool/interest_category/ to get a list of available interest categories. Use /tool/target_recommend_tags/ to get a list of recommended interest categories."
+      },
+      {
+        "name": "video_action_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the video action categories. Use /tool/action_category/ to get a list of available video interaction categories ( action_scene = VIDEO_RELATED in the response). Use /tool/targeting_category/recommend/ to get a list of recommended video interaction categories ( scene = VIDEO_RELATED in the response)."
+      },
+      {
+        "name": "creator_action_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the creator action categories. Use /tool/action_category/ to get a list of available creator interaction categories ( action_scene = CREATOR_RELATED in the response). Use /tool/targeting_category/recommend/ to get a list of recommended creator interaction categories ( scene = CREATOR_RELATED in the response)."
+      },
+      {
+        "name": "hashtag_action_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Hashtag IDs. Use /tool/hashtag/recommend/ to get a list of recommended hashtag IDs, or use /tool/hashtag/get/ to get hashtags by IDs."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/audience/insight/info/' \\\n--header 'Content-Type: application/json' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"dimensions\": [\n        \"age\"\n    ],\n    \"locations\": [\n        {\n            \"country_code\": \"US\",\n            \"location_ids\": []\n        },\n        {\n            \"country_code\": \"AU\",\n            \"location_ids\": [\n                \"{{location_ids}}\"\n            ]\n        }\n    ],\n    \"selected_audience\": {\n\n        \"gender\": [\n            \"GENDER_MALE\"\n        ],\n        \"age_groups\": [\n            \"AGE_25_34\",\n            \"AGE_35_44\",\n            \"AGE_45_54\",\n            \"AGE_55_100\"\n        ],\n        \"languages\": [\n            \"fr\",\n            \"en\"\n        ],\n        \"operating_systems\": [\n            \"IOS\"\n        ],\n\n        \"device_price_ranges\": [\n            100,\n            950\n        ],\n        \"interest_category_ids\": [\n            \"{{interest_category_ids}}\",\n            \"{{interest_category_ids}}\"\n        ],\n        \"video_action_category_ids\": [\n            \"{{video_action_category_ids}}\",\n            \"{{video_action_category_ids}}\"\n        ],\n        \"creator_action_category_ids\": [\n            \"{{creator_action_category_ids}}\",\n            \"{{creator_action_category_ids}}\"\n        ],\n        \"hashtag_action_category_ids\": [\n            \"{{hashtag_action_category_ids}}\"\n        ]\n    }\n\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/audience/insight/info/' \\\n--header 'Content-Type: application/json' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"dimensions\": [\n        \"age\"\n    ],\n  \"custom_audience_id\": \"{{custom_audience_id}}\"   \n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"age\": {\n            \"all\": [\n                {\n                    \"label\": \"18-24\",\n                    \"rate\": 0.2258\n                },\n                {\n                    \"label\": \"25-34\",\n                    \"rate\": 0.3304\n                },\n                {\n                    \"label\": \"35-44\",\n                    \"rate\": 0.201\n                },\n                {\n                    \"label\": \"45-54\",\n                    \"rate\": 0.1327\n                },\n                {\n                    \"label\": \"≥55\",\n                    \"rate\": 0.1102\n                }\n            ],\n            \"selected\": [\n                {\n                    \"label\": \"25-34\",\n                    \"rate\": 0.5264\n                },\n                {\n                    \"label\": \"35-44\",\n                    \"rate\": 0.2073\n                },\n                {\n                    \"label\": \"45-54\",\n                    \"rate\": 0.136\n                },\n                {\n                    \"label\": \"≥55\",\n                    \"rate\": 0.1302\n                }\n            ]\n        }\n    }\n}"
+    }
+  }
+}

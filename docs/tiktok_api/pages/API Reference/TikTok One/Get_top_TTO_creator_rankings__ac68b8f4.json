@@ -1,0 +1,90 @@
+{
+  "title": "Get top TTO creator rankings",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/rank/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok One Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "ranking_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of ranking. Enum values: BRANDED_CONTENT : ranking by branded content. ORGANIC_CONTENT : ranking by organic content."
+      },
+      {
+        "name": "time_period",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The time period for the ranking. Enum values: WEEK : one week. MONTH : one month."
+      },
+      {
+        "name": "time_period_lookback",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The specific lookback period for the ranking. Enum values: ONE : the most recent available period. TWO : the second most recent period. THREE : the third most recent period. For example, if the most recent available monthly period is October and you set time_period to MONTH and time_period_lookback to TWO , the system will return ranking data for September."
+      },
+      {
+        "name": "label_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Creator label ID. When ranking_type is BRANDED_CONTENT , specify creator industry labels via this field. To obtain creator industry labels, use /tto/tcm/category/label/ . The creator industry labels will be available from the returned industry_labels . When ranking_type is ORGANIC_CONTENT , specify content tag labels via this field. To obtain content tag labels, use /tto/tcm/category/label/ . The content tag labels will be available from the returned content_labels ."
+      },
+      {
+        "name": "country_code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The code of the country or region that the creator ranking is for. Currently, the only supported enum value is US because the creator ranking data is only available for the United States."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-100. Default value: 20."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/rank/?tto_tcm_account_id={{tto_tcm_account_id}}&ranking_type=ORGANIC_CONTENT&time_period=WEEK&time_period_lookback=ONE&label_id=11014001&country_code=US' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"creators\": [\n            {\n                \"branded_content_engagement_rate\": null,\n                \"branded_content_video_views\": null,\n                \"content_labels\": [\n                    {\n                        \"label_id\": \"11014001\",\n                        \"label_name\": \"Automobiles\"\n                    }\n                ],\n                \"country\": \"US\",\n                \"display_name\": \"{{display_name}}\",\n                \"engagement_rate\": 1.95,\n                \"follower_growth\": 180476,\n                \"handle\": \"{{handle}}\",\n                \"industry_labels\": [\n                    {\n                        \"label_id\": \"14100000000\",\n                        \"label_name\": \"Oral Care\"\n                    }\n                ],\n                \"number_of_followers\": 10711990,\n                \"profile_image\": \"{{profile_image}}\",\n                \"ranking_change\": \"+1\",\n                \"score\": 91.476275,\n                \"starting_price\": 30000,\n                \"starting_price_currency\": \"USD\",\n                \"total_video_views\": 329546252\n            },\n            ...,\n            {\n                \"branded_content_engagement_rate\": null,\n                \"branded_content_video_views\": null,\n                \"content_labels\": [\n                    {\n                        \"label_id\": \"11014001\",\n                        \"label_name\": \"Automobiles\"\n                    }\n                ],\n                \"country\": \"US\",\n                \"display_name\": \"{{display_name}}\",\n                \"engagement_rate\": 1.94,\n                \"follower_growth\": 6083,\n                \"handle\": \"{{handle}}\",\n                \"industry_labels\": null,\n                \"number_of_followers\": 132742,\n                \"profile_image\": \"{{profile_image}}\",\n                \"ranking_change\": \"N/A\",\n                \"score\": 82.74355,\n                \"starting_price\": null,\n                \"starting_price_currency\": \"\",\n                \"total_video_views\": 3213298\n            }\n        ],\n        \"last_updated_at\": \"2024-11-19T14:14:22Z\",\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 20,\n            \"total_number\": 100,\n            \"total_page\": 5\n        }\n    }\n}"
+    }
+  }
+}

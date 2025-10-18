@@ -1,0 +1,69 @@
+{
+  "title": "Get TTO Public Media Insights",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/public/video/list/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TTO Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TTO Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "handle_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The handle name of the TTO Creator Marketplace creator that you want to search for. The exact match is supported. Note : If you specify the handle name of a creator that is not on TTO Creator Marketplace yet, an error will occur."
+      },
+      {
+        "name": "video_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The IDs of the videos to filter the results by. Max size: 25. If this field is not specified, the results won't be filtered by video IDs."
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The timestamp cursor of the video from which you want to retrieve subsequent videos. If the response parameter has_more is true , pass the returned cursor to this parameter in the next request to retrieve the subsequent videos. Default value: 0. By default, the most recent videos will be returned."
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The number of posts to return for each request. Value range: 1-25. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/public/video/list/?tto_tcm_account_id={{tto_tcm_account_id}}&handle_name={{handle_name}}' \\\n--header 'Access-Token: {{access_token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"cursor\": 1734031433000,\n            \"has_more\": false\n        },\n        \"posts\": [\n            {\n                \"caption\": \"{{caption}}\",\n                \"comments\": 0,\n                \"create_time\": \"1734031433000\",\n                \"display_name\": \"{{display_name}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"favorites\": 0,\n                \"likes\": 3,\n                \"shares\": 1,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"video_views\": 236\n            }\n        ]\n    }\n}"
+    }
+  }
+}

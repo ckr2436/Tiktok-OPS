@@ -1,0 +1,63 @@
+{
+  "title": "Enable or disable Comment-to-Message for a Business Account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/message/direct_reply/update/",
+  "method": "POST",
+  "category_path": [
+    "Business Messaging",
+    "Direct messages"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Account owner. To obtain an access token, use /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed value: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "direct_reply_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of direct reply. Enum value: COMMENT_TO_MESSAGE : Comment-to-Message. Once you enable this feature, the TikTok system will identify high-intent comments, enabling you to send customized replies to assist these users more effectively."
+      },
+      {
+        "name": "operation_status",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The operation to perform. Enum values: ENABLE : To enable the Comment-to-Message feature. DISABLE : To disable the Comment-to-Message feature."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/message/direct_reply/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"business_id\": \"{{business_id}}\",\n    \"direct_reply_type\": \"COMMENT_TO_MESSAGE\",\n    \"operation_status\": \"ENABLE\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

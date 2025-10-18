@@ -1,0 +1,79 @@
+{
+  "title": "Get info about videos",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/video/ad/info/",
+  "method": "GET",
+  "category_path": [
+    "Video"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "video_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Video ID list. Max size: 60. Note : If the video cannot be used in ads, the video ID will be ignored."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\\\n--data-urlencode \"video_ids=VIDEO_IDS\" \\\\\nhttps://business-api.tiktok.com/open_api/v1.3/file/video/ad/info/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "list": [
+            {
+              "format": "mp4",
+              "preview_url": "http://v16-tiktokcdn-com.akamaized.net/2a19f67683ed9aa54b3df2e5c842f15d/5fccd703/video/tos/alisg/tos-alisg-v-0000/9a0033884eab42248ad6b46f7b11e44c/?a=0&br=3114&bt=1557&cd=0%7C0%7C0&cr=0&cs=0&dr=0&ds=3&er=&l=2020120607050201011517615618A693BE&lr=ad&mime_type=video_mp4&qs=0&rc=anNlbnRuOWU2eDMzZjYzM0Apdjh3ZHJuOWZzZTMzNDY6eWdwMnFebGgzYG1fLS0uMDRzc2RtX2huaDNfMHItLWAwLS06Yw%3D%3D&vl=&vr=",
+              "file_name": "wanfadong_tagging_test.mp4",
+              "video_cover_url": "http://p16-sign-sg.tiktokcdn.com/v0201/94ebe1a3e6734559a16f3e81c43787ec~tplv-noop.image?x-expires=1607259907&x-signature=Oy4%2FyYvkw%2FLTWz97pFCDx0Y6o4g%3D",
+              "height": 720,
+              "width": 1280,
+              "bit_rate": 1594584,
+              "create_time": "2020-11-16T08:19:57Z",
+              "modify_time": "2020-11-16T08:19:57Z",
+              "signature": "b24f08f569b73a33eec93edb8f4423e2",
+              "duration": 5.312,
+              "video_id": "v070331c0000bup3cb66kkoqaktb5psg",
+              "material_id": "6895633277416374000",
+              "allowed_placements": [
+                "PLACEMENT_TOPBUZZ",
+                "PLACEMENT_TIKTOK",
+                "PLACEMENT_HELO",
+                "PLACEMENT_PANGLE"
+              ],
+              "allow_download": true,
+              "size": 1058804
+            }
+          ]
+        },
+        "request_id": "2020120607050201011517615618A693BE"
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "title": "Get TikTok Shops for GMV Max Campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/store/list/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/store/list/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"store_list\": [\n            {\n                \"exclusive_authorized_advertiser_info\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"advertiser_name\": \"{{advertiser_name}}\",\n                    \"advertiser_status\": \"STATUS_ENABLE\"\n                },\n                \"is_gmv_max_available\": false,\n                \"is_owner_bc\": true,\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_authorized_bc_info\": {\n                    \"bc_id\": \"{{bc_id}}\",\n                    \"bc_name\": \"{{bc_name}}\",\n                    \"bc_profile_image\": \"{{bc_profile_image}}\",\n                    \"user_role\": \"ADMIN\"\n                },\n                \"store_code\": \"{{store_code}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_role\": \"AD_PROMOTION\",\n                \"store_status\": \"ACTIVE\",\n                \"targeting_region_codes\": [\n                    \"ID\"\n                ],\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"exclusive_authorized_advertiser_info\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"advertiser_name\": \"{{advertiser_name}}\",\n                    \"advertiser_status\": \"STATUS_ENABLE\"\n                },\n                \"is_gmv_max_available\": true,\n                \"is_owner_bc\": true,\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_authorized_bc_info\": {\n                    \"bc_id\": \"{{bc_id}}\",\n                    \"bc_name\": \"{{bc_name}}\",\n                    \"bc_profile_image\": \"{{bc_profile_image}}\",\n                    \"user_role\": \"ADMIN\"\n                },\n                \"store_code\": \"{{store_code}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_role\": \"AD_PROMOTION\",\n                \"store_status\": \"ACTIVE\",\n                \"targeting_region_codes\": [\n                    \"ID\"\n                ],\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"exclusive_authorized_advertiser_info\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"advertiser_name\": \"{{advertiser_name}}\",\n                    \"advertiser_status\": \"STATUS_ENABLE\"\n                },\n                \"is_gmv_max_available\": true,\n                \"is_owner_bc\": false,\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_authorized_bc_info\": {\n                    \"bc_id\": \"{{bc_id}}\",\n                    \"bc_name\": \"{{bc_name}}\",\n                    \"bc_profile_image\": \"{{bc_profile_image}}\",\n                    \"user_role\": \"ADMIN\"\n                },\n                \"store_code\": \"{{store_code}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_role\": \"AD_PROMOTION\",\n                \"store_status\": \"ACTIVE\",\n                \"targeting_region_codes\": [\n                    \"MY\"\n                ],\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"exclusive_authorized_advertiser_info\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"advertiser_name\": \"{{advertiser_name}}\",\n                    \"advertiser_status\": \"STATUS_ENABLE\"\n                },\n                \"is_gmv_max_available\": false,\n                \"is_owner_bc\": false,\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_authorized_bc_info\": {\n                    \"bc_id\": \"{{bc_id}}\",\n                    \"bc_name\": \"{{bc_name}}\",\n                    \"bc_profile_image\": \"{{bc_profile_image}}\",\n                    \"user_role\": \"ADMIN\"\n                },\n                \"store_code\": \"{{store_code}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_role\": \"AD_PROMOTION\",\n                \"store_status\": \"ACTIVE\",\n                \"targeting_region_codes\": [\n                    \"ID\"\n                ],\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

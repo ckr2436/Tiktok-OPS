@@ -1,0 +1,62 @@
+{
+  "title": "Get diagnoses for ad groups",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/diagnosis/get/",
+  "method": "GET",
+  "category_path": [
+    "Ad Diagnosis"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "adgroup_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the ad groups that you want to get diagnosis for. Max size: 20."
+      },
+      {
+        "name": "issue_category",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The issue category or categories. Allowed values： CREATIVE : creative-related issues. BID_AND_BUDGET : issues related to bids and budgets. EVENT_TRACK : issues related to event tracking. If multiple values are specified for this field, diagnoses belonging to any of the specified issue categories will be returned. If this field is not specified, diagnoses belonging to all issue categories will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/diagnosis/get/?advertiser_id={{advertiser_id}}&filtering={\"adgroup_ids\":[\"{{adgroup_ids}}\"], \"issue_category\": [\"CREATIVE\", \"BID_AND_BUDGET\", \"EVENT_TRACK\"]}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

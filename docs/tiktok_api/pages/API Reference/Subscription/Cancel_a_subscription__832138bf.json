@@ -1,0 +1,62 @@
+{
+  "title": "Cancel a subscription",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/subscription/unsubscribe/",
+  "method": "POST",
+  "category_path": [
+    "Subscription"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. For this endpoint, use application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of your developer application. You can find the App ID by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "secret",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Secret of your developer application. You can find the Secret by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "subscription_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The subscription ID. You can get the IDs of subscriptions under an app via subscription_id returned by /subscription/get/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"secret\": \"SECRET\", \n    \"app_id\": \"APP_ID\", \n    \"subscription_id\": \"SUBSCRIPTION_ID\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/subscription/unsubscribe/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "subscription_id": 6934682745658409000
+        },
+        "request_id": "2021030113504601023101600705098212"
+      }
+    }
+  }
+}

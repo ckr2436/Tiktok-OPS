@@ -1,0 +1,196 @@
+{
+  "title": "Create a Saved Audience",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/dmp/saved_audience/create/",
+  "method": "POST",
+  "category_path": [
+    "Audience",
+    "Saved Audience"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Accepted format: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "saved_audience_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Saved Audience name. Character limit is 512 and cannot contain emoji."
+      },
+      {
+        "name": "location_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the locations that you want to target. To get the available locations and corresponding IDs, use the /tool/region/ or /tool/targeting/search/ endpoint. Note : Overlapping targeted locations are not supported. For instance, you cannot target the U.S. and the state of California at the same time."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Gender that you want to target. Enum values: GENDER_FEMALE , GENDER_MALE , GENDER_UNLIMITED"
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Age groups you want to target. For enum values, see Enumeration - Targeting Age Group ."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Codes of the languages that you want to target. You can get language codes via /tool/language/ , and if you don't want to limit the languages you target, assign an empty value to this field or do not pass in this field."
+      },
+      {
+        "name": "audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of audience IDs. You can get audience IDs via the /dmp/custom_audience/list/ endpoint."
+      },
+      {
+        "name": "excluded_audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of audience IDs to be excluded. You can get audience IDs via the /dmp/custom_audience/list/ endpoint."
+      },
+      {
+        "name": "interest_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Interest classification. You can use /tool/target_recommend_tags/ to get a list of recommended interest categories based on your targeting regions and your industries, or use /tool/interest_category/ endpoint to get the complete list of interest categories. If the interest is specified, users who do not meet the interest target will be excluded during delivery. Do not specify if you wish to target everyone."
+      },
+      {
+        "name": "interest_keyword_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of interest keywords that you want to use to target audience. You can use /tool/interest_keyword/recommend/ to get recommended interest keywords."
+      },
+      {
+        "name": "actions",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "A list of action category objects."
+      },
+      {
+        "name": "action_category_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when actions has been specified and valid only when TikTok placement is the only placement selected in your ad group. IDs of the action categories (behaviors) or hashtags that you want to target. You can get action category IDs via /tool/action_category/ ."
+      },
+      {
+        "name": "action_scene Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when actions has been specified. Where you can collect information about user actions. Enum values: VIDEO_RELATED , CREATOR_RELATED , HASHTAG_RELATED ."
+      },
+      {
+        "name": "action_period Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Required when actions has been specified. The time period to include actions from. Enum values: 0 , 7 , 15 . If action_scene is CREATOR_RELATED or HASHTAG_RELATED , 0 will be used regardless of the value you pass in. 0 means that there is no definite timeframe to select actions from."
+      },
+      {
+        "name": "video_user_actions Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when actions has been specified. Video-related Actions. If action_scene is VIDEO_RELATED , the allowed values are: WATCHED_TO_END , LIKED , COMMENTED , SHARED . If action_scene is CREATOR_RELATED , the allowed values are: FOLLOWING , VIEW_HOMEPAGE . If action_scene is HASHTAG_RELATED , the allowed value is VIEW_HASHTAG ."
+      },
+      {
+        "name": "operating_systems",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Device operating systems that you want to target. Enum values: ANDROID , IOS . Only one value is allowed."
+      },
+      {
+        "name": "min_android_version",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Minimum device Android version. For enum values, see Enumeration - Minimum Android Version ."
+      },
+      {
+        "name": "min_ios_version",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Minimum iOS version. For enum values, see Enumeration - Minimum iOS Version ."
+      },
+      {
+        "name": "device_model_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the device models that you want to target. Use /tool/device_model/ to get the complete list of device model IDs and their statuses, and only active devices ( is_active = true in the response of /tool/device_model/ ) can be used to create ads. Note : Device model ( device_model_ids ) and device price ( device_price_ranges ) cannot be set at the same time."
+      },
+      {
+        "name": "network_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Device connection types that you want to target. Default: unlimited . For enum values, see Enumeration - Connection Type ."
+      },
+      {
+        "name": "carrier_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Carriers that you want to target. Use /tool/carrier/ endpoint to get a list of carriers. A carrier is valid only when the in_use field for the carrier is true . The carriers must be consistent with the location(s) that you want to target."
+      },
+      {
+        "name": "device_price_ranges",
+        "required": false,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important : The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/dmp/saved_audience/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"saved_audience_name\": \"{{saved_audience_name}}\",\n    \"location_ids\": [\n        \"{{location_id}}\",\n        \"{{location_id}}\"\n    ],\n    \"languages\": [\n        \"en\"\n    ],\n    \"gender\": \"GENDER_FEMALE\",\n    \"age_groups\": [\n        \"AGE_18_24\"\n    ],\n    \"audience_ids\": [\n        \"{{audience_id}}\",\n        \"{{audience_id}}\"\n    ],\n    \"excluded_audience_ids\": [\n        \"{{excluded_audience_id}}\",\n        \"{{excluded_audience_id}}\"\n    ],\n    \"interest_category_ids\": [\n        \"14\",\n        \"16\"\n    ],\n    \"interest_keyword_ids\": [\n        \"{{interest_keyword_ids}}\"\n    ],\n    \"interest_keyword_language\": [\n        \"en\"\n    ],\n    \"network_types\": [\n        \"WIFI\"\n    ],\n    \"actions\": [\n        {\n            \"video_user_actions\": [\n                \"FOLLOWING\"\n            ],\n            \"action_period\": 0,\n            \"action_scene\": \"CREATOR_RELATED\",\n            \"action_category_ids\": [\n                \"2\"\n            ]\n        }\n    ],\n    \"carrier_ids\": [\n        \"{{carrier_id}}\"\n    ],\n    \"device_price_ranges\": [\n        0,\n        1000\n    ],\n    \"operating_systems\": [\n        \"ANDROID\"\n    ],\n    \"min_android_version\": \"10.0\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

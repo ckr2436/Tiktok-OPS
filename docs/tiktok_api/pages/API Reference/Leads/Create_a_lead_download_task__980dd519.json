@@ -1,0 +1,81 @@
+{
+  "title": "Create a lead download task",
+  "endpoint": "https://business-api.tiktok.compage_id",
+  "method": "GET",
+  "category_path": [
+    "Leads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or library_id has to be set. If you haven't migrated the leads of the ad account to a Business Center via /page/library/transfer/ , specify the advertiser_id . If you have migrated the leads of the ad account to a Business Center via /page/library/transfer/ , specify the library_id . Advertiser ID."
+      },
+      {
+        "name": "library_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or library_id has to be set. If you haven't migrated the leads of the ad account to a Business Center via /page/library/transfer/ , specify the advertiser_id . If you have migrated the leads of the ad account to a Business Center via /page/library/transfer/ , specify the library_id . Form library ID. To obtain the IDs of form libraries that you can access, use /page/library/get/ ."
+      },
+      {
+        "name": "ad_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either ad_id or page_id has to be set. If you specify ad_id , you will create a lead download task for a specific ad. If you specify page_id , you will create a lead download task for a specific Instant Form. Ad ID. Specify the ID of an ad that uses an Instant Form to collect leads. To learn about how to create such ads, see Create a Lead Generation ad with optimization location as Instant Form . To obtain the IDs of ads within an ad account, use /ad/get/ ."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either ad_id or page_id has to be set. If you specify ad_id , you will create a lead download task for a specific ad. If you specify page_id , you will create a lead download task for a specific Instant Form. Instant form ID. To obtain the IDs of Instant Forms within an ad account, use /page/get/ and set business_type to LEAD_GEN ."
+      },
+      {
+        "name": "task_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Task ID. If you do not pass in this field, the request will create a lead download task and you will get the task_id in the response. If you pass in this field, the request will poll the task status to check whether the task has been completed ( status = SUCCEED )."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Create a lead download task for an Instant Form within a form library (EEA/CH/UK region)",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/page/lead/task/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'x-lead-region: eu' \\\n--data '{\n    \"library_id\":\"{{library_id}}\",\n    \"page_id\":\"{{page_id}}\"\n}'"
+      },
+      {
+        "title": "Create a lead download task for an ad (US region)",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/page/lead/task/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'x-lead-region: us' \\\n--data '{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"ad_id\":\"{{ad_id}}\"\n}'"
+      },
+      {
+        "title": "Create a lead download task for an Instant Form within an ad account (other countries/regions)",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/page/lead/task/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--data '{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"page_id\":\"{{page_id}}\"\n}'"
+      },
+      {
+        "title": "Query the status of a lead download task for an Instant Form within a form library (EEA/CH/UK region)",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/page/lead/task/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'x-lead-region: eu' \\\n--data '{\n    \"library_id\":\"{{library_id}}\",\n    \"page_id\":\"{{page_id}}\",\n    \"task_id\": \"{{task_id}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"status\": \"RUNNING\",\n        \"task_id\": \"{{task_id}}\"\n    }\n}"
+    }
+  }
+}

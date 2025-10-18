@@ -1,0 +1,48 @@
+{
+  "title": "Get the authorization status",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tcm/tt_video/status/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok Creator Marketplace account or TTO Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the video that is created under the creator account. The video needs to meet any of the following requirements: The video has been uploaded and tagged as branded content, and the creator has linked the video to a TTCM order via the invite link ( invite_link ) or campaign code ( campaign_code ) created via /tcm/order/create/v2/ . You can get video_id via /tcm/order/get/v2/ or /tcm/report/get/v2/ . The video has been uploaded and tagged as branded content, and the creator has linked the video to a TTO Creator Marketplace campaign via the invite link ( invite_link ) created via /tto/tcm/campaign/create/ . You can get video_id via /tto/tcm/campaign/ or /tto/tcm/report/ ."
+      },
+      {
+        "name": "tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "TikTok Creator Marketplace account ID or the ID of the TTO Creator Marketplace account. To obtain the IDs of the TTO Creator Marketplace accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tcm/tt_video/status/?tcm_account_id={{tcm_account_id}}&video_id={{video_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auth_status\": \"WAITING\",\n        \"auth_status_updated_time\": \"{{auth_status_updated_time}}\",\n        \"requested_authorization_days\": 30,\n        \"video_id\": \"{{video_id}}\"\n    }\n}"
+    }
+  }
+}
