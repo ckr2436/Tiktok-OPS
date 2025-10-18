@@ -1,0 +1,48 @@
+{
+  "title": "Download the output of an async report task",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/task/download/",
+  "method": "GET",
+  "category_path": [
+    "Reporting"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. Please use the same access token as the Create an asynchronous report task operation."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Note : If you use advertiser_ids when calling /report/task/create/ (POST method), you need to set this field to one of the Advertiser IDs specified via advertiser_ids ."
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the asynchronous report task."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"task_id=TASK_ID\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/report/task/download/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "Campaign ID,Campaign Name,Ad Group ID,Ad Group Name,Age,Gender,Cost,Impression,Click\n482,Test Campaign 1,578,Test Ad Group 1,13-17,female,107.56,29056,280\n482,Test Campaign 1,578,Test Ad Group 1,18-24,female,101.74,22992,203\n482,Test Campaign 1,578,Test Ad Group 1,13-17,male,58.78,17063,126\n482,Test Campaign 1,578,Test Ad Group 1,18-24,male,57.36,18467,115\n622,Test Campaign 2,765,Test Ad Group 2,18-24,male,32.9,267635,1172\n482,Test Campaign 1,578,Test Ad Group 1,25-34,female,25.97,8143,105\n810,Test Campaign 3,746,Test Ad Group 3,35-44,female,20.31,119359,3214\n···"
+    }
+  }
+}

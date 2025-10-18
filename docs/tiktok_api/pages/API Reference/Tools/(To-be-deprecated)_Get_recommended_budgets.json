@@ -1,0 +1,11 @@
+{
+  "title": "(To-be-deprecated) Get recommended budgets",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

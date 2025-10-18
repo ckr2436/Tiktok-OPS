@@ -1,0 +1,90 @@
+{
+  "title": "Submit UnionPay verification for a business license",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/unionpay_info/submit/",
+  "method": "POST",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. You need to have Admin permission for the Business Center. To obtain the list of Business Centers where you have Admin permission, use /bc/get/ and ensure the returned user_role is ADMIN ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad account ID. You need to specify the ID of the ad account associated with the business license that requires UnionPay verification and have Admin permission for the ad account."
+      },
+      {
+        "name": "representative_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The Chinese name of the legal representative as it appears on the business license."
+      },
+      {
+        "name": "representative_document_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of the representative document. Enum values: ID_CARD : ID card. PASSPORT : Passport. HK_MACAO_EXIT_ENTRY_PERMIT : Exit-Entry Permit for Travelling to and from Hong Kong and Macao. TAIWAN_MAINLAND_TRAVEL_PERMIT : Mainland Travel Permit for Taiwan Residents. HK_MACAO_MAINLAND_TRAVEL_PERMIT : Mainland Travel Permit for Hong Kong and Macao Residents. Default value: ID_CARD ."
+      },
+      {
+        "name": "representative_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the representative document. When representative_document_type is ID_CARD or not passed, specify the ID card number of the legal representative in 18 digits. Example: 234123190101012345 . When representative_document_type is PASSPORT , specify the alphanumeric ID of the passport. Example: EF1234567 . When representative_document_type is HK_MACAO_EXIT_ENTRY_PERMIT , specify the alphanumeric ID card number of the Exit-Entry Permit for Travelling to and from Hong Kong and Macao. Example: CA1234567 . When representative_document_type is TAIWAN_MAINLAND_TRAVEL_PERMIT , specify the numeric ID of the Mainland Travel Permit for Taiwan Residents. Example: 12345678 . When representative_document_type is HK_MACAO_MAINLAND_TRAVEL_PERMIT , specify the alphanumeric ID Mainland Travel Permit for Hong Kong and Macao Residents. Example: H12345678 ."
+      },
+      {
+        "name": "unionpay_account",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The UnionPay account number in 12 to 19 digits."
+      },
+      {
+        "name": "representative_phone_number",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The phone number of the legal representative in 11 digits. Example: 13812345678 ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/unionpay_info/submit/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"representative_name\": \"{{representative_name}}\",\n    \"representative_id\": \"{{representative_id}}\",\n    \"unionpay_account\": \"{{unionpay_account}}\",\n    \"representative_phone_number\": \"{{representative_phone_number}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

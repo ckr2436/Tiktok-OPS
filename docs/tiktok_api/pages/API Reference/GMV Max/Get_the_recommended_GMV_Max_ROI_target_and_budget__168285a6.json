@@ -1,0 +1,80 @@
+{
+  "title": "Get the recommended GMV Max ROI target and budget",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/bid/recommend/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "shopping_ads_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of the GMV Max Campaign. Enum values: PRODUCT : Product GMV Max Campaign. LIVE : Live GMV Max Campaign."
+      },
+      {
+        "name": "optimization_goal",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Optimization goal. Enum value: VALUE : Gross revenue."
+      },
+      {
+        "name": "item_group_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when shopping_ads_type is PRODUCT . The list of SPU (standard product unit) IDs for specific products to be promoted in a Product GMV Max Campaign. If you want to promote all products from the TikTok Shop in the Product GMV Max Campaign, you don't need to pass this field. If you want to promote specific products from the TikTok Shop in the Product GMV Max Campaign, specify these products via this field. Max size: 50. To obtain the list of SPU IDs for products within a TikTok Shop, use /store/product/get/ . Set ad_creation_eligible to GMV_MAX and select item_group_id values where status is AVAILABLE and gmv_max_ads_status is UNOCCUPIED ."
+      },
+      {
+        "name": "identity_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required and valid only when shopping_ads_type is LIVE The LIVE source identity that you want to use in a LIVE GMV Max Campaign. To obtain a list of identities for LIVE GMV Max Campaigns, use /gmv_max/identity/get/ and select identities with live_gmv_max_available as true ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "For Product GMV Max Campaigns",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/bid/recommend/?advertiser_id={{advertiser_id}}&store_id={{store_id}}&shopping_ads_type=PRODUCT&optimization_goal=VALUE' \\\n--header 'Access-Token: {{Access_Token}}'"
+      },
+      {
+        "title": "For LIVE GMV Max Campaigns",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/bid/recommend/?advertiser_id={{advertiser_id}}&store_id={{store_id}}&shopping_ads_type=LIVE&optimization_goal=VALUE&identity_id={{identity_id}}' \\\n--header 'Access-Token: {{Access_Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"budget\": 300,\n        \"roas_bid\": 2\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "title": "Grant an ad account exclusive authorization for a TikTok Shop",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/exclusive_authorization/create/",
+  "method": "POST",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "store_authorized_bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that owns the TikTok Shop ( store_id ). To confirm that a Business Center owns a TikTok Shop, use /gmv_max/store/list/ and check whether the returned is_owner_bc for the ID in store_authorized_bc_id is true ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the ad account that you want to exclusively authorize to create GMV Max Campaigns for the TikTok Shop. To obtain the list of ad accounts within a Business Center, use /bc/asset/get/ and set asset_type to ADVERTISER ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/exclusive_authorization/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"store_id\": \"{{store_id}}\",\n    \"store_authorized_bc_id\":\"{{bc_id}}\",\n    \"advertiser_id\": \"{{advertiser_id}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

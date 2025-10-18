@@ -1,0 +1,87 @@
+{
+  "title": "Get the transaction records of a BC",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/transaction/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Payments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "funds_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Fund type. If not specified, both types of fund will be returned. Enum values: FUNDS_TYPE_CASH (cash), FUNDS_TYPE_GRANT (non-cash)."
+      },
+      {
+        "name": "start_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start date of transaction records that you want to get, in the format of \"YYYY-MM-DD\". The default value is the date 90 days earlier."
+      },
+      {
+        "name": "end_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End date of transaction records that you want to get, in the format of \"YYYY-MM-DD\". The default value is the date today."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-50."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"filtering={\\\"funds_type\\\": \\\"FUNDS_TYPE\\\"}\" \\\n--data-urlencode \"start_date=START_DATE\" \\\n--data-urlencode \"end_date=END_DATE\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/transaction/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

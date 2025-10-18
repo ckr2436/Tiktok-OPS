@@ -1,0 +1,106 @@
+{
+  "title": "Get rule results",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/optimizer/rule/result/list/",
+  "method": "GET",
+  "category_path": [
+    "Automated Rules"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowed format: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filters"
+      },
+      {
+        "name": "status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Status of rules. Enum values: ON : on. OFF : off. DELETED : deleted."
+      },
+      {
+        "name": "rule_info",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Rule ids or rule names."
+      },
+      {
+        "name": "action",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by the action of the rule. Enum values: TURN_ON , TURN_OFF , MESSAGE , DAILY_BUDGET , LIFERIME_BUDGET , BID"
+      },
+      {
+        "name": "time",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "An array of length two, which are the start datetime and the second one is the end datetime. It should be UTC+0 timezone."
+      },
+      {
+        "name": "data_dimension",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Enum values: CAMPAIGN , ADGROUP , AD ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default: 1"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default: 10"
+      },
+      {
+        "name": "lang",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language of the error messages. Enum values: EN (default value), ZH , JA ."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

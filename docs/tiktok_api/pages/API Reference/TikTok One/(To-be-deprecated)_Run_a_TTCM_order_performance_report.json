@@ -1,0 +1,11 @@
+{
+  "title": "(To-be-deprecated) Run a TTCM order performance report",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

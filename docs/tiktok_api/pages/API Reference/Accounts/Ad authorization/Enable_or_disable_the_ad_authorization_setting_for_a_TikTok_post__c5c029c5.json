@@ -1,0 +1,74 @@
+{
+  "title": "Enable or disable the ad authorization setting for a TikTok post",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/post/authorize/setting/",
+  "method": "POST",
+  "category_path": [
+    "Accounts",
+    "Ad authorization"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "item_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok post. To obtain the public posts of a TikTok account, use /business/video/list/ . Example: 7123456789123456789 ."
+      },
+      {
+        "name": "is_ad_promotable",
+        "required": true,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable the \"Ad authorization\" setting to allow the post to be promoted. Supported values: true : To enable the \"Ad authorization\" setting. false : To disable the \"Ad authorization\" setting. Note : If the TikTok post is being used in Spark Ads, you cannot disable the \"Ad authorization\" setting for the post."
+      },
+      {
+        "name": "authorization_days",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The authorization validity period in days. Supported values: 7 , 30 , 60 , 180 , 365 . Default value: 30 ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Enable the ad authorization setting",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/post/authorize/setting/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"business_id\": \"{{business_id}}\",\n    \"item_id\": \"{{item_id}}\",\n    \"is_ad_promotable\": true,\n    \"authorization_days\": 365\n}'"
+      },
+      {
+        "title": "Disable the ad authorization setting",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/post/authorize/setting/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"business_id\": \"{{business_id}}\",\n    \"item_id\": \"{{item_id}}\",\n    \"is_ad_promotable\": false\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auth_code\": \"{{auth_code}}\",\n        \"auth_code_end_time\": \"2025-01-01 12:39:35\",\n        \"auth_code_start_time\": \"2024-01-01 12:39:35\",\n        \"authorization_days\": 365,\n        \"item_id\": \"{{item_id}}\"\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "title": "Get posts for a Product GMV Max Campaign",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/video/get/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "store_authorized_bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that is authorized to access the TikTok Shop ( store_id )."
+      },
+      {
+        "name": "spu_id_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Product SPU (standard product unit) IDs to filter the results by. If you want to promote all products from the TikTok Shop in the Product GMV Max Campaign using authorized posts, you don't need to pass spu_id_list and custom_posts_eligible . If you want to promote specific products from the TikTok Shop in the Product GMV Max Campaign using authorized posts, specify these products via spu_id_list and do not specify custom_posts_eligible . If you want to promote a specific product from the TikTok Shop in the Product GMV Max Campaign using customized posts, specify the product via spu_id_list and set custom_posts_eligible to true . Max size: When custom_posts_eligible is false or not specified: 50. When custom_posts_eligible is true : 1. To obtain the list of SPU IDs for products within a TikTok Shop, use /store/product/get/ . Set ad_creation_eligible to GMV_MAX and select item_group_id values where status is AVAILABLE and gmv_max_ads_status is UNOCCUPIED ."
+      },
+      {
+        "name": "custom_posts_eligible",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to query videos that can be used in customized posts promoting a specific product. If you set this field to true , you need to specify one product using spu_id_list simultaneously. Supported values: true , false . Default value: false ."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when custom_posts_eligible is false or not provided. The sorting field for videos available for authorized posts. Enum values: GMV : GMV. POST_TIME : Post time. VIDEO_VIEWS : Video views. VIDEO_LIKES : Video likes. CLICK_THROUGH_RATE : Click-through Rate (CTR). PRODUCT_CLICKS : Product clicks. Default value: GMV ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The sorting order for videos available for authorized posts or customized posts. Enum values: ASC : ascending. DESC : descending. Default value: DESC . If custom_posts_eligible is false or not specified, you can sort the videos available for authorized posts by specifying both sort_field and sort_type . If custom_posts_eligible is true , you don't need to specify sort_field . In this case, videos available for customized posts are sorted by default in descending order of post time, with the latest posts appearing first. If you prefer to sort posts in ascending order (earliest posts first), set sort_type to ASC ."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A search keyword to filter posts (videos). You can specify a post ID or caption. To search by post caption ( text ), provide a text string. This search type supports multiple-language searches and fuzzy matches. Example: summer . To search by post ID ( item_id ), provide a numeric string with at least 19 characters. This search type supports exact matches. Example: 1234567891234567891 ."
+      },
+      {
+        "name": "need_auth_code_video",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to include posts associated with AUTH_CODE identities in the results. Supported values: true , false . Default value: false . Note : If need_auth_code_video is false or not passed and identity_list is not specified, you will retrieve an empty post list."
+      },
+      {
+        "name": "identity_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "A list of TT_USER , BC_AUTH_TT , or TTS_TT identities to filter the results by. To obtain a list of identities available for Product GMV Max Campaigns, use /gmv_max/identity/get/ and select identities with product_gmv_max_available as true . Max size: 20. Note : If need_auth_code_video is false or not passed and identity_list is not specified, you will retrieve an empty post list."
+      },
+      {
+        "name": "identity_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: TT_USER : TikTok User. This type of identity is created when you bind your TikTok For Business account with your TikTok Business Account, or when you bind your TikTok For Business account with your regular TikTok account and then upgrade the account to Business Account. BC_AUTH_TT : TikTok Account User in Business Center. This type of identity is created when you add a TikTok account to your Business Center, and the TikTok account owner approves your request. TTS_TT : TikTok Account User for TikTok Shop. This type of identity is created when you set an official TikTok account for the TikTok Shop."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . The ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "identity_authorized_shop_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only when dentity_type is BC_AUTH_TT and identity_authorized_shop_id is returned for the identity from /gmv_max/identity/get/ . The ID of the TikTok Shop that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is TTS_TT . The ID of the TikTok Shop that a TikTok Account User for TikTok Shop identity is associated with."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-50. Default value:10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/video/get/?advertiser_id={{advertiser_id}}&store_id={{store_id}}&store_authorized_bc_id={{store_authorized_bc_id}}&need_auth_code_video=true&identity_list=[{ \"identity_type\": \"BC_AUTH_TT\",\"identity_id\": \"{{identity_id}}\",\"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\"}]&page=1&page_size=50' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"item_list\": [\n            {\n                \"identity_info\": {\n                    \"display_name\": \"{{display_name}}\",\n                    \"identity_id\": \"{{identity_id}}\",\n                    \"identity_type\": \"AUTH_CODE\",\n                    \"profile_image\": \"{{profile_image}}\"\n                },\n                \"item_id\": \"{{item_id}}\",\n                \"spu_id_list\": [\n                    \"{{spu_id}}\"\n                ],\n                \"text\": \"{{text}}\",\n                \"video_info\": {\n                    \"bit_rate\": 8500323,\n                    \"definition\": \"1080p\",\n                    \"duration\": 3.669,\n                    \"format\": \"mp4\",\n                    \"fps\": 30,\n                    \"height\": 1920,\n                    \"preview_url\": \"{{preview_url}}\",\n                    \"signature\": \"{{signature}}\",\n                    \"size\": 3898461,\n                    \"video_cover_url\": \"{{video_cover_url}}\",\n                    \"video_id\": \"{{video_id}}\",\n                    \"width\": 1080\n                }\n            },\n            {\n                \"identity_info\": {\n                    \"display_name\": \"{{display_name}}\",\n                    \"identity_id\": \"{{identity_id}}\",\n                    \"identity_type\": \"AUTH_CODE\",\n                    \"profile_image\": \"{{profile_image}}\"\n                },\n                \"item_id\": \"{{item_id}}\",\n                \"spu_id_list\": [\n                    \"{{spu_id}}\"\n                ],\n                \"text\": \"{{text}}\",\n                \"video_info\": {\n                    \"bit_rate\": 109400,\n                    \"definition\": \"540p\",\n                    \"duration\": 5.256,\n                    \"format\": \"mp4\",\n                    \"fps\": 27,\n                    \"height\": 1024,\n                    \"preview_url\": \"{{preview_url}}\",\n                    \"signature\": \"{{signature}}\",\n                    \"size\": 71876,\n                    \"video_cover_url\": \"{{video_cover_url}}\",\n                    \"video_id\": \"{{video_id}}\",\n                    \"width\": 576\n                }\n            },\n            {\n                \"identity_info\": {\n                    \"display_name\": \"{{display_name}}\",\n                    \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                    \"identity_id\": \"{{identity_id}}\",\n                    \"identity_type\": \"BC_AUTH_TT\",\n                    \"profile_image\": \"{{profile_image}}\"\n                },\n                \"item_id\": \"{{item_id}}\",\n                \"spu_id_list\": [\n                    \"{{spu_id}}\"\n                ],\n                \"text\": \"{{text}}\",\n                \"video_info\": {\n                    \"bit_rate\": 164638,\n                    \"definition\": \"540p\",\n                    \"duration\": 5,\n                    \"format\": \"mp4\",\n                    \"fps\": 30,\n                    \"height\": 1024,\n                    \"preview_url\": \"{{preview_url}}\",\n                    \"signature\": \"{{signature}}\",\n                    \"size\": 107982,\n                    \"video_cover_url\": \"{{video_cover_url}}\",\n                    \"video_id\": \"{{video_id}}\",\n                    \"width\": 576\n                }\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 50,\n            \"total_number\": 3,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

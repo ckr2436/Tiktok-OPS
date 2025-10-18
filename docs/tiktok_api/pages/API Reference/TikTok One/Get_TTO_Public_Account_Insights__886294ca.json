@@ -1,0 +1,48 @@
+{
+  "title": "Get TTO Public Account Insights",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/public/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TTO Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TTO Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "handle_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The handle name of the TTO Creator Marketplace creator that you want to search for. The exact match is supported. Note : If you specify the handle name of a creator that is not on TTO Creator Marketplace yet, an error will occur."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/public/?tto_tcm_account_id={{tto_tcm_account_id}}&handle_name={{handle_name}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"bio\": \"{{bio}}\",\n        \"content_labels\": [\n            {\n                \"label_id\": \"11005001007\",\n                \"label_name\": \"Shooting Games\"\n            }\n        ],\n        \"creator_id\": \"{{creator_id}}\",\n        \"creator_price\": 100,\n        \"currency\": \"USD\",\n        \"display_name\": \"{{display_name}}\",\n        \"engagement_rate\": 0.08472570776939392,\n        \"followers_count\": 4721794,\n        \"following_count\": 231,\n        \"handle_name\": \"{{handle_name}}\",\n        \"industry_labels\": [\n            {\n                \"label_id\": \"20000000000\",\n                \"label_name\": \"Apps\"\n            }\n        ],\n        \"likes_count\": 153119665,\n        \"median_views\": 426141,\n        \"profile_image\": \"{{profile_image}}\",\n        \"videos_count\": 1803\n    }\n}"
+    }
+  }
+}

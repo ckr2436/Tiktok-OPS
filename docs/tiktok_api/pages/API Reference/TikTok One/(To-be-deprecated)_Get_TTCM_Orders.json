@@ -1,0 +1,11 @@
+{
+  "title": "(To-be-deprecated) Get TTCM Orders",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

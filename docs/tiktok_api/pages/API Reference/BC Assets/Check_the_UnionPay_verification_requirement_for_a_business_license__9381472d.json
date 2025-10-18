@@ -1,0 +1,41 @@
+{
+  "title": "Check the UnionPay verification requirement for a business license",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/unionpay_info/check/",
+  "method": "GET",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "license_no",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business license number."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/unionpay_info/check/?license_no={{license_no}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"unionpay_verification_required\": true\n    }\n}"
+    }
+  }
+}

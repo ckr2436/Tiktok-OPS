@@ -1,0 +1,154 @@
+{
+  "title": "Publish a public video post to an owned account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/video/publish/",
+  "method": "POST",
+  "category_path": [
+    "Accounts",
+    "Posts"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "video_url",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A publicly accessible HTTP(s) URL for the video content to be published - with a minimum recommended TTL of 30 minutes. Video constraints : The audio-video content must be contained in .mp4, .mov or .webm format. The maximum video size is 1 GB. The minimum video duration must be 3 seconds, and the maximum video duration is 600 seconds. To check the maximum video duration allowed for a TikTok account, use /business/video/settings/ and obtain max_video_post_duration_sec from the response. The minimum height and minimum width of the video must be 360 pixels. The minimum frame rate of the video must be 23 FPS, and maximum frame rate is 60 FPS. Example : https://www.example.com/tiktok-videos/video.mp4 Important : Starting from November 16th, 2023, you can no longer publish videos using unverified video URLs. To ensure a smooth API integration, we recommend you verify ownership of URL properties as soon as possible, and specify a URL that has been verified for ownership, either manually or automatically. To manually verify ownership of a URL property, follow the steps outlined in Manage URL properties . After November 16th, 2023, if you want to publish a test video through /business/video/publish/ using a test video URL that doesn't require verification, use the test URL https://sf16-va.tiktokcdn.com/obj/eden-va2/uvpapzpbxjH-aulauvJ-WV[[/ljhwZthlaukjlkulzlp/3min.mp4 . Note that if you are a developer or an advertiser who used the /business/video/publish/ endpoint to publish videos prior to April 7th, 2023, we have automatically set the corresponding domains of video URLs specified through the video_url parameter to the \"verified\" status. Therefore, we recommend that you use the /business/property/list/ endpoint to confirm whether the domains you utilize for hosting videos have been automatically verified."
+      },
+      {
+        "name": "custom_thumbnail_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A publicly accessible HTTP(s) URL for a custom image to be used as the video’s cover photo. Photo constraints: Maximum resolution: 1080 x 1920 pixels or 1920 x 1080 pixels. Minimum resolution: 360 x 360 pixels. File size: within 20 MB. File type: JPG, JPEG, WebP, or PNG. Example: https://www.example.com/tiktok-images/image.png . When custom_thumbnail_url is specified, thumbnail_offset will be ignored. Note : Specify a URL that has been verified for ownership, either manually or automatically. To manually verify ownership of a URL property, follow the steps outlined in Manage URL properties ."
+      },
+      {
+        "name": "post_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Information about the post. This field is required, even if you don't want to use any of the additional parameters within post_info , including caption , is_brand_organic , is_branded_content , disable_comment , disable_duet , disable_stitch , thumbnail_offset , is_ai_generated , upload_to_draft , tto_invite_link , and is_ads_only . In such cases, set this field to an empty object ( {} )."
+      },
+      {
+        "name": "caption",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video caption/description - which can contain #hashtags and @mentions of friends (mutual followers) of the owned TikTok Account. You can use \"\\n\" as line break to display the video caption in multiple lines within the mobile TikTok App. However, for the line break to work effectively, the caption must contain enough characters to trigger truncation based on the current mobile phone's display settings and operating system. This truncation is characterized by an ellipsis mark (...) and the word \"more\", which users can click to expand and view the full caption. If the caption is too short and does not trigger truncation, the \"\\n\" character will be ignored, and the caption will be displayed on a single line without any line breaks. Note that in the TikTok Web App \"\\n\" will be ignored. Length limit: 2,200 characters (UTF-16 encoding), including a maximum of 30 mentions. Example : Me and me casa 🏠 #cat #kitten #britishshorthair Note : Any hashtags and mentions included in the video caption will render as plain text on the TikTok application."
+      },
+      {
+        "name": "is_brand_organic",
+        "required": true,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable the Brand Organic Content toggle for the video. If this field is set to true , the video will be labeled as Brand Organic Content, indicating you are promoting yourself or your own business. A \"Promotional content\" label will be attached to the video. Note : If you set both is_brand_organic and is_branded_content to true , is_brand_organic will be ignored and the video will be labeled as Branded Content."
+      },
+      {
+        "name": "is_branded_content",
+        "required": true,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable the Branded Content toggle for the video. If this field is set to true , the video will be labeled as Branded Content, indicating you are in a paid partnership with a brand. A \"Paid partnership\" label will be attached to the video. Note : If you set both is_brand_organic and is_branded_content to true , is_brand_organic will be ignored and the video will be labeled as Branded Content."
+      },
+      {
+        "name": "tto_invite_link",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when the following conditions are both met: is_branded_content is set to true . The TikTok account (creator) has been invited to a TikTok One (TTO) Creator Marketplace campaign. The TikTok account has joined the campaign. To join a campaign, you can use /tto/creator/campaign/join/ . The invite link for a TTO Creator Marketplace campaign. When you specify this field, the video will be published and linked to the TTO Creator Marketplace campaign that is associated with the invite link. Brands can retrieve the invite link for a TTO Creator Marketplace campaign by using /tto/tcm/campaign/ ."
+      },
+      {
+        "name": "disable_comment",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to disable the \"Allow comments\" setting for the published video post. Supported values: false : To enable the setting. true : To disable the setting. To determine the allowed values for your TikTok account's posts, use /business/video/settings/ and obtain comment_disabled from the response. If comment_disabled is true , you can only set this field to true . If comment_disabled is false , you can set this field to true or false . Example : false Default value : false"
+      },
+      {
+        "name": "disable_duet",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to disable the \"Allow Duet\" setting for the published video post. Supported values: false : To enable the setting. true : To disable the setting. To determine the allowed values for your TikTok account's posts, use /business/video/settings/ and obtain duet_disabled from the response. If duet_disabled is true , you can only set this field to true . If duet_disabled is false , you can set this field to true or false . Example : false Default value : false"
+      },
+      {
+        "name": "disable_stitch",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to disable the \"Allow Stitch\" setting for the published video post. Supported values: false : To enable the setting. true : To disable the setting. To determine the allowed values for your TikTok account's posts, use /business/video/settings/ and obtain stitch_disabled from the response. If stitch_disabled is true , you can only set this field to true . If stitch_disabled is false , you can set this field to true or false . Example : false Default value : false"
+      },
+      {
+        "name": "thumbnail_offset",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Setting to choose a frame of the published video as the cover photo, in the format of a timestamp in ms. Example : 8000. Default value : 0. Note : When custom_thumbnail_url is specified, thumbnail_offset will be ignored. A failure Webhook will be sent if you pass in a timestamp greater than the video length, and then the video will not be published. The timestamp you pass in will be rounded up to find the closest frame. For instance, if the video is a 2FPS video that lasts one second, the timestamp 499 (ms) will return the first frame and the timestamp 500 (ms) will return the second frame."
+      },
+      {
+        "name": "is_ai_generated",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable the AI-generated content toggle for the video post. If you enable the toggle, your video will be labeled as Creator labeled as AI-generated once posted and can't be changed. The \"Creator labeled as AI-generated\" label indicates that the content was completely AI-generated or significantly edited with AI. Supported values: true , false . Default value: false . Note : Turning on the AI-generated content setting won't affect the distribution of your video as long as it doesn't violate our Community Guidelines ."
+      },
+      {
+        "name": "upload_to_draft",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to upload the post as a draft. Supported values: true , false . Default value: false . If you set this field to true , all the other fields within post_info will be ignored. After you successfully upload the post as a draft, you can find the draft through the inbox notification within the TikTok app. Note : If you want to use this parameter to upload the post as a draft, obtain a TikTok account access token with video.upload permission and the Application specific unique ID for the TikTok account by following the steps in Authorization and Authentication . To confirm whether a TikTok account access token has video.upload permission, use /tt_user/token_info/get/ and check the returned scope . If the access token doesn't have the video.upload permission, request the TikTok account owner to approve draft uploading permission through the Authorization workflow."
+      },
+      {
+        "name": "is_ads_only",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to publish the video as an \"Only show in ads\" video. Supported values: true : To publish the video as an ad that won't be visible to the public on your profile page. false : Not to publish the video as an ad. Default value: false . Note : If \"Only show in ads\" videos that have been used as Spark Ads, you can access the details of these videos through /business/video/list/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -L -X POST 'https://business-api.tiktok.com/open_api/v1.3/business/video/publish/' \\\n-H 'Content-Type: application/json' \\\n-H 'Access-Token: 1234a16d2e08c3f17d1984a1be07d00406p3LIAF7vEpxliox8GRpCINv70x' \\\n--data-raw '{\n  \"business_id\": \"20f5994f-4a67-44d4-a48f-2ce494a853b8\",\n  \"video_url\": \"https://s3.amazonaws.com/tiktok-videos/video.mp4\",\n  \"post_info\": {\n      \"caption\": \"Me and me casa 🏠 #cat #kitten #britishshorthair\",\n      \"disable_comment\": false,\n      \"disable_duet\": false,\n      \"disable_stitch\": false\n      }\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "Ok",
+        "request_id": "20210817034316010245031056097316BA",
+        "data": {
+          "share_id": "v_pub_url~v1.2345123456789123456"
+        }
+      }
+    }
+  }
+}

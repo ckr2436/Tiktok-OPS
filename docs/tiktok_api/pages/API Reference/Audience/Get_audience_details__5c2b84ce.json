@@ -1,0 +1,55 @@
+{
+  "title": "Get audience details",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/get/",
+  "method": "GET",
+  "category_path": [
+    "Audience"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "custom_audience_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Audience IDs. Length range is [1, 100] ."
+      },
+      {
+        "name": "history_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The size of the history data which the user requests."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\\\n--data-urlencode \"custom_audience_ids=[\\\"CUSTOM_AUDIENCE_IDS\\\"]\" \\\\\nhttps://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"123\",\n    \"data\": {\n        \"list\": [\n            {\n                \"audience_history\": [\n                    {\n                        \"msg\": null,\n                        \"action_detail\": \"6489086\",\n                        \"editor\": \"open_api\",\n                        \"opt_time\": \"2022-05-26 14:12:12\",\n                        \"action\": \"create\"\n                    }\n                ],\n                \"audience_details\": {\n                    \"audience_id\": \"123\",\n                    \"is_expiring\": false,\n                    \"is_auto_refresh\": false,\n                    \"is_creator\": true,\n                    \"expired_time\": \"2023-09-07 18:34:20\",\n                    \"is_valid\": true,\n                    \"shared\": true,\n                    \"create_time\": \"2022-05-26 14:12:12\",\n                    \"msg\": null,\n                    \"error_msg\": null,\n                    \"type\": \"Lookalike Audience\",\n                    \"audience_sub_type\": \"NORMAL\",\n                    \"calculate_type\": null,\n                    \"cover_num\": 6489086,\n                    \"name\": \"CUSTOM_AUDIENCE_NAME\",\n                    \"rule\": \"{\\\"inclusions\\\": null, \\\"exclusions\\\": null}\",\n                    \"owner_id\": \"{{owner_id}}\",\n                     \"lookalike_spec\": null\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

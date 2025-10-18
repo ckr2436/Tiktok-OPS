@@ -1,0 +1,12 @@
+{
+  "title": "Report Offline Events in bulk",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "Offline Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

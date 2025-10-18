@@ -1,0 +1,48 @@
+{
+  "title": "Get OS versions",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/os_version/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "os_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "OS type. Enum values: ANDROID , IOS ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/os_version/?advertiser_id={{advertiser_id}}&os_type=IOS' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"os_versions\": [\n            {\n                \"name\": \"{{name}}\",\n                \"version\": \"{{version}}\",\n                \"os_id\": \"{{os_id}}\"\n            },\n            {\n                \"name\": \"{{name}}\",\n                \"version\": \"{{version}}\",\n                \"os_id\": \"{{os_id}}\"\n            }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

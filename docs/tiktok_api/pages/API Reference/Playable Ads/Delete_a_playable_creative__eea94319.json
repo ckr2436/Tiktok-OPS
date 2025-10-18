@@ -1,0 +1,48 @@
+{
+  "title": "Delete a playable creative",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/playable/delete/",
+  "method": "POST",
+  "category_path": [
+    "Playable Ads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "playable_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the playable ad."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\", \n    \"playable_id\": \"PLAYABLE_ID\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/playable/delete/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"playable_id\": \"4154\",\n    },\n    \"request_id\": \"20200924101137010116035039245F569\"\n}"
+    }
+  }
+}

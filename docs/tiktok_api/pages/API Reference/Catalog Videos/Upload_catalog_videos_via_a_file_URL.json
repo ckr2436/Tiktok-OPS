@@ -1,0 +1,11 @@
+{
+  "title": "Upload catalog videos via a file URL",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Videos"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

@@ -1,0 +1,69 @@
+{
+  "title": "Disable or enable creatives in a Smart+ Campaign",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/spc/material_status/update/",
+  "method": "POST",
+  "category_path": [
+    "Smart+"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of a Smart+ Campaign. To retrieve existing Smart+ Campaigns within your ad account, use /campaign/get/ and set filtering to {\"is_smart_performance_campaign\" : true} ."
+      },
+      {
+        "name": "ad_material_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of ad material IDs for creatives to operate on. An ad material ID is an ad-specific material ID generated when a particular creative is used in a Smart+ ad. This ID differs from the creative ID you obtain when uploading the creative to your ad account’s Creative Library. To obtain ad material IDs associated with a Smart+ ad, use /campaign/spc/get/ . Max size: 20. The number of creatives you can operate on varies based on the type of creatives you want to operate on: If you want to operate on the following types of creatives, you can only specify one ID in ad_material_ids : a carousel in Spark Ad Standard Carousel created through Sparks Ads Push a carousel in non-Spark Ad Standard Carousel If you want to operate on the following types of creatives, you can specify up to 20 IDs in ad_material_ids : non-Spark Ad Video Spark Ad Video created through Sparks Ads Push TikTok video posts in Spark Ad Video created through Sparks Ads Pull TikTok photo posts in Spark Ad Standard Carousel created through Sparks Ads Pull"
+      },
+      {
+        "name": "material_status",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The operation to perform on the creatives. Enum values: DISABLE : disable. ENABLE : enable."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/campaign/spc/material_status/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_id\": \"{{campaign_id}}\",\n    \"ad_material_ids\": [\"{{ad_material_id}}\"],\n    \"material_status\": \"DISABLE\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"material_status\": \"DISABLE\",\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"ad_material_ids\": [\n            \"{{ad_material_id}}\"\n        ]\n    }\n}"
+    }
+  }
+}

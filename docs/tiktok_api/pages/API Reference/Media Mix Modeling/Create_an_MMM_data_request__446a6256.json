@@ -1,0 +1,125 @@
+{
+  "title": "Create an MMM data request",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/mmm/api/create/",
+  "method": "POST",
+  "category_path": [
+    "Media Mix Modeling"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of advertiser IDs to request MMM data for. We recommend limiting the number of advertiser IDs to 5. To obtain a list of ad accounts within a Business Center that you have access to, use /bc/asset/get/ and set asset_type to ADVERTISER ."
+      },
+      {
+        "name": "request_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Details of the data request."
+      },
+      {
+        "name": "targets",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Details of the ad accounts and campaigns. The advertiser_id value within targets should correspond to the specified advertiser_ids ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The ID list of campaigns within the ad account to filter the data by. If you don't specify campaign_ids , data for all campaigns within the ad account will be returned. To obtain a list of campaigns within an ad account, use /campaign/get/ ."
+      },
+      {
+        "name": "brand",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand. You can use this field to distinguish between data requests for different brands. If you specify this field, the value will be filled in the \"Brand\" column of the data file."
+      },
+      {
+        "name": "sub_brand",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sub-brand. You can use this field to distinguish between data requests for different sub-brands. If you specify this field, the value will be filled in the \"Sub-brand\" column of the data file."
+      },
+      {
+        "name": "from_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start date, in the format of YYYY-MM-DD (UTC+0 time). The start date cannot be earlier than four years ago."
+      },
+      {
+        "name": "to_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End date, in the format of YYYY-MM-DD (UTC+0 time)."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Two-letter code of the country or region. For enum values, see List of values for country_code . If this field is not specified, data for all countries and regions will be returned. Example: US ."
+      },
+      {
+        "name": "media_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Media type. Enum values: All (recommended): Both paid and earned media. Paid : Paid media. Advertising you have paid for directly, such as TV commercials and social media ads. Earned : Earned media. Advertising gained through organic means, such as social media mentions. Default value: All ."
+      },
+      {
+        "name": "email",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The email address to receive the notification when the data is ready for download."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/mmm/api/create/' \\\n--header 'Access-Token: {{Access-Token}}'\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"advertiser_ids\": [\n        \"{{advertiser_id}}\"\n    ],\n    \"request_info\": {\n        \"targets\": [\n            {\n                \"advertiser_id\": \"{{advertiser_id}}\"\n            }\n        ],\n        \"from_date\": \"2024-01-01\",\n        \"to_date\": \"2024-01-03\",\n        \"country_code\": [\n            \"JP\",\"US\",\"CA\"\n        ],\n        \"media_type\": \"All\"\n    },\n    \"email\": \"{{email}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"mmm_request_id\": \"{{mmm_request_id}}\"\n    }\n}"
+    }
+  }
+}

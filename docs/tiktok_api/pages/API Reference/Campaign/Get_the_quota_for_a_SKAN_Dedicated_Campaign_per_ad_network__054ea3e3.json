@@ -1,0 +1,77 @@
+{
+  "title": "Get the quota for a SKAN Dedicated Campaign per ad network",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/quota/info/",
+  "method": "GET",
+  "category_path": [
+    "Campaign"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The Application ID of the promoted app. You can get app_id by using the /app/list/ endpoint."
+      },
+      {
+        "name": "campaign_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of a SKAN Dedicated Campaign. Specify this field if you want to get ad group quota ( adgroup_quota_info ) for a certain campaign. Note : If the ID is not the ID of a SKAN Dedicated Campaign, an error will occur. To determine whether a Dedicated Campaign is a SKAN Dedicated Campaign, use /campaign/get/ and check whether the returned disable_skan_campaign is false ."
+      },
+      {
+        "name": "adgroup_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of an ad group within a SKAN 4.0 Dedicated Campaign. Specify this field if you want to get ad quota ( ad_quota_info ) for a certain group. Note : If the ID is not the ID of an ad group within a SKAN 4.0 Dedicated Campaign, the value of the returned ad_quota_info will be null."
+      },
+      {
+        "name": "has_advertiser_quota",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to return quota info via different advertiser IDs under the promoted app. Set it to true if you want to get campaign quota via different advertiser IDs. Default value: false ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Query the Dedicated Campaign quota for an iOS app",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/quota/info/?advertiser_id={{advertiser_id}&app_id={{app_id}}'\\\n--header 'Access-Token: {{Access-Token}}' \\"
+      },
+      {
+        "title": "Query the ad group quota within a Dedicated Campaign for an iOS app",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/quota/info/?advertiser_id={{advertiser_id}&app_id={{app_id}}&campaign_id={{campaign_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Query the ad quota within a SKAN 4.0 ad group for an iOS app",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/quota/info/?advertiser_id={{advertiser_id}&app_id={{app_id}}&adgroup_id={{adgroup_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"ad_quota_info\": {\n            \"available_ad_quota\": 9,\n            \"total_ad_quota\": 9,\n            \"adgroup_id\": \"0\",\n            \"used_ad_quota\": 0\n        },\n        \"adgroup_quota_info\": {\n            \"campaign_id\": \"0\",\n            \"used_adgroup_quota\": 0,\n            \"placements\": [\n                \"PLACEMENT_PANGLE\",\n                \"PLACEMENT_GLOBAL_APP_BUNDLE\",\n                \"PLACEMENT_TIKTOK\"\n            ],\n            \"total_adgroup_quota\": 5,\n            \"available_adgroup_quota\": 5\n        },\n        \"split_test_quota\": {\n            \"max_test_number\": 2,\n            \"used_test_group\": 2,\n            \"releasing_test_group\": 0,\n            \"used_quota\": 4,\n            \"releasing_quota\": 0,\n            \"available_test_group\": 0\n        },\n        \"campaign_quota_info\": {\n            \"tiktok_campaign_quota_info\": {\n                \"campaign_quota_by_adv\": [],\n                \"total_campaign_quota_info\": {\n                    \"releasing_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"total_campaign_quota\": 20,\n                    \"releasing_campaign_quota\": 4,\n                    \"used_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"available_campaign_quota\": 15,\n                    \"used_campaign_quota\": 1\n                }\n            },\n            \"pangle_campaign_quota_info\": {\n                \"campaign_quota_by_adv\": [],\n                \"total_campaign_quota_info\": {\n                    \"releasing_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"total_campaign_quota\": 20,\n                    \"releasing_campaign_quota\": 3,\n                    \"used_campaign_ids\": [\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\"\n                    ],\n                    \"available_campaign_quota\": 12,\n                    \"used_campaign_quota\": 5\n                }\n            }\n        }\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "title": "Get a Mentions Webhook configuration",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/webhook/list/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [],
+    "parameters": [
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of your developer application. You can find the App ID by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "secret",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Secret of your developer application. You can find the Secret by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "event_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of Webhook event that you want to subscribe to. Enum values: BRAND_MENTION : Mentions events. To learn more about the schema and sample payload of the events within this event category, see Webhook schema ."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"app_id\": \"{{app_id}}\",\n        \"callback_url\": \"{{callback_url}}\",\n        \"event_type\": \"BRAND_MENTION\"\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "title": "Search for targeting hashtags",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/hashtag/recommend/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "keywords",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Keywords that you want to get recommended hashtags for. If you specify multiple unrelated keywords and set operator to AND , it is possible that no recommended hashtags are returned. Max size: 10."
+      },
+      {
+        "name": "operator",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The operator to be used between the keywords. Enum values: AND : Recommended hashtags will be generated based on all the keywords specified in keywords . OR : Recommended hashtags will be generated separately for each individual keyword in keywords . Default value: AND ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location -g --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/hashtag/recommend/?keywords=[%22game%22]&advertiser_id=1234' \\\n--header 'Access-Token: xxxx' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "1234",
+        "data": {
+          "recommend_keywords": [
+            {
+              "keyword": "#gameroom",
+              "keyword_id": "3568527772311",
+              "keyword_status": "ONLINE"
+            },
+            {
+              "keyword": "#gametime",
+              "keyword_id": "3391154394694",
+              "keyword_status": "ONLINE"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

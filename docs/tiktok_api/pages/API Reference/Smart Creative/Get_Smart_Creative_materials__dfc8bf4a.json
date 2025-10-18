@@ -1,0 +1,113 @@
+{
+  "title": "Get Smart Creative materials",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/ad/aco/get/",
+  "method": "GET",
+  "category_path": [
+    "Smart Creative"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "adgroup_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of ad group IDs. Quantity: 1-100."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "exclude_field_types_in_response",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The type of fields that you want to remove from the response. Allowed enum values: NULL_FIELD : Fields with null values."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"adgroup_ids=[\\\"ADGROUP_IDS\\\"]\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/ad/aco/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "list": [
+            {
+              "open_url": null,
+              "title_list": [
+                {
+                  "title": "Testing"
+                }
+              ],
+              "open_url_list": [
+                {
+                  "open_url": ""
+                }
+              ],
+              "app_name": null,
+              "avatar_icon_list": null,
+              "click_tracking_url": "",
+              "landing_page_urls": null,
+              "profile_image": null,
+              "pixel_id": null,
+              "landing_page_url": null,
+              "impression_tracking_url": "",
+              "page_list": null,
+              "external_action": null,
+              "call_to_action_list": [],
+              "display_name": null,
+              "display_name_list": [
+                {
+                  "source": "20210531132544123456",
+                  "app_name": ""
+                }
+              ],
+              "ad_id": 1234573413994497,
+              "page_id": null,
+              "media_info_list": [
+                {
+                  "media_info": {
+                    "image_info": [
+                      {
+                        "file_name": null,
+                        "web_uri": "v0201/aa4785144d3894fcce25033c86123456"
+                      }
+                    ],
+                    "video_info": {
+                      "file_name": "12345096e244f1dab24a7e40870cc.MP4",
+                      "video_id": "v12345270000bvgsmvthr46s2t1dgm20"
+                    },
+                    "image_mode": "IMAGE_MODE_VIDEO"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "request_id": "xxx"
+      }
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "title": "Get the members of a BC",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/member/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Members"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. The maximum page size is 20."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions"
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Keyword to filter by"
+      },
+      {
+        "name": "user_role",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Basic roles within Business Center. Enum values: ADMIN : Admins can manage the Business Center's members and assets. STANDARD : Standard members can only work on the ad accounts they've been assigned to."
+      },
+      {
+        "name": "relation_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "User's relation to the Business Center. If the invitation to join the Business Center is still pending, or has been accepted. Enum values: BOUND : The request to manage the asset has been approved by the owner. PENDING : The request to manage the asset is pending on the owner's approval. REJECTED : The request to manage the asset has been rejected by the owner."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\n--data-urlencode \"filtering={\\\"keyword\\\": \\\"KEYWORD\\\", \\\"user_role\\\": \\\"USER_ROLE\\\", \\\"relation_status\\\": \\\"RELATION_STATUS\\\"}\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/member/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"user_id\": null,\n                \"ext_user_role\": {\n                    \"finance_role\": null\n                },\n                \"relation_status\": \"BOUND\",\n                \"user_name\": null,\n                \"user_role\": \"ADMIN\",\n                \"user_email\": \"{{user_email}}\"\n            },\n            {\n                \"user_id\": null,\n                \"ext_user_role\": {\n                    \"finance_role\": null\n                },\n                \"relation_status\": \"PENDING\",\n                \"user_name\": null,\n                \"user_role\": \"STANDARD\",\n                \"user_email\": \"{{user_email}}\"\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page\": 1,\n            \"page_size\": 20,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

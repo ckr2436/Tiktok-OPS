@@ -1,0 +1,66 @@
+{
+  "title": "Apply an authorization code",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tt_video/authorize/",
+  "method": "POST",
+  "category_path": [
+    "Spark Ads Using Authorized Posts"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser id"
+      },
+      {
+        "name": "auth_code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The authorization code for the Spark Ads post."
+      },
+      {
+        "name": "original_post_auth_code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If this post is a duet or stitch from another post or it mentions another video, you also need to get the authorization code for the original post. Use this field to specify the authorization code for the original post. Note: Currently, the post can only mention at most one video."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\", \n    \"auth_code\": \"AUTH_CODE\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/tt_video/authorize/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

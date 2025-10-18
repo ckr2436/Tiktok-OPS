@@ -1,0 +1,83 @@
+{
+  "title": "Get Creative Fatigue Detection results",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative_fatigue/get/",
+  "method": "GET",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "ad_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the ad that you want to get Creative Fatigue detection results for."
+      },
+      {
+        "name": "filtering",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date (closed interval), in the format of YYYY-MM-DD (advertiser account time zone). You can only specify a date within the last 60 days."
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date (open interval), in the format of YYYY-MM-DD (advertiser account time zone). You can only specify a date within the last 60 days."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10. Value range: [1, 500]."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/creative_fatigue/get/' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"ad_id\": \"{{ad_id}}\",\n    \"filtering\": {\n        \"start_date\": \"2023-05-22\",\n        \"end_date\": \"2023-05-24\"\n    },\n    \"page\": 1,\n    \"page_size\": 500\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"page_size\": 500,\n            \"total_page\": 1,\n            \"total_number\": 2,\n            \"page\": 1\n        },\n        \"list\": [\n            {\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"date\": \"2023-05-22\",\n                \"metrics\": {\n                    \"dnu\": 26832,\n                    \"has_fatigue\": false,\n                    \"skan_cost_per_conversion\": 0.0,\n                    \"cost_per_conversion\": 11.39,\n                    \"fatigue_index\": 0.43000000000000005,\n                    \"dnu_ratio\": 0.57,\n                    \"spend\": 125.24\n               },\n                \"ad_id\": \"{{ad_id}}\"\n            },\n            {\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"date\": \"2023-05-23\",\n                \"metrics\": {\n                    \"dnu\": 32741,\n                    \"has_fatigue\": false,\n                    \"skan_cost_per_conversion\": 0.0,\n                    \"cost_per_conversion\": 13.65,\n                    \"fatigue_index\": 0.30000000000000004,\n                    \"dnu_ratio\": 0.7,\n                    \"spend\": 136.51\n                }\n                \"ad_id\": \"{{ad_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

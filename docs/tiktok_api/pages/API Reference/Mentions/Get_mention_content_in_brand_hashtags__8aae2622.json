@@ -1,0 +1,90 @@
+{
+  "title": "Get mention content in brand hashtags",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/mention/hashtag/video/list/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If fields is not set, only the default fields will be returned. Default value: [\"item_id\",\"caption\"] . Supported fields : item_id : Unique identifier for the post. create_time : Unix/epoch date-time when the post was posted. video_link : A generic URL for the post. caption : The description for the post. likes : Total number of likes on the post. comments : Total number of comments on the post. shares : Total number of times the post has been shared. thumbnail_url : The URL of the post thumbnail. matched_hashtags : A list of brand hashtags in the post caption that match the hashtags configured for the business."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The field to sort the result by. Enum values: CREATE_TIME : The field create_time . LIKES : The field likes . COMMENTS : The field comments . SHARES : The field shares . Default value: CREATE_TIME ."
+      },
+      {
+        "name": "sort_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC : Ascending. DESC : Descending. Default value: DESC ."
+      },
+      {
+        "name": "number_of_days",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The lookback period for the results, measured in days. Value range: 1-90. Default value: 90. For instance, if you set this field to 90, the results for the last 90 days will be retrieved."
+      },
+      {
+        "name": "regions",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The regions of posts that you want to filter the results by. If you specify this field, only posts posted by TikTok users registered in the specified regions will be returned. If this field is not specified, all relevant posts that contain brand hashtags will be returned. To learn about the allowed values for this field, refer to List of values for regions ."
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Cursor for pagination. The position of the results that you want to retrieve from. For instance, setting cursor to 10 means you want to retrieve the next page of results after the 10th position. If the response parameter has_more is true , pass the returned cursor in this parameter in the subsequent request to receive the next page of results. Default value: 0."
+      },
+      {
+        "name": "max_count",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The maximum number of hashtags that will be returned for each page of data. Default value: 10. Note : Due to our trust and safety policies, it is possible that the endpoint returns less than the max_count number of hashtags even if the response parameter has_more is true ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/mention/hashtag/video/list/?business_id={{business_id}}&fields=[\"item_id\",\"video_link\",\"caption\",\"likes\",\"comments\",\"shares\",\"create_time\",\"thumbnail_url\",\"matched_hashtags\"]&sort_field=LIKES&sort_order=ASC' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"cursor\": 10,\n        \"has_more\": true,\n        \"videos\": [\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 0,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1699537820\",\n                \"shares\": 1,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 132\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 3,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1699617820\",\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 132\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 180,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1694736000\",\n                \"shares\": 200,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 170\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 10,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1699627820\",\n                \"shares\": 4,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 460\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 10,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1699241347\",\n                \"shares\": 5,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 1161\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 14,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1695495795\",\n                \"shares\": 1380,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 1396\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 20,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1696097179\",\n                \"shares\": 5,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 1422\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 261,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1698616575\",\n                \"shares\": 134,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 1702\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 10,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1699637820\",\n                \"shares\": 83,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 2049\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"comments\": 37,\n                \"caption\": \"{{caption}}\",\n                \"create_time\": \"1697493375\",\n                \"shares\": 440,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"matched_hashtags\": [\n                    \"{{matched_hashtag}}\",\n                    \"{{matched_hashtag}}\"\n                ],\n                \"likes\": 3492\n            }\n        ]\n    }\n}"
+    }
+  }
+}

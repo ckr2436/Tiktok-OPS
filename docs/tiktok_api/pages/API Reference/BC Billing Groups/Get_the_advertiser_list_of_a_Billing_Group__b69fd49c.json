@@ -1,0 +1,51 @@
+{
+  "title": "Get the advertiser list of a Billing Group",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/billing_group/advertiser/list/",
+  "method": "GET",
+  "category_path": [
+    "BC Billing Groups"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "billing_group_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billing Group ID"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number. Default value: 1"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size, in the range of 1-50. The default value is 10."
+      }
+    ]
+  },
+  "response": {}
+}

@@ -1,0 +1,87 @@
+{
+  "title": "Get partners by an asset",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/asset/partner/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "asset_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Asset type. Enum values: ADVERTISER , CATALOG ."
+      },
+      {
+        "name": "asset_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Asset ID. Ad account ID when asset_type is ADVERTISER . Catalog ID when asset_type is CATALOG ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering object"
+      },
+      {
+        "name": "keyword",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Partner name keyword that you want to filter by."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"asset_type=ASSET_TYPE\" \\\n--data-urlencode \"asset_id=ASSET_ID\" \\\n--data-urlencode \"filtering={\\\"keyword\\\": \\\"KEYWORD\\\"}\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/asset/partner/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

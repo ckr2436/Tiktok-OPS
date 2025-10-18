@@ -1,0 +1,300 @@
+{
+  "title": "Update a GMV Max Campaign",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/update/",
+  "method": "POST",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. To ensure that the ad account has exclusive GMV Max authorization for the TikTok Shop that you want to promote, call /gmv_max/store/list/ and confirm that the returned advertiser_id within exclusive_authorized_advertiser_info is the same as the ad account that you want to use to create GMV Max Campaigns. If the returned advertiser_id is not the same as the ad account that you want to use to create GMV Max Campaigns, use /gmv_max/exclusive_authorization/create/ to grant the ad account exclusive GMV Max authorization for the TikTok Shop."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of a GMV Max Campaign. To create a GMV Max Campaign and obtain the campaign ID, use /campaign/gmv_max/create/ . To filter existing GMV Max Campaigns within your ad account, use /gmv_max/campaign/get/ ."
+      },
+      {
+        "name": "roas_bid",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Valid only when deep_bid_type of the campaign is VO_MIN_ROAS . ROI target. To obtain the recommended ROI target, use /gmv_max/bid/recommend/ and check the returned roas_bid ."
+      },
+      {
+        "name": "budget",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Daily budget. To obtain the recommended budget, use /gmv_max/bid/recommend/ and check the returned budget ."
+      },
+      {
+        "name": "item_group_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid when shopping_ads_type is PRODUCT and product_specific_type is CUSTOMIZED_PRODUCTS . Product SPU (standard product unit) IDs. Max size: 50. To obtain the list of SPU IDs for products within a TikTok Shop, use /store/product/get/ . Set ad_creation_eligible to GMV_MAX and select item_group_id values where status is AVAILABLE and gmv_max_ads_status is UNOCCUPIED ."
+      },
+      {
+        "name": "promotion_days",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The promotion days setting details. Note : Enabling automatic budget increase for GMV Max Campaigns is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Once you are allowlisted, you can also configure promotion days settings for your GMV Max Campaigns. Once you are allowlisted for automatic budget increase: For new campaigns : Promotion days will follow automatic budget increase logic. See the description of auto_budget_enabled for details. Budgets can increase by up to 50% each time, with a maximum of 10 increases per day . Increases are triggered only when ROI achievement ≥ 90% and budget utilization ≥ 80%. For existing campaigns : Campaigns created before September 5, 2025 (without automatic budget increase) will default to a one-time 50% increase, applied only when the ROI target is achieved. However, if automatic budget increase is turned on later, the budget increases will revert to the new logic of increasing by up to 50% each time, with a maximum of 10 increases per day ."
+      },
+      {
+        "name": "is_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable promotion days to automatically optimize your campaign for higher GMV during high-intent shopping dates in regions where your ads are delivering. Supported values: true , false . When promotion_days is specified, this field will be automatically set to true ."
+      },
+      {
+        "name": "auto_schedule_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Valid only when is_enabled is true . Whether to use TikTok Shop promotion days schedule. Supported values: true , false . When is_enabled is true , this field will be automatically set to true ."
+      },
+      {
+        "name": "custom_schedule_list Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Details of the custom promotion day schedules. If auto_schedule_enabled is false , specify at least one set of start_date and end_date in custom_schedule_list . If auto_schedule_enabled is true , custom_schedule_list is optional. Max size: 50."
+      },
+      {
+        "name": "start_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The start date of the custom promotion day schedule, in the format of YYYY-MM-DD (ad account time zone). Note : The start date cannot be after the end_date . The start date cannot be earlier than the current date. The start date must be on the same day as or after the schedule_start_time of the campaign. The custom promotion days schedule will automatically start at 00:00:00 of the start date in the ad account time zone."
+      },
+      {
+        "name": "end_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The end date of the custom promotion day schedule, in the format of YYYY-MM-DD (ad account time zone) . Note : The end date cannot be earlier than the current time. The custom promotion days schedule will automatically end at 00:00:00 of the end date in the ad account time zone."
+      },
+      {
+        "name": "roas_bid_multiplier",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The target ROI index. Changes to your target ROI will be in effect during promotion days and may drive higher GMV for this campaign. Enum values: 90 : -10%. To decrease your target ROI by 10% during promotion days. 80 : -20%. To decrease your target ROI by 20% during promotion days. 70 : -30%. To decrease your target ROI by 30% during promotion days."
+      },
+      {
+        "name": "auto_budget_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable automatic budget increase. When your achieved ROI reaches at least 90% of the target and 80% or more of your budget has been used, your daily campaign budget may automatically increase by up to 10 times to capture more sales. Your budget will reset to its original amount each day. When is_enabled within the object promotion_days is true and auto_budget_enabled is false , your ROI target will decrease and your daily budget will automatically increase during TikTok Shop promotion days (when auto_schedule_enabled is true ) and custom promotion days as defined by custom_schedule_list . Your daily budget will reset to its original amount every day. During standard days, your ROI target and budget won't change. When is_enabled within the object promotion_days is true and auto_budget_enabled is true , auto budget increase will be turned on during TikTok Shop promotion days (when auto_schedule_enabled is true ), custom promotion days as defined by custom_schedule_list ,** and standard days**. Your daily budget will reset to its original amount every day. During TikTok Shop promotion days and custom promotion days as defined by custom_schedule_list , your ROI target will decrease. During standard days, your ROI target won't change. When is_enabled within the object promotion_days is false and auto_budget_enabled is true , your ROI won't change, your daily campaign budget may automatically increase up to 10 times to optimize gross revenue. Your daily budget will reset to its original amount every day. Supported values: true , false . Note : Automatic budget increase for GMV Max Campaigns is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "schedule_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Schedule type. Enum values: SCHEDULE_FROM_NOW : To run the campaign continuously after the scheduled start time. SCHEDULE_START_END : To run the campaign between the scheduled start time and end time."
+      },
+      {
+        "name": "schedule_end_time Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when schedule_type is SCHEDULE_START_END . Not supported when schedule_type is SCHEDULE_FROM_NOW . Campaign delivery end time, in the format of YYYY-MM-DD HH:MM:SS (UTC+0)."
+      },
+      {
+        "name": "affiliate_posts_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Valid only when the following conditions are both met: shopping_ads_type is PRODUCT product_video_specific_type is AUTO_SELECTION Whether to enable affiliate posts for your Product GMV Max Campaign. Affiliate posts are TikTok posts created by affiliates (creators participating in the TikTok Shop Affiliate Program) and authorized for use in TikTok Shop Ads. Learn more about affiliate creatives for TikTok Shop Ads . Supported values: true , false ."
+      },
+      {
+        "name": "item_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Valid when shopping_ads_type is PRODUCT and product_video_specific_type is CUSTOM_SELECTION . The list of authorized TikTok posts or customized TikTok posts to associate with the Product GMV Max campaign. Authorized TikTok posts are existing posts featuring your selected products from your TikTok accounts or authorized using video codes. If you want to manually select authorized TikTok posts only for the Product GMV Max campaign, include their details using item_list and do not specify custom_anchor_video_list . Customized TikTok posts are newly created posts for the campaign, built by adding customized product links to your selected videos. These posts will be exclusive to this Product GMV Max campaign. If you want to manually select customized TikTok posts for the Product GMV Max campaign, include details of the videos to be used in customized posts using item_list and specify custom_anchor_video_list simultaneously. Max size: 50. To obtain a list of TikTok posts available for a Product GMV Max Campaign using the same TikTok Shop, use /gmv_max/video/get/ ."
+      },
+      {
+        "name": "item_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when item_list is passed. The ID of the TikTok post."
+      },
+      {
+        "name": "spu_id_list Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when item_list is passed. Product SPU IDs associated with the TikTok post."
+      },
+      {
+        "name": "identity_info Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required when item_list is passed. Information about the identity associated with the TikTok post."
+      },
+      {
+        "name": "identity_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when item_list is passed. Identity ID."
+      },
+      {
+        "name": "identity_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when item_list is passed. Identity type. Enum values: AUTH_CODE : Authorized User. This type of identity is created when you use the authorization code to access a TikTok account or a TikTok post. TT_USER : TikTok User. This type of identity is created when you bind your TikTok For Business account with your TikTok Business Account, or when you bind your TikTok For Business account with your regular TikTok account and then upgrade the account to Business Account. BC_AUTH_TT : TikTok Account User in Business Center. This type of identity is created when you add a TikTok account to your Business Center, and the TikTok account owner approves your request. TTS_TT : TikTok Account User for TikTok Shop. This type of identity is created when you set an official TikTok account for the TikTok Shop."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . The ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "identity_authorized_shop_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only when dentity_type is BC_AUTH_TT and identity_authorized_shop_id is returned for the identity from /gmv_max/identity/get/ . The ID of the TikTok Shop that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is TTS_TT . The ID of the TikTok Shop that a TikTok Account User for TikTok Shop identity is associated with."
+      },
+      {
+        "name": "video_info Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required when item_list is passed. Details of the video in the post."
+      },
+      {
+        "name": "video_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when item_list is passed. The ID of the video."
+      },
+      {
+        "name": "custom_anchor_video_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The list of customized TikTok posts to associate with the Product GMV Max campaign. Customized TikTok posts are posts created during campaign setup by adding customized product links for your products ( spu_id_list within custom_anchor_video_list ) to specified videos ( item_id within custom_anchor_video_list ). These posts will be exclusive to this Product GMV Max campaign. For manual selection: When shopping_ads_type is PRODUCT and product_video_specific_type is CUSTOM_SELECTION , specify the videos to be used in customized posts using this field. For auto selection: When shopping_ads_type is PRODUCT and product_video_specific_type is AUTO_SELECTION , specify the videos to be auto-selected for customized posts using this field. Max size: 2,000. Note : If you want to specify more than 200 customized posts for a Product GMV Max Campaign, you can update the custom_anchor_video_list of the campaign incrementally, with updates limited to 200 additional posts per request. For example, if you created the campaign with 200 customized posts and want to increase the post count to 400, specify 400 customized posts including the original 200 and the additional 200 ones through this field. If you want to remove certain customized posts from the Product GMV Max Campaign, make sure to remove the posts from both custom_anchor_video_list and item_list simultaneously."
+      },
+      {
+        "name": "item_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when custom_anchor_video_list is passed. The ID of a TikTok video to be used in a customized post. To retrieve eligible videos, use /gmv_max/video/get/ with custom_posts_eligible set to true."
+      },
+      {
+        "name": "spu_id_list Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when custom_anchor_video_list is passed. The SPU IDs of the products to associate with the customized product anchor link in the TikTok post. Max size: 1."
+      },
+      {
+        "name": "identity_info Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required when custom_anchor_video_list is passed. Information about the identity to associate with the post."
+      },
+      {
+        "name": "identity_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when custom_anchor_video_list is passed. Identity ID. To obtain a list of identities available for GMV Max Campaigns, use /gmv_max/identity/get/ ."
+      },
+      {
+        "name": "identity_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when custom_anchor_video_list is passed. Identity type. Enum values: AUTH_CODE : Authorized User. This type of identity is created when you use the authorization code to access a TikTok account or a TikTok post. TT_USER : TikTok User. This type of identity is created when you bind your TikTok For Business account with your TikTok Business Account, or when you bind your TikTok For Business account with your regular TikTok account and then upgrade the account to Business Account. BC_AUTH_TT : TikTok Account User in Business Center. This type of identity is created when you add a TikTok account to your Business Center, and the TikTok account owner approves your request. TTS_TT : TikTok Account User for TikTok Shop. This type of identity is created when you set an official TikTok account for the TikTok Shop."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . The ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "identity_authorized_shop_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only when identity_type is BC_AUTH_TT and identity_authorized_shop_id is returned for the identity from /gmv_max/identity/get/ . The ID of the TikTok Shop that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is TTS_TT . The ID of the TikTok Shop that a TikTok Account User for TikTok Shop identity is associated with."
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The name of the GMV Max Campaign."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_id\": \"{{campaign_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"age_groups\": [\n            \"AGE_18_24\",\n            \"AGE_25_34\",\n            \"AGE_35_44\",\n            \"AGE_45_54\",\n            \"AGE_55_100\"\n        ],\n        \"budget\": {{budget}},\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"custom_anchor_video_list\": [],\n        \"deep_bid_type\": \"VO_MIN_ROAS\",\n        \"identity_list\": [\n            {\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"TTS_TT\",\n                \"store_id\": \"{{store_id}}\"\n            },\n            {\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"TT_USER\"\n            },\n            {\n                \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"identity_type\": \"BC_AUTH_TT\"\n            }\n        ],\n        \"item_list\": [],\n        \"location_ids\": [\n            \"1562822\"\n        ],\n        \"operation_status\": \"ENABLE\",\n        \"optimization_goal\": \"VALUE\",\n        \"placements\": [\n            \"PLACEMENT_TIKTOK\"\n        ],\n        \"product_specific_type\": \"ALL\",\n        \"product_video_specific_type\": \"AUTO_SELECTION\",\n        \"affiliate_posts_enabled\": true,\n        \"roas_bid\": {{roas_bid}},\n        \"schedule_end_time\": \"{{schedule_end_time}}\",\n        \"schedule_start_time\": \"{{schedule_start_time}}\",\n        \"schedule_type\": \"SCHEDULE_START_END\",\n        \"shopping_ads_type\": \"PRODUCT\",\n        \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n        \"store_id\": \"{{store_id}}\"\n    }\n}"
+    }
+  }
+}

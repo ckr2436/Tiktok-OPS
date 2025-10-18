@@ -1,0 +1,83 @@
+{
+  "title": "Get the budget change history of an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/account/budget/changelog/get//",
+  "method": "GET",
+  "category_path": [
+    "BC Payments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you have access to, use /bc/get/ ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad account ID. To obtain the list of ad accounts that you have access to, use /bc/asset/get/ . Set asset_type to ADVERTISER and select ad accounts with the returned advertiser_role as ADMIN , OPERATOR , or ANALYST ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "start_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date, in the format of YYYY-MM-DD (UTC+0 time). You can either specify start_date and end_date simultaneously or leave both start_date and end_date unspecified. If you specify start_date and end_date simultaneously, the maximum time range is 365 days. If you leave both start_date and end_date unspecified, the results for the last seven days will be returned by default. Example: 2025-01-01 ."
+      },
+      {
+        "name": "end_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date, in the format of YYYY-MM-DD (UTC+0 time). You can either specify start_date and end_date simultaneously or leave both start_date and end_date unspecified. If you specify start_date and end_date simultaneously, the maximum time range is 365 days. If you leave both start_date and end_date unspecified, the results for the last seven days will be returned by default. Example: 2025-02-01 ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-50. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/bc/account/budget/changelog/get/?bc_id={{bc_id}}&advertiser_id={{advertiser_id}}&filtering={\"start_date\":\"2024-04-22\",\"end_date\":\"2025-04-22\"}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"changelog_list\": [\n            {\n                \"activity_type\": \"BUDGET_MODE_UPDATE\",\n                \"currency\": \"USD\",\n                \"current_budget\": \"{{current_budget}}\",\n                \"current_budget_mode\": \"DAILY_BUDGET\",\n                \"operation_time\": \"{{operation_time}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"operator_name\": \"{{operator_name}}\",\n                \"previous_budget_mode\": \"UNLIMITED\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_number\": 1,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

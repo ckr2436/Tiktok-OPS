@@ -1,0 +1,62 @@
+{
+  "title": "Check the occupancy of identities or products in Shopping Ads",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/occupied_custom_shop_ads/list/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "occupied_asset_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of asset that you want to check for occupancy in enabled Video Shopping Ads, Product Shopping Ads, or Live Shopping Ads. Enum values: IDENTITY_TT_USER : TikTok User ( TT_USER ) identity. IDENTITY_BC_AUTH_TT : TikTok Account User in Business Center ( BC_AUTH_TT ) identity. IDENTITY_TTS_TT : TikTok Account User for TikTok Shop ( TTS_TT ) identity. SPU : SPU."
+      },
+      {
+        "name": "asset_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The asset IDs. Max size: 1. When occupied_asset_type is IDENTITY_TT_USER , specify one TT_USER identity ID via this field. When occupied_asset_type is IDENTITY_BC_AUTH_TT , specify one BC_AUTH_TT identity ID via this field. When occupied_asset_type is IDENTITY_TTS_TT , specify one TTS_TT identity ID via this field. When occupied_asset_type is SPU , specify the SPU ID of a product within the TikTok Shop via this field. To obtain a list of identities, use /gmv_max/identity/get/ . To obtain the list of SPU IDs for products within a TikTok Shop, use /store/product/get/ . Set ad_creation_eligible to GMV_MAX and check the returned item_group_id ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/occupied_custom_shop_ads/list/?advertiser_id={{advertiser_id}}&store_id={{store_id}}&occupied_asset_type=IDENTITY_BC_AUTH_TT&asset_ids=[\"{{asset_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"occupied_custom_shop_ads\": []\n    }\n}"
+    }
+  }
+}

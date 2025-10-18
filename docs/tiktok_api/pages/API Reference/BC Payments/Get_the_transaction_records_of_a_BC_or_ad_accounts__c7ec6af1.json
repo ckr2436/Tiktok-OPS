@@ -1,0 +1,126 @@
+{
+  "title": "Get the transaction records of a BC or ad accounts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/account/transaction/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Payments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you have access to, use /bc/get/ ."
+      },
+      {
+        "name": "transaction_level",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The transaction level that the transaction records will be retrieved at. Enum values: BC : The Business Center ( bc_id ). ADVERTISER : The ad accounts within the Business Center ( bc_id ). PAYMENT_PORTFOLIO : The Payment Portfolio. Default value: ADVERTISER . Note : If a Business Center has enabled Payment Portfolio, the transactions of ad accounts shared by other Business Centers won't be returned."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "transaction_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Transaction types. BILL_PAYMENT : Bill payment. ADD_BALANCE : Add balance. CANCELLATION : Cancellation. PROMOTION_ISSUED : Issued promotion, which indicates the issuance of ad credit. PROMOTION_EXPIRED : Expired promotion, which indicates the expiration of ad credit. INCREASE_BALANCE : Increase of balance. DECREASE_BALANCE : Decrease of balance. CARD_VERIFICATION : Card verification. CARD_VERIFICATION_REFUND : Card verification refund. ORDER_CREATION_PAYMENT : Order creation payment. ORDER_EDIT_PAYMENT : Order edit payment. RETURN_OF_REMAINING_BUDGET : Return of remaining budget. REFUND : Refund."
+      },
+      {
+        "name": "owner_of_account",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when transaction_level is ADVERTISER or not passed. Owner of ad accounts. Enum values: OWNED_BY_CURRENT_BUSINESS_CENTER : Owned by the current Business Center. SHARED_BY_OTHER_BUSINESS_CENTER : Shared by another Business Center. Default value: OWNED_BY_CURRENT_BUSINESS_CENTER . If you want to obtain the transaction records of ad accounts shared by another Business Center, you need to have Admin access to these accounts. To confirm if you have Admin access to these accounts, use /bc/asset/get/ . The returned advertiser_role for the asset_id with asset_type as ADVERTISER should be ADMIN . Note : If your Business Center has more than 200 ad accounts shared by another Business Center, you cannot set this field to SHARED_BY_OTHER_BUSINESS_CENTER to filter shared ad accounts. In such cases, we recommend that you specify the account_ids filter or both account_ids and account_name filters simultaneously to narrow down the scope of your query."
+      },
+      {
+        "name": "account_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when transaction_level is ADVERTISER or not passed. A list of ad account IDs. Max size: 100."
+      },
+      {
+        "name": "account_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when transaction_level is ADVERTISER or not passed. Ad account name. Fuzzy match is supported."
+      },
+      {
+        "name": "start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start time, closed interval, in the format of YYYY-MM-DD HH:MM:SS (ad account time zone or Business Center time zone). Example: 2024-01-01 00:00:00 . The maximum query time range that you can define through start_date and end_date is 365 days. If start_time and end_time are not passed, the transaction records of the last 90 days will be returned by default."
+      },
+      {
+        "name": "end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end time, closed interval, in the format of YYYY-MM-DD HH:MM:SS (ad account time zone or Business Center time zone). Example: 2024-01-01 00:00:00 . The maximum query time range that you can define through start_time and end_time is 365 days. If start_time and end_time are not passed, the transaction records of the last 90 days will be returned by default."
+      },
+      {
+        "name": "billing_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Billing types. Enum values: CASH : cash. CREDIT : ad credit."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current number of pages. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Default value: 10. Value range: 1-50."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get the transaction records of a BC",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/bc/account/transaction/get/?bc_id={{bc_id}}&transaction_level=BC&filtering={\"start_time\": \"2023-01-01 00:00:00\",\"end_time\": \"2024-01-01 00:00:00\"}&page_size=50' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get the transaction records of ad accounts",
+        "curl": "curl --location --request GET  'https://business-api.tiktok.com/open_api/v1.3/bc/account/transaction/get/?bc_id={{bc_id}}&filtering={\"start_time\": \"2023-01-01 00:00:00\",\"end_time\": \"2024-01-01 00:00:00\"}&page_size=50' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get the transaction records of a Payment Portfolio",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/bc/account/transaction/get/?bc_id={{bc_id}}&filtering={\"start_time\":\"2024-10-01 00:00:00\",\"end_time\":\"2024-11-01 23:59:59\",\"billing_types\": [\"CASH\"]}&transaction_level=PAYMENT_ACCOUNT' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"transaction_list\": [\n            {\n                \"transaction_id\": \"{{transaction_id}}\",\n                \"subtotal\": 280000,\n                \"amount_type\": \"NEGATIVE\",\n                \"billing_type\": \"CASH\",\n                \"serial_number\": \"\",\n                \"bc_name\": \"{{bc_name}}\",\n                \"tax_amount\": 0,\n                \"amount\": 280000,\n                \"transaction_type\": \"DECREASE_BALANCE\",\n                \"invoice_id\": \"\",\n                \"create_time\": \"{{create_time}}\",\n                \"account_name\": null,\n                \"bc_id\": \"{{bc_id}}\",\n                \"timezone\": \"UTC+07:00\",\n                \"currency\": \"VND\",\n                \"account_id\": null\n            },\n            {\n                \"transaction_id\": \"{{transaction_id}}\",\n                \"subtotal\": 280000,\n                \"amount_type\": \"POSITIVE\",\n                \"billing_type\": \"CASH\",\n                \"serial_number\": \"{{serial_number}}\",\n                \"bc_name\": \"Phụ kiện oto VIP\",\n                \"tax_amount\": 30249,\n                \"amount\": 310249,\n                \"transaction_type\": \"ADD_BALANCE\",\n                \"invoice_id\": \"{{invoice_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"account_name\": null,\n                \"bc_id\": \"{{bc_id}}\",\n                \"timezone\": \"UTC+07:00\",\n                \"currency\": \"VND\",\n                \"account_id\": null\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"total_page\": 1,\n            \"page_size\": 50,\n            \"page\": 1\n        }\n    }\n}"
+    }
+  }
+}

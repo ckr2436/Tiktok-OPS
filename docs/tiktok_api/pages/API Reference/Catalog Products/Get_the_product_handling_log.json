@@ -1,0 +1,11 @@
+{
+  "title": "Get the product handling log",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Products"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

@@ -1,0 +1,77 @@
+{
+  "title": "Get Spark Ads video recommendations for a Business Account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/video/recommend/",
+  "method": "GET",
+  "category_path": [
+    "Spark Ads Recommendation"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by the TikTok Business Account. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "video_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If you want to have all videos under your Business Account analyzed, do not pass video_ids and exclude_video_ids . If you want to narrow down the scope of videos that will be analyzed to generate recommendations, pass either video_ids or exclude_video_ids . The recommendation level ( recommendation_level ) for each video is relative to the provided video set. Different video sets might result in different recommendation levels for the same video. The ID list of videos for which you wish to receive recommendations only. Max size: 20. To get the IDs of public videos under your Business Account, use /business/video/list/ ."
+      },
+      {
+        "name": "exclude_video_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If you want to have all videos under your Business Account analyzed, do not pass video_ids and exclude_video_ids . If you want to narrow down the scope of videos that will be analyzed to generate recommendations, pass either video_ids or exclude_video_ids . The ID list of videos for which you don't wish to receive recommendations. No max size limit. To get the IDs of public videos under your Business Account, use /business/video/list/ ."
+      },
+      {
+        "name": "time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The time when the TikTok video posts were published. Enum values: PAST_ONE_MONTH : In the past one month. PAST_THREE_MONTHS : In the past three months. PAST_SIX_MONTHS : In the past six months. Default value: PAST_SIX_MONTHS ."
+      },
+      {
+        "name": "objective_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The advertising objective for which to generate recommendations. Enum values: REACH : Reach. TRAFFIC : Traffic. VIDEO_VIEWS : Video views. ENGAGEMENT : Community interaction. APP_PROMOTION : App promotion. LEAD_GENERATION : Lead generation. WEB_CONVERSIONS : Website conversions. PRODUCT_SALES : Product sales. Default value: REACH . If you specify this field, you can create a campaign with the same advertising objective ( objective_type ) value by using /campaign/create/ and use the recommended video post in your ads by setting tiktok_item_id to one of the recommended post IDs ( item_id ) in /ad/create/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Consider all videos for recommendations",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/video/recommend/?business_id={{business_id}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      },
+      {
+        "title": "Consider specific videos for recommendations",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/video/recommend/?business_id={{business_id}}&video_ids=[\"{{video_id}}\",\"{{video_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      },
+      {
+        "title": "Exclude specific videos from recommendations",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/video/recommend/?business_id={{business_id}}&exclude_video_ids=[\"{{exclude_video_id}}\",\"{{exclude_video_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"videos\": [\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"MEDIUM\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 0,\n                \"likes\": 0,\n                \"comments\": 0,\n                \"embed_url\": \"{{embed_url}}\"\n            },\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"MEDIUM\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 0,\n                \"likes\": 0,\n                \"comments\": 0,\n                \"embed_url\": \"{{embed_url}}\"\n            },\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"LOW\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 4,\n                \"likes\": 3,\n                \"comments\": 1,\n                \"embed_url\": \"{{embed_url}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

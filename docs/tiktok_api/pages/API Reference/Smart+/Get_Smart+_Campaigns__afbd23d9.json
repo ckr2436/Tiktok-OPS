@@ -1,0 +1,48 @@
+{
+  "title": "Get Smart+ Campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/spc/get/",
+  "method": "GET",
+  "category_path": [
+    "Smart+"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of campaign IDs. Max size: 100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:{{Access-Token}}\" -H \"Content-Type:application/json\" -X GET \\\n-d '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_ids\": [\"{{campaign_ids}}\"]\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/campaign/spc/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [        \n       { \"campaign_id\": \"{{campaign_id}}\",\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"app_id\": \"{{app_id}}\",\n        \"pixel_id\": null,\n        \"app_type\": \"APP_ANDROID\",\n        \"objective_type\": \"APP_PROMOTION\",\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"is_smart_performance_campaign\": true,\n        \"operation_status\": \"ENABLE\",\n        \"campaign_secondary_status\": \"CAMPAIGN_STATUS_ENABLE\",\n        \"adgroup_secondary_status\": \"ADGROUP_STATUS_CREATE\",\n        \"campaign_type\": \"REGULAR_CAMPAIGN\",\n        \"app_promotion_type\": \"APP_INSTALL\",\n        \"optimization_goal\": \"CLICK\",\n        \"bid_type\": \"BID_TYPE_NO_BID\",\n        \"deep_bid_type\": null,\n        \"skip_learning_phase\": null,\n        \"budget\": {{budget}},\n        \"budget_mode\": \"BUDGET_MODE_DAY\",\n        \"scheduled_budget\": {{scheduled_budget}},\n        \"promotion_type\": \"APP_ANDROID\",\n        \"optimization_event\": \"ACTIVE\",\n        \"placements\": [\n            \"PLACEMENT_TIKTOK\"\n        ],\n        \"placement_type\": \"PLACEMENT_TYPE_NORMAL\",\n        \"promotion_website_type\": null,\n        \"comment_disabled\": true,\n        \"share_disabled\": true,\n        \"video_download_disabled\": true,\n        \"location_ids\": [\n            \"{{location_ids}}\"\n        ],\n        \"languages\": [\n            \"{{languages}}\"\n        ],\n        \"exclude_age_under_eighteen\": false,\n        \"excluded_audience_ids\": null,\n        \"blocked_pangle_app_ids\": null,\n        \"special_industries\": null,\n        \"schedule_type\": \"SCHEDULE_FROM_NOW\",\n        \"schedule_start_time\": \"2024-04-17 22:00:00\",\n        \"schedule_end_time\": \"2034-04-15 22:00:00\",\n        \"dayparting\": \"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n        \"billing_event\": \"CPC\",\n        \"app_download_url\": \"{{app_download_url}}\",\n        \"app_name\": \"{{app_name}}\",\n        \"call_to_action_id\": null,\n        \"call_to_action_list\": [\n            {\n                \"call_to_action\": \"INSTALL_NOW\"\n            },\n            {\n                \"call_to_action\": \"DOWNLOAD_NOW\"\n            }\n        ],\n        \"media_info_list\": [\n            {\n                \"media_info\": {\n                    \"video_info\": {\n                        \"video_id\": \"{{video_id}}\",\n                        \"file_name\": \"{{file_name}}\"\n                    },\n                    \"identity_id\": null,\n                    \"image_info\": [\n                        {\n                            \"web_uri\": \"{{web_uri}}\"\n                        }\n                    ],\n                    \"identity_type\": null,\n                    \"tiktok_item_id\": null\n                }\n            }\n        ],\n        \"title_list\": [\n            {\n                \"title\": \"{{title}}\"\n            },\n            {\n                \"title\": \"{{title}}\"\n            }\n        ],\n        \"page_list\": null,\n        \"card_list\": null,\n        \"landing_page_urls\": null,\n        \"deeplink\": \"{{deeplink}}\",\n        \"deeplink_type\": \"DEFERRED_DEEPLINK\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"CUSTOMIZED_USER\",\n        \"impression_tracking_url\": null,\n        \"click_tracking_url\": \"{{click_tracking_url}}\",\n        \"create_time\": \"{{create_time}}\",\n        \"modify_time\": \"{{modify_time}}\"\n        }\n      ]    \n    }\n}"
+    }
+  }
+}

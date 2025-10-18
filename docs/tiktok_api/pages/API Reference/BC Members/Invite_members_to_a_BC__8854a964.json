@@ -1,0 +1,94 @@
+{
+  "title": "Invite members to a BC",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/member/invite/",
+  "method": "POST",
+  "category_path": [
+    "BC Members"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "emails",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of emails. User emails that have been invited earlier will be ignored."
+      },
+      {
+        "name": "user_role",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Basic roles within Business Center. Enum values: ADMIN : Admins can manage the Business Center's members and assets. STANDARD : Standard members can only work on the ad accounts they've been assigned to."
+      },
+      {
+        "name": "asset_ids",
+        "required": false,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "List of ad account IDs assigned to the invited members. Note : The maximum number of asset_ids is 50."
+      },
+      {
+        "name": "advertiser_role",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad account role assigned to the members invited."
+      },
+      {
+        "name": "ext_user_role",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Advanced role of the user in the Business Center other than basic role, this is optional."
+      },
+      {
+        "name": "finance_role",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "User finance role. Enum values: ANALYST : Finance Analysts can view, export, and download payment transaction records for all ad accounts owned or created by the Business Center. MANAGER : Finance Managers have all the permissions as the Finance Analyst, and have the access to a series of editing permissions, which they can use to make payments, top up ad accounts, and modify contact information for billing and invoicing, for all of the ad accounts owned or created by the Business Center."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"bc_id\": \"BC_ID\",\n    \"emails\": [\n        \"EMAILS\"\n    ],\n    \"user_role\": \"USER_ROLE\",\n    \"asset_ids\": [\n        \"ASSET_IDS\"\n    ],\n    \"advertiser_role\": \"ADVERTISER_ROLE\",\n    \"ext_user_role\": {\n        \"finance_role\": \"FINANCE_ROLE\"\n    }\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/member/invite/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "title": "Get recommended interest and action categories",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/targeting_category/recommend/",
+  "method": "POST",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "region_codes",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of country or region codes. For example: [\"US\", \"JP\", \"KR\"]"
+      },
+      {
+        "name": "app_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the mobile app that you want to promote. This field in optional and only valid if you want to promote a mobile app."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\",\n    \"region_code\": [\n        \"REGION_CODE\"\n    ],\n    \"app_id\": \"APP_ID\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/tool/targeting_category/recommend/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "20220614231448010245246039155606FD",
+        "data": {
+          "interest_categories": [
+            {
+              "interest_category_id": "11",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "placements": [],
+              "interest_category_name": "Vehicles & Transportation"
+            },
+            {
+              "interest_category_id": "20",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "placements": [],
+              "interest_category_name": "Apps"
+            },
+            {
+              "interest_category_id": "23117104",
+              "special_industries": [],
+              "placement": [
+                "PLACEMENT_TIKTOK",
+                "PLACEMENT_PANGLE"
+              ],
+              "interest_category_name": "Talk Shows"
+            },
+            {
+              "interest_category_id": "20105",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "placement": [],
+              "interest_category_name": "Online Shopping"
+            },
+            {
+              "interest_category_id": "10",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "placement": [],
+              "interest_category_name": "Education"
+            },
+            {
+              "interest_category_id": "26105",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "placement": [],
+              "interest_category_name": "Housekeeping"
+            }
+          ],
+          "action_categories": [
+            {
+              "action_category_name": "Fitness & Health",
+              "action_category_id": "21",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "description": "TikTok users who have followed healthy lifestyle or fitness creators.",
+              "scene": "CREATOR_RELATED"
+            },
+            {
+              "action_category_name": "Other Transportation and Vehicle",
+              "action_category_id": "22002",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "description": "TikTok users who have followed creators that post content about other types of transportation vehicles.",
+              "scene": "CREATOR_RELATED"
+            },
+            {
+              "action_category_name": "Selfie",
+              "action_category_id": "27001",
+              "special_industries": [
+                "HOUSING",
+                "EMPLOYMENT",
+                "CREDIT"
+              ],
+              "description": "TikTok users who have followed creators that post selfies.",
+              "scene": "CREATOR_RELATED"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

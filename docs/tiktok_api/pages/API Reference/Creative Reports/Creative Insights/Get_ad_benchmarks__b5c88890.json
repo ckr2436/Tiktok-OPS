@@ -1,0 +1,165 @@
+{
+  "title": "Get ad benchmarks",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/ad_benchmark/get/",
+  "method": "GET",
+  "category_path": [
+    "Creative Reports",
+    "Creative Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "compare_time_window",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Time window for comparison (in days). Enum: 7 (default), 14 , 30 , 60"
+      },
+      {
+        "name": "dimensions",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of dimensions to compare. 1-4 dimensions are allowed. Enum: LOCATION , AD_CATEGORY , EXTERNAL_ACTION , PLACEMENT"
+      },
+      {
+        "name": "metrics_fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Metrics that you want to get. By default, all metrics will be returned. See the Supported metrics section for supported metrics."
+      },
+      {
+        "name": "filtering",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions. You must specify one and only one out of the three conditions allowed"
+      },
+      {
+        "name": "ad_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the ads that you want to get benchmark results for"
+      },
+      {
+        "name": "adgroup_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the ad groups that you want to get benchmark results for"
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the campaigns that you want to get benchmark results for"
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. By default, results will be sorted by CREATE_TIME"
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting type. Enum: ASC (starting from the one that was created earliest), DES (starting from the one that was created latest)"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size"
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "2021120912121801024524603910501234",
+        "data": {
+          "compare_date": "2021-12-05",
+          "list": [
+            {
+              "info": {
+                "placement": "TIKTOK",
+                "ad_id": "1234943678835714",
+                "location": "VN",
+                "ad_category": "0",
+                "external_action": "FORM_BUTTON"
+              },
+              "metrics": {
+                "video_watched_6s": 0.6,
+                "video_views_p25": 0.4,
+                "click": 0.8,
+                "video_views_p100": 0.4,
+                "average_video_play": 0.2,
+                "video_views_p50": 0.4,
+                "cpm": 0.1,
+                "profile_visits_rate": 0.9,
+                "cost": 0.7,
+                "impression": 0.8,
+                "cpa": 0.8,
+                "video_views_p75": 0.4,
+                "cpv": 0,
+                "cpc": 0.1,
+                "cvr": 0.2,
+                "ctr": 0.4,
+                "video_watched_2s": 0.7,
+                "pvr": 0.2,
+                "conversion": 0.6,
+                "video_views": 0.8
+              }
+            },
+            {
+              "info": {
+                "ad_id": "1234003068951586"
+              }
+            }
+          ],
+          "page_info": {
+            "page": 1,
+            "total_page": 1,
+            "page_size": 10,
+            "total_number": 2
+          }
+        }
+      }
+    }
+  }
+}

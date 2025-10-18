@@ -1,0 +1,90 @@
+{
+  "title": "Get recommended search keywords",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/search_keyword/recommend/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "search_queries",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of search queries. You can specify products, services, or brands as search queries. Max size: 5. Length limit for each query: 80 characters. Only English words are supported. Emojis and special symbols such as # are not supported."
+      },
+      {
+        "name": "regions",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of country or region codes. Currently, the only supported value is US ."
+      },
+      {
+        "name": "order_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting logic. Enum values: RELEVANCE : Sort the results by relevance. MONTHLY_SEARCHES : Sort the results by the response parameter monthly_searches . Default value: RELEVANCE ."
+      },
+      {
+        "name": "order_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when order_field is MONTHLY_SEARCHES . Sorting order. Enum values: ASC : ascending. DESC : descending. Default value: DESC ."
+      },
+      {
+        "name": "total_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The total number of recommended keywords to return. Value range: 1-1,000. Default value: 1,000."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-1,000. Default value: 50."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/search_keyword/recommend/?advertiser_id={{advertiser_id}}&search_queries=[\"TikTok\"]&regions=[\"US\"]&order_field=MONTHLY_SEARCHES&order_type=DESC' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 50,\n            \"total_number\": 897,\n            \"total_page\": 18\n        },\n        \"recommended_keywords\": [\n            {\n                \"monthly_searches\": 22063,\n                \"recommended_keyword\": \"messytiktok\"\n            },\n            ...\n            {\n                \"monthly_searches\": 9747,\n                \"recommended_keyword\": \"funny relatable tiktoks\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

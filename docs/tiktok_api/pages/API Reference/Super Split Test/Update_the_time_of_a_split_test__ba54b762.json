@@ -1,0 +1,67 @@
+{
+  "title": "Update the time of a split test",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/split_test/update/",
+  "method": "POST",
+  "category_path": [
+    "Super Split Test"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "split_test_group_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Split test group ID."
+      },
+      {
+        "name": "start_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The start time of this split test, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2022-01-01 00:00:00. Note : For campaign level split tests, The time can only be set to hour level. Thus, any MM and SS input will default to 00. The start time set for campaign level split test will not overwrite the start time of campaigns and ad groups in this test. For ad group level split tests, the start time of the test will be applied to both ad groups under this test group. For both campaign and adgroup level split tests, the start time cannot be updated once the test has started."
+      },
+      {
+        "name": "end_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The end time of this split test, in the format of YYYY-MM-DD HH:MM:SS(UTC+0). Example: 2022-01-01 00:00:00. Note : For campaign level split tests, The time can only be set to hour level. Thus, any MM and SS input will default to 00. The end time set for campaign level split test will not overwrite the end time of campaigns and ad groups in this test. For ad group level split tests, the end time of the test will be applied to both ad groups under this test group."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/split_test/update/' \\\n--header 'Access-Token: xx' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"advertiser_id\": \"xx\",\n    \"start_time\": \"2022-10-21 22:00:00\",\n    \"end_time\": \"2022-10-22 22:00:00\",\n    \"split_test_group_id\": \"xxx\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "xxx",
+        "data": {}
+      }
+    }
+  }
+}

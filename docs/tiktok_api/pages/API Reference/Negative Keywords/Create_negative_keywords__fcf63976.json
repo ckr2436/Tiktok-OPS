@@ -1,0 +1,90 @@
+{
+  "title": "Create negative keywords",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/search_ad/negative_keyword/add/",
+  "method": "POST",
+  "category_path": [
+    "Negative Keywords"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "object_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Object type. Object type. Use this field to specify whether you want to create negative keywords for a campaign or ad group. Enum values: CAMPAIGN : campaign. ADGROUP : ad group."
+      },
+      {
+        "name": "object_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Object IDs. Use this field to pass in campaign IDs or ad group IDs that you want to create negative keywords for. Max size: 50. Specify this field according to object_type : If object_type is CAMPAIGN , assign campaign IDs to this field. If object_type is ADGROUP , assign ad group IDs to this field."
+      },
+      {
+        "name": "replace",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to replace all the existing negative keywords for the campaign or ad group with the keywords that you specify via keywords . Enum values: true : To replace all the existing negative keywords. false : To add new negative keywords. Default value: false ."
+      },
+      {
+        "name": "keywords",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The list of negative keywords you want to create. Max size: 1,000. Note : For each ad group, you can configure a maximum of 10,000 negative keywords."
+      },
+      {
+        "name": "name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Name of the negative keyword you want to create. Length limit: 80 characters. The name needs to exclude the following special characters: [ ! , @ , % , ^ , ( , ) , = , { , } , ; , ~ , ` , < , > , ? , \\ , | ]. Otherwise, an error will occur. Note : Duplicate negative keyword names will be de-duplicated to only one unique name, and for each unique name you can only specify one match type."
+      },
+      {
+        "name": "match_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Match type for the negative keyword. Enum values: PRECISE_WORD : exact match. PHRASE_WORD : phrase match. BROAD_WORD : broad match. Default value: BROAD_WORD ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/search_ad/negative_keyword/add/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"object_type\":\"CAMPAIGN\",\n    \"object_ids\":[\"{{object_id}}\"],\n    \"keywords\":[\n        {\n            \"name\":\"{{name}}\",\n            \"match_type\":\"BROAD_WORD\"\n        },\n        {\n            \"name\":\"{{name}}\",\n            \"match_type\":\"BROAD_WORD\"\n        }\n    ]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

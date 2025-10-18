@@ -1,0 +1,118 @@
+{
+  "title": "Get available locations by different settings",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/region/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "placements",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The apps where you want to deliver your ads. For enum values, see Enumeration - Placement"
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Your objective type. For enum values and descriptions, see Objectives ."
+      },
+      {
+        "name": "level_range",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Location level you want to get. Enum values: ALL : all levels TO_COUNTRY : only country or region level TO_PROVINCE : country and province level; DMA and Metropolitan are at province level. TO_CITY : country, province, and city levels TO_DISTRICT : country, province, city, and district levels."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The language of the returned location name ( name ). Default value: en (English). To find out the allowed values, see List of values for language . Note : If the specified language is not supported, it will be ignored and the default value en will be used. If a supported non-English language is specified, the names of locations outside the native country or region associated with that language might not be translated. For example, if you set language to ja (Japanese), the names of locations outside Japan might not be translated."
+      },
+      {
+        "name": "shopping_ads_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when objective_type is PRODUCT_SALES . Shopping ads type. Enum values: VIDEO : Video Shopping Ads. LIVE : Live Shopping Ads. PRODUCT_SHOPPING_ADS : Product Shopping Ads. To find out the introduction to different Shopping Ads types and the steps of creating Video Shopping Ads , Live Shopping Ads , and Product Shopping Ads , see Create Shopping Ads ."
+      },
+      {
+        "name": "promotion_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Promotion type (Optimization location). For enum values, see Enumeration - Promotion Type ."
+      },
+      {
+        "name": "promotion_target_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid when objective_type is LEAD_GENERATION . The promotion type for Lead Generation objective. Enum values: INSTANT_PAGE ：Instant Form. To create a fast-loading in-app TikTok Instant Form to collect more leads. EXTERNAL_WEBSITE ：Website Form. To use a landing page that has the Website Form or the TikTok Instant Page that redirects to the website with the Website Form to collect more leads."
+      },
+      {
+        "name": "operating_system",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Operating systems that you want to target. Enum values: ANDROID , IOS ."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand safety type. Valid only when placements is set as PLACEMENT_TIKTOK . Default value: NO_BRAND_SAFETY . Enum values: NO_BRAND_SAFETY : To not use any brand safety solution. Full inventory, which means your ads may appear next to some content featuring mature themes. EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. THIRD_PARTY : Use a third-party brand safety solution. You also need to pass in a value to the brand_safety_partner field. Note : Pre-bid first-party Brand Safety solutions for APP_PROMOTION , WEB_CONVERSIONS , TRAFFIC , LEAD_GENERATION objectives in Auction ads, and pre-bid third-party brand safety solutions are currently allowlist-only features. If you would like to access them, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives for pre-bid Brand Safety filtering."
+      },
+      {
+        "name": "brand_safety_partner Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand safety partner. Required when brand_safety_type is THIRD_PARTY , and placements needs to be set as PLACEMENT_TIKTOK . Enum values: IAS , OPEN_SLATE (The partner is named DoubleVerify on TikTok Ads Manager because the partner has been acquired by DoubleVerify). Note : Pre-bid third-party brand safety solutions are currently allowlist-only features. If you would like to access them, please contact your TikTok representative."
+      },
+      {
+        "name": "rf_campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When objective_type is specified as RF_REACH , use this field to set the campaign as a TikTok Pulse campaign, then you can get available premium contextual tags. Enum values: STANDARD (Reach & Frequency campaign), PULSE (TikTok Pulse campaign). If you set this field as PULSE , only one location ID ( location_id ) will be returned. Note : Do not pass in this field when objective_type is not specified as RF_REACH . You need to pass the location_id value returned in this endpoint to location_ids when you use /adgroup/rf/create/ to create a TikTok Pulse ad group."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location -g --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/region/?advertiser_id={ADVERTISER_ID}}&placements=[\"PLACEMENT_TIKTOK\"]&objective_type={{objective_type}}' \\\n--header 'Access-Token: xxxx' \\\n--header 'Content-Type: application/json' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

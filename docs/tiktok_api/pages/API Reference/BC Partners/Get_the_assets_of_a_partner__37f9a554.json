@@ -1,0 +1,94 @@
+{
+  "title": "Get the assets of a partner",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/partner/asset/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Partners"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "partner_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Partner Business Center ID"
+      },
+      {
+        "name": "asset_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Asset type. Enum values: ADVERTISER , CATALOG , TIKTOK_SHOP , and PIXEL ."
+      },
+      {
+        "name": "share_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Share type. Enum values: SHARED : Assets that are shared with you by a partner SHARING : Assets that you share with a partner"
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering by keyword"
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Keyword you want the assets filtered by"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"partner_id=PARTNER_ID\" \\\n--data-urlencode \"asset_type=ASSET_TYPE\" \\\n--data-urlencode \"share_type=SHARE_TYPE\" \\\n--data-urlencode \"filtering={\\\"keyword\\\": \\\"KEYWORD\\\"}\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/partner/asset/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

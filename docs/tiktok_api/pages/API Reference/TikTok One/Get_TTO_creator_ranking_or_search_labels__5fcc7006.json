@@ -1,0 +1,48 @@
+{
+  "title": "Get TTO creator ranking or search labels",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/category/label/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok One Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "label_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of label. Enum value: RANKING : ranking label. A label that can be used with /tto/tcm/rank/ for ranking creators. SEARCH : search label. A label that can be used with /tto/tcm/creator/discover/ for discovering creators."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/category/label/?tto_tcm_account_id={{tto_tcm_account_id}}&label_type=RANKING' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"content_labels\": [\n            {\n                \"label_id\": \"11007001\",\n                \"label_name\": \"Fitness\"\n            },\n            {\n                \"label_id\": \"11009001\",\n                \"label_name\": \"Love & Romantic Relationships\"\n            },\n            {\n                \"label_id\": \"11009002\",\n                \"label_name\": \"Babies\"\n            },\n            {\n                \"label_id\": \"11014001\",\n                \"label_name\": \"Automobiles\"\n            },\n            {\n                \"label_id\": \"11010004\",\n                \"label_name\": \"Cooking & Recipes\"\n            },\n            {\n                \"label_id\": \"11011007\",\n                \"label_name\": \"Jobs & Careers\"\n            },\n            {\n                \"label_id\": \"11015001\",\n                \"label_name\": \"Tech Products & Tests\"\n            },\n            {\n                \"label_id\": \"11015003\",\n                \"label_name\": \"Business & Finance\"\n            },\n            {\n                \"label_id\": \"11001001\",\n                \"label_name\": \"Pet Tips & Care\"\n            },\n            {\n                \"label_id\": \"11003001\",\n                \"label_name\": \"Outfits\"\n            },\n            {\n                \"label_id\": \"11007004\",\n                \"label_name\": \"Traditional Sports\"\n            },\n            {\n                \"label_id\": \"11009003\",\n                \"label_name\": \"Family\"\n            },\n            {\n                \"label_id\": \"11013006\",\n                \"label_name\": \"Home & Garden\"\n            },\n            {\n                \"label_id\": \"11004003\",\n                \"label_name\": \"Music\"\n            },\n            {\n                \"label_id\": \"11004004\",\n                \"label_name\": \"Dance\"\n            },\n            {\n                \"label_id\": \"11008001\",\n                \"label_name\": \"Comedy\"\n            },\n            {\n                \"label_id\": \"11013005\",\n                \"label_name\": \"Travel\"\n            },\n            {\n                \"label_id\": \"11002002\",\n                \"label_name\": \"Beauty Tutorials & Tips\"\n            },\n            {\n                \"label_id\": \"11002006\",\n                \"label_name\": \"Hair Design & Care\"\n            },\n            {\n                \"label_id\": \"11004001\",\n                \"label_name\": \"Movies & TV\"\n            },\n            {\n                \"label_id\": \"11005001\",\n                \"label_name\": \"Video Games\"\n            }\n        ],\n        \"industry_labels\": [\n            {\n                \"label_id\": \"16000000000\",\n                \"label_name\": \"Appliances\"\n            },\n            {\n                \"label_id\": \"18000000000\",\n                \"label_name\": \"Household Products\"\n            },\n            {\n                \"label_id\": \"22000000000\",\n                \"label_name\": \"Apparel & Accessories\"\n            },\n            {\n                \"label_id\": \"15000000000\",\n                \"label_name\": \"Tech & Electronics\"\n            },\n            {\n                \"label_id\": \"14000000000\",\n                \"label_name\": \"Beauty & Personal Care\"\n            },\n            {\n                \"label_id\": \"21000000000\",\n                \"label_name\": \"Home Improvement\"\n            },\n            {\n                \"label_id\": \"25000000000\",\n                \"label_name\": \"Games\"\n            },\n            {\n                \"label_id\": \"28000000000\",\n                \"label_name\": \"Sports & Outdoor\"\n            },\n            {\n                \"label_id\": \"11000000000\",\n                \"label_name\": \"Vehicle & Transportation\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

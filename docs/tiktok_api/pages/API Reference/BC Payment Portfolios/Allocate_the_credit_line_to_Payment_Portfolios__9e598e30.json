@@ -1,0 +1,62 @@
+{
+  "title": "Allocate the credit line to Payment Portfolios",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/payment_portfolio/credit_line/update/",
+  "method": "POST",
+  "category_path": [
+    "BC Payment Portfolios"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "allocation_details",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The details of credit line allocation. Max size: 10."
+      },
+      {
+        "name": "payment_portfolio_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the Payment Portfolio. To obtain a list of Payment Portfolio IDs, use /payment_portfolio/get/ ."
+      },
+      {
+        "name": "allocation_percentage",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The percentage of credit line that you want to allocate to the Payment Portfolio, kept to four decimal places. Value range: 0-1. Note : The percentage you allocate to each Payment Portfolio must be greater than its used percentage. To confirm the used credit line percentage for a Payment Portfolio, check the min_allocation_percentage returned from /payment_portfolio/get/ . If your total credit line changes later, the credit line for each Portfolio will change based on the set percentage. Each Portfolio's available credit line is automatically restored when outstanding bills are settled. You won't need to manually reallocate the amount."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/payment_portfolio/credit_line/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"allocation_details\": [\n        {\n            \"payment_portfolio_id\": \"{{payment_portfolio_id}}\",\n            \"allocation_percentage\": {{allocation_percentage}}\n        },\n        {\n            \"payment_portfolio_id\": \"{{payment_portfolio_id}}\",\n            \"allocation_percentage\": {{allocation_percentage}}\n        }\n    ]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

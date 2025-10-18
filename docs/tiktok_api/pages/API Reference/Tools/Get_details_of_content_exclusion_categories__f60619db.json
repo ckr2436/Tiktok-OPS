@@ -1,0 +1,48 @@
+{
+  "title": "Get details of content exclusion categories",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/content_exclusion/info/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "category_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the content exclusion categories or vertical sensitivity categories. You can get category_id from the response of /tool/content_exclusion/get/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location -g 'https://business-api.tiktok.com/open_api/v1.3/tool/content_exclusion/info/?advertiser_id={{advertiser_id}}&category_ids=[{{category_id}},{{category_id}}]' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

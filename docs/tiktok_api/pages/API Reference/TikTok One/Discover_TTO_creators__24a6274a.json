@@ -1,0 +1,209 @@
+{
+  "title": "Discover TTO creators",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/discover/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok One Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "country_codes",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by the country or region codes of the creators. If you pass multiple codes, these codes should be from the same regional category. For enum values and regional category for each code, see List of values for country_codes ."
+      },
+      {
+        "name": "state_provinces",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when country_codes is [\"US\"] . Filter by the states or provinces of the creators. Currently, only U.S. states are supported. For enum values, see List of values for state_provinces ."
+      },
+      {
+        "name": "content_label_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by the IDs of video content tags. A video content tag is a main focus of the creator’s TikTok account and primarily represents the direction of the creator’s organic content. Max size: 100. To obtain a list of video content tag IDs, use /tto/tcm/category/label/ with label_type set to SEARCH and retrieve the IDs from the response parameter label_id within the object array content_labels ."
+      },
+      {
+        "name": "industry_label_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by the IDs of industry tags. An industry tag indicates the creator industry that is assigned to creators based on the commercial content they produce, including ad creatives and branded content on their TikTok accounts, and represents their commercial experience in certain industries. Max size: 100. To obtain a list of industry tag IDs, use /tto/tcm/category/label/ with label_type set to SEARCH and retrieve the IDs from the response parameter label_id within the object array industry_labels ."
+      },
+      {
+        "name": "min_followers",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the minimum number of followers. Default value: 0."
+      },
+      {
+        "name": "max_followers",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the maximum number of followers. This field doesn’t have a default value."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by language. For enum values, see List of values for languages . By default, the results are not filtered by languages."
+      },
+      {
+        "name": "min_creator_price",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the minimum creator starting price, in the currency specified by creator_price_currency . Default value: 0."
+      },
+      {
+        "name": "max_creator_price",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the maximum creator starting price, in the currency specified by creator_price_currency . This field doesn’t have a default value."
+      },
+      {
+        "name": "creator_price_currency",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The currency for creator starting price filters min_creator_price and max_creator_price . Enum value: USD . Default value: USD ."
+      },
+      {
+        "name": "min_avg_views",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the minimum average views. Average views represent the number of views that the creator’s videos received. Default value: 0."
+      },
+      {
+        "name": "max_avg_views",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the maximum average views. This field doesn’t have a default value."
+      },
+      {
+        "name": "min_median_views",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the minimum median views. Median views represent the middle value in the range of views across a creator’s recent videos, ranked lowest to highest, which showcases the typical video view count of their content. Default value: 0."
+      },
+      {
+        "name": "max_median_views",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Filter by the maximum median views. This field doesn’t have a default value."
+      },
+      {
+        "name": "min_engagement_rate",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Filter by the minimum engagement rate. Engagement rate represents how much people interacted with content. It’s calculated by taking the total number of comments, likes, and shares divided by video views. Value range: 0-1. Default value: 0."
+      },
+      {
+        "name": "max_engagement_rate",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Filter by the maximum engagement rate. Value range: 0-1. This field doesn’t have a default value."
+      },
+      {
+        "name": "follower_country_code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by the code of followers’ location. For enum values, see List of values for follower_country_code ."
+      },
+      {
+        "name": "follower_gender_ratio",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by followers’ gender ratio. Enum values: FEMALE_50 : Percentage of audience who are female is over 50%. FEMALE_60 : Percentage of audience who are female is over 60%. FEMALE_70 : Percentage of audience who are female is over 70%. MALE_50 : Percentage of audience who are male is over 50%. MALE_60 : Percentage of audience who are male is over 60%. MALE_70 : Percentage of audience who are male is over 70%."
+      },
+      {
+        "name": "follower_age",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by followers’ majority age group. Enum values: 18-24 : 18-24. 25-34 : 25-34. 35-44 : 35-44. 45-54 : 45-54. 55+ : 55+."
+      },
+      {
+        "name": "keyword_search",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The keyword to search for creators. Length limit: 100 characters. Fuzzy match is supported."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The specific metric by which to sort the results. Enum values: RELEVANCE : relevance. FOLLOWERS : followers. MEDIAN_VIEWS : median views. ENGAGEMENT_RATE : engagement rate. Default value: RELEVANCE . You can sort the returned data using this field."
+      },
+      {
+        "name": "sort_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The order in which to sort the results. Enum values: ASC : Ascending. DESC : Descending. Default value: DESC ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page size. Value range: 1-200. Default value: 24."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/creator/discover/?tto_tcm_account_id={{tto_tcm_account_id}}&country_codes=[\"US\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"creators\": [\n            {\n                \"display_name\": \"{{display_name}}\",\n                \"followers_count\": 4419006,\n                \"following_count\": 428,\n                \"handle_name\": \"{{handle_name}}\",\n                \"likes_count\": 133618856,\n                \"profile_image\": \"{{profile_image}}\",\n                \"videos_count\": 606\n            },\n            {\n                \"display_name\": \"{{display_name}}\",\n                \"followers_count\": 2149447,\n                \"following_count\": 1309,\n                \"handle_name\": \"{{handle_name}}\",\n                \"likes_count\": 89181425,\n                \"profile_image\": \"{{profile_image}}\",\n                \"videos_count\": 1047\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 24,\n            \"total_number\": 1,\n            \"total_page\": 2\n        }\n    }\n}"
+    }
+  }
+}

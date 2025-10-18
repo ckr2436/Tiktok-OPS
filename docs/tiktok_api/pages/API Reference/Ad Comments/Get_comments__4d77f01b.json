@@ -1,0 +1,104 @@
+{
+  "title": "Get comments",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/comment/list/",
+  "method": "GET",
+  "category_path": [
+    "Ad Comments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "comment_type",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Comment type. Enum values: ALL , COMMENT , REPLY . Default value: [\"ALL\"]"
+      },
+      {
+        "name": "search_field",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to search by. Enum value: ADGROUP_ID : To filter by an ad group ID."
+      },
+      {
+        "name": "search_value",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Value to search. When search_field is ADGROUP_ID , specify an ad group ID via this field. To obtain the list of ad groups within your ad account, use /adgroup/get/ . Example: 1234567891234567 ."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. Enum values: CREATE_TIME , LIKES , REPLIES . Default value: CREATE_TIME ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC , DESC . Default value: DESC ."
+      },
+      {
+        "name": "start_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start date of the time range that you want to get comments, in the format of YYYY-MM-DD ."
+      },
+      {
+        "name": "end_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End date of the time range that you want to get comments, in the format of YYYY-MM-DD ."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-100. Default value: 10 ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"start_time=START_TIME\" \\\n--data-urlencode \"end_time=END_TIME\" \\\n--data-urlencode \"comment_type=[\\\"comment_type\\\"]\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"search_value=SEARCH_VALUE\" \\\n--data-urlencode \"search_field=SEARCH_FIELD\" \\\n--data-urlencode \"sort_field=SORT_FIELD\" \\\n--data-urlencode \"sort_by_asc=SORT_BY_ASC\" \\\n--data-urlencode \"comment_status=[\\\"COMMENT_STATUS\\\"]\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/comment/list/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202105210639490102360430824C1AE673\",\n    \"data\": {\n        \"comments\": [\n            {\n                \"likes\": 0,\n                \"create_time\": \"2021-01-14 07:04:16 +0000 UTC\",\n                \"comment_type\": \"COMMENT\",\n                \"hit_blockedword\": false,\n                \"ad_text\": \"\",\n                \"campaign_name\": \"Bytedance_3006_JP_JA_IOS/AND_1123_dogfood\",\n                \"adgroup_name\": \"Ad Group20201123093958\",\n                \"ad_id\": \"1684147917059121\",\n                \"replies\": 0,\n                \"comment_status\": \"PUBLIC\",\n                \"original_comment_id\": null,\n                \"campaign_id\": \"1684147923311617\",\n                \"adgroup_id\": \"1684147923311633\",\n                \"ad_name\": \"Ad Name20201123094902\",\n                \"comment_id\": \"6917508027378253825\",\n                \"content\": \"Another creative\",\n                \"app\": null\n            },\n            {\n                \"likes\": 0,\n                \"create_time\": \"2021-01-14 05:54:24 +0000 UTC\",\n                \"comment_type\": \"REPLY\",\n                \"hit_blockedword\": false,\n                \"ad_text\": \"\",\n                \"campaign_name\": \"Bytedance_3006_JP_JA_IOS/AND_1123_dogfood\",\n                \"adgroup_name\": \"Ad Group20201123093958\",\n                \"ad_id\": \"1684147917057073\",\n                \"replies\": 0,\n                \"comment_status\": \"PUBLIC\",\n                \"original_comment_id\": \"6917441294860550145\",\n                \"campaign_id\": \"1684147923311617\",\n                \"adgroup_id\": \"1684147923311633\",\n                \"ad_name\": \"Creative award~~~\",\n                \"comment_id\": \"6917490050552823810\",\n                \"content\": \"hsbbdbd@user285\",\n                \"app\": null\n            },\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page_size\": 10,\n            \"page\": 1,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

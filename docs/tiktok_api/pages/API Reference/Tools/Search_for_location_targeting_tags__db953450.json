@@ -1,0 +1,130 @@
+{
+  "title": "Search for location targeting tags",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/targeting/search/",
+  "method": "POST",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign objective. The allowed enum values: REACH , TRAFFIC , VIDEO_VIEWS , LEAD_GENERATION , ENGAGEMENT , APP_PROMOTION , WEB_CONVERSIONS , PRODUCT_SALES . For descriptions of the objectives, see Objectives ."
+      },
+      {
+        "name": "promotion_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Promotion type and you can decide where you'd like to promote your products using this field. You need to specify the field when advertising objective ( objective_type ) for your campaign is NOT set as REACH , VIDEO_VIEWS , or ENGAGEMENT . For enum values, see Enumeration - Promotion Type ."
+      },
+      {
+        "name": "placements",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The apps where you want to deliver your ads. For enum values, see Enumeration - Placement . Note : If you want to fuzzy search for a zip code ID to be used for zip code targeting or a postal code ID to be used for postal code targeting, the value of this field needs to include PLACEMENT_TIKTOK ."
+      },
+      {
+        "name": "search_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of search you want to perform. Enum values: FUZZY_SEARCH : To fuzzy search for a single location ID, a zip code ID, or a postal code ID. For this search type, you can only pass one keyword to keywords and a maximum of 100 results will be returned. BATCH_REGION_SEARCH : To search for location IDs in batch. Fuzzy search is supported. For this search type, you can pass up to 1,000 keywords to keywords , and for each keyword a maximum of 5 results ordered by relevance will be returned. BATCH_ZIPCODE_SEARCH : To search for zip code IDs or postal code IDs in batch. Exact search is supported. For this search type, you can pass up to 1,000 keywords to keywords , and for each keyword one result or no result will be returned. Note : Targeting postal code areas in Brazil, Indonesia, Thailand, and Vietnam is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. The enum values BATCH_ZIPCODE_SEARCH and BATCH_REGION_SEARCH can only be used to search for IDs of zip codes (or postal codes) or locations. In contrast, you can use FUZZY_SEARCH to search for a single ID of a zip code (or postal code) or location."
+      },
+      {
+        "name": "keywords",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The keywords that you use to search for targeting tags. Length limit: 1 when search_type is FUZZY_SEARCH . 1,000 when search_type is BATCH_REGION_SEARCH or BATCH_ZIPCODE_SEARCH . If you set search_type as BATCH_ZIPCODE_SEARCH , you need to pass zip codes or postal codes as keywords because this search type only supports exact search. For US zip code targeting, provide the five-digit US zip codes as keywords. Example: [\"10001\",\"10002\"] . For Canadian postal code targeting, provide the three-character Forward Sortation Area (FSA) portions of Canadian postal codes as keywords. Example: [\"A0A\",\"A0B\"] . For Brazil postal code targeting, provide the first five digits of postal codes as keywords. Example: [\"81480\",\"18072\"] . For Indonesia postal code targeting, provide the five-digit postal codes as keywords. Example: [\"20371\",\"12120\"] . For Thailand postal code targeting, provide the five-digit postal codes as keywords. Example: [\"30000\",\"40000\"] . For Vietnam postal code targeting, provide the first three digits of postal codes as keywords. Example: [\"718\",\"719\"] ."
+      },
+      {
+        "name": "geo_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The types of locations that you want to filter the results by. Enum values: COUNTRY (country or region), PROVINCE (province), CITY (city or county), DISTRICT (district or city), DMA (DMA), ZIP_CODE (zip code or postal code). When you specify search_type as FUZZY_SEARCH , the allowed enum values for this field are ZIP_CODE , COUNTRY , PROVINCE , CITY , DISTRICT , and DMA . When you specify search_type as BATCH_ZIPCODE_SEARCH , the allowed enum value for this field is ZIP_CODE . When you specify search_type as BATCH_REGION_SEARCH , the allowed enum values for this field are COUNTRY , PROVINCE , CITY , DISTRICT , and DMA ."
+      },
+      {
+        "name": "region_codes Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The codes of targeted countries or regions that you want to filter the results by. When you specify search_type as BATCH_ZIPCODE_SEARCH or BATCH_REGION_SEARCH , this field is required and needs to be set as US (the US) , CA (Canada), BR (Brazil), ID (Indonesia), TH (Thailand), or VN (Vietnam). When you specify search_type as FUZZY_SEARCH , this field is optional and you can pass any supported country or region code to this field. To find out the complete list of country or region codes, see Location code ."
+      },
+      {
+        "name": "operating_system",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Device operating system that you want to target. Enum values: ANDROID , IOS ."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand safety type. Valid only when placements is set as PLACEMENT_TIKTOK . Default value: NO_BRAND_SAFETY . Enum values: NO_BRAND_SAFETY : To not use any brand safety solution. Full inventory, which means your ads may appear next to some content featuring mature themes. EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. THIRD_PARTY : Use a third-party brand safety solution. You also need to pass in a value to the brand_safety_partner field. To get the countries and regions that your ads can be deployed to based on your brand safety settings, use the /tool/region/ endpoint. Note : Pre-bid first-party Brand Safety solutions for APP_PROMOTION , WEB_CONVERSIONS , TRAFFIC , LEAD_GENERATION objectives in Auction ads, and pre-bid third-party brand safety solutions are currently allowlist-only features. If you would like to access them, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives for pre-bid Brand Safety filtering."
+      },
+      {
+        "name": "brand_safety_partner Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only when brand_safety_type is THIRD_PARTY . Brand safety partner. Enum values: IAS , OPEN_SLATE (The partner is named DoubleVerify on TikTok Ads Manager because the partner has been acquired by DoubleVerify). Note : Pre-bid third-party brand safety solutions are currently allowlist-only features. If you would like to access them, please contact your TikTok representative."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Search for a single Canadian postal code ID",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/tool/targeting/search/' \\\n--header 'Access-Token:  {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"objective_type\":\"{{objective_type}}\",\n    \"placements\":[\"PLACEMENT_TIKTOK\"],\n    \"promotion_type\":\"{{promotion_type}}\",\n    \"search_type\":\"FUZZY_SEARCH\",\n    \"keywords\":[\"A0A\"],\n    \"region_codes\":[\"CA\"]\n}'"
+      },
+      {
+        "title": "Search for a single US zip code ID",
+        "curl": "curl --location \"https://business-api.tiktok.com/open_api/v1.3/tool/targeting/search/\" \\\n--header \"Access-Token: {{Access-Token}}\" \\\n--header \"Content-Type: application/json\" \\\n--data \"{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"objective_type\":\"{{objective_type}}\",\n    \"placements\":[\"PLACEMENT_TIKTOK\",\"PLACEMENT_PANGLE\"],\n    \"promotion_type\":\"{{promotion_type}}\",\n    \"search_type\":\"FUZZY_SEARCH\",\n    \"keywords\":[\"40601\"]\n}\""
+      },
+      {
+        "title": "Search for Brazil postal code IDs in batch",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/tool/targeting/search/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"objective_type\":\"APP_PROMOTION\",\n    \"placements\":[\"PLACEMENT_TIKTOK\"],\n    \"promotion_type\":\"APP_IOS\",\n    \"search_type\":\"BATCH_ZIPCODE_SEARCH\",\n    \"keywords\":[\"81480\",\"18072\"],\n    \"region_codes\":[\"BR\"]\n}'"
+      },
+      {
+        "title": "Search for location IDs in batch",
+        "curl": "curl --location \"https://business-api.tiktok.com/open_api/v1.3/tool/targeting/search/\" \\\n--header \"Access-Token: {{Access-Token}}\" \\\n--header \"Content-Type: application/json\" \\\n--data \"{\n    \"advertiser_id\":\"{{advertiser_id}}\",\n    \"objective_type\":\"{{objective_type}}\",\n    \"placements\":[\"PLACEMENT_TIKTOK\",\"PLACEMENT_PANGLE\"],\n    \"promotion_type\":\"{{promotion_type}}\",\n    \"search_type\":\"BATCH_REGION_SEARCH\",\n    \"keywords\":[\"Kentucky\",\"Virginia\"],\n    \"region_codes\":[\"US\"]\n}\""
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"parent_tags\": [\n            {\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"6251999\",\n                    \"geo_type\": \"COUNTRY\",\n                    \"parent_id\": \"0\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"Country\"\n                },\n                \"isp\": null,\n                \"name\": \"Canada\",\n                \"targeting_type\": \"GEO\"\n            },\n            {\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"6354959\",\n                    \"geo_type\": \"PROVINCE\",\n                    \"parent_id\": \"6251999\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"province\"\n                },\n                \"isp\": null,\n                \"name\": \"Newfoundland and Labrador\",\n                \"targeting_type\": \"GEO\"\n            }\n        ],\n        \"targeting_tag_list\": [\n            {\n                \"keyword\": \"A0A\",\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"8124000000533\",\n                    \"geo_type\": \"ZIP_CODE\",\n                    \"parent_id\": \"6354959\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"postcode\"\n                },\n                \"isp\": null,\n                \"name\": \"A0A\",\n                \"targeting_type\": \"GEO\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

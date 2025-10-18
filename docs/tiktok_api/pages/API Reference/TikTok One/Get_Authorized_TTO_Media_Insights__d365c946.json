@@ -1,0 +1,62 @@
+{
+  "title": "Get Authorized TTO Media Insights",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/creator/authorized/video/list/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. Use /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ endpoint to get or renew an access token."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "creator_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique ID of the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ to this field."
+      },
+      {
+        "name": "video_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The IDs of the videos to retrieve information for. If video_ids is provided, limit and cursor will be ignored."
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The number of videos that you want to retrieve per request. Value range: 1-10. Default value: 10."
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Timestamp cursor. The videos before the timestamp value in milliseconds will be returned in reverse-chronological order. By default, the value is 0 and the most recent videos will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/creator/authorized/video/list/?creator_id={{creator_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"cursor\": 1743739292000,\n        \"has_more\": false,\n        \"posts\": [\n            {\n                \"caption\": \"\",\n                \"comments\": 0,\n                \"create_time\": \"1749206540000\",\n                \"display_name\": \"{{display_name}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"favorites\": 0,\n                \"likes\": 0,\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"video_views\": 0\n            },\n            {\n                \"caption\": \"\",\n                \"comments\": 0,\n                \"create_time\": \"1743739292000\",\n                \"display_name\": \"{{display_name}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"favorites\": 0,\n                \"likes\": 0,\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"video_views\": 1\n            }\n        ]\n    }\n}"
+    }
+  }
+}

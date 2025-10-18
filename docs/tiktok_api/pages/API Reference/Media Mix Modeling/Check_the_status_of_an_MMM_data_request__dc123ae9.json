@@ -1,0 +1,41 @@
+{
+  "title": "Check the status of an MMM data request",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/mmm/api/check/",
+  "method": "GET",
+  "category_path": [
+    "Media Mix Modeling"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "mmm_request_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the MMM data request. To create an MMM data request and obtain the data request ID, use /mmm/api/create/ . To retrieve historical MMM data requests, including data request IDs, use /mmm/api/history/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/mmm/api/check/?mmm_request_id={{mmm_request_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"status\": \"completed - ready for download\"\n    }\n}"
+    }
+  }
+}

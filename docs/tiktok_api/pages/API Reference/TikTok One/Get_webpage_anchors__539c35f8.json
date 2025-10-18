@@ -1,0 +1,62 @@
+{
+  "title": "Get webpage anchors",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/anchor/get/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TTO Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "anchor_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of anchor IDs. Max size: 100. If anchor_ids is not passed, all anchors within the TTO Creator Marketplace account will be returned."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-50. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/anchor/get/?tto_tcm_account_id={{tto_tcm_account_id}}&page=1&page_size=50' \\\n--header 'Access-Token: {{access_token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"anchors\": [\n            {\n                \"advertiser_preview_url\": \"{{advertiser_preview_url}}\",\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": \"{{anchor_sub_title}}\",\n                \"anchor_sub_type\": \"ENTERTAINMENT\",\n                \"anchor_title\": \"{{anchor_title}}\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"TW\",\n                \"coupon_link\": null,\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"pixel_id\": null,\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"advertiser_preview_url\": \"{{advertiser_preview_url}}\",\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": \"{{anchor_sub_title}}\",\n                \"anchor_sub_type\": \"ECOMMERCE\",\n                \"anchor_title\": \"{{anchor_title}}\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"US\",\n                \"coupon_link\": {\n                    \"coupon_code\": \"\",\n                    \"coupon_url\": \"\",\n                    \"discount\": 5\n                },\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"advertiser_preview_url\": null,\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": null,\n                \"anchor_sub_type\": \"DESTINATION\",\n                \"anchor_title\": \"Watch Now\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"CA\",\n                \"coupon_link\": null,\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"pixel_id\": \"7258197703320944642\",\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 50,\n            \"total_number\": 3,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

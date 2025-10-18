@@ -1,0 +1,82 @@
+{
+  "title": "Create a Smart Fix task",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/video/fix/task/create/",
+  "method": "POST",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "tasks",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Task info. Max size is 10."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Video that you want to fix."
+      },
+      {
+        "name": "auto_bind_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to automatically upload the fixed video to your creative library. Default value: False ."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "202208180945000102452480040607B21A",
+        "data": {
+          "tasks": [
+            {
+              "flaw_types": [
+                "NO_BGM",
+                "LOW_RESOLUTION"
+              ],
+              "video_id": "v09033f20000bojg7jbdjls6pfaa9i2g",
+              "fix_task_id": "130782063140497479"
+            },
+            {
+              "flaw_types": [
+                "ILLEGAL_DURATION",
+                "NO_BGM",
+                "BLACK_EDGE"
+              ],
+              "video_id": "v090332c0000bp1th2f7421ibbs4cp10",
+              "fix_task_id": "130781343733475399"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

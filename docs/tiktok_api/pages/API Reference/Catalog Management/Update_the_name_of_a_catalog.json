@@ -1,0 +1,11 @@
+{
+  "title": "Update the name of a catalog",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Management"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

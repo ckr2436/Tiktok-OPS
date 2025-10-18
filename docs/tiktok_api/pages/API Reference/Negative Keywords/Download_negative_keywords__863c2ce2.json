@@ -1,0 +1,55 @@
+{
+  "title": "Download negative keywords",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/search_ad/negative_keyword/download/",
+  "method": "GET",
+  "category_path": [
+    "Negative Keywords"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "object_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Object type. Use this field to specify whether you want to download the list of negative keywords for a campaign or ad group. Enum values: CAMPAIGN : campaign. ADGROUP : ad group."
+      },
+      {
+        "name": "object_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Object ID. Use this field to pass in a campaign ID or ad group ID that you want to download the list of negative keywords for. Specify this field according to object_type : If object_type is CAMPAIGN , assign to this field a campaign ID. If object_type is ADGROUP , assign to this field an ad group ID."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/search_ad/negative_keyword/download/?advertiser_id={{advertiser_id}}&object_type=CAMPAIGN&object_id={{object_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

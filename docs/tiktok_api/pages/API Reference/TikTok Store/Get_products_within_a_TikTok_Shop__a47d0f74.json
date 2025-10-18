@@ -1,0 +1,119 @@
+{
+  "title": "Get products within a TikTok Shop",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/store/product/get/",
+  "method": "GET",
+  "category_path": [
+    "TikTok Store"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you have access to, use /bc/get/ ."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "TikTok Shop ID. To obtain the ID list of TikTok Shops associated with an ad account, use /store/list/ ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "item_group_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Product SPU (standard product unit) IDs. Max size: 10."
+      },
+      {
+        "name": "ad_creation_eligible",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of ad or campaign that the products are eligible for. Enum values: CUSTOM_SHOP_ADS : Shopping Ads, including Video Shopping Ads and Product Shopping Ads . GMV_MAX : Product GMV Max Campaigns . If this field is not specified, the response will not include the eligibility of the products for Product GMV Max Campaigns."
+      },
+      {
+        "name": "product_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Product name."
+      },
+      {
+        "name": "advertiser_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when ad_creation_eligible is passed. Advertiser ID."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. Enum values: min_price : the returned min_price field. historical_sales : the returned historical_sales field."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC : ascending. DESC : descending."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current number of pages. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Default value: 10. Value range: 1-100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get products available for Product GMV Max Campaigns",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/store/product/get/?store_id={{store_id}}&bc_id={{bc_id}}&filtering={\"ad_creation_eligible\":\"GMV_MAX\"}&advertiser_id={{advertiser_id}}&page_size=100' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get products available for Shopping Ads",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/store/product/get/?store_id={{store_id}}&bc_id={{bc_id}}&filtering={\"ad_creation_eligible\":\"CUSTOM_SHOP_ADS\"}&advertiser_id={{advertiser_id}}&page_size=100' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get products within a TikTok Shop without using the ad_creation_eligible filter",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/store/product/get/?bc_id={{bc_id}}&store_id={{store_id}}&page_size=100' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"total_page\": 1,\n            \"page\": 1,\n            \"page_size\": 100,\n            \"total_number\": 2\n        },\n        \"store_products\": [\n            {\n                \"currency\": \"GBP\",\n                \"category\": \"Fashion Accessories > Eyewear > Glasses Cases & Accessories\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"max_price\": \"0.07\",\n                \"status\": \"AVAILABLE\",\n                \"title\": \"{{title}}\",\n                \"product_image_url\": \"{{product_image_url}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"item_group_id\": \"{{item_group_id}}\",\n                \"min_price\": \"0.07\",\n                \"historical_sales\": 18\n            },\n            {\n                \"currency\": \"GBP\",\n                \"category\": \"Womenswear & Underwear > Women's Tops > Vests\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"max_price\": \"0.7\",\n                \"status\": \"NOT_AVAILABLE\",\n                \"title\": \"{{title}}\",\n                \"product_image_url\": \"{{product_image_url}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"item_group_id\": \"{{item_group_id}}\",\n                \"min_price\": \"0.7\",\n                \"historical_sales\": 0\n            }\n        ]\n    }\n}"
+    }
+  }
+}

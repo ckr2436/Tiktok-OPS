@@ -1,0 +1,12 @@
+{
+  "title": "Get Offline Event sets",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "Offline Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

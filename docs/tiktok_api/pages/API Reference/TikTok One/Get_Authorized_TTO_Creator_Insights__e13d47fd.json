@@ -1,0 +1,48 @@
+{
+  "title": "Get Authorized TTO Creator Insights",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/creator/authorized/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. Use /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ endpoint to get or renew an access token."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "creator_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique ID of the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ to this field."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If this field is not set, the default fields ( profile_image and display_name ) will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/creator/authorized/?creator_id={{creator_id}}&fields=[\"handle_name\",\"display_name\",\"profile_image\",\"bio\",\"followers_count\",\"following_count\",\"videos_count\",\"likes_count\",\"creator_rate\",\"country_code\",\"content_labels\",\"industry_labels\",\"audience_countries\",\"audience_genders\",\"audience_ages\",\"audience_devices\",\"audience_usages\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"audience_ages\": [\n            {\n                \"age\": \"25-34\",\n                \"percentage\": 0.375\n            },\n            {\n                \"age\": \"35-44\",\n                \"percentage\": 0.375\n            },\n            {\n                \"age\": \"Other\",\n                \"percentage\": 0.125\n            },\n            {\n                \"age\": \"55+\",\n                \"percentage\": 0.125\n            }\n        ],\n        \"audience_countries\": [\n            {\n                \"country\": \"US\",\n                \"percentage\": 0.5\n            },\n            {\n                \"country\": \"JP\",\n                \"percentage\": 0.375\n            },\n            {\n                \"country\": \"MY\",\n                \"percentage\": 0.125\n            }\n        ],\n        \"audience_devices\": [\n            {\n                \"device\": \"APPLE\",\n                \"percentage\": 0.7777777777777778\n            },\n            {\n                \"device\": \"SAMSUNG\",\n                \"percentage\": 0.1111111111111111\n            },\n            {\n                \"device\": \"XIAOMI\",\n                \"percentage\": 0.1111111111111111\n            },\n            {\n                \"device\": \"Other\",\n                \"percentage\": 0\n            }\n        ],\n        \"audience_genders\": [\n            {\n                \"gender\": \"Male\",\n                \"percentage\": 0.625\n            },\n            {\n                \"gender\": \"Female\",\n                \"percentage\": 0.375\n            }\n        ],\n        \"audience_usages\": [\n            {\n                \"percentage\": 0.875,\n                \"usage\": \"active\"\n            },\n            {\n                \"percentage\": 0.125,\n                \"usage\": \"inactive\"\n            }\n        ],\n        \"bio\": \"{{bio}}\",\n        \"content_labels\": [\n            {\n                \"label_id\": 11015001,\n                \"label_name\": \"Tech Products & Tests\"\n            }\n        ],\n        \"country_code\": \"US\",\n        \"creator_rate\": {\n            \"currency\": \"USD\",\n            \"rate\": 1000\n        },\n        \"display_name\": \"{{display_name}}\",\n        \"followers_count\": 8,\n        \"following_count\": 0,\n        \"handle_name\": \"{{handle_name}}\",\n        \"industry_labels\": [\n            {\n                \"label_id\": 23000000000,\n                \"label_name\": \"News & Entertainment\"\n            },\n            {\n                \"label_id\": 24000000000,\n                \"label_name\": \"Business Services\"\n            },\n            {\n                \"label_id\": 29000000000,\n                \"label_name\": \"Health\"\n            }\n        ],\n        \"likes_count\": 0,\n        \"profile_image\": \"{{profile_image}}\",\n        \"videos_count\": 3\n    }\n}"
+    }
+  }
+}

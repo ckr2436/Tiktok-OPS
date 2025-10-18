@@ -1,0 +1,86 @@
+{
+  "title": "Get the invoices of a BC",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/invoice/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Invoices"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "invoice_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Invoice ID."
+      },
+      {
+        "name": "invoice_title",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Invoice title."
+      },
+      {
+        "name": "invoice_types",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Invoice types. Enum values: RECON : Reconciliation Invoice. CREDIT : Credit Invoice. AUTO_PAY : Automatic Payment Invoice. Note : AUTO_PAY cannot be used with other invoice types. To filter Automatic Payment Invoices, set invoice_types to [\"AUTO_PAY\"] ."
+      },
+      {
+        "name": "pay_statuses",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Payment statuses of the invoices. Enum values: UNPAID , PAID , PARTIAL_PAID , NO_NEED (No need to pay)."
+      },
+      {
+        "name": "start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The start time for the invoice issuance, in the format of YYYY-MM-DD HH:MM:SS . Example: 2024-01-01 00:00:00 . You must specify both start_time and end_time or neither."
+      },
+      {
+        "name": "end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The end time for the invoice issuance, in the format of YYYY-MM-DD HH:MM:SS . Example: 2024-02-01 00:00:00 . You must specify both start_time and end_time or neither."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size, in the range of 1-50. Default value: 10."
+      }
+    ]
+  },
+  "response": {}
+}

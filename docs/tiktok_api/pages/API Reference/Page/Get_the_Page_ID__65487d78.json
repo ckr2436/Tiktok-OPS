@@ -1,0 +1,111 @@
+{
+  "title": "Get the Page ID",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/page/get/",
+  "method": "GET",
+  "category_path": [
+    "Page"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or library_id has to be set. To get pages under an ad account, you must specify the advertiser ID."
+      },
+      {
+        "name": "library_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or library_id has to be set. To get pages under a Business Center, you must specify the ID of the form library that contains the page and leads. You can migrate pages and leads from an ad account to a Business Center."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current number of pages. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10. Value range: 1-100."
+      },
+      {
+        "name": "status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Page status. Enum values: EDITED (draft), PUBLISHED (ready)."
+      },
+      {
+        "name": "title",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Page title. This field will be used to filter the page that contains the words in the title."
+      },
+      {
+        "name": "update_time_range",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filter for pages updated in the specified time range."
+      },
+      {
+        "name": "start Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when update_time_range is passed. Start time in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2024-01-01 00:00:00 ."
+      },
+      {
+        "name": "end Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when update_time_range is passed. End time in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2024-01-01 00:00:00 ."
+      },
+      {
+        "name": "business_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Page type. Enum values: LEAD_GEN (Instant Form), STORE_FRONT (Storefront Page), APP_PROFILE_PAGE (App Profile Page), TIKTOK_INSTANT_PAGE (Custom Page or Custom TikTok Instant Page), SHOP_ADS_PLP (Shop Ads Product List Page), SHOP_ADS_PDP (Shop Ads Product Detail Page), POP_UP_FORM (Direct Message Page). Default value: LEAD_GEN ."
+      },
+      {
+        "name": "business_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Page types. Enum values: LEAD_GEN (Instant Form), STORE_FRONT (Storefront Page), APP_PROFILE_PAGE (App Profile Page), TIKTOK_INSTANT_PAGE (Custom Page or Custom TikTok Instant Page), SHOP_ADS_PLP (Shop Ads Product List Page), SHOP_ADS_PDP (Shop Ads Product Detail Page), POP_UP_FORM (Direct Message Page). Note : If it is passed concurrently with business_type , the value of business_type will be ignored."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"status=STATUS\" \\\n--data-urlencode \"title=TITLE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"update_time_range={\\\"start\\\": \\\"START\\\", \\\"end\\\": \\\"END\\\"}\" \\\n--data-urlencode \"page=PAGE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/page/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n  \"message\": \"OK\",\n  \"code\": 0,\n  \"data\": {\n    \"page_info\": {\n      \"total_number\": 1,\n      \"page\": 1,\n      \"page_size\": 10,\n      \"total_page\": 1\n    },\n    \"list\": [\n      {\n        \"status\": \"PUBLISHED\",\n        \"duplicate_id\": \"6854791294359699461\",\n        \"user_id\": \"6844401689412666374\",\n        \"title\": \"page_title\",\n        \"preview_url\": \"http://preview.page.url\",\n        \"thumbnail\": \"http://preview.page.thumbnail\",\n        \"create_time\": \"2022-06-02 15:06:32\",\n        \"update_time\": \"2022-06-02 15:06:33\",\n        \"publish_time\": \"2022-06-02 15:06:33\",\n        \"page_id\": \"6854821673904898054\",\n        \"template_id\": \"6852135057059610630\",\n        \"transfer_status\": \"UNSET\"\n      },\n    ]\n  },\n  \"request_id\": \"{{request_id}}\"\n}"
+    }
+  }
+}

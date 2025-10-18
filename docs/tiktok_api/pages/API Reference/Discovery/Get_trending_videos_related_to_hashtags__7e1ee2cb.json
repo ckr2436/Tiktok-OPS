@@ -1,0 +1,69 @@
+{
+  "title": "Get trending videos related to hashtags",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/discovery/video_list/",
+  "method": "GET",
+  "category_path": [
+    "Discovery"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Pass one of the advertiser IDs returned via advertiser_ids from /oauth2/access_token/ ."
+      },
+      {
+        "name": "discovery_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of discovery item. Enum values: HASHTAG : hashtag-related videos."
+      },
+      {
+        "name": "hashtag_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of hashtag IDs. Max size: 10. Pass one or more popular hashtag IDs obtained via hashtag_id from /discovery/trending_list/ . Example: [\"4268426520694\"] ."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Location code. Default value: US . Pass one of the location codes returned via top_country_list from /discovery/trending_list/ ."
+      },
+      {
+        "name": "date_range",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The timeframe in which the videos have been popular. Enum values: 1DAY : last 1 day. 7DAY : last 7 days. 30DAY : last 30 days. 120DAY : last 120 days. Default value: 7DAY ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/discovery/video_list/?advertiser_id={{advertiser_id}}&discovery_type=HASHTAG&hashtag_ids=[\"{{hashtag_id}}\",\"{{hashtag_id}}\"]&country_code=GB&date_range=7DAY' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"relatable\",\n                \"top_video_list\": [\n                    {\n                        \"embed_url\": \"{{embed_url}}\",\n                        \"video_id\": \"{{video_id}}\",\n                        \"share_url\": \"{{share_url}}\"\n                    },\n                    ...,\n                    {\n                        \"embed_url\": \"{{embed_url}}\",\n                        \"video_id\": \"{{video_id}}\",\n                        \"share_url\": \"{{share_url}}\"\n                    }\n                ]\n            },\n            {\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"funny\",\n                \"top_video_list\": [\n                    {\n                        \"embed_url\": \"{{embed_url}}\",\n                        \"video_id\": \"{{video_id}}\",\n                        \"share_url\": \"{{share_url}}\" \n                    },\n                    ...,\n                    {\n                        \"embed_url\": \"{{embed_url}}\",\n                        \"video_id\": \"{{video_id}}\",\n                        \"share_url\": \"{{share_url}}\" \n                    }\n                ]\n            }\n        ]\n    }\n}"
+    }
+  }
+}
