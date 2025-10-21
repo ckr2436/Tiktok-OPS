@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Iterable
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBShop,
     TTBProduct,
+    TTBAdgroup,
 )
 from app.services.ttb_api import TTBApiClient
 from app.services.oauth_ttb import get_access_token_for_auth_id
@@ -186,6 +187,61 @@ def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) ->
     db.execute(ondup)
 
 
+def _upsert_adgroup(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
+    adgroup_id = str(_pick(item, "adgroup_id", "id"))
+    if not adgroup_id:
+        return
+
+    advertiser_id = _pick(item, "advertiser_id")
+    campaign_id = _pick(item, "campaign_id")
+
+    values = dict(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        adgroup_id=adgroup_id,
+        advertiser_id=str(advertiser_id) if advertiser_id else None,
+        campaign_id=str(campaign_id) if campaign_id else None,
+        name=_pick(item, "adgroup_name", "name"),
+        operation_status=_pick(item, "operation_status", "status"),
+        primary_status=_pick(item, "primary_status"),
+        secondary_status=_pick(item, "secondary_status"),
+        budget=_pick(item, "budget"),
+        budget_mode=_pick(item, "budget_mode"),
+        optimization_goal=_pick(item, "optimization_goal"),
+        promotion_type=_pick(item, "promotion_type"),
+        bid_type=_pick(item, "bid_type"),
+        bid_strategy=_pick(item, "bid_strategy"),
+        schedule_start_time=_parse_dt(_pick(item, "schedule_start_time")),
+        schedule_end_time=_parse_dt(_pick(item, "schedule_end_time")),
+        ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
+        ext_updated_time=_parse_dt(_pick(item, "modify_time", "update_time", "updated_time")),
+        raw_json=item,
+    )
+
+    stmt = mysql_insert(TTBAdgroup).values(values)
+    ondup = stmt.on_duplicate_key_update(
+        advertiser_id=stmt.inserted.advertiser_id,
+        campaign_id=stmt.inserted.campaign_id,
+        name=stmt.inserted.name,
+        operation_status=stmt.inserted.operation_status,
+        primary_status=stmt.inserted.primary_status,
+        secondary_status=stmt.inserted.secondary_status,
+        budget=stmt.inserted.budget,
+        budget_mode=stmt.inserted.budget_mode,
+        optimization_goal=stmt.inserted.optimization_goal,
+        promotion_type=stmt.inserted.promotion_type,
+        bid_type=stmt.inserted.bid_type,
+        bid_strategy=stmt.inserted.bid_strategy,
+        schedule_start_time=stmt.inserted.schedule_start_time,
+        schedule_end_time=stmt.inserted.schedule_end_time,
+        ext_created_time=stmt.inserted.ext_created_time,
+        ext_updated_time=stmt.inserted.ext_updated_time,
+        raw_json=stmt.inserted.raw_json,
+        last_seen_at=text("CURRENT_TIMESTAMP(6)"),
+    )
+    db.execute(ondup)
+
+
 def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
     product_id = str(_pick(item, "product_id", "id"))
     if not product_id:
@@ -277,6 +333,59 @@ class TTBSyncService:
                 continue
             async for item in self.client.iter_shops(advertiser_id=str(adv.advertiser_id), page_size=min(limit, 1000)):
                 _upsert_shop(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+                count += 1
+
+        cursor.last_rev = str(int(datetime.utcnow().timestamp()))
+        self.db.add(cursor)
+        return {"synced": count, "cursor": {"last_rev": cursor.last_rev}}
+
+    async def sync_adgroups(
+        self,
+        *,
+        limit: int = 200,
+        advertiser_id: str | None = None,
+        fields: Iterable[str] | None = None,
+        filtering: Dict[str, Any] | None = None,
+        exclude_field_types_in_response: Iterable[str] | None = None,
+    ) -> dict:
+        cursor = _get_or_create_cursor(
+            self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="adgroup"
+        )
+
+        fields_list = list(fields) if fields else None
+        exclude_list = list(exclude_field_types_in_response) if exclude_field_types_in_response else None
+
+        if advertiser_id:
+            row = self.db.query(TTBAdvertiser).filter(
+                TTBAdvertiser.workspace_id == self.workspace_id,
+                TTBAdvertiser.auth_id == self.auth_id,
+                TTBAdvertiser.advertiser_id == str(advertiser_id),
+            ).one_or_none()
+            advertisers = [row] if row else []
+        else:
+            advertisers = self.db.query(TTBAdvertiser).filter(
+                TTBAdvertiser.workspace_id == self.workspace_id,
+                TTBAdvertiser.auth_id == self.auth_id,
+            ).all()
+
+        try:
+            page_size = int(limit)
+        except (TypeError, ValueError):
+            page_size = 200
+        page_size = max(1, min(page_size, 1000))
+
+        count = 0
+        for adv in advertisers:
+            if not adv or not adv.advertiser_id:
+                continue
+            async for item in self.client.iter_adgroups(
+                advertiser_id=str(adv.advertiser_id),
+                fields=fields_list,
+                filtering=filtering,
+                exclude_field_types_in_response=exclude_list,
+                page_size=page_size,
+            ):
+                _upsert_adgroup(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
                 count += 1
 
         cursor.last_rev = str(int(datetime.utcnow().timestamp()))
