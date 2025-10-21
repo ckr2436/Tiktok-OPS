@@ -319,6 +319,88 @@ a:hover{ opacity:.95; }
 .btn.sm{ padding:6px 10px; border-radius:8px; font-size:13px; }
 .btn.danger{ background:#ef4444; }
 
+/* ===== BC Ads 运营计划：通用布局 ===== */
+.page-with-gap{ display:grid; gap:20px; }
+
+.section-title{ font-size:1.05rem; font-weight:600; margin-bottom:12px; }
+
+.plan-intro-list{ margin:12px 0; padding-left:20px; display:grid; gap:6px; }
+.plan-intro-list li{ line-height:1.6; }
+
+.plan-card-wrapper{ display:grid; gap:18px; }
+.plan-loading{ padding:20px 12px; color:var(--muted); }
+.plan-empty{ padding:18px 12px; border:1px dashed var(--border); border-radius:10px; text-align:center; color:var(--muted); }
+
+.plan-toolbar{ display:flex; flex-wrap:wrap; gap:12px; }
+.plan-actions{ gap:12px; justify-content:flex-end; flex-wrap:wrap; }
+
+.plan-card-list{ display:grid; gap:18px; }
+.plan-card{
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--panel-2);
+  padding:16px;
+  box-shadow:var(--shadow);
+}
+.plan-card__head{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; flex-wrap:wrap; }
+.plan-card__meta{ display:grid; gap:8px; flex:1; min-width:220px; }
+.plan-card__badge{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; background:rgba(110,168,254,.18); color:var(--accent); font-size:12px; font-weight:600; width:max-content; }
+.plan-card__title{ font-size:1rem; font-weight:600; }
+.plan-card__actions{ display:flex; align-items:center; gap:10px; }
+
+.plan-card__grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+.plan-card__field--full{ grid-column:1 / -1; }
+@media (max-width: 860px){
+  .plan-card__grid{ grid-template-columns:1fr; }
+}
+
+/* ===== BC Ads 运营计划：时间轴展示 ===== */
+.plan-timeline{ list-style:none; margin:0; padding:0; display:grid; gap:18px; }
+.plan-timeline__item{ position:relative; padding-left:20px; }
+.plan-timeline__item::before{
+  content:"";
+  position:absolute; left:6px; top:4px; bottom:0;
+  width:2px; background:var(--border);
+}
+.plan-timeline__item::after{
+  content:"";
+  position:absolute; left:2px; top:0;
+  width:10px; height:10px; border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow:0 0 0 3px rgba(110,168,254,.18);
+}
+.plan-timeline__head{ display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:10px; }
+.plan-timeline__title{ font-size:1.05rem; font-weight:600; }
+.plan-timeline__objective{ color:var(--muted); font-size:.92rem; margin-top:4px; }
+.plan-timeline__meta{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.plan-chip{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; background:rgba(110,168,254,.18); color:var(--accent); font-size:12px; font-weight:600; }
+.plan-chip--muted{ background:rgba(255,255,255,.05); color:var(--muted); }
+.plan-timeline__grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+.plan-timeline__label{ font-size:.86rem; color:var(--muted); margin-bottom:4px; }
+.plan-timeline__list{ margin:0; padding-left:18px; display:grid; gap:4px; }
+.plan-timeline__list--inline{ grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); padding-left:0; list-style:none; }
+.plan-timeline__list--inline li{ padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); width:max-content; }
+.plan-timeline__text{ margin:0; line-height:1.6; }
+.plan-timeline__notes{ grid-column:1 / -1; }
+
+/* ===== BC Ads 运营计划：同步头部与状态 ===== */
+.sync-header{ display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+.sync-header__text{ flex:1; min-width:260px; display:grid; gap:10px; }
+.sync-header__actions{ display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+.sync-meta{ display:flex; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:.9rem; }
+
+.status-badge{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
+.status-badge--ok{ background:rgba(34,197,94,.15); color:#22c55e; }
+.status-badge--danger{ background:rgba(248,113,113,.18); color:#f87171; }
+.status-badge--warn{ background:rgba(245,158,11,.18); color:#f59e0b; }
+.status-badge--muted{ background:rgba(148,163,184,.22); color:var(--muted); }
+
+.history-table{ width:100%; border-collapse:separate; border-spacing:0; }
+.history-table th,
+.history-table td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); }
+.history-table tbody tr:last-child td{ border-bottom:none; }
+.history-table th{ font-weight:600; color:var(--muted); }
+
 /* ===== 视口高度优先级（仅桌面端使用固定高度） ===== */
 @media (min-width: 961px){
   /* 1) 优先 100svh */

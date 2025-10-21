@@ -21,6 +21,7 @@ import LoginView from '../features/platform/auth/pages/LoginView.jsx';
 import AdminHome from '../features/platform/admin/pages/AdminHome.jsx';
 import TenantList from '../features/platform/tenants/pages/TenantList.jsx';
 import TenantCreate from '../features/platform/tenants/pages/TenantCreate.jsx';
+import BcAdsPlanConfig from '../features/platform/admin/pages/BcAdsPlanConfig.jsx';
 
 // 平台管理员 · API 文档
 import ApiDocsView from '../features/platform/admin/pages/ApiDocsView.jsx';
@@ -28,6 +29,9 @@ import ApiDocsView from '../features/platform/admin/pages/ApiDocsView.jsx';
 import AdminList from '../features/platform/admin/pages/AdminList.jsx';
 // 平台管理员 · OAuth Provider Apps
 import OAuthAppsPage from '../features/platform/oauth/pages/OAuthAppsPage.jsx';
+
+// 租户 · BC Ads 运营计划
+import BcAdsPlanSync from '../features/tenants/bc_ads_shop_product/pages/BcAdsPlanSync.jsx';
 
 // 公司域：成员
 import UserList from '../features/tenants/users/pages/UserList.jsx';
@@ -64,6 +68,7 @@ const router = createBrowserRouter([
               { path: 'tenants/create', element: <TenantCreate /> },
               { path: 'apis', element: <ApiDocsView /> },
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
+              { path: 'bc-ads-shop-product', element: <BcAdsPlanConfig /> },
             ],
           },
 
@@ -75,6 +80,7 @@ const router = createBrowserRouter([
           // 公司域 - TikTok Business 授权
           { path: 'tenants/:wid/tiktok_business', element: <TbAuthList /> },
           { path: 'tenants/:wid/tiktok_business/:auth_id', element: <TbAuthDetail /> },
+          { path: 'tenants/:wid/bc_ads_shop_product', element: <BcAdsPlanSync /> },
 
         ],
       },

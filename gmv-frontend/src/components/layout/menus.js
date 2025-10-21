@@ -29,6 +29,7 @@ export function buildMenus(session) {
           { to: '/platform/tenants',     label: '公司管理' },
           { to: '/platform/oauth-apps',  label: 'OAuth 应用' },
           { to: '/platform/apis',        label: 'API 管理' },
+          { to: '/platform/bc-ads-shop-product', label: 'BC Ads 计划配置' },
         ],
       },
     ];
@@ -49,6 +50,7 @@ export function buildMenus(session) {
         title: '整合与授权',
         items: [
           { to: `/tenants/${wsId}/tiktok_business`, label: 'TikTok Business 授权' },
+          { to: `/tenants/${wsId}/bc_ads_shop_product`, label: 'BC Ads 运营计划' },
         ],
       },
     ];
@@ -61,6 +63,7 @@ export function buildMenus(session) {
       items: [
         { to: '/dashboard',             label: '仪表盘', exact: true },
         { to: `/tenants/${wsId}/users`, label: '成员' },
+        { to: `/tenants/${wsId}/bc_ads_shop_product`, label: 'BC Ads 运营计划' },
       ],
     },
   ];
