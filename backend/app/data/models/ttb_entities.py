@@ -40,7 +40,9 @@ class TTBSyncCursor(Base):
         UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
     )
 
-    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "bc" | "advertiser" | "shop" | "product"
+    resource_type: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # "bc" | "advertiser" | "shop" | "product" | "adgroup"
 
     cursor_token: Mapped[str | None] = mapped_column(String(256), default=None)
     since_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
@@ -195,6 +197,62 @@ class TTBShop(Base):
         server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
+
+# --------------------------- 广告组 ---------------------------
+class TTBAdgroup(Base):
+    __tablename__ = "ttb_adgroups"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "auth_id", "adgroup_id", name="uk_ttb_adgroup_scope"),
+        Index("idx_ttb_adgroup_scope", "workspace_id", "auth_id", "adgroup_id"),
+        Index("idx_ttb_adgroup_advertiser", "advertiser_id"),
+        Index("idx_ttb_adgroup_campaign", "campaign_id"),
+        Index("idx_ttb_adgroup_operation_status", "operation_status"),
+        Index("idx_ttb_adgroup_primary_status", "primary_status"),
+        Index("idx_ttb_adgroup_secondary_status", "secondary_status"),
+        Index("idx_ttb_adgroup_updated", "ext_updated_time"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+
+    adgroup_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    advertiser_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    campaign_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    name: Mapped[str | None] = mapped_column(String(255), default=None)
+    operation_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    primary_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    secondary_status: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    budget: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    budget_mode: Mapped[str | None] = mapped_column(String(32), default=None)
+    optimization_goal: Mapped[str | None] = mapped_column(String(64), default=None)
+    promotion_type: Mapped[str | None] = mapped_column(String(64), default=None)
+    bid_type: Mapped[str | None] = mapped_column(String(32), default=None)
+    bid_strategy: Mapped[str | None] = mapped_column(String(32), default=None)
+
+    schedule_start_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    schedule_end_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    ext_created_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    ext_updated_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    first_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
 
 # --------------------------- 商品 ---------------------------
 class TTBProduct(Base):

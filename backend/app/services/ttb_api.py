@@ -56,6 +56,7 @@ class TTBPaths:
     advertiser_get: str = "/open_api/v1.3/oauth2/advertiser/get/"
     shop_get: str = "/open_api/v1.3/store/list/"
     product_get: str = "/open_api/v1.3/store/product/get/"
+    adgroup_get: str = "/open_api/v1.3/adgroup/get/"
 
     @classmethod
     def from_settings(cls) -> "TTBPaths":
@@ -71,6 +72,7 @@ class TTBPaths:
             advertiser_get=_g("advertiser_get", cls.advertiser_get),
             shop_get=_g("shop_get", cls.shop_get),
             product_get=_g("product_get", cls.product_get),
+            adgroup_get=_g("adgroup_get", cls.adgroup_get),
         )
 
 
@@ -325,5 +327,37 @@ class TTBApiClient:
         if advertiser_id:
             base_q["advertiser_id"] = advertiser_id
         async for it in self._paged_by_page(self._paths.product_get, base_query=base_q, page_size=page_size):
+            yield it
+
+    async def iter_adgroups(
+        self,
+        *,
+        advertiser_id: str,
+        fields: Iterable[str] | None = None,
+        filtering: Dict[str, Any] | None = None,
+        exclude_field_types_in_response: Iterable[str] | None = None,
+        page: int | None = None,
+        page_size: int = 100,
+    ) -> AsyncIterator[dict]:
+        base_q: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
+        if fields:
+            base_q["fields"] = json.dumps(list(dict.fromkeys(str(f) for f in fields if f)))
+        if filtering:
+            base_q["filtering"] = json.dumps(filtering)
+        if exclude_field_types_in_response:
+            base_q["exclude_field_types_in_response"] = json.dumps(
+                list(dict.fromkeys(str(v) for v in exclude_field_types_in_response if v))
+            )
+        if page and page > 1:
+            base_q["page"] = int(page)
+
+        size = max(1, min(int(page_size), 1000))
+        async for it in self._paged_by_page(
+            self._paths.adgroup_get,
+            base_query=base_q,
+            page_param="page",
+            page_size_param="page_size",
+            page_size=size,
+        ):
             yield it
 
