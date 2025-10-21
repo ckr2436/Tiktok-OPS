@@ -13,13 +13,24 @@ export async function fetchSyncStatus(workspaceId) {
   return res?.data ?? res
 }
 
-export async function triggerManualSync(workspaceId) {
-  const res = await http.post(`${BASE_URL}/${workspaceId}/bc_ads_shop_product/sync`)
+export async function fetchBindingSummary(workspaceId) {
+  const res = await http.get(`${BASE_URL}/${workspaceId}/bc_ads_shop_product/bindings`)
+  return res?.data ?? res
+}
+
+export async function triggerManualSync(workspaceId, bindingId) {
+  if (!workspaceId) throw new Error('workspaceId is required')
+  const base = `${BASE_URL}/${workspaceId}/bc_ads_shop_product`
+  const url = bindingId
+    ? `${base}/bindings/${encodeURIComponent(bindingId)}/sync`
+    : `${base}/sync`
+  const res = await http.post(url)
   return res?.data ?? res
 }
 
 export default {
   fetchTenantPlanConfig,
   fetchSyncStatus,
+  fetchBindingSummary,
   triggerManualSync,
 }

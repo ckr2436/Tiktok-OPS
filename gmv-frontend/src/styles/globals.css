@@ -354,6 +354,38 @@ a:hover{ opacity:.95; }
   .plan-card__grid{ grid-template-columns:1fr; }
 }
 
+/* ===== BC Ads 运营计划：计划任务调度 ===== */
+.schedule-card{ display:grid; gap:16px; }
+.schedule-head{ display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.schedule-head__text{ flex:1; min-width:260px; display:grid; gap:8px; }
+.schedule-head__toggle{ display:flex; align-items:center; gap:10px; }
+.schedule-head__label{ font-weight:600; }
+.schedule-grid{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); }
+.schedule-grid__notes{ grid-column:1 / -1; }
+.schedule-meta{ display:flex; flex-wrap:wrap; gap:12px; padding-top:4px; font-size:.92rem; }
+.schedule-meta__item{ display:flex; align-items:center; gap:6px; color:var(--muted); }
+.schedule-meta__label{ font-weight:600; color:var(--text); font-size:.9rem; }
+.input--invalid{ border-color:#ef4444 !important; box-shadow:0 0 0 1px rgba(239,68,68,.18); }
+
+/* ===== BC Ads 运营计划：绑定账号列表 ===== */
+.binding-table{ width:100%; border-collapse:separate; border-spacing:0; }
+.binding-table th,
+.binding-table td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); }
+.binding-table tbody tr:last-child td{ border-bottom:none; }
+.binding-row--warn td{ background:rgba(245,158,11,.05); }
+.binding-name{ display:grid; gap:4px; }
+.binding-name__main{ font-weight:600; }
+.binding-name__meta{ font-size:.85rem; color:var(--muted); }
+.binding-status{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.binding-note{ font-size:.85rem; color:var(--muted); }
+.binding-consistency{ display:grid; gap:6px; }
+.binding-tags{ display:flex; flex-wrap:wrap; gap:6px; }
+.binding-tag{ display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; font-size:.75rem; font-weight:600; }
+.binding-tag--ok{ background:rgba(34,197,94,.15); color:#22c55e; }
+.binding-tag--warn{ background:rgba(245,158,11,.18); color:#f59e0b; }
+.binding-tag--muted{ background:rgba(148,163,184,.22); color:var(--muted); }
+.binding-actions{ display:flex; gap:8px; }
+
 /* ===== BC Ads 运营计划：时间轴展示 ===== */
 .plan-timeline{ list-style:none; margin:0; padding:0; display:grid; gap:18px; }
 .plan-timeline__item{ position:relative; padding-left:20px; }

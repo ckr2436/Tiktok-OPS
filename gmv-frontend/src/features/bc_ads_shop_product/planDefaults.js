@@ -60,9 +60,21 @@ const BASE_PLANS = [
   },
 ];
 
+export const DEFAULT_SCHEDULE = Object.freeze({
+  enabled: false,
+  status: 'idle',
+  taskName: 'bc-ads-plan-refresh',
+  cron: '0 */6 * * *',
+  timezone: 'Asia/Shanghai',
+  description: '按固定频率刷新运营计划模板，保障租户自动获得最新版本。',
+  lastRunAt: '',
+  nextRunAt: '',
+});
+
 export const DEFAULT_PLAN_CONFIG = {
   syncCooldownMinutes: 45,
   plans: BASE_PLANS,
+  schedule: DEFAULT_SCHEDULE,
 };
 
 function ensureArray(value) {
@@ -88,6 +100,70 @@ function clampMinutes(value) {
   return Math.min(Math.max(num, 5), 1440);
 }
 
+function normalizeSchedule(rawSchedule = {}) {
+  const schedule = rawSchedule?.schedule ?? rawSchedule ?? {};
+  const enabled = Boolean(
+    rawSchedule?.enabled ??
+      rawSchedule?.is_enabled ??
+      schedule?.enabled ??
+      schedule?.is_enabled ??
+      DEFAULT_SCHEDULE.enabled,
+  );
+
+  const taskName =
+    schedule?.task_name ??
+    schedule?.taskName ??
+    schedule?.name ??
+    schedule?.task_key ??
+    DEFAULT_SCHEDULE.taskName;
+
+  const cron =
+    schedule?.cron ??
+    schedule?.cron_expression ??
+    schedule?.schedule ??
+    schedule?.expression ??
+    DEFAULT_SCHEDULE.cron;
+
+  const timezone =
+    schedule?.timezone ??
+    schedule?.tz ??
+    schedule?.time_zone ??
+    DEFAULT_SCHEDULE.timezone;
+
+  const description =
+    schedule?.description ??
+    schedule?.desc ??
+    schedule?.note ??
+    DEFAULT_SCHEDULE.description;
+
+  const status = schedule?.status ?? schedule?.state ?? DEFAULT_SCHEDULE.status;
+
+  const lastRunAt =
+    schedule?.last_run_at ??
+    schedule?.lastRunAt ??
+    schedule?.latest_run_at ??
+    schedule?.ran_at ??
+    DEFAULT_SCHEDULE.lastRunAt;
+
+  const nextRunAt =
+    schedule?.next_run_at ??
+    schedule?.nextRunAt ??
+    schedule?.upcoming_run_at ??
+    schedule?.scheduled_for ??
+    DEFAULT_SCHEDULE.nextRunAt;
+
+  return {
+    enabled,
+    status,
+    taskName,
+    cron,
+    timezone,
+    description,
+    lastRunAt,
+    nextRunAt,
+  };
+}
+
 export function toEditableConfig(rawConfig = {}) {
   const fallback = DEFAULT_PLAN_CONFIG;
   const plans = Array.isArray(rawConfig?.plans) && rawConfig.plans.length > 0
@@ -111,10 +187,12 @@ export function toEditableConfig(rawConfig = {}) {
   });
 
   const cooldown = clampMinutes(rawConfig?.sync_cooldown_minutes ?? rawConfig?.syncCooldownMinutes);
+  const schedule = normalizeSchedule(rawConfig?.schedule ?? rawConfig?.sync_schedule ?? {});
 
   return {
     syncCooldownMinutes: cooldown,
     plans: editablePlans,
+    schedule,
   };
 }
 
@@ -128,6 +206,8 @@ function arrayFromMultiline(text) {
 
 export function toApiPayload(editableConfig = {}) {
   const plans = Array.isArray(editableConfig?.plans) ? editableConfig.plans : [];
+  const schedule = editableConfig?.schedule ?? {};
+  const timezone = String(schedule?.timezone ?? DEFAULT_SCHEDULE.timezone).trim();
   return {
     sync_cooldown_minutes: clampMinutes(editableConfig?.syncCooldownMinutes),
     plans: plans.map((plan, idx) => ({
@@ -142,6 +222,13 @@ export function toApiPayload(editableConfig = {}) {
       metrics: arrayFromMultiline(plan?.metrics ?? ''),
       notes: String(plan?.notes ?? '').trim(),
     })),
+    schedule: {
+      enabled: Boolean(schedule?.enabled),
+      task_name: String(schedule?.taskName ?? DEFAULT_SCHEDULE.taskName).trim(),
+      cron: String(schedule?.cron ?? DEFAULT_SCHEDULE.cron).trim(),
+      timezone: timezone || DEFAULT_SCHEDULE.timezone,
+      description: String(schedule?.description ?? '').trim(),
+    },
   };
 }
 
@@ -168,10 +255,12 @@ export function toDisplayConfig(rawConfig = {}) {
   });
 
   const cooldown = clampMinutes(rawConfig?.sync_cooldown_minutes ?? rawConfig?.syncCooldownMinutes);
+  const schedule = normalizeSchedule(rawConfig?.schedule ?? rawConfig?.sync_schedule ?? {});
 
   return {
     syncCooldownMinutes: cooldown,
     plans: normalizedPlans,
+    schedule,
   };
 }
 

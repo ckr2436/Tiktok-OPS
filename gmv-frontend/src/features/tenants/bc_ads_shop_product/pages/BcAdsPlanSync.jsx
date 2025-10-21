@@ -5,9 +5,11 @@ import {
   DEFAULT_PLAN_CONFIG,
   toDisplayConfig,
 } from '../../../bc_ads_shop_product/planDefaults.js'
+import { formatStatusLabel, statusTone } from '../../../bc_ads_shop_product/statusUtils.js'
 import {
   fetchTenantPlanConfig,
   fetchSyncStatus,
+  fetchBindingSummary,
   triggerManualSync,
 } from '../service.js'
 
@@ -60,22 +62,6 @@ function formatDuration(ms) {
   return parts.join(' ')
 }
 
-function formatStatusLabel(status) {
-  const value = String(status || '').toLowerCase()
-  if (value === 'success' || value === 'done' || value === 'completed') return '成功'
-  if (value === 'failed' || value === 'error') return '失败'
-  if (value === 'running' || value === 'pending' || value === 'processing') return '进行中'
-  return '未知'
-}
-
-function statusTone(status) {
-  const value = String(status || '').toLowerCase()
-  if (value === 'success' || value === 'done' || value === 'completed') return 'ok'
-  if (value === 'failed' || value === 'error') return 'danger'
-  if (value === 'running' || value === 'pending' || value === 'processing') return 'warn'
-  return 'muted'
-}
-
 function sanitizeHistory(list = []) {
   return list.map((item, idx) => ({
     id: item?.id ?? item?.job_id ?? `history-${idx}`,
@@ -101,6 +87,70 @@ function normalizeStatus(rawStatus, workspaceId) {
     nextAllowedAt: next || '',
     history,
   }
+}
+
+function toStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\s,，、\n\r]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  return []
+}
+
+function normalizeBindings(rawBindings = []) {
+  const list = Array.isArray(rawBindings?.items)
+    ? rawBindings.items
+    : Array.isArray(rawBindings)
+      ? rawBindings
+      : []
+
+  return list.map((item, idx) => {
+    const fields = toStringArray(
+      item?.diff_fields ??
+        item?.diffFields ??
+        item?.outdated_fields ??
+        item?.mismatched_fields ??
+        item?.fields,
+    )
+
+    const inconsistent = Boolean(
+      item?.inconsistent ?? item?.has_diff ?? item?.hasDiff ?? (fields.length > 0),
+    )
+
+    return {
+      id:
+        item?.binding_id ??
+        item?.id ??
+        item?.account_id ??
+        item?.auth_id ??
+        `binding-${idx}`,
+      name:
+        item?.alias ??
+        item?.account_name ??
+        item?.name ??
+        item?.shop_name ??
+        `绑定账号 ${idx + 1}`,
+      accountId:
+        item?.account_id ?? item?.bc_ads_account_id ?? item?.advertiser_id ?? '',
+      shopName: item?.shop_name ?? item?.store_name ?? item?.workspace_name ?? '',
+      productLine: item?.product_line ?? item?.product ?? item?.catalog_name ?? '',
+      status: item?.status ?? item?.sync_status ?? item?.integration_status ?? '',
+      lastSyncedAt:
+        item?.last_synced_at ??
+        item?.synced_at ??
+        item?.updated_at ??
+        item?.refreshed_at ??
+        '',
+      message: item?.message ?? item?.note ?? item?.remark ?? '',
+      fields,
+      inconsistent,
+    }
+  })
 }
 
 function PlanTimeline({ plans }) {
@@ -188,6 +238,10 @@ export default function BcAdsPlanSync() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
+  const [bindings, setBindings] = useState([])
+  const [bindingsLoading, setBindingsLoading] = useState(true)
+  const [bindingError, setBindingError] = useState('')
+  const [bindingSyncing, setBindingSyncing] = useState({})
   const [lastSyncedAt, setLastSyncedAt] = useState(() => loadLocalLastSync(workspaceId))
   const [nextAllowedAt, setNextAllowedAt] = useState('')
   const [now, setNow] = useState(() => Date.now())
@@ -204,6 +258,10 @@ export default function BcAdsPlanSync() {
   useEffect(() => {
     setLastSyncedAt(loadLocalLastSync(workspaceId))
     setNextAllowedAt('')
+    setBindingError('')
+    setBindingSyncing({})
+    setBindings([])
+    setBindingsLoading(true)
     refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId])
@@ -212,6 +270,7 @@ export default function BcAdsPlanSync() {
     if (!workspaceId) return
     setLoading(true)
     setError('')
+    const bindingPromise = fetchBindingSummary(workspaceId)
     try {
       const [planRes, statusRes] = await Promise.all([
         fetchTenantPlanConfig(workspaceId),
@@ -234,6 +293,27 @@ export default function BcAdsPlanSync() {
       setError('加载失败，已展示平台默认模板。')
     } finally {
       setLoading(false)
+    }
+    await refreshBindings(bindingPromise)
+  }
+
+  async function refreshBindings(promise) {
+    if (!workspaceId) {
+      setBindings([])
+      setBindingsLoading(false)
+      return
+    }
+    setBindingError('')
+    setBindingsLoading(true)
+    try {
+      const res = promise ? await promise : await fetchBindingSummary(workspaceId)
+      setBindings(normalizeBindings(res || []))
+    } catch (err) {
+      console.error('Failed to load bc-ads binding summary', err)
+      setBindings([])
+      setBindingError('加载绑定账号信息失败，请稍后重试。')
+    } finally {
+      setBindingsLoading(false)
     }
   }
 
@@ -267,12 +347,15 @@ export default function BcAdsPlanSync() {
   const nextAllowedText = formatDateTime(nextAllowedTs)
   const canSync = !syncing && !isCoolingDown
 
-  async function handleManualSync() {
+  async function handleManualSync(bindingId) {
     if (!workspaceId || !canSync) return
     setSyncing(true)
     setError('')
+    if (bindingId) {
+      setBindingSyncing((prev) => ({ ...prev, [bindingId]: true }))
+    }
     try {
-      const res = await triggerManualSync(workspaceId)
+      const res = await triggerManualSync(workspaceId, bindingId)
       const syncedAt = res?.synced_at ?? res?.triggered_at ?? new Date().toISOString()
       setLastSyncedAt(syncedAt)
       saveLocalLastSync(workspaceId, syncedAt)
@@ -290,16 +373,24 @@ export default function BcAdsPlanSync() {
             triggered_at: syncedAt,
             operator: '手动同步',
             status: res?.status ?? 'pending',
-            message: res?.message ?? '已触发手动同步任务',
+            message: res?.message ?? (bindingId ? '已触发该账号的手动同步任务' : '已触发手动同步任务'),
           },
           ...prev,
         ])
       }
       await refreshStatus()
+      await refreshBindings()
     } catch (err) {
       console.error('Manual sync failed', err)
       setError('同步失败，请稍后重试。')
     } finally {
+      if (bindingId) {
+        setBindingSyncing((prev) => {
+          const next = { ...prev }
+          delete next[bindingId]
+          return next
+        })
+      }
       setSyncing(false)
     }
   }
@@ -336,7 +427,7 @@ export default function BcAdsPlanSync() {
             <button type="button" className="btn ghost" onClick={refreshAll} disabled={loading || syncing}>
               {loading ? '刷新中…' : '刷新模板'}
             </button>
-            <button type="button" className="btn" onClick={handleManualSync} disabled={!canSync}>
+            <button type="button" className="btn" onClick={() => handleManualSync()} disabled={!canSync}>
               {syncing ? '同步中…' : isCoolingDown ? `冷却中 · ${countdownText || '请稍候'}` : '手动同步'}
             </button>
           </div>
@@ -346,6 +437,96 @@ export default function BcAdsPlanSync() {
           <div className="alert">
             正在冷却中，预计 {nextAllowedText || '稍后'} 可再次触发手动同步。
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">已绑定的 BC Ads 账号</div>
+        <p className="small-muted">
+          核对租户授权的广告账号与店铺信息。如标记为数据存在差异，可直接触发单账号同步。
+        </p>
+        {bindingError && <div className="alert alert--error">{bindingError}</div>}
+        {bindingsLoading ? (
+          <div className="plan-loading">绑定信息加载中…</div>
+        ) : bindings.length > 0 ? (
+          <div className="table-wrap">
+            <table className="binding-table">
+              <thead>
+                <tr>
+                  <th scope="col">账号信息</th>
+                  <th scope="col">广告账户 ID</th>
+                  <th scope="col">同步状态</th>
+                  <th scope="col">数据一致性</th>
+                  <th scope="col">最近同步</th>
+                  <th scope="col" className="col-actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bindings.map((binding) => {
+                  const rowSyncing = Boolean(bindingSyncing[binding.id])
+                  const disabled = !canSync || rowSyncing
+                  let actionLabel = '仅同步此账号'
+                  if (rowSyncing || syncing) {
+                    actionLabel = '同步中…'
+                  } else if (isCoolingDown) {
+                    actionLabel = `冷却中${countdownText ? ` · ${countdownText}` : ''}`
+                  }
+                  const meta = [binding.shopName, binding.productLine].filter(Boolean).join(' · ')
+                  const fields = Array.isArray(binding.fields) ? binding.fields : []
+                  const rowClass = binding.inconsistent ? 'binding-row binding-row--warn' : 'binding-row'
+                  const lastBindingSyncText = formatDateTime(binding.lastSyncedAt) || '-'
+                  return (
+                    <tr key={binding.id} className={rowClass}>
+                      <td>
+                        <div className="binding-name">
+                          <div className="binding-name__main">{binding.name || '-'}</div>
+                          {meta && <div className="binding-name__meta">{meta}</div>}
+                        </div>
+                      </td>
+                      <td>{binding.accountId || '-'}</td>
+                      <td>
+                        <div className="binding-status">
+                          <StatusBadge status={binding.status} />
+                          {binding.message && <span className="binding-note">{binding.message}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="binding-consistency">
+                          <span className={`binding-tag ${binding.inconsistent ? 'binding-tag--warn' : 'binding-tag--ok'}`}>
+                            {binding.inconsistent ? '存在差异' : '已同步'}
+                          </span>
+                          {fields.length > 0 && (
+                            <div className="binding-tags">
+                              {fields.map((field, idx) => (
+                                <span key={`${binding.id}-field-${idx}`} className="binding-tag binding-tag--muted">
+                                  {field}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td>{lastBindingSyncText}</td>
+                      <td className="col-actions">
+                        <div className="binding-actions">
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            onClick={() => handleManualSync(binding.id)}
+                            disabled={disabled}
+                          >
+                            {actionLabel}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="small-muted">暂无绑定账号，请先完成 BC Ads 授权绑定。</p>
         )}
       </div>
 

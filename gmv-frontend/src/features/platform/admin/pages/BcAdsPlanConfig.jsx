@@ -2,9 +2,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   DEFAULT_PLAN_CONFIG,
+  DEFAULT_SCHEDULE,
   toEditableConfig,
   toApiPayload,
 } from '../../../bc_ads_shop_product/planDefaults.js'
+import { formatStatusLabel, statusTone } from '../../../bc_ads_shop_product/statusUtils.js'
 import {
   fetchPlanConfig,
   savePlanConfig,
@@ -33,6 +35,28 @@ function formatDateTime(value) {
   } catch {
     return ''
   }
+}
+
+const TIMEZONE_OPTIONS = [
+  { value: 'Asia/Shanghai', label: 'GMT+08 · Asia/Shanghai' },
+  { value: 'Asia/Singapore', label: 'GMT+08 · Asia/Singapore' },
+  { value: 'UTC', label: 'UTC' },
+]
+
+function Switch({ checked, disabled, onToggle }) {
+  const cls = ['switch']
+  if (checked) cls.push('on')
+  if (disabled) cls.push('disabled')
+  return (
+    <div className={cls.join(' ')} onClick={() => !disabled && onToggle?.()} role="switch" aria-checked={checked}>
+      <i />
+    </div>
+  )
+}
+
+function ScheduleStatusBadge({ status }) {
+  const tone = statusTone(status)
+  return <span className={`status-badge status-badge--${tone}`}>{formatStatusLabel(status)}</span>
 }
 
 function PlanEditorCard({ index, plan, onChange, onRemove, disableRemove }) {
@@ -195,12 +219,29 @@ export default function BcAdsPlanConfig() {
   }, [])
 
   const planCount = form.plans?.length ?? 0
+  const schedule = form?.schedule ?? DEFAULT_SCHEDULE
+
   const invalidPlans = useMemo(() => {
     if (!Array.isArray(form.plans)) return true
     return form.plans.some((plan) => !plan.title?.trim() || !plan.objective?.trim())
   }, [form.plans])
 
-  const disableSave = saving || invalidPlans
+  const scheduleErrors = useMemo(() => {
+    const errors = []
+    if (schedule.enabled) {
+      if (!schedule.taskName?.trim()) errors.push('计划任务名称不能为空')
+      if (!schedule.cron?.trim()) errors.push('调度表达式不能为空')
+    }
+    return errors
+  }, [schedule.enabled, schedule.taskName, schedule.cron])
+
+  const scheduleLastRunText = formatDateTime(schedule.lastRunAt)
+  const scheduleNextRunText = formatDateTime(schedule.nextRunAt)
+  const isTaskNameInvalid = schedule.enabled && !schedule.taskName?.trim()
+  const isCronInvalid = schedule.enabled && !schedule.cron?.trim()
+
+  const disableSave = saving || invalidPlans || scheduleErrors.length > 0
+  const disablePublish = publishing || invalidPlans || scheduleErrors.length > 0
 
   function updatePlan(index, nextPlan) {
     setForm((prev) => {
@@ -226,6 +267,28 @@ export default function BcAdsPlanConfig() {
       plans.splice(index, 1)
       return { ...prev, plans }
     })
+  }
+
+  function updateSchedule(updater) {
+    setForm((prev) => {
+      const current = { ...DEFAULT_SCHEDULE, ...(prev?.schedule ?? {}) }
+      const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
+      return { ...prev, schedule: next }
+    })
+  }
+
+  function handleScheduleToggle() {
+    updateSchedule((prevSchedule) => ({ ...prevSchedule, enabled: !prevSchedule.enabled }))
+  }
+
+  const handleScheduleField = (field) => (event) => {
+    const value = event?.target?.value ?? ''
+    updateSchedule({ [field]: value })
+  }
+
+  function handleScheduleTimezone(event) {
+    const value = event?.target?.value ?? ''
+    updateSchedule({ timezone: value })
   }
 
   function resetToDefault() {
@@ -297,6 +360,111 @@ export default function BcAdsPlanConfig() {
         )}
       </div>
 
+      <div className="card schedule-card">
+        <div className="schedule-head">
+          <div className="schedule-head__text">
+            <div className="section-title">计划任务调度</div>
+            <p>
+              配置平台侧定时任务，定期触发租户同步「BC Ads 运营计划」模板。
+              建议在夜间或业务低峰时间执行，避免影响实时操作。
+            </p>
+          </div>
+          <div className="schedule-head__toggle">
+            <span className="schedule-head__label">自动调度</span>
+            <Switch checked={schedule.enabled} onToggle={handleScheduleToggle} />
+          </div>
+        </div>
+
+        <p className="small-muted">
+          计划任务通过 Cron 表达式驱动，执行时会调用各租户的计划同步接口。
+          关闭后仅保留手动下发能力。
+        </p>
+
+        {scheduleErrors.length > 0 && (
+          <div className="alert alert--error">
+            {scheduleErrors.join('；')}
+          </div>
+        )}
+
+        <div className="schedule-grid">
+          <label className="form-field">
+            <span className="form-field__label">计划任务名称</span>
+            <input
+              className={`input${isTaskNameInvalid ? ' input--invalid' : ''}`}
+              placeholder="例如：bc-ads-plan-refresh"
+              value={schedule.taskName || ''}
+              onChange={handleScheduleField('taskName')}
+              aria-invalid={isTaskNameInvalid}
+            />
+            <span className="small-muted">用于后台识别与排错，建议保持全局唯一。</span>
+          </label>
+
+          <label className="form-field">
+            <span className="form-field__label">Cron 表达式</span>
+            <input
+              className={`input${isCronInvalid ? ' input--invalid' : ''}`}
+              placeholder="0 3 * * *"
+              value={schedule.cron || ''}
+              onChange={handleScheduleField('cron')}
+              aria-invalid={isCronInvalid}
+            />
+            <span className="small-muted">使用 5 段 Cron 表达式，例如 0 3 * * * 表示每日 03:00 执行。</span>
+          </label>
+
+          <label className="form-field">
+            <span className="form-field__label">执行时区</span>
+            <select className="input" value={schedule.timezone || DEFAULT_SCHEDULE.timezone} onChange={handleScheduleTimezone}>
+              {TIMEZONE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <span className="small-muted">时区会影响 Cron 计算，请与后端调度器保持一致。</span>
+          </label>
+
+          <label className="form-field schedule-grid__notes">
+            <span className="form-field__label">任务说明（选填）</span>
+            <textarea
+              className="input"
+              rows={3}
+              placeholder="例如：凌晨 3 点统一刷新模板，保障次日运营使用最新版本。"
+              value={schedule.description || ''}
+              onChange={handleScheduleField('description')}
+            />
+          </label>
+        </div>
+
+        <div className="schedule-meta">
+          <div className="schedule-meta__item">
+            <span className="schedule-meta__label">任务状态</span>
+            <ScheduleStatusBadge status={schedule.status} />
+          </div>
+          <div className="schedule-meta__item">
+            <span className="schedule-meta__label">时区</span>
+            <span>{schedule.timezone || DEFAULT_SCHEDULE.timezone}</span>
+          </div>
+          {scheduleLastRunText && (
+            <div className="schedule-meta__item">
+              <span className="schedule-meta__label">最近执行</span>
+              <span>{scheduleLastRunText}</span>
+            </div>
+          )}
+          {scheduleNextRunText && (
+            <div className="schedule-meta__item">
+              <span className="schedule-meta__label">下一次执行</span>
+              <span>{scheduleNextRunText}</span>
+            </div>
+          )}
+        </div>
+
+        {!schedule.enabled && (
+          <div className="alert">
+            当前未启用计划任务，租户需要手动同步才能获取最新模板。
+          </div>
+        )}
+      </div>
+
       <div className="card plan-card-wrapper">
         <div className="form-field">
           <span className="form-field__label">手动同步冷却时间（分钟）</span>
@@ -351,7 +519,7 @@ export default function BcAdsPlanConfig() {
             type="button"
             className="btn ghost"
             onClick={handlePublish}
-            disabled={publishing || invalidPlans}
+            disabled={disablePublish}
           >
             {publishing ? '下发中…' : '保存并下发'}
           </button>
