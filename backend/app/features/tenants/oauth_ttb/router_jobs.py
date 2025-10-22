@@ -107,10 +107,11 @@ def get_last_sync(
     workspace_id: int,
     provider: str,
     auth_id: int,
+    response: Response,
+    *,
     kind: str = Query(default="products"),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
-    response: Response,
 ):
     p = _norm_provider(provider)
     job = get_last_sync_job(

@@ -12,6 +12,7 @@ import AdminOnly from '../core/AdminOnly.jsx';
 
 // 通用页面
 import Dashboard from '../pages/Dashboard.jsx';
+import TenantDataOverview from '../features/tenants/pages/TenantDataOverview.jsx';
 import NotFound from '../pages/NotFound.jsx';
 
 // 平台认证
@@ -50,8 +51,9 @@ const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { index: true, element: <Dashboard /> },
+          { index: true, element: <TenantDataOverview /> },
           { path: 'dashboard', element: <Dashboard /> },
+          { path: 'tenant/data-overview', element: <TenantDataOverview /> },
 
           // 平台控制台（仅平台管理员）
           {
