@@ -22,6 +22,7 @@ from app.features.platform.router_companies import router as platform_companies_
 from app.features.platform.router_oauth_apps import router as platform_oauth_apps_router
 from app.features.platform.router_oauth_callback import router as oauth_callback_router
 from app.features.platform.router_tasks import router as platform_tasks_router  # 平台任务触发网关
+from app.features.platform.router_task_configs import router as platform_task_configs_router
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_admin_router)
     app.include_router(platform_companies_router)
     app.include_router(platform_oauth_apps_router)
+    app.include_router(platform_task_configs_router)
     app.include_router(platform_tasks_router)
 
     app.include_router(tenant_users_router)

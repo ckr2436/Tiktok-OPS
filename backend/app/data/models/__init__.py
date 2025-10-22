@@ -11,6 +11,16 @@ from .oauth_ttb import (
     OAuthAccountTTB,
 )
 from .scheduling import TaskCatalog, Schedule, ScheduleRun
+from .platform_tasks import (
+    PlatformTaskCatalog,
+    PlatformTaskConfig,
+    WorkspaceTag,
+    PlatformTaskRun,
+    PlatformTaskRunWorkspace,
+    TenantSyncJob,
+    RateLimitToken,
+    IdempotencyKey,
+)
 
 __all__ = [
     "Base",
@@ -25,4 +35,12 @@ __all__ = [
     "TaskCatalog",
     "Schedule",
     "ScheduleRun",
+    "PlatformTaskCatalog",
+    "PlatformTaskConfig",
+    "WorkspaceTag",
+    "PlatformTaskRun",
+    "PlatformTaskRunWorkspace",
+    "TenantSyncJob",
+    "RateLimitToken",
+    "IdempotencyKey",
 ]
