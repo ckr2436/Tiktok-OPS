@@ -6,7 +6,7 @@ import base64
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from croniter import croniter
@@ -17,13 +17,15 @@ from sqlalchemy import Select, and_, nullslast, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.errors import APIError
+from app.core.errors import APIError, RateLimitExceeded
+from app.core.metrics import get_counter
 from app.data.models.platform_tasks import (
     IdempotencyKey,
     PlatformTaskCatalog,
     PlatformTaskConfig,
     PlatformTaskRun,
     PlatformTaskRunWorkspace,
+    RateLimitToken,
     TenantSyncJob,
     WorkspaceTag,
 )
@@ -52,8 +54,61 @@ class TenantSyncJobView:
     next_allowed_at: Optional[datetime]
 
 
+_RATE_LIMIT_COUNTER = get_counter(
+    "rate_limit_hits_total",
+    "Rate limit hits by scope",
+    labelnames=("scope",),
+)
+
+
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC)
+
+
+def _enforce_rate_limit(
+    db: Session,
+    scope: str,
+    token_key: str,
+    *,
+    window_seconds: int,
+    metric_scope: str,
+) -> tuple[int, int, int]:
+    now = _utc_now()
+    stmt = (
+        select(RateLimitToken)
+        .where(RateLimitToken.scope == scope, RateLimitToken.token_key == token_key)
+        .with_for_update()
+    )
+    token = db.scalar(stmt)
+    if token is None:
+        token = RateLimitToken(scope=scope, token_key=token_key)
+        db.add(token)
+
+    if token.next_allowed_at and token.next_allowed_at > now:
+        _RATE_LIMIT_COUNTER.labels(scope=metric_scope).inc()
+        next_allowed = token.next_allowed_at
+        raise RateLimitExceeded(
+            "Too many requests.",
+            next_allowed_at=next_allowed,
+            limit=1,
+            remaining=0,
+            reset_ts=int(next_allowed.timestamp()),
+        )
+
+    token.last_seen_at = now
+    token.next_allowed_at = now + timedelta(seconds=window_seconds)
+    return 1, 0, int(token.next_allowed_at.timestamp())
+
+
+def enforce_schedule_apply_rate_limit(db: Session, task_key: str, actor_id: int) -> tuple[int, int, int]:
+    token_key = f"{task_key}:{actor_id}"
+    return _enforce_rate_limit(
+        db,
+        scope="platform.schedule.apply",
+        token_key=token_key,
+        window_seconds=60,
+        metric_scope="global",
+    )
 
 
 def _isoformat(dt: Optional[datetime]) -> Optional[str]:
@@ -526,6 +581,10 @@ def _idempotency_scope(task_key: str) -> str:
     return f"platform.task_config.{task_key}"
 
 
+def _schedule_apply_scope(task_key: str) -> str:
+    return f"platform.schedule.apply.{task_key}"
+
+
 def update_task_config(
     db: Session,
     task_key: str,
@@ -791,10 +850,39 @@ def list_runs(
     return {"items": items, "next_cursor": next_cursor}
 
 
-def apply_schedule_snapshot(db: Session, task_key: str, *, dry_run: bool = False) -> Dict[str, Any]:
+def apply_schedule_snapshot(
+    db: Session,
+    task_key: str,
+    *,
+    dry_run: bool = False,
+    idempotency_key: Optional[str] = None,
+    payload_hash: Optional[str] = None,
+) -> Dict[str, Any]:
     catalog, config = get_task_config(db, task_key)
     if not config:
         raise APIError("TASK_NOT_FOUND", "task not configured", 404, data={"task_key": task_key})
+
+    if payload_hash is None:
+        payload_hash = _hash_payload({"dry_run": dry_run})
+
+    if idempotency_key:
+        scope = _schedule_apply_scope(task_key)
+        existing = db.scalar(
+            select(IdempotencyKey).where(
+                IdempotencyKey.scope == scope,
+                IdempotencyKey.key == idempotency_key,
+            )
+        )
+        if existing:
+            if existing.payload_hash and existing.payload_hash != payload_hash:
+                raise APIError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "Payload differs for the same Idempotency-Key",
+                    409,
+                    data={"payload_hash": existing.payload_hash},
+                )
+            if existing.response_json:
+                return existing.response_json
 
     targets = config.target_snapshot_workspace_ids or []
     summary = {
@@ -811,6 +899,28 @@ def apply_schedule_snapshot(db: Session, task_key: str, *, dry_run: bool = False
     }
     if dry_run:
         response["dry_run"] = True
+
+    if idempotency_key:
+        scope = _schedule_apply_scope(task_key)
+        entry = db.scalar(
+            select(IdempotencyKey).where(
+                IdempotencyKey.scope == scope,
+                IdempotencyKey.key == idempotency_key,
+            )
+        )
+        if entry:
+            entry.payload_hash = payload_hash
+            entry.response_json = response
+        else:
+            db.add(
+                IdempotencyKey(
+                    scope=scope,
+                    key=idempotency_key,
+                    payload_hash=payload_hash,
+                    response_json=response,
+                )
+            )
+
     return response
 
 

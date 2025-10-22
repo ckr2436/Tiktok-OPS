@@ -28,6 +28,7 @@ from app.features.platform.router_task_configs import router as platform_task_co
 from app.features.tenants.users.router import router as tenant_users_router
 from app.features.tenants.oauth_ttb.router import router as tenant_oauth_ttb_router
 from app.features.tenants.schedules.router import router as tenant_schedules_router  # plan/schedule API
+from app.features.tenants.actions.router import router as tenant_actions_router
 
 # ★ 新增：TTB 同步相关独立路由
 from app.features.tenants.oauth_ttb.router_sync import router as sync_router
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(tenant_users_router)
     app.include_router(tenant_oauth_ttb_router)
     app.include_router(tenant_schedules_router)
+    app.include_router(tenant_actions_router)
 
     # ★ 注册租户级 TTB 同步 API（独立文件，避免 router.py 过胖）
     app.include_router(sync_router)

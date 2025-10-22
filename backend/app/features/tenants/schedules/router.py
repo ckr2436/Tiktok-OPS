@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -14,12 +16,65 @@ from app.core.deps import require_tenant_admin, SessionUser
 from app.core.errors import APIError
 from app.data.db import get_db
 from app.data.models.scheduling import TaskCatalog, Schedule, ScheduleRun
+from app.data.models.platform_tasks import IdempotencyKey
 from app.services.scheduler_catalog import validate_params_or_raise
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants" + "/{workspace_id}/schedules",
     tags=["Tenant / Schedules"],
 )
+
+
+def _hash_idempotency_payload(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _schedule_scope(action: str, workspace_id: int, schedule_id: Optional[int] = None) -> str:
+    scope = f"tenant.schedule.{action}.{workspace_id}"
+    if schedule_id is not None:
+        scope = f"{scope}.{schedule_id}"
+    return scope
+
+
+def _require_idempotency_key(value: Optional[str]) -> str:
+    if not value:
+        raise APIError("INVALID_ARGUMENT", "Idempotency-Key header is required", 400)
+    if len(value) > 256:
+        raise APIError("INVALID_ARGUMENT", "Idempotency-Key too long", 400)
+    return value
+
+
+def _load_idempotency_entry(db: Session, scope: str, key: str) -> IdempotencyKey | None:
+    return db.scalar(
+        select(IdempotencyKey)
+        .where(IdempotencyKey.scope == scope, IdempotencyKey.key == key)
+        .with_for_update()
+    )
+
+
+def _persist_idempotency_entry(
+    db: Session,
+    entry: IdempotencyKey | None,
+    *,
+    scope: str,
+    key: str,
+    payload_hash: str,
+    response: dict[str, Any],
+) -> None:
+    if entry:
+        entry.payload_hash = payload_hash
+        entry.response_json = response
+    else:
+        db.add(
+            IdempotencyKey(
+                scope=scope,
+                key=key,
+                payload_hash=payload_hash,
+                response_json=response,
+            )
+        )
 
 # -------- DTOs --------
 class CatalogItem(BaseModel):
@@ -133,7 +188,26 @@ def create_schedule(
     req: ScheduleCreateReq,
     me: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    idem_key = _require_idempotency_key(idempotency_key)
+    scope = _schedule_scope("create", workspace_id)
+    payload_hash = _hash_idempotency_payload(req.model_dump())
+    entry = _load_idempotency_entry(db, scope, idem_key)
+    if entry:
+        if entry.payload_hash and entry.payload_hash != payload_hash:
+            raise APIError(
+                "IDEMPOTENCY_CONFLICT",
+                "Payload differs for the same Idempotency-Key",
+                409,
+                data={
+                    "payload_hash": entry.payload_hash,
+                    "schedule_id": (entry.response_json or {}).get("id") if entry.response_json else None,
+                },
+            )
+        if entry.response_json:
+            return ScheduleItem(**entry.response_json)
+
     cat = db.scalar(select(TaskCatalog).where(TaskCatalog.task_name == req.task_name, TaskCatalog.is_enabled.is_(True)))
     if not cat or (cat.visibility or "tenant") != "tenant":
         raise APIError("TASK_NOT_ALLOWED", "Task not found or not tenant-visible.", 400)
@@ -170,7 +244,16 @@ def create_schedule(
     )
     db.add(row)
     db.flush()
-    return _to_item(row)
+    item = _to_item(row)
+    _persist_idempotency_entry(
+        db,
+        entry,
+        scope=scope,
+        key=idem_key,
+        payload_hash=payload_hash,
+        response=item.model_dump(),
+    )
+    return item
 
 class SchedulePatchReq(BaseModel):
     params_json: Optional[dict[str, Any]] = None
@@ -189,7 +272,23 @@ def patch_schedule(
     req: SchedulePatchReq,
     me: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    idem_key = _require_idempotency_key(idempotency_key)
+    scope = _schedule_scope("patch", workspace_id, schedule_id)
+    payload_hash = _hash_idempotency_payload(req.model_dump(exclude_none=True))
+    entry = _load_idempotency_entry(db, scope, idem_key)
+    if entry:
+        if entry.payload_hash and entry.payload_hash != payload_hash:
+            raise APIError(
+                "IDEMPOTENCY_CONFLICT",
+                "Payload differs for the same Idempotency-Key",
+                409,
+                data={"payload_hash": entry.payload_hash, "schedule_id": schedule_id},
+            )
+        if entry.response_json:
+            return ScheduleItem(**entry.response_json)
+
     row = db.get(Schedule, int(schedule_id))
     if not row or row.workspace_id != int(workspace_id):
         raise APIError("NOT_FOUND", "Schedule not found.", 404)
@@ -226,7 +325,16 @@ def patch_schedule(
     row.updated_by_user_id = int(me.id)
     db.add(row)
     db.flush()
-    return _to_item(row)
+    item = _to_item(row)
+    _persist_idempotency_entry(
+        db,
+        entry,
+        scope=scope,
+        key=idem_key,
+        payload_hash=payload_hash,
+        response=item.model_dump(),
+    )
+    return item
 
 @router.delete("/{schedule_id}")
 def delete_schedule(
@@ -234,12 +342,37 @@ def delete_schedule(
     schedule_id: int,
     _: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    idem_key = _require_idempotency_key(idempotency_key)
+    scope = _schedule_scope("delete", workspace_id, schedule_id)
+    payload_hash = _hash_idempotency_payload({"schedule_id": schedule_id})
+    entry = _load_idempotency_entry(db, scope, idem_key)
+    if entry:
+        if entry.payload_hash and entry.payload_hash != payload_hash:
+            raise APIError(
+                "IDEMPOTENCY_CONFLICT",
+                "Payload differs for the same Idempotency-Key",
+                409,
+                data={"payload_hash": entry.payload_hash, "schedule_id": schedule_id},
+            )
+        if entry.response_json:
+            return entry.response_json
+
     row = db.get(Schedule, int(schedule_id))
     if not row or row.workspace_id != int(workspace_id):
         raise APIError("NOT_FOUND", "Schedule not found.", 404)
     db.delete(row)
-    return {"ok": True}
+    response = {"ok": True, "schedule_id": schedule_id}
+    _persist_idempotency_entry(
+        db,
+        entry,
+        scope=scope,
+        key=idem_key,
+        payload_hash=payload_hash,
+        response=response,
+    )
+    return response
 
 class RunListItem(BaseModel):
     id: int

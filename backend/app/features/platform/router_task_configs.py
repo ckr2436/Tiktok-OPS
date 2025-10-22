@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, Query
+from datetime import datetime, timezone
+import time
+
+from fastapi import APIRouter, Depends, Header, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import SessionUser, require_platform_admin
+from app.core.errors import APIError, RateLimitExceeded
+from app.core.metrics import get_counter, get_histogram
 from app.data.db import get_db
 from app.services import platform_tasks
 
@@ -15,6 +20,19 @@ from app.services import platform_tasks
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/tasks",
     tags=["Platform / Task Config"],
+)
+
+
+_SCHEDULE_APPLY_COUNTER = get_counter(
+    "platform_schedule_apply_total",
+    "Count of platform schedule apply attempts",
+    labelnames=("task_key", "status"),
+)
+
+_SCHEDULE_APPLY_DURATION = get_histogram(
+    "platform_schedule_apply_duration_seconds",
+    "Latency of platform schedule apply API",
+    labelnames=("task_key",),
 )
 
 
@@ -252,9 +270,46 @@ def list_runs(
 def apply_schedules(
     task_key: str,
     req: ScheduleApplyRequest,
-    _: SessionUser = Depends(require_platform_admin),
+    response: Response,
+    me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> ScheduleApplyResponse:
-    data = platform_tasks.apply_schedule_snapshot(db, task_key, dry_run=req.dry_run)
-    return ScheduleApplyResponse(**data)
+    start = time.perf_counter()
+    status_label = "error"
+
+    try:
+        if not idempotency_key:
+            raise APIError("INVALID_ARGUMENT", "Idempotency-Key header is required", 400)
+
+        limit, remaining, reset_ts = platform_tasks.enforce_schedule_apply_rate_limit(db, task_key, me.id)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
+        next_allowed_iso = (
+            datetime.fromtimestamp(reset_ts, tz=timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        response.headers["X-Next-Allowed-At"] = next_allowed_iso
+
+        data = platform_tasks.apply_schedule_snapshot(
+            db,
+            task_key,
+            dry_run=req.dry_run,
+            idempotency_key=idempotency_key,
+        )
+        status_label = "ok"
+        return ScheduleApplyResponse(**data)
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _SCHEDULE_APPLY_COUNTER.labels(task_key=task_key, status=status_label).inc()
+        _SCHEDULE_APPLY_DURATION.labels(task_key=task_key).observe(duration)
 

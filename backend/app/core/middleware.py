@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import os
 import json
+import uuid
 from typing import List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.types import ASGIApp
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # 改为从 uvicorn 引入
 
 from app.core.config import settings
@@ -40,6 +44,23 @@ def _parse_list_like(value: object) -> List[str]:
             pass
     # 逗号分隔
     return [x.strip() for x in s.split(",") if x.strip()]
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Ensure every request carries an ``X-Request-ID`` for traceability."""
+
+    def __init__(self, app: ASGIApp, header_name: str = "X-Request-ID") -> None:
+        super().__init__(app)
+        self._header_name = header_name
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        request_id = request.headers.get(self._header_name)
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers[self._header_name] = request_id
+        return response
 
 
 def install_middleware(app: FastAPI) -> None:
@@ -94,4 +115,7 @@ def install_middleware(app: FastAPI) -> None:
 
     # 4) 压缩
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+    # 5) Request-ID 透传
+    app.add_middleware(RequestIdMiddleware)
 

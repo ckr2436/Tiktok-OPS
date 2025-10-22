@@ -1,20 +1,37 @@
 # app/features/tenants/oauth_ttb/router_sync.py
 from __future__ import annotations
 
-from typing import Annotated, Optional, List, Dict
+import hashlib
+import json
+import time
+from datetime import datetime, timezone
+from typing import Annotated, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, validator
 
 from app.data.db import get_db
 from sqlalchemy.orm import Session
 
-from app.core.errors import APIError
+from app.core.errors import APIError, RateLimitExceeded
+from app.core.metrics import get_counter, get_histogram
 from app.celery_app import celery_app  # 你现有的入口
-from celery.result import AsyncResult
+
+from app.features.platform.router_tasks import _RATE_LIMIT_COUNTER
 
 
 router = APIRouter(tags=["tenant.tiktok-business.sync"])
+
+_SYNC_COUNTER = get_counter(
+    "tenant_sync_jobs_total",
+    "Count of tenant initiated sync jobs",
+    labelnames=("kind", "status"),
+)
+_SYNC_DURATION = get_histogram(
+    "tenant_sync_job_duration_seconds",
+    "Latency of tenant sync trigger endpoints",
+    labelnames=("kind",),
+)
 
 BASE_PREFIX = "/api/v1/tenants/{workspace_id}/oauth/{provider}/bindings/{auth_id}/sync"
 
@@ -56,40 +73,106 @@ class SyncProductsParams(SyncCommonParams):
 # ---------- 幂等 & 任务登记（Best-effort，Redis 后端可复用） ----------
 def _idempotency_key_required(idem: Optional[str]) -> str:
     if not idem:
-        raise HTTPException(status_code=400, detail="Idempotency-Key header is required")
+        raise APIError("INVALID_ARGUMENT", "Idempotency-Key header is required", status.HTTP_400_BAD_REQUEST)
     if len(idem) > 256:
-        raise HTTPException(status_code=400, detail="Idempotency-Key too long")
+        raise APIError("INVALID_ARGUMENT", "Idempotency-Key too long", status.HTTP_400_BAD_REQUEST)
     return idem
 
 
-def _redis_get_set_task_id(cache_key: str, task_id: Optional[str] = None) -> Optional[str]:
-    """
-    若 Celery backend 是 Redis，则用 setnx 复用同一 key 的 task_id。
-    不是 Redis 时，返回 None。
-    """
+def _redis_client():
     backend = getattr(celery_app, "backend", None)
-    client = getattr(backend, "client", None)
+    return getattr(backend, "client", None)
+
+
+def _load_cached_job(cache_key: str, payload_hash: str) -> Optional[Dict[str, str]]:
+    client = _redis_client()
     if client is None:
         return None
     try:
-        if task_id is None:
-            val = client.get(cache_key)
-            return val.decode("utf-8") if val else None
-        # 写入：仅当不存在时设置（24h）
-        ok = client.set(cache_key, task_id, ex=24 * 3600, nx=True)
-        return task_id if ok else (client.get(cache_key).decode("utf-8") if client.get(cache_key) else None)
+        raw = client.get(cache_key)
+        if not raw:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        data = json.loads(raw)
+        stored_hash = data.get("payload_hash")
+        if stored_hash and stored_hash != payload_hash:
+            raise APIError(
+                "IDEMPOTENCY_CONFLICT",
+                "Payload differs for the same Idempotency-Key",
+                status.HTTP_409_CONFLICT,
+                data={"job_id": data.get("job_id"), "payload_hash": stored_hash},
+            )
+        return data
+    except APIError:
+        raise
     except Exception:
         return None
+
+
+def _store_cached_job(cache_key: str, payload_hash: str, job_id: str) -> Dict[str, str]:
+    client = _redis_client()
+    record = {"job_id": job_id, "payload_hash": payload_hash}
+    if client is None:
+        return record
+    try:
+        value = json.dumps(record, separators=(",", ":"))
+        ok = client.set(cache_key, value, ex=24 * 3600, nx=True)
+        if ok:
+            return record
+        existing = _load_cached_job(cache_key, payload_hash)
+        return existing or record
+    except APIError:
+        raise
+    except Exception:
+        return record
 
 
 def _binding_cache_key(workspace_id: int, auth_id: int, action: str, idem: str) -> str:
     return f"idempotency:ttb:{workspace_id}:{auth_id}:{action}:{idem}"
 
 
+def _rate_limit_binding(workspace_id: int, auth_id: int, kind: str, *, limit: int = 10, window: int = 30) -> tuple[int, int, int]:
+    client = _redis_client()
+    if client is None:
+        reset_ts = int(time.time()) + window
+        return limit, limit, reset_ts
+    key = f"ratelimit:ttb:{workspace_id}:{auth_id}:{kind}"
+    try:
+        current = client.incr(key)
+        client.expire(key, window)
+        ttl = client.ttl(key)
+        ttl = int(ttl) if ttl and int(ttl) > 0 else window
+        reset_ts = int(time.time()) + ttl
+        remaining = max(0, limit - int(current))
+        if int(current) > limit:
+            _RATE_LIMIT_COUNTER.labels(scope="auth").inc()
+            next_allowed = datetime.fromtimestamp(reset_ts, tz=timezone.utc)
+            raise RateLimitExceeded(
+                "Too many requests.",
+                next_allowed_at=next_allowed,
+                limit=limit,
+                remaining=remaining,
+                reset_ts=reset_ts,
+            )
+        return limit, remaining, reset_ts
+    except RateLimitExceeded:
+        raise
+    except Exception:
+        reset_ts = int(time.time()) + window
+        return limit, limit, reset_ts
+
+
+def _hash_payload(payload: Dict[str, object]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 # ---------- 触发器 ----------
 @router.post(f"{BASE_PREFIX}/bc")
 def trigger_bc_sync(
-    request: Request,
+    response: Response,
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -99,35 +182,67 @@ def trigger_bc_sync(
     _norm_provider(provider)
     key = _idempotency_key_required(idempotency_key)
     cache_key = _binding_cache_key(workspace_id, auth_id, "bc", key)
+    payload_hash = _hash_payload({
+        "workspace_id": workspace_id,
+        "auth_id": auth_id,
+        "params": params.dict(),
+    })
 
-    # 幂等复用（后端为 Redis 时生效）
-    existed = _redis_get_set_task_id(cache_key)
-    if existed:
-        return {"job_id": existed, "accepted": True, "action": "bc", "idempotent": True}
+    start = time.perf_counter()
+    status_label = "error"
 
-    task = celery_app.send_task(
-        "tenant.ttb.sync.bc",
-        kwargs={
-            "workspace_id": workspace_id,
-            "auth_id": auth_id,
-            "params": params.dict(),
-        },
-        queue="gmv.tasks.events",
-    )
-    _redis_get_set_task_id(cache_key, task.id)
+    try:
+        limit, remaining, reset_ts = _rate_limit_binding(workspace_id, auth_id, "bc")
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
 
-    return {
-        "job_id": task.id,
-        "accepted": True,
-        "action": "bc",
-        "plan": {"mode": params.mode, "limit": params.limit or None},
-        "hints": {"rate_limit": "10/s"},
-    }
+        cached = _load_cached_job(cache_key, payload_hash)
+        if cached:
+            status_label = "idempotent"
+            return {
+                "job_id": cached.get("job_id"),
+                "accepted": True,
+                "action": "bc",
+                "idempotent": True,
+                "plan": {"mode": params.mode, "limit": params.limit or None},
+                "hints": {"rate_limit": "10/s"},
+            }
+
+        task = celery_app.send_task(
+            "tenant.ttb.sync.bc",
+            kwargs={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "params": params.dict(),
+            },
+            queue="gmv.tasks.events",
+        )
+        _store_cached_job(cache_key, payload_hash, task.id)
+
+        status_label = "accepted"
+        return {
+            "job_id": task.id,
+            "accepted": True,
+            "action": "bc",
+            "plan": {"mode": params.mode, "limit": params.limit or None},
+            "hints": {"rate_limit": "10/s"},
+        }
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _SYNC_COUNTER.labels(kind="bc", status=status_label).inc()
+        _SYNC_DURATION.labels(kind="bc").observe(duration)
 
 
 @router.post(f"{BASE_PREFIX}/advertisers")
 def trigger_advertisers_sync(
-    request: Request,
+    response: Response,
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -137,27 +252,60 @@ def trigger_advertisers_sync(
     _norm_provider(provider)
     key = _idempotency_key_required(idempotency_key)
     cache_key = _binding_cache_key(workspace_id, auth_id, "advertisers", key)
+    payload_hash = _hash_payload({
+        "workspace_id": workspace_id,
+        "auth_id": auth_id,
+        "params": params.dict(),
+    })
 
-    existed = _redis_get_set_task_id(cache_key)
-    if existed:
-        return {"job_id": existed, "accepted": True, "action": "advertisers", "idempotent": True}
+    start = time.perf_counter()
+    status_label = "error"
 
-    task = celery_app.send_task(
-        "tenant.ttb.sync.advertisers",
-        kwargs={
-            "workspace_id": workspace_id,
-            "auth_id": auth_id,
-            "params": params.dict(),
-        },
-        queue="gmv.tasks.events",
-    )
-    _redis_get_set_task_id(cache_key, task.id)
-    return {"job_id": task.id, "accepted": True, "action": "advertisers", "plan": {"mode": params.mode}}
+    try:
+        limit, remaining, reset_ts = _rate_limit_binding(workspace_id, auth_id, "advertisers")
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
+
+        cached = _load_cached_job(cache_key, payload_hash)
+        if cached:
+            status_label = "idempotent"
+            return {
+                "job_id": cached.get("job_id"),
+                "accepted": True,
+                "action": "advertisers",
+                "idempotent": True,
+                "plan": {"mode": params.mode},
+            }
+
+        task = celery_app.send_task(
+            "tenant.ttb.sync.advertisers",
+            kwargs={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "params": params.dict(),
+            },
+            queue="gmv.tasks.events",
+        )
+        _store_cached_job(cache_key, payload_hash, task.id)
+
+        status_label = "accepted"
+        return {"job_id": task.id, "accepted": True, "action": "advertisers", "plan": {"mode": params.mode}}
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _SYNC_COUNTER.labels(kind="advertisers", status=status_label).inc()
+        _SYNC_DURATION.labels(kind="advertisers").observe(duration)
 
 
 @router.post(f"{BASE_PREFIX}/shops")
 def trigger_shops_sync(
-    request: Request,
+    response: Response,
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -170,33 +318,66 @@ def trigger_shops_sync(
     key = _idempotency_key_required(idempotency_key)
     cache_key = _binding_cache_key(workspace_id, auth_id, "shops", key)
 
-    existed = _redis_get_set_task_id(cache_key)
-    if existed:
-        return {"job_id": existed, "accepted": True, "action": "shops", "idempotent": True}
-
-    # 过滤器透传（当前任务内部未做基于广告主的过滤抓取；如需按广告主筛，将在 0005 扩展）
-    filt = {}
+    filt: Dict[str, object] = {}
     if advertiser_id:
         filt["advertiser_id"] = advertiser_id
     if advertiser_ids:
         filt["advertiser_ids"] = [x.strip() for x in advertiser_ids.split(",") if x.strip()]
 
-    task = celery_app.send_task(
-        "tenant.ttb.sync.shops",
-        kwargs={
-            "workspace_id": workspace_id,
-            "auth_id": auth_id,
-            "params": {**params.dict(), **filt},
-        },
-        queue="gmv.tasks.events",
-    )
-    _redis_get_set_task_id(cache_key, task.id)
-    return {"job_id": task.id, "accepted": True, "action": "shops", "plan": {"mode": params.mode}}
+    payload_hash = _hash_payload({
+        "workspace_id": workspace_id,
+        "auth_id": auth_id,
+        "params": {**params.dict(), **filt},
+    })
+
+    start = time.perf_counter()
+    status_label = "error"
+
+    try:
+        limit, remaining, reset_ts = _rate_limit_binding(workspace_id, auth_id, "shops")
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
+
+        cached = _load_cached_job(cache_key, payload_hash)
+        if cached:
+            status_label = "idempotent"
+            return {
+                "job_id": cached.get("job_id"),
+                "accepted": True,
+                "action": "shops",
+                "idempotent": True,
+                "plan": {"mode": params.mode},
+            }
+
+        task = celery_app.send_task(
+            "tenant.ttb.sync.shops",
+            kwargs={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "params": {**params.dict(), **filt},
+            },
+            queue="gmv.tasks.events",
+        )
+        _store_cached_job(cache_key, payload_hash, task.id)
+
+        status_label = "accepted"
+        return {"job_id": task.id, "accepted": True, "action": "shops", "plan": {"mode": params.mode}}
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _SYNC_COUNTER.labels(kind="shops", status=status_label).inc()
+        _SYNC_DURATION.labels(kind="shops").observe(duration)
 
 
 @router.post(f"{BASE_PREFIX}/products")
 def trigger_products_sync(
-    request: Request,
+    response: Response,
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -209,25 +390,59 @@ def trigger_products_sync(
     key = _idempotency_key_required(idempotency_key)
     cache_key = _binding_cache_key(workspace_id, auth_id, "products", key)
 
-    existed = _redis_get_set_task_id(cache_key)
-    if existed:
-        return {"job_id": existed, "accepted": True, "action": "products", "idempotent": True}
-
-    filt = {}
+    filt: Dict[str, object] = {}
     if shop_id:
         filt["shop_id"] = shop_id
     if shop_ids:
         filt["shop_ids"] = [x.strip() for x in shop_ids.split(",") if x.strip()]
 
-    task = celery_app.send_task(
-        "tenant.ttb.sync.products",
-        kwargs={
-            "workspace_id": workspace_id,
-            "auth_id": auth_id,
-            "params": {**params.dict(), **filt},
-        },
-        queue="gmv.tasks.events",
-    )
-    _redis_get_set_task_id(cache_key, task.id)
-    return {"job_id": task.id, "accepted": True, "action": "products", "plan": {"mode": params.mode}}
+    payload_hash = _hash_payload({
+        "workspace_id": workspace_id,
+        "auth_id": auth_id,
+        "params": {**params.dict(), **filt},
+    })
+
+    start = time.perf_counter()
+    status_label = "error"
+
+    try:
+        limit, remaining, reset_ts = _rate_limit_binding(workspace_id, auth_id, "products")
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
+
+        cached = _load_cached_job(cache_key, payload_hash)
+        if cached:
+            status_label = "idempotent"
+            return {
+                "job_id": cached.get("job_id"),
+                "accepted": True,
+                "action": "products",
+                "idempotent": True,
+                "plan": {"mode": params.mode},
+            }
+
+        task = celery_app.send_task(
+            "tenant.ttb.sync.products",
+            kwargs={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "params": {**params.dict(), **filt},
+            },
+            queue="gmv.tasks.events",
+        )
+        _store_cached_job(cache_key, payload_hash, task.id)
+
+        status_label = "accepted"
+        return {"job_id": task.id, "accepted": True, "action": "products", "plan": {"mode": params.mode}}
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _SYNC_COUNTER.labels(kind="products", status=status_label).inc()
+        _SYNC_DURATION.labels(kind="products").observe(duration)
 

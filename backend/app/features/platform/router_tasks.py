@@ -6,20 +6,17 @@ import time
 import uuid
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Callable
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, Literal, Optional, Tuple
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Header,
-    Request,
-)
+from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import BaseModel, Field
 import redis
 
 from app.core.config import settings
-from app.core.errors import APIError
-from app.core.deps import SessionUser, require_session
+from app.core.errors import APIError, RateLimitExceeded
+from app.core.deps import SessionUser, require_platform_admin
+from app.core.metrics import get_counter, get_histogram
 from app.celery_app import celery_app  # ✅ 统一使用 app.celery_app
 from celery.result import AsyncResult
 
@@ -57,14 +54,18 @@ class ActionSpec:
     task_name: str
     # 任务投递队列
     queue: str
+    # 动作域
+    domain: Literal["platform", "tenant"] = "platform"
     # 是否需要 workspace（绝大多数需要）
     require_workspace: bool = True
+    # 并发粒度
+    concurrency_scope: Literal["global", "workspace"] = "workspace"
     # 是否允许被取消
     cancellable: bool = True
     # 每租户并发上限（平台侧约束；None 表示用默认）
     max_concurrency_per_workspace: Optional[int] = None
     # 速率限制（window 秒内 max_calls 次）
-    rate_limit_window_seconds: int = 60
+    rate_limit_window_sec: int = 60
     rate_limit_max_calls: int = 60
 
 
@@ -73,15 +74,33 @@ class ActionSpec:
 _ACTIONS: Dict[str, ActionSpec] = {
     "oauth_health_check": ActionSpec(
         name="oauth_health_check",
-        task_name="tenant.oauth.health_check",                 # ✅ 和 app/tasks/oauth_tasks.py 对齐
-        queue=settings.CELERY_TASK_DEFAULT_QUEUE,              # 用你的默认队列
+        task_name="tenant.oauth.health_check",  # ✅ 和 app/tasks/oauth_tasks.py 对齐
+        queue=settings.CELERY_TASK_DEFAULT_QUEUE,  # 用你的默认队列
+        domain="tenant",
         require_workspace=True,
+        concurrency_scope="workspace",
         cancellable=False,
         max_concurrency_per_workspace=1,
-        rate_limit_window_seconds=30,
+        rate_limit_window_sec=30,
         rate_limit_max_calls=10,
     ),
 }
+
+_TASK_TRIGGER_COUNTER = get_counter(
+    "platform_task_runs_total",
+    "Count of platform task trigger attempts",
+    labelnames=("task_key", "status"),
+)
+_TASK_TRIGGER_DURATION = get_histogram(
+    "platform_task_run_duration_seconds",
+    "Latency of platform task trigger API",
+    labelnames=("task_key",),
+)
+_RATE_LIMIT_COUNTER = get_counter(
+    "rate_limit_hits_total",
+    "Rate limit hits by scope",
+    labelnames=("scope",),
+)
 
 
 def _require_action(action: str) -> ActionSpec:
@@ -210,16 +229,11 @@ def _resolve_workspace_id(
 # 并发控制（每租户每动作）
 # =========================
 def _check_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
-    max_c = spec.max_concurrency_per_workspace
-    if max_c is None:
-        # 默认并发上限（平台总控）
-        max_c = 3
-    if not spec.require_workspace:
-        # 平台级无租户的动作：用统一分组键
-        workspace_id = 0
+    max_c = spec.max_concurrency_per_workspace or 3
+    scope_id = workspace_id if spec.concurrency_scope == "workspace" else 0
 
     r = _get_redis()
-    key = _conc_key(spec.name, workspace_id)
+    key = _conc_key(spec.name, scope_id)
     # 使用计数器 + TTL 作为软并发（硬并发 Worker 侧再控）
     current = r.get(key)
     cur = int(current) if current and str(current).isdigit() else 0
@@ -228,10 +242,9 @@ def _check_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
 
 
 def _inc_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
-    if not spec.require_workspace:
-        workspace_id = 0
+    scope_id = workspace_id if spec.concurrency_scope == "workspace" else 0
     r = _get_redis()
-    key = _conc_key(spec.name, workspace_id)
+    key = _conc_key(spec.name, scope_id)
     # 计数 + 安全 TTL（10分钟无心跳则回落；Worker 结束时会主动减）
     pipe = r.pipeline()
     pipe.incr(key, 1)
@@ -240,10 +253,9 @@ def _inc_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
 
 
 def _dec_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
-    if not spec.require_workspace:
-        workspace_id = 0
+    scope_id = workspace_id if spec.concurrency_scope == "workspace" else 0
     r = _get_redis()
-    key = _conc_key(spec.name, workspace_id)
+    key = _conc_key(spec.name, scope_id)
     try:
         with r.pipeline() as p:
             p.watch(key)
@@ -265,11 +277,10 @@ def _dec_concurrency(spec: ActionSpec, workspace_id: Optional[int]) -> None:
 # 速率限制（用户维度 + 租户维度）
 # =========================
 def _rate_limit(spec: ActionSpec, workspace_id: Optional[int], user_id: int) -> Tuple[int, int, int]:
-    """
-    返回 (limit, remaining, reset_ts)
-    """
+    """返回 (limit, remaining, reset_ts) 或在命中频控时抛出异常。"""
+
     r = _get_redis()
-    window = int(spec.rate_limit_window_seconds)
+    window = int(spec.rate_limit_window_sec)
     limit = int(spec.rate_limit_max_calls)
     key = _rate_key(spec.name, workspace_id if spec.require_workspace else 0, user_id)
 
@@ -279,10 +290,21 @@ def _rate_limit(spec: ActionSpec, workspace_id: Optional[int], user_id: int) -> 
         cur, _ = p.execute()
 
     cur = int(cur)
+    ttl = r.ttl(key)
+    ttl = int(ttl) if ttl and int(ttl) > 0 else window
+    reset_ts = int(time.time()) + ttl
     remaining = max(0, limit - cur)
-    reset_ts = int(time.time()) + (r.ttl(key) or window)
+
     if cur > limit:
-        raise APIError("RATE_LIMITED", "Too many requests.", 429)
+        _RATE_LIMIT_COUNTER.labels(scope="auth").inc()
+        next_allowed = datetime.fromtimestamp(reset_ts, tz=timezone.utc)
+        raise RateLimitExceeded(
+            "Too many requests.",
+            next_allowed_at=next_allowed,
+            limit=limit,
+            remaining=remaining,
+            reset_ts=reset_ts,
+        )
 
     return (limit, remaining, reset_ts)
 
@@ -294,28 +316,47 @@ def _idempotent_get_or_set(
     action: str,
     workspace_id: Optional[int],
     idempotency_key: str,
+    payload_hash: str,
     response_payload_factory: Callable[[], Dict[str, Any]],
     ttl_seconds: int = 24 * 3600,
 ) -> Dict[str, Any]:
-    """
-    命中幂等：直接返回旧响应
-    未命中：调用工厂生成响应并写入
-    """
+    """缓存幂等响应，并在请求负载不一致时抛出冲突。"""
+
     r = _get_redis()
     key = _idem_key(action, workspace_id if workspace_id is not None else 0, idempotency_key)
     old = r.get(key)
     if old:
         try:
             data = json.loads(old)
-            data["_idempotent_hit"] = True
-            return data
+            stored_payload = data.get("payload") if isinstance(data, dict) else None
+            stored_hash = data.get("payload_hash") if isinstance(data, dict) else None
+            if stored_payload is None and isinstance(data, dict):
+                stored_hash = data.get("_payload_hash")
+                stored_payload = {k: v for k, v in data.items() if k != "_payload_hash"}
+            if stored_hash and stored_hash != payload_hash:
+                raise APIError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "Payload differs for the same Idempotency-Key.",
+                    409,
+                    data={
+                        "task_id": (stored_payload or {}).get("task_id"),
+                        "payload_hash": stored_hash,
+                    },
+                )
+            payload = stored_payload or data
+            if isinstance(payload, dict):
+                payload = dict(payload)
+                payload["_idempotent_hit"] = True
+                return payload
+        except APIError:
+            raise
         except Exception:
-            # 旧值坏了，继续走新生成
+            # 存档损坏则继续生成
             pass
 
     new_payload = response_payload_factory()
-    # 持久化
-    r.set(key, json.dumps(new_payload, separators=(",", ":"), ensure_ascii=False), ex=ttl_seconds)
+    stored = {"payload": new_payload, "payload_hash": payload_hash}
+    r.set(key, json.dumps(stored, separators=(",", ":"), ensure_ascii=False), ex=ttl_seconds)
     return new_payload
 
 
@@ -403,98 +444,138 @@ def trigger_task(
     action: str,
     req: TriggerRequest,
     http: Request,
-    me: SessionUser = Depends(require_session),
+    response: Response,
+    me: SessionUser = Depends(require_platform_admin),
     path_workspace_id: Optional[int] = None,
     idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     x_request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ):
     spec = _require_action(action)
+    if spec.domain != "platform":
+        raise APIError("FORBIDDEN", "Action not available on the platform domain.", 403)
 
-    # workspace 解析与权限
-    wid = _resolve_workspace_id(path_workspace_id, req.workspace_id, me, require_workspace=spec.require_workspace)
+    request_id = getattr(http.state, "request_id", None) or x_request_id
 
-    # 限流（用户维度 + 租户维度）
-    limit, remaining, reset_ts = _rate_limit(spec, wid, me.id)
+    start = time.perf_counter()
+    status_label = "error"
+    wid: Optional[int] = None
 
-    # 并发检测（软限）
-    _check_concurrency(spec, wid)
+    try:
+        # workspace 解析与权限
+        wid = _resolve_workspace_id(path_workspace_id, req.workspace_id, me, require_workspace=spec.require_workspace)
 
-    # 幂等键（强制要求）
-    if not idempotency_key:
-        raise APIError("INVALID_ARGUMENT", "Missing Idempotency-Key header.", 400)
+        # 限流（用户维度 + 租户维度）
+        limit, remaining, reset_ts = _rate_limit(spec, wid, me.id)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_ts)
+        next_allowed_iso = datetime.fromtimestamp(reset_ts, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        response.headers["X-Next-Allowed-At"] = next_allowed_iso
 
-    def _produce() -> Dict[str, Any]:
-        # 真正投递
-        task_id, meta = _enqueue_task(
-            spec=spec,
-            workspace_id=wid,
-            args=req.args or {},
-            priority=(req.priority or "normal"),
-            delay_seconds=int(req.delay_seconds or 0),
-            request_id=x_request_id,
+        # 并发检测（软限）
+        _check_concurrency(spec, wid)
+
+        # 幂等键（强制要求）
+        if not idempotency_key:
+            raise APIError("INVALID_ARGUMENT", "Missing Idempotency-Key header.", 400)
+
+        payload_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "workspace_id": wid,
+                    "args": req.args or {},
+                    "priority": req.priority or "normal",
+                    "delay_seconds": int(req.delay_seconds or 0),
+                    "dedupe_key": req.dedupe_key or None,
+                    "action": spec.name,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        def _produce() -> Dict[str, Any]:
+            task_id, meta = _enqueue_task(
+                spec=spec,
+                workspace_id=wid,
+                args=req.args or {},
+                priority=(req.priority or "normal"),
+                delay_seconds=int(req.delay_seconds or 0),
+                request_id=request_id,
+            )
+
+            if log_event:
+                try:
+                    args_digest = hashlib.sha1(
+                        json.dumps(req.args or {}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                    ).hexdigest()
+                    log_event(  # type: ignore[misc]
+                        db=None,
+                        action="task.trigger",
+                        resource_type="task",
+                        resource_id=None,
+                        actor_user_id=int(me.id),
+                        actor_workspace_id=(int(wid) if wid is not None else None),
+                        actor_ip=http.client.host if http.client else None,
+                        user_agent=http.headers.get("user-agent"),
+                        details={
+                            "action": spec.name,
+                            "task_id": task_id,
+                            "args_sha1": args_digest,
+                            "priority": req.priority or "normal",
+                            "delay_seconds": int(req.delay_seconds or 0),
+                            "idempotency_key_sha1": hashlib.sha1((idempotency_key or "").encode()).hexdigest(),
+                            "x_request_id": request_id,
+                            "status": "ENQUEUED",
+                            "affected_workspaces": [int(wid)] if wid is not None else [],
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return {
+                "task_id": task_id,
+                "action": spec.name,
+                "workspace_id": (int(wid) if wid is not None else None),
+                "state": "ENQUEUED",
+                "enqueued_at": meta["enqueued_at"],
+                "status_url": f"{settings.API_PREFIX}/platform/tasks/{task_id}",
+            }
+
+        payload = _idempotent_get_or_set(
+            action=spec.name,
+            workspace_id=(int(wid) if wid is not None else None),
+            idempotency_key=idempotency_key,
+            payload_hash=payload_fingerprint,
+            response_payload_factory=_produce,
+            ttl_seconds=24 * 3600,
         )
 
-        # 审计（可选，有就记；没有就忽略）
-        if log_event:
-            try:
-                args_digest = hashlib.sha1(
-                    json.dumps(req.args or {}, sort_keys=True, separators=(",", ":")).encode("utf-8")
-                ).hexdigest()
-                log_event(  # type: ignore[misc]
-                    db=None,  # 你的 log_event 若必须 DB，这里可在依赖里接个 db；为保持与你现状兼容先传 None
-                    action="task.trigger",
-                    resource_type="task",
-                    resource_id=None,
-                    actor_user_id=int(me.id),
-                    actor_workspace_id=(int(wid) if wid is not None else None),
-                    actor_ip=http.client.host if http.client else None,
-                    user_agent=http.headers.get("user-agent"),
-                    details={
-                        "action": spec.name,
-                        "task_id": task_id,
-                        "args_sha1": args_digest,
-                        "priority": req.priority or "normal",
-                        "delay_seconds": int(req.delay_seconds or 0),
-                        "idempotency_key_sha1": hashlib.sha1((idempotency_key or "").encode()).hexdigest(),
-                        "x_request_id": x_request_id,
-                    },
-                )
-            except Exception:
-                pass
-
-        resp = {
-            "task_id": task_id,
-            "action": spec.name,
-            "workspace_id": (int(wid) if wid is not None else None),
-            "state": "ENQUEUED",
-            "enqueued_at": meta["enqueued_at"],
-            "status_url": f"{settings.API_PREFIX}/platform/tasks/{task_id}",
+        payload["_rate"] = {
+            "limit": limit,
+            "remaining": remaining,
+            "reset": reset_ts,
         }
-        return resp
 
-    payload = _idempotent_get_or_set(
-        action=spec.name,
-        workspace_id=(int(wid) if wid is not None else None),
-        idempotency_key=idempotency_key,
-        response_payload_factory=_produce,
-        ttl_seconds=24 * 3600,
-    )
+        status_label = "idempotent" if payload.get("_idempotent_hit") else "accepted"
 
-    # 附带限流响应体（如需写响应头，可改签名加 Response）
-    payload["_rate"] = {
-        "limit": limit,
-        "remaining": remaining,
-        "reset": reset_ts,
-    }
-
-    # 只返回 schema 里定义的字段
-    return TriggerResponse(**{k: v for k, v in payload.items() if k in TriggerResponse.model_fields})
+        return TriggerResponse(**{k: v for k, v in payload.items() if k in TriggerResponse.model_fields})
+    except RateLimitExceeded:
+        status_label = "rate_limited"
+        raise
+    except APIError as exc:
+        status_label = exc.code.lower()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        _TASK_TRIGGER_COUNTER.labels(task_key=spec.name, status=status_label).inc()
+        _TASK_TRIGGER_DURATION.labels(task_key=spec.name).observe(duration)
 
 
 @router.get("/{task_id}", response_model=TaskStateResponse)
 def get_task_state(
     task_id: str,
-    me: SessionUser = Depends(require_session),
+    me: SessionUser = Depends(require_platform_admin),
 ):
     r = _get_redis()
     meta_raw = r.get(_meta_key(task_id))
@@ -537,7 +618,7 @@ def get_task_state(
 @router.post("/{task_id}/cancel", response_model=CancelResponse)
 def cancel_task(
     task_id: str,
-    me: SessionUser = Depends(require_session),
+    me: SessionUser = Depends(require_platform_admin),
 ):
     # 查 meta，判断是否允许取消 & 所属校验
     r = _get_redis()

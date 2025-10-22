@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -108,6 +110,7 @@ def get_last_sync(
     kind: str = Query(default="products"),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
+    response: Response,
 ):
     p = _norm_provider(provider)
     job = get_last_sync_job(
@@ -119,6 +122,14 @@ def get_last_sync(
     )
     if not job:
         raise APIError("JOB_NOT_FOUND", "No sync history", 404)
+
+    next_allowed_iso = _iso(job.next_allowed_at)
+    if response is not None and next_allowed_iso:
+        response.headers["X-Next-Allowed-At"] = next_allowed_iso
+        if job.next_allowed_at:
+            retry_after = int((job.next_allowed_at - datetime.now(timezone.utc)).total_seconds())
+            if retry_after > 0:
+                response.headers["Retry-After"] = str(retry_after)
 
     return SyncLastResponse(
         status=job.status,
