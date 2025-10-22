@@ -1,0 +1,5 @@
+
+# third-party vendor artifacts
+cryptography*/
+email_validator*/
+*.dist-info/
