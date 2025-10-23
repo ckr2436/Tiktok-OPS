@@ -322,5 +322,5 @@ async function pollLastUntilSettled({
 const syncApi = { listBindings, getLast, postSync, pollLastUntilSettled }
 
 export default syncApi
-export { listBindings, getLast, postSync, pollLastUntilSettled, normalizeBindingList }
+export { listBindings, getLast, postSync, pollLastUntilSettled, normalizeBindingList, DEFAULT_DELAYS }
 

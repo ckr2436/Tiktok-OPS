@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from './testUtils.js'
 import reducer, {
   setBindingGraph,
   toggleBcSelection,
@@ -39,6 +39,16 @@ describe('tenantDataSlice selection cascade', () => {
     const next = reducer(initial, toggleAdvSelection('adv-1'))
     expect(next.selectedAdvIds).toEqual([])
     expect(next.selectedShopIds).toEqual([])
+  })
+
+  it('restores advertisers and shops when BC toggled back on', () => {
+    const initial = reducer(undefined, setBindingGraph(graphPayload))
+    const cleared = reducer(initial, toggleBcSelection('bc-1'))
+    expect(cleared.selectedBCIds).toEqual([])
+    const restored = reducer(cleared, toggleBcSelection('bc-1'))
+    expect(restored.selectedBCIds).toEqual(['bc-1'])
+    expect(restored.selectedAdvIds).toEqual(['adv-1'])
+    expect(restored.selectedShopIds).toEqual(['shop-1'])
   })
 })
 

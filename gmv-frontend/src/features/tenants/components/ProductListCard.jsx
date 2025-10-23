@@ -1,18 +1,12 @@
 import { useMemo } from 'react'
 import StatusBadge from './StatusBadge.jsx'
-import CooldownTimer from './CooldownTimer.jsx'
+import CooldownTimer from './CooldownTimer.js'
+import { filterProducts } from '../utils/productFilters.js'
 
 function formatAbsolute(value) {
   if (!value) return '--'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString()
-}
-
-function isChangeType(value) {
-  const type = String(value || '').toLowerCase()
-  return ['added', 'add', 'create', 'created', 'removed', 'delete', 'deleted', 'updated', 'update'].some(
-    (token) => type.includes(token)
-  )
 }
 
 function deriveProductState(product) {
@@ -108,23 +102,17 @@ export default function ProductListCard({
     [scopeAuthIds, lastByAuth]
   )
 
-  const filteredProducts = useMemo(() => {
-    let base = products
-    if (selectedShopIds.length > 0) {
-      base = base.filter((p) => selectedShopIds.includes(p.shopId))
-    } else if (selectedAdvIds.length > 0) {
-      base = base.filter((p) => selectedAdvIds.includes(p.advertiserId))
-    } else if (selectedBCIds.length > 0) {
-      base = base.filter((p) => selectedBCIds.includes(p.bcId))
-    }
-    if (filters.onlyChanges) {
-      base = base.filter((p) => isChangeType(p.changeType) || isChangeType(p.status))
-    }
-    if (filters.onlyFailed) {
-      base = base.filter((p) => String(p.status || '').toLowerCase().includes('fail'))
-    }
-    return base
-  }, [products, selectedShopIds, selectedAdvIds, selectedBCIds, filters])
+  const filteredProducts = useMemo(
+    () =>
+      filterProducts({
+        products,
+        selectedShopIds,
+        selectedAdvIds,
+        selectedBCIds,
+        filters,
+      }),
+    [products, selectedShopIds, selectedAdvIds, selectedBCIds, filters]
+  )
 
   const cooldownUntil = useMemo(() => {
     if (!scopeAuthIds.length) return null

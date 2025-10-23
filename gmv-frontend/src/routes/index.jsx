@@ -39,6 +39,11 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
 
+export const tenantPrimaryRoutes = [
+  { index: true, element: <Dashboard /> },
+  { path: 'tenant/data-overview', element: <TenantDataOverview /> },
+]
+
 const router = createBrowserRouter([
   // 登录页
   { path: '/login', element: <MinimalLayout><LoginView /></MinimalLayout> },
@@ -51,9 +56,7 @@ const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { index: true, element: <TenantDataOverview /> },
-          { path: 'dashboard', element: <Dashboard /> },
-          { path: 'tenant/data-overview', element: <TenantDataOverview /> },
+          ...tenantPrimaryRoutes,
 
           // 平台控制台（仅平台管理员）
           {

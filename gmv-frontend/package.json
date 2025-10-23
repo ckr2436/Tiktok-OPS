@@ -8,7 +8,7 @@
     "build": "vite build",
     "postbuild": "cp src/pages/terms.md public/terms.md && cp src/pages/privacy.md public/privacy.md",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "node scripts/run-tests.js"
   },
   "engines": {
     "node": ">=18.18.0"

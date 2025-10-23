@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from './testUtils.js'
 import http from '../core/httpClient.js'
 import httpReducer, { recordHeaders } from '../store/httpSlice.js'
 

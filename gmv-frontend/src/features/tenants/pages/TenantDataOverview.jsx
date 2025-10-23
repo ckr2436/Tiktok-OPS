@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppDispatch, useAppSelector } from '../../../app/hooks.js'
-import BCSelectCard from '../components/BCSelectCard.jsx'
-import AdvSelectCard from '../components/AdvSelectCard.jsx'
-import ShopSelectCard from '../components/ShopSelectCard.jsx'
 import ProductListCard from '../components/ProductListCard.jsx'
+import TenantSyncDashboardCard from '../components/TenantSyncDashboardCard.jsx'
 import LastResultDialog from '../components/LastResultDialog.jsx'
 import syncApi from '../services/syncApi.js'
 import {
@@ -49,7 +47,7 @@ function useToasts() {
   return { toasts, push, remove }
 }
 
-function normalizeHeaders(input) {
+export function normalizeHeaders(input) {
   const map = {}
   if (!input) return map
   if (typeof input.forEach === 'function') {
@@ -70,7 +68,7 @@ function normalizeHeaders(input) {
   return map
 }
 
-function extractErrorCode(err) {
+export function extractErrorCode(err) {
   return (
     err?.payload?.error?.code ||
     err?.payload?.code ||
@@ -95,7 +93,7 @@ function formatCountdown(headers) {
   return '稍后'
 }
 
-function aggregateDiffTotals(results) {
+export function aggregateDiffTotals(results) {
   const totals = { added: 0, removed: 0, updated: 0 }
   if (!results) return totals
   Object.values(results).forEach((entry) => {
@@ -466,83 +464,73 @@ export default function TenantDataOverview() {
     dispatch(setSelectedShopIds([]))
   }, [dispatch])
 
+  const productScopeAuthIds = useMemo(
+    () => getAuthIdsForDomain('products'),
+    [getAuthIdsForDomain]
+  )
+
   return (
     <div className="data-page">
       {loadingBindings && <div className="loading-overlay">数据加载中…</div>}
 
-      <BCSelectCard
-        items={bcList}
-        selectedIds={selectedBCIds}
-        onToggle={(id) => dispatch(toggleBcSelection(id))}
-        onSelectAll={() => dispatch(selectAllBcs())}
-        onClear={() => dispatch(clearBcSelection())}
-        showOnlySelected={showOnlySelected.bc}
-        onToggleShowOnlySelected={() => dispatch(toggleShowOnlySelected('bc'))}
-        onSync={() => handleSync('bc')}
-        loading={loading.bc === 'pending'}
-        cooldownUntil={bcCooldownUntil}
-        cooldownMap={bcCooldownMap}
-        lastByAuth={lastByDomainOrEmpty('bc')}
-        onShowDetail={(authId) => handleOpenDialog('bc', authId)}
-        syncDisabled={!selectedBCIds.length}
-      />
+      <div className="data-page__cards">
+        <TenantSyncDashboardCard
+          bcList={bcList}
+          advertisers={advertisers}
+          shops={shops}
+          bcMap={bcMap}
+          advMap={advMap}
+          selectedBCIds={selectedBCIds}
+          selectedAdvIds={selectedAdvIds}
+          selectedShopIds={selectedShopIds}
+          showOnlySelected={showOnlySelected}
+          onToggleBc={(id) => dispatch(toggleBcSelection(id))}
+          onToggleAdv={(id) => dispatch(toggleAdvSelection(id))}
+          onToggleShop={(id) => dispatch(toggleShopSelection(id))}
+          onSelectAllBcs={() => dispatch(selectAllBcs())}
+          onClearBcs={() => dispatch(clearBcSelection())}
+          onSelectAllAdvs={handleAdvSelectAll}
+          onClearAdvs={handleAdvClear}
+          onSelectAllShops={handleShopSelectAll}
+          onClearShops={handleShopClear}
+          onToggleShowOnlyBc={() => dispatch(toggleShowOnlySelected('bc'))}
+          onToggleShowOnlyAdv={() => dispatch(toggleAdvListFilter())}
+          onToggleShowOnlyShop={() => dispatch(toggleShopListFilter())}
+          onSyncBc={() => handleSync('bc')}
+          onSyncAdvertisers={() => handleSync('advertisers')}
+          onSyncShops={() => handleSync('shops')}
+          loadingBc={loading.bc === 'pending'}
+          loadingAdvertisers={loading.advertisers === 'pending'}
+          loadingShops={loading.shops === 'pending'}
+          cooldownBc={bcCooldownUntil}
+          cooldownAdvertisers={advCooldownUntil}
+          cooldownShops={shopCooldownUntil}
+          cooldownMapBc={bcCooldownMap}
+          cooldownMapAdvertisers={advCooldownMap}
+          cooldownMapShops={shopCooldownMap}
+          lastByDomain={lastByDomain}
+          onShowDetail={handleOpenDialog}
+          getAuthIdsForDomain={getAuthIdsForDomain}
+          onRefreshLast={loadLastForAuths}
+        />
 
-      <AdvSelectCard
-        items={advertisers}
-        selectedIds={selectedAdvIds}
-        activeBcIds={selectedBCIds}
-        bcMap={bcMap}
-        onToggle={(id) => dispatch(toggleAdvSelection(id))}
-        onSelectAll={handleAdvSelectAll}
-        onClear={handleAdvClear}
-        showOnlySelected={showOnlySelected.advertisers}
-        onToggleShowOnlySelected={() => dispatch(toggleAdvListFilter())}
-        onSync={() => handleSync('advertisers')}
-        loading={loading.advertisers === 'pending'}
-        cooldownUntil={advCooldownUntil}
-        cooldownMap={advCooldownMap}
-        lastByAuth={lastByDomainOrEmpty('advertisers')}
-        onShowDetail={(authId) => handleOpenDialog('advertisers', authId)}
-        syncDisabled={!selectedBCIds.length}
-      />
-
-      <ShopSelectCard
-        items={shops}
-        selectedIds={selectedShopIds}
-        activeBcIds={selectedBCIds}
-        activeAdvIds={selectedAdvIds}
-        bcMap={bcMap}
-        advMap={advMap}
-        onToggle={(id) => dispatch(toggleShopSelection(id))}
-        onSelectAll={handleShopSelectAll}
-        onClear={handleShopClear}
-        showOnlySelected={showOnlySelected.shops}
-        onToggleShowOnlySelected={() => dispatch(toggleShopListFilter())}
-        onSync={() => handleSync('shops')}
-        loading={loading.shops === 'pending'}
-        cooldownUntil={shopCooldownUntil}
-        cooldownMap={shopCooldownMap}
-        lastByAuth={lastByDomainOrEmpty('shops')}
-        onShowDetail={(authId) => handleOpenDialog('shops', authId)}
-        syncDisabled={!selectedBCIds.length}
-      />
-
-      <ProductListCard
-        products={products}
-        shopMap={shopMap}
-        advMap={advMap}
-        bcMap={bcMap}
-        selectedShopIds={selectedShopIds}
-        selectedAdvIds={selectedAdvIds}
-        selectedBCIds={selectedBCIds}
-        filters={productFilters}
-        onToggleFilter={(key) => dispatch(setProductFilter({ key }))}
-        onSync={() => handleSync('products')}
-        loading={loading.products === 'pending'}
-        cooldownMap={productCooldownMap}
-        lastByAuth={lastByDomainOrEmpty('products')}
-        syncDisabled={!getAuthIdsForDomain('products').length}
-      />
+        <ProductListCard
+          products={products}
+          shopMap={shopMap}
+          advMap={advMap}
+          bcMap={bcMap}
+          selectedShopIds={selectedShopIds}
+          selectedAdvIds={selectedAdvIds}
+          selectedBCIds={selectedBCIds}
+          filters={productFilters}
+          onToggleFilter={(key) => dispatch(setProductFilter({ key }))}
+          onSync={() => handleSync('products')}
+          loading={loading.products === 'pending'}
+          cooldownMap={productCooldownMap}
+          lastByAuth={lastByDomainOrEmpty('products')}
+          syncDisabled={!productScopeAuthIds.length}
+        />
+      </div>
 
       {dialogState.open && (
         <LastResultDialog

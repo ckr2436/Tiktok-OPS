@@ -1,6 +1,6 @@
 import clsx from 'classnames'
 import StatusBadge from './StatusBadge.jsx'
-import CooldownTimer from './CooldownTimer.jsx'
+import CooldownTimer from './CooldownTimer.js'
 
 function DiffRow({ diff }) {
   if (!diff) return null
