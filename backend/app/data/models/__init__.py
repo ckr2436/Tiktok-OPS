@@ -11,6 +11,13 @@ from .oauth_ttb import (
     OAuthAccountTTB,
 )
 from .scheduling import TaskCatalog, Schedule, ScheduleRun
+from .providers import (
+    PlatformProvider,
+    PlatformPolicy,
+    PlatformPolicyItem,
+    PolicyMode,
+    PolicyDomain,
+)
 
 __all__ = [
     "Base",
@@ -25,4 +32,9 @@ __all__ = [
     "TaskCatalog",
     "Schedule",
     "ScheduleRun",
+    "PlatformProvider",
+    "PlatformPolicy",
+    "PlatformPolicyItem",
+    "PolicyMode",
+    "PolicyDomain",
 ]

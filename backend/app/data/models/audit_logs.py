@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import String, JSON, text, ForeignKey, Index
+from sqlalchemy import Integer, String, JSON, text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import BigInteger as _BigInteger
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
@@ -11,11 +11,16 @@ from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME  # ← 关键
 from app.data.db import Base
 
 # 通用 BigInt + MySQL 无符号 BIGINT 变体
-UBigInt = _BigInteger().with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+UBigInt = (
+    _BigInteger()
+    .with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+    .with_variant(Integer(), "sqlite")
+)
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
 
