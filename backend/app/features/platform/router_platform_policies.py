@@ -1,445 +1,465 @@
-"""Admin APIs for platform providers and policies."""
+"""Admin APIs for managing platform policies."""
 
 from __future__ import annotations
 
-from typing import List
+import logging
+import re
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import SessionUser, require_platform_admin
 from app.core.errors import APIError
 from app.data.db import get_db
-from app.data.models.providers import (
-    PlatformPolicy,
-    PlatformPolicyItem,
-    PlatformProvider,
-    PolicyDomain,
-    PolicyMode,
-)
-from app.data.models.workspaces import Workspace
+from app.data.models.providers import PlatformPolicy, PlatformProvider, PolicyMode
 from app.services.audit import log_event
 from app.services.providers.base import registry
 
 
-router = APIRouter(prefix="/api/admin", tags=["Platform / Providers"])
+logger = logging.getLogger("gmv.platform.policies")
+router = APIRouter(prefix="/api/admin/platform/policies", tags=["Platform"])
+
+_DOMAIN_PATTERN = re.compile(
+    r"^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
 
 
-class ProviderUpsertRequest(BaseModel):
-    key: str = Field(min_length=1, max_length=64)
-    display_name: str | None = Field(default=None, max_length=128)
-    is_enabled: bool = True
-
-
-class ProviderResponse(BaseModel):
-    id: int
-    key: str
-    display_name: str
-    is_enabled: bool
-    created_at: str
-    updated_at: str
-
-
-def _provider_to_response(provider: PlatformProvider) -> ProviderResponse:
-    return ProviderResponse(
-        id=int(provider.id),
-        key=provider.key,
-        display_name=provider.display_name,
-        is_enabled=bool(provider.is_enabled),
-        created_at=provider.created_at.isoformat(timespec="microseconds"),
-        updated_at=provider.updated_at.isoformat(timespec="microseconds"),
-    )
-
-
-@router.get("/providers", response_model=List[ProviderResponse])
-def list_providers(
-    _: SessionUser = Depends(require_platform_admin),
-    db: Session = Depends(get_db),
-) -> List[ProviderResponse]:
-    providers = db.scalars(select(PlatformProvider).order_by(PlatformProvider.key)).all()
-    return [_provider_to_response(p) for p in providers]
-
-
-@router.post("/providers", response_model=ProviderResponse)
-def upsert_provider(
-    req: ProviderUpsertRequest,
-    http: Request,
-    me: SessionUser = Depends(require_platform_admin),
-    db: Session = Depends(get_db),
-) -> ProviderResponse:
-    normalized_key = req.key.strip().lower()
-    if not normalized_key:
-        raise APIError("INVALID_ARGUMENT", "Provider key must not be empty.", 400)
-
-    try:
-        provider_impl = registry.get(normalized_key)
-    except KeyError:
-        raise APIError("UNKNOWN_PROVIDER", f"Provider '{req.key}' is not registered.", 400)
-
-    provider = db.scalar(select(PlatformProvider).where(PlatformProvider.key == normalized_key))
-    created = False
-    if provider is None:
-        provider = PlatformProvider(
-            key=normalized_key,
-            display_name=req.display_name or provider_impl.display_name(),
-            is_enabled=req.is_enabled,
-        )
-        created = True
-    else:
-        if req.display_name is not None:
-            provider.display_name = req.display_name
-        provider.is_enabled = req.is_enabled
-
-    db.add(provider)
-    try:
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        existing = db.scalar(select(PlatformProvider).where(PlatformProvider.key == normalized_key))
-        if existing is None:
-            raise APIError("PROVIDER_SAVE_FAILED", "Unable to save provider.", 500) from exc
-        provider = existing
-        created = False
-        if req.display_name is not None:
-            provider.display_name = req.display_name
-        provider.is_enabled = req.is_enabled
-        db.add(provider)
-        db.flush()
-
-    log_event(
-        db,
-        action="platform.provider.create" if created else "platform.provider.update",
-        resource_type="platform_provider",
-        resource_id=int(provider.id),
-        actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=None,
-        details={
-            "key": provider.key,
-            "display_name": provider.display_name,
-            "is_enabled": bool(provider.is_enabled),
-        },
-    )
-
-    return _provider_to_response(provider)
-
-
-class PolicyBase(BaseModel):
-    provider_key: str = Field(min_length=1, max_length=64)
-    workspace_id: int | None = Field(default=None, ge=1)
-    mode: PolicyMode
-    is_enabled: bool = True
-    description: str | None = Field(default=None, max_length=512)
-
-
-class PolicyCreateRequest(PolicyBase):
-    pass
-
-
-class PolicyUpdateRequest(BaseModel):
-    mode: PolicyMode | None = None
-    is_enabled: bool | None = None
-    description: str | None = Field(default=None, max_length=512)
-
-
-class PolicyItemRequest(BaseModel):
-    domain: PolicyDomain
-    item_id: str = Field(min_length=1, max_length=128)
-
-
-class PolicyItemResponse(BaseModel):
-    id: int
-    domain: PolicyDomain
-    item_id: str
+class ProviderOption(BaseModel):
+    key: str = Field(description="Provider registry key")
+    name: str = Field(description="Display name")
+    is_enabled: bool = Field(description="Whether provider is active")
 
 
 class PolicyResponse(BaseModel):
     id: int
     provider_key: str
-    workspace_id: int | None
     mode: PolicyMode
+    domain: str
     is_enabled: bool
     description: str | None
-    created_by_user_id: int | None
-    updated_by_user_id: int | None
     created_at: str
     updated_at: str
-    items: List[PolicyItemResponse]
+
+
+class PolicyPage(BaseModel):
+    items: list[PolicyResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class PolicyCreateRequest(BaseModel):
+    provider_key: str = Field(min_length=1, max_length=64)
+    mode: PolicyMode
+    domain: str = Field(min_length=1, max_length=255)
+    is_enabled: bool = True
+    description: str | None = Field(default=None, max_length=512)
+
+
+class PolicyUpdateRequest(BaseModel):
+    mode: PolicyMode | None = None
+    domain: str | None = Field(default=None, min_length=1, max_length=255)
+    is_enabled: bool | None = None
+    description: str | None = Field(default=None, max_length=512)
+
+
+class PolicyToggleRequest(BaseModel):
+    is_enabled: bool
 
 
 def _normalize_provider_key(key: str) -> str:
     return key.strip().lower()
 
 
+def _normalize_domain(domain: str) -> str:
+    normalized = domain.strip().lower()
+    if not normalized:
+        raise APIError("INVALID_DOMAIN", "Domain must not be empty.", status.HTTP_400_BAD_REQUEST)
+    if len(normalized) > 255:
+        raise APIError("INVALID_DOMAIN", "Domain is too long.", status.HTTP_400_BAD_REQUEST)
+    if not _DOMAIN_PATTERN.match(normalized):
+        raise APIError(
+            "INVALID_DOMAIN",
+            "Domain must be a valid hostname (supporting optional wildcard prefix).",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    return normalized
+
+
+def _normalize_description(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def _ensure_provider(db: Session, key: str) -> PlatformProvider:
-    provider = db.scalar(select(PlatformProvider).where(PlatformProvider.key == key))
+    provider = db.scalar(
+        select(PlatformProvider).where(PlatformProvider.key == key)
+    )
     if provider is None:
-        raise APIError("PROVIDER_NOT_FOUND", "Provider not found.", 404)
+        try:
+            registry.get(key)
+        except KeyError as exc:
+            raise APIError(
+                "PROVIDER_NOT_FOUND",
+                f"Provider '{key}' is not registered.",
+                status.HTTP_404_NOT_FOUND,
+            ) from exc
+        raise APIError(
+            "PROVIDER_NOT_CONFIGURED",
+            f"Provider '{key}' is not configured in the platform.",
+            status.HTTP_404_NOT_FOUND,
+        )
     return provider
-
-
-def _ensure_workspace(db: Session, workspace_id: int | None) -> None:
-    if workspace_id is None:
-        return
-    ws = db.get(Workspace, int(workspace_id))
-    if ws is None:
-        raise APIError("WORKSPACE_NOT_FOUND", "Workspace not found.", 404)
 
 
 def _policy_to_response(policy: PlatformPolicy) -> PolicyResponse:
     return PolicyResponse(
         id=int(policy.id),
         provider_key=policy.provider_key,
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
         mode=PolicyMode(policy.mode),
+        domain=str(policy.domain or ""),
         is_enabled=bool(policy.is_enabled),
         description=policy.description,
-        created_by_user_id=int(policy.created_by_user_id) if policy.created_by_user_id is not None else None,
-        updated_by_user_id=int(policy.updated_by_user_id) if policy.updated_by_user_id is not None else None,
         created_at=policy.created_at.isoformat(timespec="microseconds"),
         updated_at=policy.updated_at.isoformat(timespec="microseconds"),
-        items=[
-            PolicyItemResponse(id=int(item.id), domain=PolicyDomain(item.domain), item_id=item.item_id)
-            for item in sorted(policy.items, key=lambda x: (x.domain, x.item_id))
-        ],
     )
 
 
-def _policy_query(base: Select[tuple[PlatformPolicy]]) -> Select[tuple[PlatformPolicy]]:
-    return base.options(selectinload(PlatformPolicy.items)).order_by(PlatformPolicy.id)
+def _policy_snapshot(policy: PlatformPolicy) -> dict[str, Any]:
+    return {
+        "id": int(policy.id),
+        "provider_key": policy.provider_key,
+        "mode": PolicyMode(policy.mode).value,
+        "domain": policy.domain,
+        "is_enabled": bool(policy.is_enabled),
+        "description": policy.description,
+        "created_at": policy.created_at.isoformat(timespec="microseconds"),
+        "updated_at": policy.updated_at.isoformat(timespec="microseconds"),
+    }
 
 
-@router.get("/policies", response_model=List[PolicyResponse])
-def list_policies(
-    provider_key: str | None = Query(default=None, max_length=64),
-    workspace_id: int | None = Query(default=None, ge=1),
-    mode: PolicyMode | None = Query(default=None),
-    is_enabled: bool | None = Query(default=None),
+def _request_id(request: Request) -> str | None:
+    return request.headers.get("x-request-id") or request.headers.get("x-requestid")
+
+
+def _apply_policy_filters(
+    base: Select[tuple[PlatformPolicy]],
+    *,
+    provider_key: str | None,
+    mode: PolicyMode | None,
+    domain: str | None,
+    enabled: bool | None,
+) -> Select[tuple[PlatformPolicy]]:
+    conditions = []
+    if provider_key:
+        conditions.append(PlatformPolicy.provider_key == provider_key)
+    if mode is not None:
+        conditions.append(PlatformPolicy.mode == mode.value)
+    if domain:
+        like_pattern = f"%{domain.lower()}%"
+        conditions.append(func.lower(PlatformPolicy.domain).like(like_pattern))
+    if enabled is not None:
+        conditions.append(PlatformPolicy.is_enabled.is_(enabled))
+
+    if conditions:
+        base = base.where(and_(*conditions))
+    return base
+
+
+def _parse_enabled_filter(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "enabled", "yes"}:
+        return True
+    if normalized in {"false", "0", "disabled", "no"}:
+        return False
+    raise APIError("INVALID_ENABLED_FILTER", "Invalid enabled filter value.")
+
+
+@router.get(
+    "/providers",
+    response_model=list[ProviderOption],
+    summary="List registered platform policy providers",
+)
+def list_providers(
     _: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
-) -> List[PolicyResponse]:
-    stmt = _policy_query(select(PlatformPolicy))
+) -> list[ProviderOption]:
+    providers = db.scalars(
+        select(PlatformProvider).order_by(PlatformProvider.display_name)
+    ).all()
+    result = [
+        ProviderOption(
+            key=p.key,
+            name=p.display_name,
+            is_enabled=bool(p.is_enabled),
+        )
+        for p in providers
+    ]
+    if not result:
+        # fallback to registry so UI still shows options even if DB is empty
+        for provider in registry.list():
+            result.append(
+                ProviderOption(
+                    key=provider.key(),
+                    name=provider.display_name(),
+                    is_enabled=True,
+                )
+            )
+    return result
 
-    if provider_key:
-        stmt = stmt.where(PlatformPolicy.provider_key == _normalize_provider_key(provider_key))
-    if workspace_id is not None:
-        stmt = stmt.where(PlatformPolicy.workspace_id == int(workspace_id))
-    if mode is not None:
-        stmt = stmt.where(PlatformPolicy.mode == mode.value)
-    if is_enabled is not None:
-        stmt = stmt.where(PlatformPolicy.is_enabled.is_(bool(is_enabled)))
 
-    policies = db.scalars(stmt).all()
-    return [_policy_to_response(p) for p in policies]
+@router.get(
+    "",
+    response_model=PolicyPage,
+    summary="List platform policies",
+)
+def list_policies(
+    provider_key: str | None = Query(default=None, max_length=64),
+    mode: PolicyMode | None = Query(default=None),
+    domain: str | None = Query(default=None, max_length=255),
+    enabled: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> PolicyPage:
+    normalized_key = _normalize_provider_key(provider_key) if provider_key else None
+    enabled_filter = _parse_enabled_filter(enabled)
+    domain_filter = domain.strip().lower() if domain else None
+
+    base_stmt = select(PlatformPolicy).options(joinedload(PlatformPolicy.provider))
+    base_stmt = _apply_policy_filters(
+        base_stmt,
+        provider_key=normalized_key,
+        mode=mode,
+        domain=domain_filter,
+        enabled=enabled_filter,
+    )
+
+    count_stmt = _apply_policy_filters(
+        select(func.count()).select_from(PlatformPolicy),
+        provider_key=normalized_key,
+        mode=mode,
+        domain=domain_filter,
+        enabled=enabled_filter,
+    )
+    total = int(db.scalar(count_stmt) or 0)
+
+    offset = (page - 1) * page_size
+    items_stmt = base_stmt.order_by(PlatformPolicy.updated_at.desc()).offset(offset).limit(page_size)
+    policies = db.scalars(items_stmt).all()
+
+    return PolicyPage(
+        items=[_policy_to_response(policy) for policy in policies],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
-@router.post("/policies", response_model=PolicyResponse)
+@router.post(
+    "",
+    response_model=PolicyResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a platform policy",
+)
 def create_policy(
     req: PolicyCreateRequest,
-    http: Request,
+    request: Request,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
     provider_key = _normalize_provider_key(req.provider_key)
     _ensure_provider(db, provider_key)
-    _ensure_workspace(db, req.workspace_id)
+    domain = _normalize_domain(req.domain)
 
     policy = PlatformPolicy(
         provider_key=provider_key,
-        workspace_id=int(req.workspace_id) if req.workspace_id is not None else None,
         mode=req.mode.value,
+        domain=domain,
         is_enabled=req.is_enabled,
-        description=req.description,
+        description=_normalize_description(req.description),
         created_by_user_id=int(me.id),
         updated_by_user_id=int(me.id),
     )
     db.add(policy)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:  # pragma: no cover - handled in tests
+        raise APIError(
+            "POLICY_EXISTS",
+            "A policy with the same provider, mode and domain already exists.",
+            status.HTTP_409_CONFLICT,
+        ) from exc
 
+    db.refresh(policy)
+    new_snapshot = _policy_snapshot(policy)
     log_event(
         db,
-        action="platform.policy.create",
+        action="policy.create",
         resource_type="platform_policy",
         resource_id=int(policy.id),
         actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
-        details={
-            "provider_key": policy.provider_key,
-            "mode": policy.mode,
-            "is_enabled": bool(policy.is_enabled),
-        },
+        actor_workspace_id=int(me.workspace_id) if me.workspace_id else None,
+        actor_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        workspace_id=None,
+        details={"old": None, "new": new_snapshot},
     )
-
-    db.refresh(policy)
+    logger.info(
+        "policy.create",
+        extra={"policy_id": int(policy.id), "request_id": _request_id(request)},
+    )
     return _policy_to_response(policy)
 
 
-@router.patch("/policies/{policy_id}", response_model=PolicyResponse)
+@router.patch(
+    "/{policy_id}",
+    response_model=PolicyResponse,
+    summary="Update a platform policy",
+)
 def update_policy(
     policy_id: int,
     req: PolicyUpdateRequest,
-    http: Request,
+    request: Request,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
     policy = db.get(PlatformPolicy, int(policy_id))
     if policy is None:
-        raise APIError("POLICY_NOT_FOUND", "Policy not found.", 404)
+        raise APIError("POLICY_NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
+
+    old_snapshot = _policy_snapshot(policy)
 
     if req.mode is not None:
         policy.mode = req.mode.value
+    if req.domain is not None:
+        policy.domain = _normalize_domain(req.domain)
     if req.is_enabled is not None:
         policy.is_enabled = req.is_enabled
     if req.description is not None:
-        policy.description = req.description
+        policy.description = _normalize_description(req.description)
 
     policy.updated_by_user_id = int(me.id)
     db.add(policy)
-    db.flush()
-
-    log_event(
-        db,
-        action="platform.policy.update",
-        resource_type="platform_policy",
-        resource_id=int(policy.id),
-        actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
-        details={
-            "mode": policy.mode,
-            "is_enabled": bool(policy.is_enabled),
-            "description": policy.description,
-        },
-    )
-
-    db.refresh(policy)
-    return _policy_to_response(policy)
-
-
-@router.delete("/policies/{policy_id}")
-def delete_policy(
-    policy_id: int,
-    http: Request,
-    me: SessionUser = Depends(require_platform_admin),
-    db: Session = Depends(get_db),
-) -> dict[str, bool]:
-    policy = db.get(PlatformPolicy, int(policy_id))
-    if policy is None:
-        raise APIError("POLICY_NOT_FOUND", "Policy not found.", 404)
-
-    log_event(
-        db,
-        action="platform.policy.delete",
-        resource_type="platform_policy",
-        resource_id=int(policy.id),
-        actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
-        details={"provider_key": policy.provider_key},
-    )
-
-    db.delete(policy)
-    return {"ok": True}
-
-
-@router.post("/policies/{policy_id}/items", response_model=PolicyItemResponse)
-def add_policy_item(
-    policy_id: int,
-    req: PolicyItemRequest,
-    http: Request,
-    me: SessionUser = Depends(require_platform_admin),
-    db: Session = Depends(get_db),
-) -> PolicyItemResponse:
-    policy = db.get(PlatformPolicy, int(policy_id))
-    if policy is None:
-        raise APIError("POLICY_NOT_FOUND", "Policy not found.", 404)
-
-    item = PlatformPolicyItem(
-        policy_id=int(policy.id),
-        domain=req.domain.value,
-        item_id=req.item_id,
-    )
-
-    db.add(item)
     try:
         db.flush()
     except IntegrityError as exc:
-        raise APIError("POLICY_ITEM_EXISTS", "Policy item already exists.", 409) from exc
+        raise APIError(
+            "POLICY_EXISTS",
+            "A policy with the same provider, mode and domain already exists.",
+            status.HTTP_409_CONFLICT,
+        ) from exc
 
-    policy.updated_by_user_id = int(me.id)
-    db.add(policy)
+    db.refresh(policy)
+    new_snapshot = _policy_snapshot(policy)
 
     log_event(
         db,
-        action="platform.policy_item.create",
-        resource_type="platform_policy_item",
-        resource_id=int(item.id),
+        action="policy.update",
+        resource_type="platform_policy",
+        resource_id=int(policy.id),
         actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
-        details={
-            "policy_id": int(policy.id),
-            "domain": item.domain,
-            "item_id": item.item_id,
-        },
+        actor_workspace_id=int(me.workspace_id) if me.workspace_id else None,
+        actor_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        workspace_id=None,
+        details={"old": old_snapshot, "new": new_snapshot},
     )
+    logger.info(
+        "policy.update",
+        extra={"policy_id": int(policy.id), "request_id": _request_id(request)},
+    )
+    return _policy_to_response(policy)
 
-    return PolicyItemResponse(id=int(item.id), domain=PolicyDomain(item.domain), item_id=item.item_id)
 
-
-@router.delete("/policies/{policy_id}/items/{item_id}")
-def delete_policy_item(
+@router.post(
+    "/{policy_id}/toggle",
+    response_model=PolicyResponse,
+    summary="Toggle policy enabled state",
+)
+def toggle_policy(
     policy_id: int,
-    item_id: str,
-    http: Request,
+    req: PolicyToggleRequest,
+    request: Request,
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> PolicyResponse:
+    policy = db.get(PlatformPolicy, int(policy_id))
+    if policy is None:
+        raise APIError("POLICY_NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
+
+    if bool(policy.is_enabled) == bool(req.is_enabled):
+        return _policy_to_response(policy)
+
+    old_snapshot = _policy_snapshot(policy)
+    policy.is_enabled = req.is_enabled
+    policy.updated_by_user_id = int(me.id)
+    db.add(policy)
+    db.flush()
+    db.refresh(policy)
+    new_snapshot = _policy_snapshot(policy)
+
+    log_event(
+        db,
+        action="policy.toggle",
+        resource_type="platform_policy",
+        resource_id=int(policy.id),
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id) if me.workspace_id else None,
+        actor_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        workspace_id=None,
+        details={"old": old_snapshot, "new": new_snapshot},
+    )
+    logger.info(
+        "policy.toggle",
+        extra={"policy_id": int(policy.id), "request_id": _request_id(request)},
+    )
+    return _policy_to_response(policy)
+
+
+@router.delete(
+    "/{policy_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a platform policy",
+)
+def delete_policy(
+    policy_id: int,
+    request: Request,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
     policy = db.get(PlatformPolicy, int(policy_id))
     if policy is None:
-        raise APIError("POLICY_NOT_FOUND", "Policy not found.", 404)
+        raise APIError("POLICY_NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
 
-    item = db.scalar(
-        select(PlatformPolicyItem).where(
-            PlatformPolicyItem.policy_id == int(policy.id),
-            PlatformPolicyItem.item_id == item_id,
-        )
-    )
-    if item is None:
-        raise APIError("POLICY_ITEM_NOT_FOUND", "Policy item not found.", 404)
-
+    snapshot = _policy_snapshot(policy)
     log_event(
         db,
-        action="platform.policy_item.delete",
-        resource_type="platform_policy_item",
-        resource_id=int(item.id),
+        action="policy.delete",
+        resource_type="platform_policy",
+        resource_id=int(policy.id),
         actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=http.client.host if http.client else None,
-        user_agent=http.headers.get("user-agent"),
-        workspace_id=int(policy.workspace_id) if policy.workspace_id is not None else None,
-        details={
-            "policy_id": int(policy.id),
-            "item_id": item.item_id,
-        },
+        actor_workspace_id=int(me.workspace_id) if me.workspace_id else None,
+        actor_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        workspace_id=None,
+        details={"old": snapshot, "new": None},
+    )
+    logger.info(
+        "policy.delete",
+        extra={"policy_id": int(policy.id), "request_id": _request_id(request)},
     )
 
-    db.delete(item)
-    policy.updated_by_user_id = int(me.id)
-    db.add(policy)
+    db.delete(policy)
+    db.flush()
     return {"ok": True}
-

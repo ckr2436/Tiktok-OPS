@@ -74,6 +74,12 @@ class PlatformPolicy(Base):
     __table_args__ = (
         Index("idx_policies_provider_enabled", "provider_key", "is_enabled"),
         Index("idx_policies_workspace_enabled", "workspace_id", "is_enabled"),
+        UniqueConstraint(
+            "provider_key",
+            "mode",
+            "domain",
+            name="uq_platform_policy_provider_mode_domain",
+        ),
         {"sqlite_autoincrement": True},
     )
 
@@ -89,6 +95,7 @@ class PlatformPolicy(Base):
         nullable=True,
     )
     mode: Mapped[str] = mapped_column(SAEnum(PolicyMode, name="ttb_policy_mode"), nullable=False)
+    domain: Mapped[str | None] = mapped_column(String(255), default=None)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     description: Mapped[str | None] = mapped_column(Text, default=None)
     created_by_user_id: Mapped[int | None] = mapped_column(

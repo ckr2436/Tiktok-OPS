@@ -24,6 +24,7 @@ import TenantCreate from '../features/platform/tenants/pages/TenantCreate.jsx';
 
 // 平台管理员 · API 文档
 import ApiDocsView from '../features/platform/admin/pages/ApiDocsView.jsx';
+import PlatformPolicies from '../features/platform/admin/pages/PlatformPolicies.jsx';
 // 平台管理员 · 列表页
 import AdminList from '../features/platform/admin/pages/AdminList.jsx';
 // 平台管理员 · OAuth Provider Apps
@@ -62,6 +63,7 @@ const router = createBrowserRouter([
               { path: 'admins', element: <AdminList /> },
               { path: 'tenants', element: <TenantList /> },
               { path: 'tenants/create', element: <TenantCreate /> },
+              { path: 'policies', element: <PlatformPolicies /> },
               { path: 'apis', element: <ApiDocsView /> },
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
             ],
