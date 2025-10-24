@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "postbuild": "cp src/pages/terms.md public/terms.md && cp src/pages/privacy.md public/privacy.md",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node ./scripts/run-vitest.mjs"
   },
   "engines": {
     "node": ">=18.18.0"
@@ -23,7 +24,12 @@
     "react-router-dom": "7.9.3"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.2.0",
+    "@testing-library/user-event": "14.5.2",
     "@vitejs/plugin-react": "5.0.4",
-    "vite": "7.1.9"
+    "jsdom": "26.0.0",
+    "vite": "7.1.9",
+    "vitest": "2.1.8"
   }
 }

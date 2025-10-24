@@ -22,6 +22,7 @@ from app.features.platform.router_companies import router as platform_companies_
 from app.features.platform.router_oauth_apps import router as platform_oauth_apps_router
 from app.features.platform.router_oauth_callback import router as oauth_callback_router
 from app.features.platform.router_tasks import router as platform_tasks_router  # 平台任务触发网关
+from app.features.platform.router_platform_policies import router as platform_policies_router
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -33,6 +34,8 @@ from app.features.tenants.oauth_ttb.router_sync import router as sync_router
 from app.features.tenants.oauth_ttb.router_sync_all import router as sync_all_router
 from app.features.tenants.oauth_ttb.router_cursors import router as cursors_router
 from app.features.tenants.oauth_ttb.router_jobs import router as jobs_router
+
+from app.providers import load_builtin_providers
 
 
 def create_app() -> FastAPI:
@@ -48,6 +51,9 @@ def create_app() -> FastAPI:
     install_middleware(app)
     install_exception_handlers(app)
 
+    # Providers
+    load_builtin_providers()
+
     # Routers
     app.include_router(healthz_router)
 
@@ -56,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_companies_router)
     app.include_router(platform_oauth_apps_router)
     app.include_router(platform_tasks_router)
+    app.include_router(platform_policies_router)
 
     app.include_router(tenant_users_router)
     app.include_router(tenant_oauth_ttb_router)
