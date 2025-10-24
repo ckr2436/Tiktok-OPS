@@ -44,7 +44,20 @@ def _dt6():
 
 def upgrade() -> None:
     bind = op.get_bind()
-    is_mysql = bind.dialect.name == "mysql"
+    dialect_name = bind.dialect.name
+    is_mysql = dialect_name == "mysql"
+    is_sqlite = dialect_name == "sqlite"
+
+    def _create_unique(name: str, table: str, columns: list[str]) -> None:
+        if is_sqlite:
+            cols = ", ".join(f'"{col}"' for col in columns)
+            op.execute(
+                sa.text(
+                    f'CREATE UNIQUE INDEX IF NOT EXISTS "{name}" ON "{table}" ({cols})'
+                )
+            )
+        else:
+            op.create_unique_constraint(name, table, columns)
 
     # Non-MySQL must register named enums explicitly
     if not is_mysql:
@@ -307,7 +320,11 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_unique_constraint("uk_ttb_cursor_scope", "ttb_sync_cursors", ["workspace_id", "provider", "auth_id", "resource_type"])
+    _create_unique(
+        "uk_ttb_cursor_scope",
+        "ttb_sync_cursors",
+        ["workspace_id", "provider", "auth_id", "resource_type"],
+    )
     op.create_index("idx_ttb_cursor_scope", "ttb_sync_cursors", ["workspace_id", "auth_id", "resource_type"])
 
     op.create_table(
@@ -330,7 +347,7 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_unique_constraint("uk_ttb_bc_scope", "ttb_business_centers", ["workspace_id", "auth_id", "bc_id"])
+    _create_unique("uk_ttb_bc_scope", "ttb_business_centers", ["workspace_id", "auth_id", "bc_id"])
     op.create_index("idx_ttb_bc_scope", "ttb_business_centers", ["workspace_id", "auth_id", "bc_id"])
     op.create_index("idx_ttb_bc_updated", "ttb_business_centers", ["ext_updated_time"])
 
@@ -357,7 +374,9 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_unique_constraint("uk_ttb_adv_scope", "ttb_advertisers", ["workspace_id", "auth_id", "advertiser_id"])
+    _create_unique(
+        "uk_ttb_adv_scope", "ttb_advertisers", ["workspace_id", "auth_id", "advertiser_id"]
+    )
     op.create_index("idx_ttb_adv_scope", "ttb_advertisers", ["workspace_id", "auth_id", "advertiser_id"])
     op.create_index("idx_ttb_adv_bc", "ttb_advertisers", ["bc_id"])
     op.create_index("idx_ttb_adv_updated", "ttb_advertisers", ["ext_updated_time"])
@@ -383,7 +402,7 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_unique_constraint("uk_ttb_shop_scope", "ttb_shops", ["workspace_id", "auth_id", "shop_id"])
+    _create_unique("uk_ttb_shop_scope", "ttb_shops", ["workspace_id", "auth_id", "shop_id"])
     op.create_index("idx_ttb_shop_scope", "ttb_shops", ["workspace_id", "auth_id", "shop_id"])
     op.create_index("idx_ttb_shop_adv", "ttb_shops", ["advertiser_id"])
     op.create_index("idx_ttb_shop_updated", "ttb_shops", ["ext_updated_time"])
@@ -410,7 +429,9 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_unique_constraint("uk_ttb_product_scope", "ttb_products", ["workspace_id", "auth_id", "product_id"])
+    _create_unique(
+        "uk_ttb_product_scope", "ttb_products", ["workspace_id", "auth_id", "product_id"]
+    )
     op.create_index("idx_ttb_product_scope", "ttb_products", ["workspace_id", "auth_id", "product_id"])
     op.create_index("idx_ttb_product_shop", "ttb_products", ["shop_id"])
     op.create_index("idx_ttb_product_updated", "ttb_products", ["ext_updated_time"])

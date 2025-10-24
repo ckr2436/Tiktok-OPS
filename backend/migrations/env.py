@@ -6,7 +6,8 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, event
+from sqlalchemy.engine import Connection
 
 # 让 "app.*" 能被 import（基于 /opt/gmv/backend 为根）
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -45,6 +46,17 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _sqlite_before_cursor_execute(
+    conn: Connection, cursor, statement: str, parameters, context, executemany
+):
+    if "CURRENT_TIMESTAMP(6)" in statement:
+        statement = statement.replace("CURRENT_TIMESTAMP(6)", "CURRENT_TIMESTAMP")
+    stripped = statement.lstrip().upper()
+    if stripped.startswith("CREATE INDEX ") and " IF NOT EXISTS " not in stripped:
+        statement = statement.replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
+    return statement, parameters
+
+
 def run_migrations_online() -> None:
     """在线模式：连接数据库并执行"""
     connectable = engine_from_config(
@@ -53,6 +65,15 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
         future=True,
     )
+
+    target_engine = getattr(connectable, "sync_engine", connectable)
+    if target_engine.dialect.name == "sqlite":
+        event.listen(
+            target_engine,
+            "before_cursor_execute",
+            _sqlite_before_cursor_execute,
+            retval=True,
+        )
 
     with connectable.connect() as connection:
         dialect = connection.dialect.name  # 'sqlite' / 'mysql' / 'postgresql' ...

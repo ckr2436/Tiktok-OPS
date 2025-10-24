@@ -24,9 +24,53 @@ export async function updatePlatformAdminDisplayName(userId, display_name) {
   return res?.data ?? res
 }
 
+export async function listPolicyProviders() {
+  const res = await http.get('/api/admin/platform/policies/providers', { baseURL: '' })
+  return res?.data ?? res
+}
+
+export async function listPolicies(params = {}) {
+  const query = { ...params }
+  const res = await http.get('/api/admin/platform/policies', {
+    baseURL: '',
+    params: query,
+  })
+  return res?.data ?? res
+}
+
+export async function createPolicy(payload) {
+  const res = await http.post('/api/admin/platform/policies', payload, { baseURL: '' })
+  return res?.data ?? res
+}
+
+export async function updatePolicy(id, payload) {
+  const res = await http.patch(`/api/admin/platform/policies/${id}`, payload, { baseURL: '' })
+  return res?.data ?? res
+}
+
+export async function togglePolicy(id, is_enabled) {
+  const res = await http.post(
+    `/api/admin/platform/policies/${id}/toggle`,
+    { is_enabled },
+    { baseURL: '' }
+  )
+  return res?.data ?? res
+}
+
+export async function deletePolicy(id) {
+  const res = await http.delete(`/api/admin/platform/policies/${id}`, { baseURL: '' })
+  return res?.data ?? res
+}
+
 export default {
   listPlatformAdmins,
   deletePlatformAdmin,
   updatePlatformAdminDisplayName,
+  listPolicyProviders,
+  listPolicies,
+  createPolicy,
+  updatePolicy,
+  togglePolicy,
+  deletePolicy,
 }
 

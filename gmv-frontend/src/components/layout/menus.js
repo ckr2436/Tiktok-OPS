@@ -28,6 +28,7 @@ export function buildMenus(session) {
           { to: '/platform',             label: '系统控制台', exact: true },
           { to: '/platform/tenants',     label: '公司管理' },
           { to: '/platform/oauth-apps',  label: 'OAuth 应用' },
+          { to: '/platform/policies',    label: 'Platform Policies' },
           { to: '/platform/apis',        label: 'API 管理' },
         ],
       },
