@@ -1,0 +1,325 @@
+{
+  "title": "Get in-second performance",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/video_performance/get/",
+  "method": "GET",
+  "category_path": [
+    "Creative Reports",
+    "Creative Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "report_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Report type. Enum values: AD to-be-deprecated : A report that provides in-seconds performance data on ads. VIDEO : A Video Insights report on a video. Default value: AD . Note : The enum value AD will be deprecated in the next API version. We recommend that you use VIDEO instead."
+      },
+      {
+        "name": "metrics_fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Metrics that you want to get. By default, all metrics supported for the report_type that you specify will be returned. See the Supported metrics section for supported metrics."
+      },
+      {
+        "name": "filtering",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions. When report_type is set to AD or not passed, you need to specify ad_ids , adgroup_ids , or campaign_ids . When report_type is set to VIDEO , you need to specify either material_ids or video_ids ."
+      },
+      {
+        "name": "ad_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When report_type is set to AD or not passed, you need to specify ad_ids , adgroup_ids , or campaign_ids . IDs of the ads that you want to get in-second performance data for. Note : Currently, the limit of the ad_ids you pass is 200."
+      },
+      {
+        "name": "adgroup_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When report_type is set to AD or not passed, you need to specify ad_ids , adgroup_ids , or campaign_ids . IDs of the ad groups that you want to get in-second performance data for."
+      },
+      {
+        "name": "campaign_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When report_type is set to AD or not passed, you need to specify ad_ids , adgroup_ids , or campaign_ids . IDs of the campaigns that you want to get in-second performance data for."
+      },
+      {
+        "name": "material_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When report_type is set to VIDEO , you need to specify either material_ids or video_ids . Material IDs of the videos that you want to get Video Insights data on. Max size: 1."
+      },
+      {
+        "name": "video_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When report_type is set to VIDEO , you need to specify either material_ids or video_ids . IDs of the videos that you want to get Video Insights data on. Max size: 1."
+      },
+      {
+        "name": "start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when report_type is set to VIDEO . If you want to specify a time range for Video Insights data, you need to pass in both start_time and end_time , and specify lifetime as false . Query start time (closed interval) in the format of YYYY-MM-DD hh:mm:ss (UTC+0 Time)."
+      },
+      {
+        "name": "end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when report_type is set to VIDEO . If you want to specify a time range for Video Insights data, you need to pass in both start_time and end_time , and specify lifetime as false . Query end time (closed interval) in the format of YYYY-MM-DD hh:mm:ss (UTC+0 Time)."
+      },
+      {
+        "name": "lifetime",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Valid only when report_type is set to VIDEO . If you want to specify a time range for Video Insights data, you need to pass in both start_time and end_time , and specify lifetime as false . Whether to request lifetime data for metrics. Default value: true ."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. By default, results will be sorted by CREATE_TIME ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting type. Enum values: ASC (starting from the one that was created earliest), DES (starting from the one that was created latest)."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-500. Default value: 10."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "202112091214160102452460391351BB20",
+        "data": {
+          "list": [
+            {
+              "info": {
+                "video_id": "123425gc0000c695b6bc77u1sho1s8g0",
+                "ad_id": "1234647413898242",
+                "duration": 18
+              },
+              "metrics": {
+                "slide_count": [
+                  21,
+                  7,
+                  11,
+                  2,
+                  2,
+                  1,
+                  2,
+                  0,
+                  1,
+                  0,
+                  0,
+                  1,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "share_count": [
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "comment_count": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "convert_count": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "click_count": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "view_count": [
+                  19570,
+                  14410,
+                  6749,
+                  4791,
+                  3707,
+                  2841,
+                  2415,
+                  1985,
+                  1484,
+                  1119,
+                  858,
+                  738,
+                  658,
+                  579,
+                  505,
+                  417,
+                  311,
+                  218
+                ],
+                "break_count": [
+                  5160,
+                  7661,
+                  1958,
+                  1084,
+                  866,
+                  426,
+                  430,
+                  501,
+                  365,
+                  261,
+                  120,
+                  80,
+                  79,
+                  74,
+                  88,
+                  106,
+                  93,
+                  92
+                ],
+                "like_count": [
+                  65,
+                  3567,
+                  3981,
+                  972,
+                  413,
+                  173,
+                  140,
+                  80,
+                  86,
+                  58,
+                  26,
+                  25,
+                  14,
+                  16,
+                  14,
+                  7,
+                  14,
+                  9
+                ]
+              }
+            }
+          ],
+          "page_info": {
+            "page": 1,
+            "total_page": 1,
+            "page_size": 10,
+            "total_number": 1
+          }
+        }
+      }
+    }
+  }
+}

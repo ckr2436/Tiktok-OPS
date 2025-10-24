@@ -1,0 +1,160 @@
+{
+  "title": "Get the music list",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/music/get/",
+  "method": "GET",
+  "category_path": [
+    "Music"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "music_scene",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The scenario where the piece of music is used. Enum values: CREATIVE_ASSET : Creative Tools. CAROUSEL_ADS : Non-Shopping Ads - Carousel format. CATALOG_CAROUSEL : Shopping Ads (VSA) - Carousel format. Default value: CREATIVE_ASSET ."
+      },
+      {
+        "name": "search_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL . Not supported when music_scene is set to CREATIVE_ASSET or not passed. The type of music search that you want to perform. Enum values: SEARCH_BY_KEYWORD : To fuzzy search for music via keyword. You need to pass in keyword as well. Note that you cannot search for user-uploaded music through this search type. SEARCH_BY_RECOMMEND : When music_scene is set to CAROUSEL_ADS : To get recommended music for the images specified via the image URLs. You need to pass in image_urls as well. A maximum of 500 pieces of recommended music can be returned. Note that you cannot search for user-uploaded music through this search type. When music_scene is set to CATALOG_CAROUSEL : To get recommended music for the specified catalog products. You need to pass in catalog_id and catalog_authorized_bc_id as well. Additionally, you need to choose one of the three settings below. Note that you cannot search for user-uploaded music through this search type. To get recommended music for all products in a catalog, do not pass any of product_set_id , item_group_ids , and sku_ids . To get recommended music for products in a product set, pass in either product_set_id or item_group_ids . To get recommended music for specific products, pass in sku_ids . SEARCH_BY_LIKED : To search the Liked list for music. A maximum of 1,000 pieces of music in the Liked list can be returned. SEARCH_BY_HISTORY : To search the History list for music. SEARCH_BY_MUSIC_ID : To search for music via music IDs. SEARCH_BY_SOURCE : To search for music by music source. You need to pass in sources as well. Note that you can only filter user-uploaded music for Carousel Ads. Note : When this field is set to SEARCH_BY_RECOMMEND , SEARCH_BY_LIKED or SEARCH_BY_MUSIC_ID , pagination is not supported and the parameters page and page_size will be ignored."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filter condition."
+      },
+      {
+        "name": "keyword Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when search_type is set to SEARCH_BY_KEYWORD . Invalid when search_type is not set to SEARCH_BY_KEYWORD . The keyword for music search."
+      },
+      {
+        "name": "image_urls Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when music_scene is set to CAROUSEL_ADS and search_type is set to SEARCH_BY_RECOMMEND . Invalid when search_type is not set to SEARCH_BY_RECOMMEND . A list of image URLs to get recommended music for. Size range: [2, 35]. You need to specify at least 2 image URLs obtained from /file/image/ad/upload/ and /file/image/ad/search/ . The image URLs should also meet the requirements below at the same time : Specifications: File Type: JPG, JPEG, or PNG. Image Resolution: a maximum of 1242*2340 px or 2340*1242 px. Aspect Ratio: a maximum of 9:20 or 20:9. File Size: below 50 MB. The value of the parameter is_carousel_usable returned from /file/image/ad/search/ for the image is true . If you use the recommended music to create non-VSA Carousel Ads, you need to use the same images for which the recommended music is provided in the ad."
+      },
+      {
+        "name": "music_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when search_type is set to SEARCH_BY_MUSIC_ID . Music IDs. Max size: 100."
+      },
+      {
+        "name": "catalog_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when music_scene is set to CATALOG_CAROUSEL and search_type is set to SEARCH_BY_RECOMMEND . Catalog ID."
+      },
+      {
+        "name": "catalog_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when music_scene is set to CATALOG_CAROUSEL and search_type is set to SEARCH_BY_RECOMMEND . ID of the Business Center that has the permission to access the catalog. For a catalog in Business Center, specify the ID of the Business Center that the catalog belongs to."
+      },
+      {
+        "name": "item_group_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If music_scene is set to CATALOG_CAROUSEL , search_type is set to SEARCH_BY_RECOMMEND , and you want to get recommended music for a VSA Carousel Ad with products dynamically selected from a product set, either product_set_id or item_group_ids must be specified. Do not pass this field if you want to get recommended music for a VSA Carousel Ad with products dynamically selected from all products in the catalog. Product SPU IDs. Max size: 20."
+      },
+      {
+        "name": "product_set_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If music_scene is set to CATALOG_CAROUSEL , search_type is set to SEARCH_BY_RECOMMEND , and you want to get recommended music for a VSA Carousel Ad with products dynamically selected from a product set, either product_set_id or item_group_ids must be specified. Do not pass this field if you want to get recommended music for a VSA Carousel Ad with products dynamically selected from all products in the catalog. The ID of the product set."
+      },
+      {
+        "name": "sku_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required if music_scene is set to CATALOG_CAROUSEL , search_type is set to SEARCH_BY_RECOMMEND , and you want to get recommended music for a VSA Carousel Ad with specific products from the catalog. Do not pass this field if you want to get recommended music for a VSA Carousel Ad with products dynamically selected from all products in the catalog. IDs of the SKUs. Max size: 20. Min size: 2."
+      },
+      {
+        "name": "carousel_image_index",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Valid only if music_scene is set to CATALOG_CAROUSEL , search_type is set to SEARCH_BY_RECOMMEND , and a list of additional images has been configured for the specified products. The index that specifies the additional images to be used in the VSA Carousel Ad. If this field is not passed, the main images of catalog products will be used in the VSA Carousel Ad. Value range: [0, 9]. The number you set via this field represents the position of the product image within the additional image list ( additional_image_urls ) for each catalog product. For instance, carousel_image_index = 1 means that you will use all the images specified via the second image URL in each additional_image_urls value as images in the Carousel Ad. You can retrieve the additional images configured for a product via additional_image_urls returned by /catalog/product/get/ . If you set a number greater than the total number of additional Image URLs specified for the product, this field will be ignored, and the main image ( image_url ) for the product will be used. You can retrieve the main image for a product via image_url returned by /catalog/product/get/ ."
+      },
+      {
+        "name": "material_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Not supported when music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL . Material IDs. Max size: 100."
+      },
+      {
+        "name": "styles",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Not supported when music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL . Music style. Max size: 1."
+      },
+      {
+        "name": "sources Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "When music_scene is set to CREATIVE_ASSET or not passed, this field is optional. When music_scene is set to CAROUSEL_ADS or CATALOG_CAROUSEL and search_type is set to SEARCH_BY_SOURCE , this field is required and can only be set to USER to filter user-uploaded music for Carousel Ads. Music source. USER represents user uploaded music, and SYSTEM represents system music. Max size: 1."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value Range: ≥ 1. The product of page and page_size cannot exceed 100,000. Note : When search_type is set to SEARCH_BY_RECOMMEND , SEARCH_BY_LIKED , or SEARCH_BY_MUSIC_ID , pagination is not supported and the parameters page and page_size will be ignored."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 1,000. Value Range: 1-1,000. The product of page and page_size cannot exceed 100,000. Note : When search_type is set to SEARCH_BY_RECOMMEND , SEARCH_BY_LIKED , or SEARCH_BY_MUSIC_ID , pagination is not supported and the parameters page and page_size will be ignored. When search_type is set to SEARCH_BY_KEYWORD or SEARCH_BY_HISTORY , the default value is 200 and the value range is [1,200]."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\nhttps://ads.tiktok.com/open_api/v1.3/file/music/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"page_info\": {\n            \"total_number\": 1,\n            \"page\": 1,\n            \"page_size\": 1000,\n            \"total_page\": 1\n        },\n        \"musics\": [\n            {\n                \"style\": \"Teen\",\n                \"name\": \"Her World\",\n                \"copyright\": \"MUSIC_FORBID_VIDEO_ALLOW\",\n                \"url\": \"http://sf-tk-sg.ibytedtos.com/obj/cc-music-sg/6650280667860962050\",\n                \"file_name\": \"Her World\",\n                \"music_id\": \"6707429901383565318\",\n                \"material_id\": \"6707429901383565318\",\n                \"sources\": [\n                    \"SYSTEM\"\n                ],\n                \"signature\": \"bdb2ff10fb44bb38151c98bfee94de89\",\n                \"duration\": 127.5,\n            }\n        ]\n    },\n    \"request_id\": \"2020120606494801011517615607983119\"\n}"
+    }
+  }
+}

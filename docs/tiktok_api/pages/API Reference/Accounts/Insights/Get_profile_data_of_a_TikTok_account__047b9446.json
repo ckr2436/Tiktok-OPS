@@ -1,0 +1,127 @@
+{
+  "title": "Get profile data of a TikTok account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/get/",
+  "method": "POST",
+  "category_path": [
+    "Accounts",
+    "Insights"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "start_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date, closed interval, format such as: 2021-06-01. The date is based on the UTC time zone. If not set, then the start_date will be [current date - 7 days]. The maximum supported look-back period is 60 days."
+      },
+      {
+        "name": "end_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date, closed interval, format such as: 2021-06-01. The date is based on the UTC time zone. If not set, then end_date will be [current date - 1 day]."
+      },
+      {
+        "name": "fields",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Requested fields. If not set, returns the default fields only. Default fields: [\"display_name\", \"profile_image\"] To retrieve certain fields in the response, you must have specific permissions. You can check the \"Required permission\" column for each field in the response schema to determine the permissions needed. To confirm that you have the necessary permission scope, you can check the scope returned by the /tt_user/token_info/get/ endpoint. If the required permission has not been granted to you, follow the steps outlined in Authorization to enable the TikTok account user to reauthorize your app with the permission. Example : [\"display_name\", \"profile_image\"] . Supported fields : is_business_account ：Whether the TikTok account is a TikTok Business Account. This metric is only available when the TikTok account user has granted you the new permission scope \"user.account.type\". Note : To determine whether you have obtained the permission scope \"user.account.type\", you can check the scope returned from /tt_user/token_info/get/ . If the permission scope has not been granted to you, follow the steps outlined in Authorization to enable the TikTok account user to reauthorize your app with the permission scope. profile_image : The URL to the profile photo of the TikTok account. username : The username (handle) of the TikTok account. profile_deep_link : The link to the profile page of the TikTok account. display_name : The display name (nickname) of the TikTok account. bio_description : The bio description of the TikTok account. is_verified : Whether TikTok has provided a verified badge to the TikTok account after confirming that it belongs to the user it represents. following_count : The number of accounts that the TikTok account is following. followers_count : The number of followers for the TikTok account. Note : If you specify followers_count in the value of fields , you will obtain followers_count as both a lifetime metric and a daily metric in the response. total_likes : Total likes. The total number of times people have liked your published videos. videos_count : The lifetime number of public videos posted by the TikTok account. video_views : Daily video views. The daily number of times your videos have been viewed. Note : Counts when playback duration >0 and the playback is the first playback in an impression session. If the user swipes away from the ad then swipes back, it would be counted as 2 impressions. Therefore, a new video view will be counted again with the new impression session. unique_video_views : Daily reached audience. The daily number of people who watched your published content at least once. profile_views : Daily profile views. The daily number of clicks on your profile from users. likes : Daily likes. The daily number of times people have liked your published videos. comments : Daily comments. The daily number of times people have commented on your published videos. shares : Daily shares. The daily number of times people have shared your published videos. phone_number_clicks : Daily phone number clicks. The daily number of clicks collected on your phone number link in the selected date range. lead_submissions : Daily lead submissions. The daily number of leads (e.g. price quotes, newsletter subscriptions, etc.) collected from your consumers in the selected date range. app_download_clicks : Daily app download link clicks. The daily number of clicks collected on your app download link in the selected date range. bio_link_clicks : Daily bio link clicks. The daily number of clicks collected on your link-in-bio during the selected time range. email_clicks : Daily email clicks. The daily number of clicks collected on the Email button on your profile during the selected time range. address_clicks : Daily address clicks. The daily number of clicks collected on the Address button on your profile during the selected time range. daily_total_followers : Daily net growth. The daily change in the number of followers. daily_new_followers : Daily new followers. The daily number of new followers you have gained. daily_lost_followers : Daily lost followers. The daily number of followers you have lost. audience_activity : Hourly follower activity. The hourly breakdown of followers active on TikTok during the day. The data for this metric is only available for TikTok accounts with at least 100 followers. engaged_audience : Daily engaged audience. The daily number of people who engaged (liked, commented or shared) with at least one of your published content. audience_ages : Follower age. The distribution of your followers by age. This demographic data is based on a number of factors, including information users provide in their profiles. The data for this metric is only available for TikTok accounts with at least 100 followers. audience_genders : Follower gender. The distribution of your followers by gender. This demographic data is based on a number of factors, including information users provide in their profiles. The data for this metric is only available for TikTok accounts with at least 100 followers. audience_countries : Follower top countries or regions. The distribution of your followers by their location (countries or regions). This demographic data is based on a number of factors, including information users provide in their profiles. The data for this metric is only available for TikTok accounts with at least 100 followers. audience_cities : Follower top cities. The distribution of your followers by their cities. This demographic data is based on a number of factors, including information users provide in their profiles. The data for this metric is only available for TikTok accounts with at least 100 followers."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location -g --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/get/?business_id=b3d2f73d-4b8c-47fb-85c3-cd571287754b&fields=[\"username\",\"display_name\",\"shares\",\"comments\", \"video_views\", \"audience_countries\"]&start_date=2021-07-28&end_date=2021-08-01' \\\n--header 'Access-Token: 1234a16d2e08c3f17d1984a1be07d00406p3LIAF7vEpxliox8GRpCINv70x'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "202108030711080102450310564DA3B2EB",
+        "data": {
+          "profile_image": "https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/188d468fc1de3f328250ea0c96e98f8b~c5_100x100.webp?x-expires=1628060400&x-signature=BnPoX8rWsYZZ%2BtyzCoWanxYdRyg%3D",
+          "username": "la_flama_blanca",
+          "display_name": "Display Name",
+          "followers_count": 1124,
+          "audience_countries": [
+            {
+              "percentage": 0.1797,
+              "country": "MY"
+            },
+            {
+              "percentage": 0.5996,
+              "country": "TW"
+            },
+            {
+              "percentage": 0.0629,
+              "country": "VN"
+            }
+          ],
+          "audience_genders": [
+            {
+              "percentage": 0.6031,
+              "gender": "Female"
+            },
+            {
+              "percentage": 0.1685,
+              "gender": "Male"
+            },
+            {
+              "percentage": 0.2283,
+              "gender": "Other"
+            }
+          ],
+          "metrics": [
+            {
+              "date": "2021-07-30",
+              "followers_count": 4,
+              "video_views": 1126,
+              "comments": 4,
+              "shares": 0,
+              "likes": 26
+            },
+            {
+              "date": "2021-07-31",
+              "followers_count": 6,
+              "video_views": 312,
+              "comments": 0,
+              "shares": 0,
+              "likes": 15
+            },
+            {
+              "date": "2021-08-01",
+              "followers_count": 8,
+              "video_views": 283,
+              "comments": 0,
+              "shares": 0,
+              "likes": 19
+            }
+          ]
+        }
+      }
+    }
+  }
+}

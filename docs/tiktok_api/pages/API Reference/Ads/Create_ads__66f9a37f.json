@@ -1,0 +1,650 @@
+{
+  "title": "Create ads",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/ad/create/",
+  "method": "POST",
+  "category_path": [
+    "Ads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowed format: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID."
+      },
+      {
+        "name": "creatives",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Advertising creatives. Max size: 20. Within an ad group, you can create a maximum of 20 ads in a single request. If you want to create additional ads within the same ad group, you need to make multiple calls to /ad/create/ ."
+      },
+      {
+        "name": "ad_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad name. To make the ad name automatically generated, set this field to \"\" (empty string). The format of the auto-generated ad name is ad ID ( ad_id ). Length limit: 512 and cannot contain emojis. Note : Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: CUSTOMIZED_USER , AUTH_CODE , TT_USER , BC_AUTH_TT . For details about identities, see Identities . Note : An identity of the identity type AUTH_CODE , TT_USER , or BC_AUTH_TT can only be used to create a maximum of 10,000 ads. If you reach this limit, you can release the ad quota associated with that identity by deleting the ads where it is used. To check the remaining ad quota for such an identity, you can call /asset/bind/quota/ and examine the value returned for available_quota ."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID. If you are not using Spark Ads, identity_id and identity_type ( CUSTOMIZED_USER ) can be used for better management of ads information. Note : An identity of the identity type AUTH_CODE , TT_USER , or BC_AUTH_TT can only be used to create a maximum of 10,000 ads. If you reach this limit, you can release the ad quota associated with that identity by deleting the ads where it is used. To check the remaining ad quota for such an identity, you can call /asset/bind/quota/ and examine the value returned for available_quota ."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "catalog_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Product catalog ID. Required for Shopping Ads with product source as catalog. Products whose links are shown in the ad are from this catalog. Note : Starting June 30th, 2024, when product_source at the ad group level is STORE , you will no longer need to pass this field because it will be ignored."
+      },
+      {
+        "name": "product_specific_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only in any of the following scenarios: shopping_ads_type is VIDEO and product_source is CATALOG . shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE . Different dimensions to choose products. Enum values: ALL : Allow TikTok to dynamically choose from all products. PRODUCT_SET : Specify a product set. TikTok will dynamically choose products from this set. CUSTOMIZED_PRODUCTS : Specify a customized number of products. When shopping_ads_type is VIDEO and product_source is CATALOG , you can set this field to ALL , PRODUCT_SET , or CUSTOMIZED_PRODUCTS . If this field is set to ALL , you don't need to input sku_ids , item_group_ids and product_set_id . If this field is set to PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . If this field is set to CUSTOMIZED_PRODUCTS , sku_ids is required. When shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE , you can set this field to ALL or CUSTOMIZED_PRODUCTS . If this field is set to ALL , you don't need to input sku_ids , item_group_ids and product_set_id . If this field is set to CUSTOMIZED_PRODUCTS , item_group_ids is required. Note : When shopping_ads_type is VIDEO and product_source is STORE , specify the products directly through item_group_ids . When shopping_ads_type is VIDEO and product_source is SHOWCASE , specify the products directly through showcase_products . When shopping_ads_type is LIVE , you don't need to specify the products."
+      },
+      {
+        "name": "item_group_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If shopping_ads_type is VIDEO , product_source is CATALOG , and product_specific_type is PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . If shopping_ads_type is PRODUCT_SHOPPING_ADS , product_source is STORE , and product_specific_type is CUSTOMIZED_PRODUCTS , this field is required. Product SPU IDs. Max size: 20 when shopping_ads_type is VIDEO , product_source is CATALOG , and product_specific_type is PRODUCT_SET . 50 when shopping_ads_type is PRODUCT_SHOPPING_ADS , product_source is STORE , and product_specific_type is CUSTOMIZED_PRODUCTS ,"
+      },
+      {
+        "name": "product_set_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If shopping_ads_type is VIDEO , product_source is CATALOG , and product_specific_type is set to PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . The ID of the product set."
+      },
+      {
+        "name": "sku_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when shopping_ads_type is VIDEO , product_source is CATALOG , and product_specific_type is CUSTOMIZED_PRODUCTS . IDs of the SKUs. Max size: 20."
+      },
+      {
+        "name": "vehicle_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when the following conditions are met: At the campaign level: objective_type is LEAD_GENERATION . catalog_enabled is true . At the ad group level: An Auto-Inventory or Auto-Model catalog is specified through catalog_id . At the ad level: product_specific_type is CUSTOMIZED_PRODUCTS . IDs of vehicles. Max size: 20."
+      },
+      {
+        "name": "showcase_products Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when you set product_source as SHOWCASE at the ad group level. See Create Video Shopping Ads with products from Showcase to learn more. The list of Showcase products that you want to use in your ad. Max size: 20. You can get the available Showcase products via /showcase/product/get/ ."
+      },
+      {
+        "name": "item_group_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "SPU ID of the product."
+      },
+      {
+        "name": "store_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the store that the product ( item_group_id ) belongs to. Note that the only supported store type is TikTok Shop."
+      },
+      {
+        "name": "catalog_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the catalog that the product ( item_group_id ) belongs to. Note : Starting June 30th, 2024, when product_source at the ad group level is STORE , you will no longer need to pass this field because it will be ignored."
+      },
+      {
+        "name": "ad_format",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ad format. Enum values: SINGLE_IMAGE , SINGLE_VIDEO , LIVE_CONTENT , CAROUSEL_ADS , CATALOG_CAROUSEL . Required for the following scenarios: For single video ads, set this field to SINGLE_VIDEO . For single image ads, set this field to SINGLE_IMAGE . For TikTok Standard Carousel ads, set this field to CAROUSEL_ADS . For TikTok VSA Carousel ads, Automotive Carousel Ads for Inventory , or Automotive Carousel Ads for Models . set this field to CATALOG_CAROUSEL . See here to learn about the steps of creating TikTok Carousel Ads. For Live Shopping Ads, set this field to LIVE_CONTENT . Note : Once set to CAROUSEL_ADS or CATALOG_CAROUSEL , this field cannot be updated."
+      },
+      {
+        "name": "vertical_video_strategy",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The video type that you use for Product Sales scenarios. Enum values: UNSET (unset), SINGLE_VIDEO (single video), CATALOG_VIDEOS (catalog video using video templates), CATALOG_UPLOADED_VIDEOS (catalog video using uploaded videos), LIVE_STREAM (livestream video). It must be UNSET if dynamic_format = DYNAMIC_CREATIVE . To learn more about how to manage uploaded catalog videos to be used in VSA for Catalog, see Upload catalog videos to associate with catalog products . Note : Creating VSA for Catalog with catalog video format using uploaded catalog videos (with vertical_video_strategy as CATALOG_UPLOADED_VIDEOS ) is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. If you set vertical_video_strategy to CATALOG_UPLOADED_VIDEOS , you cannot update this field to a different value."
+      },
+      {
+        "name": "dynamic_format",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Dynamic format. Enum values: UNSET : Unset. DYNAMIC_CREATIVE : Dynamic format. To display different videos, product cards and destinations to each person based on purchase intent, maximizing conversions."
+      },
+      {
+        "name": "video_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when ad_format is SINGLE_VIDEO and identity_type is CUSTOMIZED_USER . When ad_format is SINGLE_VIDEO and identity_type is TT_USER or BC_AUTH_TT , you need to pass either video_id or tiktok_item_id . Not supported when ad_format is SINGLE_IMAGE or CAROUSEL_ADS . Video ID. To obtain video IDs, use /file/video/ad/search/ . If you want to create Spark Ads, you can use video_id or tiktok_item_id . To learn more about Spark Ads, see Create Spark Ads . Note : To ensure a smooth integration journey, we recommend that you use /file/video/ad/upload/ ( upload_type = UPLOAD_BY_VIDEO_ID ) to bind video ID with your advertiser ID."
+      },
+      {
+        "name": "image_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of image IDs (images used in an ad or as a video cover). To obtain the image ID, use the /file/image/ad/search/ or /file/image/ad/upload/ endpoint. When ad_format is SINGLE_VIDEO : If you want to create video Spark Ads via Spark Ads Push or create video Non-Spark Ads, this field is required and the value of this field will be used as the video cover (thumbnail) (only one value is allowed), and the aspect ratio of the image should be the same as the video. If you want to create video Spark Ads via Spark Ads Pull, this field is not supported. You need to pass tiktok_item_id instead. When ad_format is set to CAROUSEL_ADS : If you want to create Standard Carousel Spark Ads via Spark Ads Push or create Standard Carousel Non-Spark Ads, this field is required and the size range for this field is [1, 35], and the sequence of the image IDs specified via this field is the order in which the images are shown in the Carousel Ads. See Create Carousel Ads to learn about the requirements for images that can be used in TikTok Standard Carousel Ads. If you want to create Standard Carousel Spark Ads via Spark Ads Pull, this field is not supported. You need to pass tiktok_item_id instead. When ad_format is set to CATALOG_CAROUSEL at the ad level and catalog_enabled is set to true at the campaign level, this field is required and the value of this field will be used as the summary photo in the Automotive Ad for Inventory or Automotive Ads for Models (only one value is allowed). See Create Automotive Ads for Inventory or Automotive Ads for Models to learn about the requirements for the summary photo that can be used in Automotive Ads for Inventory or Automotive Ads for Models. When ad_format is set to SINGLE_IMAGE , this field is required and you can only assign one image ID to this field. To learn about the requirements for images that can be used in single image ads, see Create single image ads ."
+      },
+      {
+        "name": "carousel_image_index",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Valid only for VSA Carousel ads where a list of additional image URLs has been configured for the specified products. Not supported for Automotive Carousel Ads for Inventory or Automotive Carousel Ads for Models . The index that specifies the additional images to be used in the VSA Carousel ad. If this field is not passed, the main images of catalog products will be used in the VSA Carousel ad. Value range: [0, 9]. The number you set via this field represents the position of the product image within the additional image list ( additional_image_urls ) for each E-commerce catalog product. For instance, carousel_image_index = 1 means that you will use all the images specified via the second image URL in each additional_image_urls value as images in the Carousel Ad. You can retrieve the additional images configured for a product via additional_image_urls returned by /catalog/product/get/ . If you specify the additional image index using this field, the system will count the number of E-commerce products with available additional images. If the index you provide does not match any of the additional image URLs specified for the product or if the additional image fails to be fetched from the corresponding image URL, the product will not be counted. When there are two or more products with available additional images, only those products will be displayed in the ads with the additional images used. When there are fewer than two products with available additional images, all products will be displayed in the ads with the main images used."
+      },
+      {
+        "name": "end_card_cta Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when the following conditions are met: At the campaign level: objective_type is LEAD_GENERATION . catalog_enabled is true . At the ad group level: An Auto-Inventory or Auto-Model catalog is specified through catalog_id . At the ad level: ad_format is CATALOG_CAROUSEL . Call-to-action for the end card ( image_ids ) of an Automotive Carousel Ad for Inventory or Automotive Carousel Ad for Models . Enum values: SEARCH_INVENTORY (Recommended): Search inventory. LEARN_MORE : Learn more. SHOP_NOW : Shop now. SIGN_UP : Sign up. CONTACT_US : Contact us. BOOK_NOW : Book now. READ_MORE : Read more. VIEW_MORE : View now. ORDER_NOW : Order now."
+      },
+      {
+        "name": "product_display_field_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when the following conditions are met: At the campaign level: objective_type is LEAD_GENERATION . catalog_enabled is true . At the ad group level: An Auto-Inventory catalog is specified through catalog_id . At the ad level: ad_format is CATALOG_CAROUSEL . A list of product details to display in your Automotive Carousel Ad for Inventory . Max size: 2. Enum values: DEALER_NAME : the dealer_name field of vehicles. MAKE : the make field of vehicles. MODEL : the model field of vehicles. YEAR : the year field of vehicles. MILEAGE : the mileage field of vehicles. PRICE : the price field of vehicles. SALE_PRICE : the sale_price field of vehicles. EXTERIOR_COLOR : the exterior_color field of vehicles. TRIM : the trim field of vehicles. ADDRESS_CITY : the city field of vehicles. VEHICLE_STATE : the state_of_vehicle field of vehicles. The title of each vehicle is displayed automatically. For instance, if you set this field to [\"MILEAGE\",\"YEAR\"] , the ad will display the mileage , price and title fields of each vehicle. To retrieve the product detail fields of your vehicles in an Auto-Inventory catalog and check whether you need to update the details, use /catalog/product/get/ . Note : Once set, this field cannot be updated."
+      },
+      {
+        "name": "auto_disclaimer_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when the following conditions are met: At the campaign level: objective_type is LEAD_GENERATION . catalog_enabled is true . At the ad group level: An Auto-Model catalog is specified through catalog_id . At the ad level: ad_format is CATALOG_CAROUSEL . The type of disclaimer to show in the Automotive Carousel Ads for Models . Enum values: EMISSION : Emssion disclaimer. DISCOUNT : Discount or offer disclaimer. Max size: 1."
+      },
+      {
+        "name": "music_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required in any of the following scenarios: ad_format is CAROUSEL_ADS and you want to create Standard Carousel Spark Ads via Spark Ads Push or Standard Carousel Non-Spark Ads. ad_format is CATALOG_CAROUSEL . The ID of the piece of music that you want to use in the TikTok Carousel Ad. See Create Carousel Ads-Steps-Create an ad to learn about how to get music that can be used in TikTok Carousel Ads."
+      },
+      {
+        "name": "tiktok_item_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is AUTH_CODE , or BC_AUTH_TT and you want to create Spark Ads through Spark Ads Pull. Not supported when identity_type is CUSTOMIZED_USER . The ID of the TikTok post to be used as Spark Ad. To learn more about Spark Ads, see Create Spark Ads . Pass in the item_id you get from the response of the /tt_video/info/ or /identity/video/get/ endpoint. Note : By using Spark Ads, you confirm that you have the rights to use the music in the videos for commercial purposes."
+      },
+      {
+        "name": "promotional_music_disabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to disable the promotional use of the music in the Spark Ad. The default value is true . If you want to allow dueting and stitching for the TikTok video, you need to set this field to false . This field is only valid for Spark Ad posts."
+      },
+      {
+        "name": "item_duet_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Whether to enable dueting for the Spark Ad. This field is valid only when promotional_music_disabled is set to false . Enum values: ENABLE , DISABLE . This field is only valid for Spark Ad posts."
+      },
+      {
+        "name": "item_stitch_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Whether to enable stitching for the Spark Ad. This field is valid only when promotional_music_disabled is set to false . Enum values: ENABLE , DISABLE . This field is only valid for Spark Ad posts."
+      },
+      {
+        "name": "dark_post_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "You can set this field to either ON or OFF . Default is OFF . If the ad is created as a dark post, it will not appear in the creator's homepage."
+      },
+      {
+        "name": "shopping_ads_video_package_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Product video package ID. Use the /catalog/video/get/ endpoint to get video package IDs."
+      },
+      {
+        "name": "ad_text Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For Spark Ads Push , ad_text is required. For non-Spark Ads , either ad_text or ad_texts has to be set. An ad text. It is shown to your audience as part of your ad creative, to deliver the message you intend to communicate to them. If you don't know how to create effective ad texts, you can try the Smart Text feature, which generates ad text recommendations based on the industry and language. Length limit for the ad text: 100 characters long and cannot contain emoji. Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character. Note : If both ad_text and ad_texts are specified, ad_text will be ignored."
+      },
+      {
+        "name": "ad_texts Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "For non-Spark Ads, either ad_text or ad_texts has to be set. Valid only for Search Ads Campaigns . A list of ad texts. The ad text is shown to your audience as part of your ad creative, to deliver the message that you intend to communicate to them. When you specify multiple ad texts, the system will automatically select the most relevant to the audience and optimize for the best results. If you don't know how to create effective ad texts, you can try the Smart Text feature, which generates ad text recommendations based on industry and language. Size limit: 5. Length limit for each ad text: 100 characters long and cannot contain emoji. Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character. Note : If both ad_text and ad_texts are specified, ad_text will be ignored."
+      },
+      {
+        "name": "call_to_action Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Call-to-action text. For TikTok ads, either this field or call_to_action_id must be specified. If both are specified, this field will be ignored. For enum values, see Enumeration - Call-to-Action . In a Live Shopping Ad where creative_type is set to SHORT_VIDEO_LIVE , this field is required and must be set to WATCH_LIVE ."
+      },
+      {
+        "name": "call_to_action_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the CTA portfolio that you want to use in your ads. A CTA portfolio is a group of auto-optimized CTAs. If both this field and call_to_action are specified, this field will be used, and call_to_action will be ignored. For details about auto-optimized CTAs, see CTA Recommendations - Auto-Optimized CTAs ."
+      },
+      {
+        "name": "card_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Creative portfolio ID. Pass the ID of one of the following creative portfolio types: call-to-action text. Display Card. Website info card. Download Card. Product Card. Product Tiles. Countdown Sticker. Gift Code Sticker. Pop-up Showcase. Gesture. Superlike. To create a creative portfolio, use /creative/portfolio/create/ . To learn about how to get the ID of a Display Card, Website info card, Download Card, Product Card, or Product Tiles portfolio, see Cards . To learn about how to get the ID of a Countdown Sticker or Gift Code Sticker portfolio, see Stickers . To learn about how to get the ID of a Pop-out Showcase, Gesture, or Superlike portfolio, see Premium Add-ons . Note : Once you include a Product Tiles portfolio in your ad, you cannot delete the portfolio from the ad. However, you have the option to update the portfolio to a different one."
+      },
+      {
+        "name": "landing_page_url Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The landing page that users will be redirected to. The landing page URL can include URL parameters that are appended to the end of the URL. To learn more about URL parameters, see the description of the parameter utm_params . Example: https://www.example.com?utm_source=TikTok&utm_medium=video&utm_campaign=Campaign1&utm_content=Content1"
+      },
+      {
+        "name": "utm_params",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "This field is supported in any of the following scenarios: Video Shopping Ads (VSA) for Catalog scenarios: At the campaign level: objective_type is set to PRODUCT_SALES At the ad group level: shopping_ads_type is set to VIDEO (Video Shopping Ads) product_source is set to CATALOG promotion_type is set to WEBSITE , APP_ANDROID , or APP_IOS Automotive Ads for Inventory (AIA) or Automotive Ads for Models scenarios: At the campaign level: objective_type is set to LEAD_GENERATION catalog_enabled is set to true At the ad group level: promotion_target_type is set to EXTERNAL_WEBSITE Other scenarios: At the campaign level: objective_type is set to REACH , TRAFFIC , VIDEO_VIEWS , LEAD_GENERATION (with catalog_enabled as false ), ENGAGEMENT , APP_PROMOTION (with app_promotion_type as APP_PREREGISTRATION ), WEB_CONVERSIONS , or RF_REACH . A list of URL parameters. URL parameters are snippets of code that can be added to the end of the URLs to help you track clicks across different channels and understand how visitors interact with a website through third-party analytics platforms. They consist of key-value pairs that are specified through key and value . Max size : 14. In VSA for Catalog scenarios: If you use a product link in your ad ( shopping_ads_fallback_type is SHOPPING_ADS ), you can add URL parameters to the product link by passing utm_params . The URL parameters will be automatically appended to the product link upon ad delivery. If you use a custom link (website URL) in your ad ( shopping_ads_fallback_type is CUSTOM ), you can manually add URL parameters to the custom link by directly setting landing_page_url to a URL that already includes URL parameters. However, if you use a custom link in your ad and pass utm_params at the same time, the URL parameters will not be automatically appended to the custom link ( landing_page_url ) upon ad delivery. In such cases, you need to ensure that you specify a landing_page_url with the URL parameters already appended, and that utm_params exactly matches the used URL parameters. Otherwise, an error will occur. In AIA or Automotive Ads for Models scenarios, you can add URL parameters to the product link (the landing_page_url of your catalog products) by passing utm_params . The URL parameters will be automatically appended to the product link upon ad delivery. In other scenarios, if you set landing_page_url to a URL that already includes URL parameters, you can optionally pass utm_params at the same time to store the URL parameters used in the URL. In such cases, you need to ensure that utm_params exactly matches the used URL parameters. The URL parameters will not be automatically appended to the landing_page_url upon ad delivery."
+      },
+      {
+        "name": "key",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The URL parameter. You can specify a custom parameter or a UTM parameter. The supported UTM parameters are: utm_source : The app, site, etc., that brings traffic to your website. For example: TikTok. utm_medium : The advertising or marketing medium. For example: cpm, cpc, banner, video. utm_content : The creative content used for promotion. For example: ad name, CTA text, asset, color, etc. utm_campaign : The individual campaign name, slogan, or promo code. For example: BlackFridayProm. Note that UTM parameters are case-sensitive. Length limit when you specify a custom parameter: 100 characters."
+      },
+      {
+        "name": "value",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The value of the URL parameter. You can specify a custom value or the name of a macro. The supported macros are: __CAMPAIGN_NAME__ : This will be replaced by your campaign name. __CAMPAIGN_ID__ : This will be replaced by your campaign ID. __AID_NAME__ : This will be replaced by your ad group name. __AID__ : This will be replaced by your ad group ID. __CID_NAME__ : This will be replaced by your ad name. __CID__ : This will be replaced by your ad ID. __PLACEMENT__ : This will be replaced by your placement. Length limit when you specify a custom value: 600 characters."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page ID. To obtain pages within your ad account, use /page/get/ . To create instant pages, use Instant Page Editor SDK . Instant Forms are for LEAD_GENERATION campaign objective. Only applicable for TikTok placement. Before creating for the first time, you need to sign the LeadAds agreement through the /term/confirm/ endpoint. Note: We will sunset the Collection Ads on Feb.16,2023. To ensure a seamless experience, please don't set a storefront page as your instant page."
+      },
+      {
+        "name": "cpp_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The Custom Product Page (CPP) URL. CPPs are product pages with customized screenshots, promotional text, and app previews that can be used to highlight specific content or features of the promoted app, or reach specific audiences. The Custom Product Page URL must be consistent with the promoted app ( app_id ). Format: https://apps.apple.com/{region}/app/{app_name}/id{app_id}?ppid={ppid} . Length limit: 512 characters. Example: https://apps.apple.com/us/app/tiktok/id835599320?ppid=12345a6b-c789-12d3-e4f5-g6h78i91jk2l . To learn about the scenarios where you can use CPPs in your ads and the detailed steps, see Custom Product Pages . Note : Using Custom Product Pages in ads is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "tiktok_page_category Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when optimization_goal is PAGE_VISIT at the ad group level. The category of the TikTok page that you want to promote. Enum values: PROFILE_PAGE : TikTok account profile page. You don't need to pass landing_page_url or page_id . OTHER_TIKTOK_PAGE : Other TikTok pages, including Playlist Page, Hashtag Page, Music Page and Branded Effect Page. You need to specify the specific TikTok page URL via landing_page_url simultaneously. To obtain a TikTok page URL, tap on the top right corner of the TikTok page you want to promote within your TikTok app, and click to copy the URL. TIKTOK_INSTANT_PAGE : Custom TikTok Instant Page. You need to specify the specific TikTok Instant Page via page_id simultaneously. To obtain Custom TikTok Instant Pages within your ad account, use /page/get/ and set business_type to TIKTOK_INSTANT_PAGE . Note : This field cannot be updated after creation. If you set tiktok_page_category to OTHER_TIKTOK_PAGE , landing_page_url cannot be updated after ad creation."
+      },
+      {
+        "name": "phone_region_code Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If promotion_type is set to LEAD_GEN_CLICK_TO_CALL at the ad group level, the parameters phone_number , phone_region_calling_code , and phone_region_code are all required. The region code for the phone number that the audience can click on the ad to call. Example: US . To learn about how to create a Lead Generation ad with promotion type as phone call, refer to here . To obtain the region code ( phone_region_code ) and region calling code ( phone_region_calling_code ) for the region that is associated with a specific phone number, use /tool/phone_region_code/ . Note : Creating a Lead Generation ad with promotion type as phone call is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "phone_region_calling_code Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If promotion_type is set to LEAD_GEN_CLICK_TO_CALL at the ad group level, the parameters phone_number , phone_region_calling_code , and phone_region_code are all required. The region calling code for the phone number that the audience can click on the ad to call. Example: +1 . To learn about how to create a Lead Generation ad with promotion type as phone call, refer to here . To obtain the region code ( phone_region_code ) and region calling code ( phone_region_calling_code ) for the region that is associated with a specific phone number, use /tool/phone_region_code/ . Note : Creating a Lead Generation ad with promotion type as phone call is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "phone_number Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If promotion_type is set to LEAD_GEN_CLICK_TO_CALL at the ad group level, the parameters phone_number , phone_region_calling_code , and phone_region_code are all required. The phone number that the audience can click on the ad to call. Example: 12638282 . To learn about how to create a Lead Generation ad with promotion type as phone call, refer to here . Note : Creating a Lead Generation ad with promotion type as phone call is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "deeplink",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The specific location where you want your audience to go if they have your app installed. See deeplink_type for more. To learn about the supported scenarios for non-deferred deeplinks and deferred deeplinks, see the \" Deeplink - Availability - Deeplink \" section. Note : Deferred deeplinks are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Note that implementing deferred deeplinks require technical resources and development capabilities. Non-deferred deeplinks are currently an allowlist-only feature for some scenarios. To check the scenarios where non-deferred deeplinks are an allowlist-only feature, see the \" Deeplink - Availability - Deeplink \" section. If you would like to access it for these scenarios, please contact your TikTok representative."
+      },
+      {
+        "name": "deeplink_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The deeplink type. Enum values: NORMAL : non-deferred deeplink. DEFERRED_DEEPLINK : deferred deeplink. Default value: NORMAL . To learn about the supported scenarios for non-deferred deeplinks and deferred deeplinks, see the \" Deeplink - Availability - Deeplink \" section. Note : Deferred deeplinks are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Note that implementing deferred deeplinks require technical resources and development capabilities. Non-deferred deeplinks are currently an allowlist-only feature for some scenarios. To check the scenarios where non-deferred deeplinks are an allowlist-only feature, see the \" Deeplink - Availability - Deeplink \" section. If you would like to access it for these scenarios, please contact your TikTok representative. Deferred deeplinks are not supported in Dedicated Campaigns. Therefore, if the campaign_type of the campaign that the ad belongs to is IOS14_CAMPAIGN , you cannot set this field to DEFERRED_DEEPLINK ."
+      },
+      {
+        "name": "deeplink_format_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When objective_type is set to TRAFFIC at the campaign level and optimization_goal is set to DESTINATION_VISIT at the ad group level, deeplink_format_type and deeplink are required. The format type of the deeplink. Enum values: UNIVERSAL_OR_APP_LINK : Apple’s universal link or Android App Link starting with http:// or https:// . SCHEME_LINK : Custom URL scheme, in the format of scheme://resource . For instance, a Custom URL scheme of WhatsApp should follow the format whatsapp://resource . To learn more about how to use the optimization goal Destination Visit in a Traffic ad, see Optimize Destination visit in Traffic ads . Note : Once set, this field cannot be updated."
+      },
+      {
+        "name": "shopping_ads_deeplink_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The source of the deeplink to be used in the Shopping Ads. Enum values: NONE : No deeplink. CUSTOM : Custom deeplink. Use the deeplink you provided in the ad. You need to specify deeplink at the same time. SHOPPING_ADS : Product deeplink. Use the deeplink you've provided for each product in the catalog. Default value: NONE . The SHOPPING_ADS value is not supported when the following conditions are met: At the ad group level: shopping_ads_type is set to VIDEO (Video Shopping Ads) And product_source is set to CATALOG At the ad level: ad_format is set to SINGLE_VIDEO and vertical_video_strategy is set to SINGLE_VIDEO Or ad_format is set to CATALOG_CAROUSEL To learn about the supported scenarios for non-deferred deeplinks and deferred deeplinks, see the \" Deeplink - Availability - Deeplink \" section. Note : Deferred deeplinks are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Note that implementing deferred deeplinks require technical resources and development capabilities. Non-deferred deeplinks are currently an allowlist-only feature for some scenarios. To check the scenarios where non-deferred deeplinks are an allowlist-only feature, see the \" Deeplink - Availability - Deeplink \" section. If you would like to access it for these scenarios, please contact your TikTok representative."
+      },
+      {
+        "name": "deeplink_utm_params",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "This field is supported only when the following conditions are all met: At the ad group level: shopping_ads_type is set to VIDEO (Video Shopping Ads) product_source is set to CATALOG promotion_type is set to WEBSITE , APP_ANDROID , or APP_IOS A list of deeplink URL parameters. URL parameters are snippets of code that can be added to the end of the URLs to help you track clicks across different channels and understand how visitors interact with a website through third-party analytics platforms. They consist of key-value pairs that are specified through key and value . Max size: 14. If you use a product deeplink in your ad ( shopping_ads_deeplink_type is SHOPPING_ADS ), you can add deeplink URL parameters to the product deeplink by passing deeplink_utm_params . The URL parameters will be automatically appended to the product link upon ad delivery. If you use a custom deeplink in your ad ( shopping_ads_deeplink_type = CUSTOM ), you can manually add deeplink URL parameters to the custom deeplink by directly setting deeplink to a deeplink that already includes URL parameters. However, if you use a custom deeplink in your ad and pass deeplink_utm_params at the same time, the URL parameters will not be automatically appended to the custom deeplink ( deeplink ) upon ad delivery. In such cases, you need to ensure that deeplink_utm_params exactly matches the used deeplink URL parameters. Note : Deeplink URL parameters are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "key",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The deeplink URL parameter. You can specify a custom parameter or a UTM parameter. The supported UTM parameters are: utm_source : The app, site, etc., that brings traffic to your website. For example: TikTok. utm_medium : The advertising or marketing medium. For example: cpm, cpc, banner, video. utm_content : The creative content used for promotion. For example: ad name, CTA text, asset, color, etc. utm_campaign : The individual campaign name, slogan, or promo code. For example: BlackFridayProm. Note that UTM parameters are case-sensitive. Length limit when you specify a custom parameter: 100 characters."
+      },
+      {
+        "name": "value",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The value of the deeplink URL parameter. You can specify a custom value or the name of a macro. The supported macros are: __CAMPAIGN_NAME__ : This will be replaced by your campaign name. __CAMPAIGN_ID__ : This will be replaced by your campaign ID. __AID_NAME__ : This will be replaced by your ad group name. __AID__ : This will be replaced by your ad group ID. __CID_NAME__ : This will be replaced by your ad name. __CID__ : This will be replaced by your ad ID. __PLACEMENT__ : This will be replaced by your placement. Length limit when you specify a custom value: 600 characters."
+      },
+      {
+        "name": "shopping_ads_fallback_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "In the Shopping Ads retargeting scenario, the fallback website type when the deeplink fails to be triggered. Enum values: DEFAULT : Unset. CUSTOM : Custom link. Fall back to the web page link you provide. You need to pass in landing_page_url at the same time. SHOPPING_ADS : Product link. Fall back to the web page link you've provided for each product in the catalog. The SHOPPING_ADS value is not supported when the following conditions are met: At the ad group level: shopping_ads_type is set to VIDEO (Video Shopping Ads) And product_source is set to CATALOG At the ad level: ad_format is set to SINGLE_VIDEO and vertical_video_strategy is set to SINGLE_VIDEO Or ad_format is set to CATALOG_CAROUSEL To learn about the supported scenarios for fallback types, see the \" Deeplink - Availability - Fallback type \" section."
+      },
+      {
+        "name": "fallback_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Fallback Type. If the audience do not have the app installed, you can have them fall back to install the app, or to view a specific web page. Enum values: APP_INSTALL : the App Store or Google Play page for the promoted App that is specified through the app_id field at the ad group level. WEBSITE : the promoted web page that is specified through landing_page_url . UNSET : Unset. If you set this field to WEBSITE , you need to pass the landing_page_url field. To learn about the supported scenarios for fallback types, see the \" Deeplink - Availability - Fallback type \" section."
+      },
+      {
+        "name": "dynamic_destination",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Dynamic destination strategy. Enum values: DLP : Dynamic Landing Page. Displaying different destinations including a custom website or Instant Product Page to each person based on their profile, behavior, and intent to maximize ad conversion. UNSET : Unset. You cannot set this field to DLP if promotion_type is APP_ANDROID or APP_IOS . Note : Dynamic destination is not supported for the optimization goals Click and Landing Page View in website-promoting Video Shopping Ads with product source as catalog. Therefore, this field cannot be specified as DLP when the following conditions are met: At the ad group level: shopping_ads_type is set to VIDEO (Video Shopping Ads). product_source is set to CATALOG . promotion_type is set to WEBSITE . optimization_goal is set to CLICK or TRAFFIC_LANDING_PAGE_VIEW ."
+      },
+      {
+        "name": "instant_product_page_used",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to use TikTok Instant Product Page, an auto-generated TikTok instant page that displays a range of products and provides a native experience landing page. When dynamic_destination = DLP , you don't need this parameter. When dynamic_destination = UNSET , you can set this field to true , and you don't need to pass in page_id ."
+      },
+      {
+        "name": "page_image_index",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Valid only when you set instant_product_page_used to true , and a list of additional images has been configured for the specified products. The index that specifies the additional images to be used on the TikTok Instant Product Page. If this field is not passed, the main images of catalog products will be used on the TikTok Instant Product Page. Value range: [0, 9]. The number you set via this field represents the position of the product image within the additional image list ( additional_image_urls ) for each catalog product. For instance, page_image_index = 1 means that you will use all the images specified via the second image URL in each additional_image_urls value as images on the TikTok Instant Product Page. You can retrieve the additional images configured for a product via additional_image_urls returned by /catalog/product/get/ . If you set a number greater than the total number of additional Image URLs specified for the product, this field will be ignored, and the main image ( image_url ) for the product will be used. You can retrieve the main image for a product via image_url returned by /catalog/product/get/ ."
+      },
+      {
+        "name": "auto_message_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when promotion_type is LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE at the ad group level. The ID of the automatic message to use in a TikTok Direct Messaging Ad. Currently, the only supported automatic message type is welcome message. To obtain a list of welcome messages within your ad account, use /creative/auto_message/get/ . To create a welcome message within your ad account, use /creative/auto_message/create/ . To learn more about how to create TikTok Direct Messaging Ads with welcome messages, see Create a Lead Generation ad with optimization location as TikTok direct messages ."
+      },
+      {
+        "name": "aigc_disclosure_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when identity_type is CUSTOMIZED_USER . Whether to turn on the AIGC (Artificial Intelligence Generated Content) self-disclosure toggle to indicate the ad contains AI-generated content. After the toggle is turned on, your ad will carry an \"Advertiser labeled as Al-generated\" label when viewed in full. Enum values: SELF_DISCLOSURE : To turn on the toggle to declare that the ad contains AI-generated content. NOT_DECLARED : To not declare that the ad contains AI-generated content. Default value: NOT_DECLARED . To learn about the supported advertising objectives and ad formats for the toggle and the detailed steps for using the toggle, see AIGC self-disclosure toggle . Note : For Single Video or Carousel Ads, you can only update this field when you update the ad creative (video or image) itself. For example, if you only reorder the images in a Carousel Ad, this field cannot be updated. For Dynamic Format, Catalog Video, and Catalog Carousel Ads, this field cannot be updated."
+      },
+      {
+        "name": "disclaimer_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of disclaimer that you want to add to the ad. Enum values: TEXT_LINK (clickable disclaimers), TEXT_ONLY (text-only disclaimers). See Include disclaimers in ads to learn about how to configure disclaimer settings. Note : Disclaimers are currently an allowlist-only feature for advertisers not registered in Canada and America using auction ad objectives, and for all advertisers using Reach & Frequency ad objectives. If you would like to access it, please contact your TikTok representative. The disclaimer feature only supports the following advertising objectives: APP_PROMOTION , WEB_CONVERSIONS , REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , LEAD_GENERATION , RF_REACH . The disclaimer feature only supports TikTok placement. The disclaimer feature is not supported for Automated Creative Optimization ads. Once added to your ads, the disclaimer cannot be deleted."
+      },
+      {
+        "name": "disclaimer_text Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The text-only disclaimer that you want to add to the ad. Required when disclaimer_type = TEXT_ONLY ."
+      },
+      {
+        "name": "text",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The disclaimer text. Length limit: 90 characters."
+      },
+      {
+        "name": "disclaimer_clickable_texts Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The clickable disclaimer or clickable disclaimers that you want to add to the ad. Required when disclaimer_type = TEXT_LINK . Max size: 3. If you use multiple clickable disclaimers, both the overall length for all the texts you pass in and the length of individual text need to be no more than 40 characters."
+      },
+      {
+        "name": "text",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The disclaimer text. Length limit: 40 characters."
+      },
+      {
+        "name": "url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The URL for the clickable disclaimer. When users tap each text, they will be redirected to the URL and see more disclaimer details."
+      },
+      {
+        "name": "tracking_pixel_id",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The pixel ID that you'd like to track. You can use this field to track offsite events. It supports the campaign objectives for both Auction ads ( REACH , VIDEO_VIEWS , TRAFFIC , WEB_CONVERSIONS , LEAD_GENERATION , APP_PROMOTION , PRODUCT_SALES , ENGAGEMENT ) and Reach & Frequency ads ( RF_REACH ). For Auction objectives: If pixel_id is specified at the ad group level and you want to use pixel to track offsite events, then the pixel ID you pass in the tracking_pixel_id field must be the same ID that you specified in the pixel_id field for the ad group. Otherwise, you can pass in any pixel ID that you'd like to track in the tracking_pixel_id field. For Reach & Frequency objectives: You can pass in any pixel ID that you'd like to track in the tracking_pixel_id field."
+      },
+      {
+        "name": "tracking_app_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the application that you want to track. You can use this field to track offsite app events. This field supports the campaign objectives for both Auction ads ( REACH , VIDEO_VIEWS , TRAFFIC , WEB_CONVERSIONS , LEAD_GENERATION , APP_PROMOTION , PRODUCT_SALES , ENGAGEMENT ) and Reach & Frequency ads ( RF_REACH ). If app_id is specified at the ad group level and you want to track offsite app events, then the application ID you pass via this field must be the same ID that you specified at the ad group level. Otherwise, you can pass in any application ID that you'd like to track via this field. You can get application ID ( app_id ) via /app/list/ ."
+      },
+      {
+        "name": "tracking_offline_event_set_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Offline Event set IDs that you want to track. You can use this field to track and measure offline activity from people that see or interact with your ads. Max size: 50. See here to learn more about how to create and manage Offline Event sets. Note : Existing auto-tracking Offline Event sets have to be tracked under a newly created ad: You can omit this parameter, then this field will automatically default to the IDs of all the existing auto-tracking Offline Event sets under the advertiser account, or You can manually pass in this parameter. You need to specify via this field at least all the existing auto-tracking Offline Event set IDs, and non-auto-tracking ones are optional. To get the IDs of current auto-tracking Offline Event sets, call /offline/get/ to get all Offline Event set IDs and then select all the auto-tracking ones according to the returned auto_tracking parameter. This field supports the following campaign objectives: REACH , VIDEO_VIEWS , TRAFFIC , LEAD_GENERATION , APP_PROMOTION , WEB_CONVERSIONS , ENGAGEMENT , and PRODUCT_SALES . If the campaign objective ( objective_type ) is set to PRODUCT_SALES , you can only use this field in Video Shopping Ads with product source as catalog. Therefore, ensure the following requirements are both met at the ad group level: shopping_ads_type = VIDEO product_source = CATALOG"
+      },
+      {
+        "name": "tracking_message_event_set_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid when the following conditions are met: promotion_type is LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE . optimization_goal is CLICK . messaging_app_type is MESSENGER or WHATSAPP . page_id is not passed. The ID of the message event set that you want to measure in the Instant Messaging Ad. You can use this field to measure when users have started conversation in your instant messaging app. To obtain the list of available message event sets, use /ctm/message_event_set/get/ . To learn more about how to create Instant Messaging Ads, see Create a Lead Generation ad with optimization location as instant messaging apps . Note : Once set, this field cannot be updated."
+      },
+      {
+        "name": "viewability_postbid_partner",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Post-bid third-party viewability measurement partner. Enum values: MOAT , DOUBLE_VERIFY , IAS . Note : Post-bid third-party viewability measurement is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives, supported markets, and the general introduction of post-bid measurement. When you pass in both brand_safety_postbid_partner and viewability_postbid_partner : If you set either of these two fields as IAS , you need to specify both as IAS , and assign the same value (the wrapped VAST URL that you obtain from the measurement partner IAS) to brand_safety_vast_url and viewability_vast_url . If you set two different post-bid measurement partners, only the post-bid brand safety measurement setting will become valid. Post-bid third-party measurement is not supported for ACO ads. Post-bid third-party measurement is not supported for ad groups where promotion_type is set as LIVE_SHOPPING ."
+      },
+      {
+        "name": "viewability_vast_url Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The wrapped VAST URL used by the post-bid third-party partner to measure viewability. Required when viewability_postbid_partner = IAS . You need to get the URL from the measurement partner IAS. Note : Post-bid third-party viewability measurement is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. When you set both brand_safety_postbid_partner and viewability_postbid_partner as IAS, brand_safety_vast_url should be the same as viewability_vast_url . Post-bid third-party measurement is not supported for ACO ads. Post-bid third-party measurement is not supported for ad groups where promotion_type is set as LIVE_SHOPPING ."
+      },
+      {
+        "name": "brand_safety_postbid_partner",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Post-bid third-party brand safety measurement partner. Enum values: DOUBLE_VERIFY , IAS , ZEFR . Note : Post-bid third-party brand safety measurement is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives, supported markets, and the general introduction of post-bid measurement. The pre-bid Brand Safety filtering setting at the ad group level will determine whether you can use both types of post-bid measurement: If you have specified brand_safety_type as NO_BRAND_SAFETY at the ad group level, you can only pass in viewability_postbid_partner , but not brand_safety_postbid_partner at the ad level. If you have specified brand_safety_type as a value other than NO_BRAND_SAFETY at the ad group level, you can pass in both viewability_postbid_partner and brand_safety_postbid_partner at the ad level. When you pass in both brand_safety_postbid_partner and viewability_postbid_partner : If you set either of these two fields as IAS , you need to specify both as IAS , and assign the same value (the wrapped VAST URL that you obtain from the measurement partner IAS) to brand_safety_vast_url and viewability_vast_url . If you set two different post-bid measurement partners, only the post-bid brand safety measurement setting will become valid. Post-bid third-party measurement is not supported for ACO ads. Post-bid third-party measurement is not supported for ad groups where promotion_type is set as LIVE_SHOPPING ."
+      },
+      {
+        "name": "brand_safety_vast_url Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The wrapped VAST URL used by the post-bid third-party partner to measure brand safety. Required when brand_safety_postbid_partner = IAS . You need to get the URL from the measurement partner IAS. Note : Post-bid third-party brand safety measurement is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. When you set both brand_safety_postbid_partner and viewability_postbid_partner as IAS, brand_safety_vast_url should be the same as viewability_vast_url . Post-bid third-party measurement is not supported for ACO ads. Post-bid third-party measurement is not supported for ad groups where promotion_type is set as LIVE_SHOPPING ."
+      },
+      {
+        "name": "impression_tracking_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Default Impression Tracking URL. URL generated by your data partner to track impression events in your ads. Generally you can find and copy the URL from their platform. If the partner ID for the App ( app_id specified at the ad group level ) that you want to track is 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field. If you do, this field will be ignored. You can obtain the partner ID of an App through partner_id returned from /app/list/ or /app/info/ . If self-attribution has been enabled for the App ( app_id specified at the ad group level ) that you want to track and the partner ID for the App is not 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field because this field will default to the Default Impression Tracking URL you have configured for the App, and updates to the URL are not supported. You can check whether self-attribution has been enabled for the App through self_attribution_enabled returned from /app/list/ or /app/info/ ."
+      },
+      {
+        "name": "click_tracking_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Click Tracking URL. URL generated by your data partner to track click events in your ads. Generally you can find and copy the URL from their platform. If the partner ID for the App ( app_id specified at the ad group level ) that you want to track is 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field. If you do, this field will be ignored. You can obtain the partner ID of an App through partner_id returned from /app/list/ or /app/info/ . If self-attribution has been enabled for the App ( app_id specified at the ad group level ) that you want to track and the partner ID for the App is not 44 (TikTok Business SDK) or 49 (TikTok App API), you don't need to pass in this field because this field will default to the Click Tracking URL you have configured for the App, and updates to the URL are not supported. You can check whether self-attribution has been enabled for the App through self_attribution_enabled returned from /app/list/ or /app/info/ . Currently Pangle does not support DCM, Sizmek or Flashtalking."
+      },
+      {
+        "name": "playable_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Playable material url, valid in Pangle and TikTok placement. You can get the url via the /playable/get/ endpoint. Note that all ads in the same ad group share the same playable material. Note : Starting September 30, 2024, you will no longer be able to create Playable Ads delivered to the TikTok placement."
+      },
+      {
+        "name": "operation_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Note For Reach & Frequency ads, please specify operation_status as ENABLE or do not pass in operation_status . Do not specify operation_status as DISABLE . The status of the ad when created. Enum values: ENABLE : The ad is enabled when created. DISABLE : The ad is disabled when created. Default value: ENABLE . If you want to update the status of the ad after creation, use the /ad/status/update/ endpoint."
+      },
+      {
+        "name": "creative_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Creative type for Live Shopping Ads, Product Shopping Ads, App Pre-Registration, Automotive Ads for Inventory, or Automotive Ads for Models scenarios. When shopping_ads_type is LIVE at the ad group level, this field is required and can be set to SHORT_VIDEO_LIVE or DIRECT_LIVE . When shopping_ads_type is PRODUCT_SHOPPING_ADS at the ad group level, you can omit this field or set it to PSA . When app_promotion_type is APP_PREREGISTRATION at the campaign level and promotion_website_type is set to TIKTOK_NATIVE_PAGE at the ad group level, you can omit this field or set it to CUSTOM_INSTANT_PAGE . When objective_type is LEAD_GENERATION and catalog_enabled is true at the campaign level, you can omit this field or set it to AUTO_INVENTORY_INSTANT_PAGE . To learn about Automotive Ads for Inventory and Automotive Ads for Models, see Create Automotive Ads for Inventory and Automotive Ads for Models . Enum values: SHORT_VIDEO_LIVE : Short videos that direct traffic to live shopping room. DIRECT_LIVE : Live shopping room. Each campaign can have only one live shopping room. PSA : The product visuals will be used as ad creative. CUSTOM_INSTANT_PAGE : Customized TikTok Instant Page. AUTO_INVENTORY_INSTANT_PAGE ：A video or carousel with an auto-generated Instant Product Page showcasing the inventory of the Auto-Inventory catalog in Automotive Ads for Inventory or the models of the Auto-Model Catalog in the Automotive Ads for Models."
+      },
+      {
+        "name": "video_view_tracking_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The monitoring URL for video view."
+      },
+      {
+        "name": "app_name Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "App name that is displayed in the ad. If not specified, the name in the app store will be used. Number of characters allowed: 1-40. If the name in the app store exceeds 40 characters, you must pass in a new app name with this field."
+      },
+      {
+        "name": "display_name Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The display name of landing page or pure exposure ad, length limit: 1-40 English characters, or 1-20 Chinese/Japanese/Korean characters, required when the promotion type is landing page or pure exposure"
+      },
+      {
+        "name": "avatar_icon_web_uri",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the avatar image. It can be uploaded through the Upload an image endpoint (picture ratio requirement is 1: 1)"
+      },
+      {
+        "name": "creative_authorized",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether you grant displaying some of your ads in our TikTok For Business Creative Center. Only valid for non-US advertisers, the default value is false . Note : creative_authorized can only be used for video ads."
+      },
+      {
+        "name": "schedule_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only for Reach & Frequency ads. Schedule ID. Use this field to associate a schedule ID with the ad you are creating within a Reach & Frequency ad group that has sequenced delivery enabled. To obtain a schedule ID, call /adgroup/rf/create/ and set delivery_mode to SEQUENCE . After you associate the ad delivery information ( schedule_id ) with an ad, the value of is_draft will automatically be set to false , and the value of schedule_id will be the ID of the ad that you have associated the ad delivery information with. To confirm that the schedule ID has been successfully associated with the ad, call /adgroup/get/ and check the values for is_draft and schedule_id in the response."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"adgroup_id\": \"{{adgroup_id}}\",\n    \"creatives\": [{\n        \"ad_name\": \"{{ad_name}}\",\n        \"identity_type\":\"CUSTOMIZED_USER\",\n        \"identity_id\":\"{{identity_id}}\",\n        \"ad_format\": \"SINGLE_VIDEO\",\n        \"video_id\":\"{{video_id}}\",\n        \"image_ids\":[\"{{image_id}}\"],\n        \"ad_text\": \"{{ad_text}}\",\n        \"call_to_action\": \"{{call_to_action}}\",\n        \"landing_page_url\":\"{{landing_page_url}}\"\n    }]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"ad_ids\": [\n            \"{{ad_id}}\"\n        ],\n        \"need_audit\": false,\n        \"creatives\": [\n            {\n                \"ad_name\": \"{{ad_name}}\",\n                \"avatar_icon_web_uri\": \"{{avatar_icon_web_uri}}\",\n                \"creative_type\": null,\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"playable_url\": \"\",\n                \"operation_status\": \"ENABLE\",\n                \"brand_safety_vast_url\": null,\n                \"impression_tracking_url\": null,\n                \"viewability_postbid_partner\": \"UNSET\",\n                \"viewability_vast_url\": null,\n                \"identity_id\": \"{{identity_id}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"page_id\": null,\n                \"ad_id\": \"{{ad_id}}\",\n                \"identity_type\": \"CUSTOMIZED_USER\",\n                \"landing_page_url\": \"{{landing_page_url}}\",\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"landing_page_urls\": null,\n                \"profile_image_url\": \"{{profile_image_url}}\",\n                \"ad_text\": \"{{ad_text}}\",\n                \"is_new_structure\": true,\n                \"create_time\": \"{{create_time}}\",\n                \"call_to_action_id\": null,\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"creative_authorized\": false,\n                \"deeplink_type\": \"NORMAL\",\n                \"tracking_pixel_id\": 0,\n                \"is_aco\": false,\n                \"brand_safety_postbid_partner\": \"UNSET\",\n                \"image_ids\": [\n                    \"{{image_id}}\"\n                ],\n                \"deeplink\": \"\",\n                \"fallback_type\": \"UNSET\",\n                \"app_name\": \"\",\n                \"vast_moat_enabled\": false,\n                \"ad_format\": \"SINGLE_VIDEO\",\n                \"optimization_event\": null,\n                \"ad_texts\": null,\n                \"click_tracking_url\": null,\n                \"call_to_action\": \"{{call_to_action}}\",\n                \"card_id\": null,\n                \"modify_time\": \"{{modify_time}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

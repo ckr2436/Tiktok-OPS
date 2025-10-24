@@ -1,0 +1,321 @@
+{
+  "title": "Create an audience by rule",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/rule/create/",
+  "method": "POST",
+  "category_path": [
+    "Audience"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "custom_audience_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Audience name. Length limit: 128 characters."
+      },
+      {
+        "name": "audience_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Audience type. Enum values: ENGAGEMENT : Engagement Audience (with asset type as ad groups). ENGAGEMENT_ORGANIC_VIDEO : Organic Engagement Audience (with asset type as public video). ENGAGEMENT_LIVE_VIDEO : Live Engagement Audience (with asset type as live video). APP : App Activity Audience. PIXEL : Website Traffic Audience. LEAD_GENERATION : Lead Generation Audience. BUSINESS_ACCOUNT : Business Account Audience. TIKTOK_SHOP : Shop Activity Audience. OFFLINE : Offline Activity Audience."
+      },
+      {
+        "name": "audience_sub_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Audience sub type, indicating the type of ads that the audience can be used. Enum values: NORMAL : Audience for non-Reach & Frequency ads. REACH_FREQUENCY : Audience for Reach & Frequency ads. It can only be used in Reach & Frequency ads. Default value: NORMAL ."
+      },
+      {
+        "name": "retention_in_days",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Number of days to retain the audience. Value range: 1-365. Note : If this field is passed, the expiration date will be the specified number of retention days from the date when the audience was created. Any operations to the audience CANNOT reset the expiration date. If this field is not passed, the expiration date will be 365 days from the last time the audience was applied to an active ad group or modified. Applying the audience to an active ad group or modifying the audience will reset the expiration date. To learn about the actions that will reset the expiration date, refer to the Help Center article Audience Expiration Policy ."
+      },
+      {
+        "name": "is_auto_refresh",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to turn on the audience auto-refresh function. Supported values: true , false . Default value: true . If you enable this feature, your audience will automatically refresh to include the latest user data according to the lookback window you set. If you disable this feature, your audience will not automatically refresh."
+      },
+      {
+        "name": "identity_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when audience_type is ENGAGEMENT_LIVE_VIDEO or ENGAGEMENT_ORGANIC_VIDEO . Identity ID."
+      },
+      {
+        "name": "identity_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when audience_type is ENGAGEMENT_LIVE_VIDEO or ENGAGEMENT_ORGANIC_VIDEO . Identity type. Enum values: TT_USER , BC_AUTH_TT"
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "rule_spec",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Rule of the audience."
+      },
+      {
+        "name": "inclusion_rule_set",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Details of the inclusion rule set."
+      },
+      {
+        "name": "operator",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Operator between the inclusion rules within the inclusion rule set. Enum value: OR . If you provide more than one inclusion rule, the inclusion rules will be combined using OR logic to broaden the audience."
+      },
+      {
+        "name": "rules",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "A list of inclusion rules within the inclusion rule set."
+      },
+      {
+        "name": "event_source_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when audience_type is not ENGAGEMENT or LEAD_GENERATION . List of event source IDs of the rule. For an Engagement Audience, use ad group IDs as event source IDs. If not specified, all available event source IDs will be used. For an Organic Engagement Audience, use TikTok post IDs as event source IDs. You can use /identity/video/get/ to get TikTok post IDs. The maximum allowed number of TikTok post IDs is 10. For a Live Engagement Audience, use live video ID as event source IDs. You can use /identity/live/get/ to get live video IDs. The maximum allowed number of live video IDs is 10. For an App Activity Audience, use App IDs as event source IDs. For a Website Traffic Audience, use pixel IDs as event source IDs. For a Lead Generation Audience, do not pass in this field. Otherwise, an error will occur. If not specified, all available event source IDs will be used. For a Business Account Audience, use core user IDs of the advertisers. You can use /user/info/ to get a core user ID. For a Shop Activity Audience, use TikTok Shop IDs as event source IDs. You can use /store/list/ to get TikTok Shop IDs. For an Offline Activity Audience, use Offline Event set IDs as event source IDs. You can use /offline/get/ to get Offline Event set IDs."
+      },
+      {
+        "name": "retention_days",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Audience lookback window. For enum values, see Enumerations - Lookback window . Note : If audience_type = BUSINESS_ACCOUNT , and the value in the filters object is not BUSINESS ACCOUNT PROFILE FOLLOW , then retention_days must be 7 , 14 , or 30 . If audience_type = ENGAGEMENT_LIVE_VIDEO or ENGAGEMENT_ORGANIC_VIDEO , then retention_days must be 7 , 14 , or 30 . To avoid confusion between retention_days and retention_in_days , we'll rename retention_days in the next API version."
+      },
+      {
+        "name": "filter_set",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The set of filters for each inclusion rule."
+      },
+      {
+        "name": "operator",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Operator between filters in the filters object array. Enum value: OR . Within each inclusion rule, you can only specify one object in filters ."
+      },
+      {
+        "name": "filters",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "An array of filters on previous audience actions and optionally also on URL keywords or parameters. Max size: 1."
+      },
+      {
+        "name": "field",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter field. Enum value: EVENT : To include the people who've carried out a certain action in the past few days as indicated by retention_days ."
+      },
+      {
+        "name": "operator",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter operator between filter field and filter value. Enum value: EQ : equals."
+      },
+      {
+        "name": "value",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter value. For enum values, see Enumeration - Filter Value ."
+      },
+      {
+        "name": "parameter_filters",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "List of filters on URL keywords or parameters. Within parameter_filters , you can add a maximum of one URL keyword filter (with field set to URL ) and 10 parameter filters (with field not set to URL ) . If specified, these filters ( parameter_filters ) are combined with the action filter (as specified by field , operator and value ) using default AND logic to form the inclusion rule. For example, if retention_days is 30 and filter_set is set to {\"operator\": \"OR\", \"filters\":[{\"field\":\"EVENT\",\"operator\":\"EQ\", \"value\":\"PIXEL COMPLETE PAYMENT\"},\"parameter_filters\":[{\"field\":\"URL\",\"operator\":\"CONTAINS\",\"value\":\"us\"}]]} , the inclusion rule will create an audience that includes people who carried out the \"Complete Payment\" action on a webpage with \"us\" included in the page URL within the past 30 days on the website where the Pixel is installed."
+      },
+      {
+        "name": "field Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when parameter_filters within inclusion_rule_set is passed. Filter condition. Use this field to specify whether to filter URL keywords, or Web Event parameters reported via the Pixel . Enum value: URL : URL keywords. CONTENT_TYPE : the parameter content_type . PRICE : the parameter price . VALUE : the parameter value . CONTENT_ID : the parameter content_id . CONTENT_CATEGORY : the parameter content_category ."
+      },
+      {
+        "name": "operator Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when parameter_filters within inclusion_rule_set is passed. Filter operator between filter condition and filter value. Enum value: CONTAINS : contains. DOES_NOT_CONTAIN : doesn't contain. EQ : equals. IS_LESS_THAN : is less than. IS_GREATER_THAN : is greater than. IS_LESS_THAN_OR_EQUAL_TO : is less than or equal to. IS_GRETER_THAN_OR_EQUAL_TO : is greater than or equal to. The allowed values vary based on the field value: If field is set to URL , operator can only be set to CONTAINS , DOES_NOT_CONTAIN , or EQ . If field is not set to URL , operator can be set to CONTAINS , DOES_NOT_CONTAINS , EQ , IS_LESS_THAN , IS_GREATER_THAN , IS_LESS_THAN_OR_EQUAL_TO , or IS_GREATER_THAN_OR_EQUAL_TO ."
+      },
+      {
+        "name": "values Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when parameter_filters within inclusion_rule_set is passed. A list of filter values. Max size: 10. Length limit for each value: 100 characters. If you specify multiple values, the values will be combined using OR logic."
+      },
+      {
+        "name": "exclusion_rule_set",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Details of the exclusion rule set."
+      },
+      {
+        "name": "operator Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when exclusion_rule_set is passed. Operator between the exclusion rules within the exclusion rule set. Enum value: OR ."
+      },
+      {
+        "name": "rules Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when exclusion_rule_set is passed. A list of exclusion rules within the exclusion rule set."
+      },
+      {
+        "name": "event_source_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of event source IDs of the rule. For an Engagement Audience, use ad group IDs as event source IDs. If not specified, all available event source IDs will be used. For an Organic Engagement Audience, use TikTok post IDs as event source IDs. You can use /identity/video/get/ to get TikTok post IDs. The maximum allowed number of TikTok post IDs is 10. For a Live Engagement Audience, use live video ID as event source IDs. You can use /identity/live/get/ to get live video IDs. The maximum allowed number of live video IDs is 10. For an App Activity Audience, use App IDs as event source IDs. For a Website Traffic Audience, use pixel IDs as event source IDs. For a Lead Generation Audience, do not pass in this field. Otherwise, an error will occur. If not specified, all available event source IDs will be used. For a Business Account Audience, use core user IDs of the advertisers. You can use /user/info/ to get a core user ID. For a Shop Activity Audience, use TikTok Shop IDs as event source IDs. You can use /store/list/ to get TikTok Shop IDs. For an Offline Activity Audience, use Offline Event set IDs as event source IDs. You can use /offline/get/ to get Offline Event set IDs."
+      },
+      {
+        "name": "retention_days Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Required when exclusion_rule_set is passed. Audience lookback window. For enum values, see Enumerations - Lookback window . Note : If audience_type = BUSINESS_ACCOUNT , and the value in the filters object is not BUSINESS ACCOUNT PROFILE FOLLOW , then retention_days must be 7 , 14 , or 30 . If audience_type = ENGAGEMENT_LIVE_VIDEO or ENGAGEMENT_ORGANIC_VIDEO , then retention_days must be 7 , 14 , or 30 . To avoid confusion between retention_days and retention_in_days , we'll rename retention_days in the next API version."
+      },
+      {
+        "name": "filter_set Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required when exclusion_rule_set is passed. The set of filters for the exclusion rule."
+      },
+      {
+        "name": "operator Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when exclusion_rule_set is passed. Operator between filters in the filters object array. Enum value: OR . Within each exclusion rule, you can only specify one object in filters ."
+      },
+      {
+        "name": "filters Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when exclusion_rule_set is passed. An array of filters on previous audience actions and optionally also on URL keywords or parameters. Max size: 1."
+      },
+      {
+        "name": "field Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when exclusion_rule_set is passed. Filter field. Enum value: EVENT : To exclude the people who've carried out a certain action in the past few days as indicated by retention_days ."
+      },
+      {
+        "name": "operator Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when exclusion_rule_set is passed. Filter operator between filter field and filter value. Enum value: EQ : equals."
+      },
+      {
+        "name": "value Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when exclusion_rule_set is passed. Filter value. For enum values, see Enumeration - Filter Value ."
+      },
+      {
+        "name": "parameter_filters",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "List of filters on URL keywords or parameters. Within parameter_filters , you can add a maximum of one URL keyword filter (with field set to URL ) and 10 parameter filters (with field not set to URL ) . If specified, these filters ( parameter_filters ) are combined with the action filter (as specified by field , operator and value ) using default AND logic to form the exclusion rule. For example, if retention_days is 30 and filter_set is set to {\"operator\": \"OR\", \"filters\":[{\"field\":\"EVENT\",\"operator\":\"EQ\", \"value\":\"PIXEL COMPLETE PAYMENT\"},\"parameter_filters\":[{\"field\":\"URL\",\"operator\":\"CONTAINS\",\"value\":\"us\"}]]} , the exclusion rule will create an audience that excludes people who carried out the \"Complete Payment\" action on a webpage with \"us\" included in the page URL within the past 30 days on the website where the Pixel is installed."
+      },
+      {
+        "name": "field Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when parameter_filters within exclusion_rule_set is passed. Filter condition. Use this field to specify whether to filter URL keywords, or Web Event parameters reported via the Pixel . Enum value: URL : URL keywords. CONTENT_TYPE : the parameter content_type . PRICE : the parameter price . VALUE : the parameter value . CONTENT_ID : the parameter content_id . CONTENT_CATEGORY : the parameter content_category ."
+      },
+      {
+        "name": "operator Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when parameter_filters within exclusion_rule_set is passed. Filter operator between filter condition and filter value. Enum value: CONTAINS : contains. DOES_NOT_CONTAIN : doesn't contain. EQ : equals. IS_LESS_THAN : is less than. IS_GREATER_THAN : is greater than. IS_LESS_THAN_OR_EQUAL_TO : is less than or equal to. IS_GRETER_THAN_OR_EQUAL_TO : is greater than or equal to. The allowed values vary based on the field value: If field is set to URL , operator can only be set to CONTAINS , DOES_NOT_CONTAIN , or EQ . If field is not set to URL , operator can be set to CONTAINS , DOES_NOT_CONTAINS , EQ , IS_LESS_THAN , IS_GREATER_THAN , IS_LESS_THAN_OR_EQUAL_TO , or IS_GREATER_THAN_OR_EQUAL_TO ."
+      },
+      {
+        "name": "values Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when parameter_filters within exclusion_rule_set is passed. A list of filter values. Max size: 10. Length limit for each value: 100 characters. If you specify multiple values, the values will be combined using OR logic."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/rule/create/' \\\n--header 'Content-Type: application/json' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"custom_audience_name\": \"{{custom_audience_name}}\",\n    \"audience_type\": \"OFFLINE\",\n    \"rule_spec\": {\n        \"inclusion_rule_set\": {\n            \"operator\": \"OR\",\n            \"rules\": [\n                {\n                    \"event_source_ids\": [\n                        \"{{event_source_id}}\"\n                    ],\n                    \"retention_days\": 7,\n                    \"filter_set\": {\n                        \"operator\": \"OR\",\n                        \"filters\": [\n                            {\n                                \"field\": \"EVENT\",\n                                \"operator\": \"EQ\",\n                                \"value\": \"OFFLINE COMPLETE PAYMENT\"\n                            }\n                        ]\n                    }\n                }\n            ]\n        }\n    }\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"custom_audience_id\": \"{{custom_audience_id}}\"\n    }\n}"
+    }
+  }
+}

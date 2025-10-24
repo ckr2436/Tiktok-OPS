@@ -1,0 +1,80 @@
+{
+  "title": "Appeal a rejection",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/adgroup/appeal/",
+  "method": "POST",
+  "category_path": [
+    "Ad Review"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID."
+      },
+      {
+        "name": "ad_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad ID. Optional."
+      },
+      {
+        "name": "appeal_reason",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The reason for the appeal."
+      },
+      {
+        "name": "attachment_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of attachment links."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\",\n    \"adgroup_id\": \"ADGROUP_ID\",\n    \"ad_id\": \"AD_ID\",\n    \"appeal_reason\": \"APPEAL_REASON\",\n    \"attachment_list\": [\n        \"ATTACHMENT_LIST\"\n    ]\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/adgroup/appeal/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

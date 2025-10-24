@@ -1,0 +1,230 @@
+{
+  "title": "Get inventory estimates",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/rf/inventory/estimate/",
+  "method": "GET",
+  "category_path": [
+    "Reach & Frequency"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "audience_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Audience targeting rules"
+      },
+      {
+        "name": "audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the audiences that you want to target. For an audience to be targeted or excluded in R&F ads, you must set audience_sub_type to REACH_FREQUENCY when creating or updating the audience."
+      },
+      {
+        "name": "excluded_audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the audiences that you want to exclude. For an audience to be targeted or excluded in R&F ads, you must set audience_sub_type to REACH_FREQUENCY when creating or updating the audience."
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Target age range. If your targeting locations include Israel or Brazil, AGE_13_17 cannot be used. For enum values, see Enumeration - Audience Age Range ."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Target gender. For enum values, see Enumeration - Audience Gender ."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Target language. For enum values, see Enumeration - Audience Language ."
+      },
+      {
+        "name": "location_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the targeted locations. targeting countries and/or regions. The location can be at the country or region level, the Province, DMA (Designated Market Area) or Metropolitan level, or the city level. Location targeting supports a single country / region only. If multiple location IDs are specified, they must from the same country / region. You can find the supported locations from Reach & Frequency . For the list of location IDs, see Location IDs ."
+      },
+      {
+        "name": "operating_systems",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Operating system. For enum values, see Enumeration - Audience Operation System"
+      },
+      {
+        "name": "network_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Network type. Default value: unlimited . For enum values, see Enumeration - Audience Network Type ."
+      },
+      {
+        "name": "device_model_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the device models that you want to target. Currently only brand-level model IDs are supported. When this field is specified, device_price_ranges must not be specified. For enum values of device model IDs on different levels, please see Device Models . Note : Only active devices ( is_active = True in the response of /tool/device_model/ ) can be used to create ads."
+      },
+      {
+        "name": "device_price_ranges",
+        "required": false,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important : The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+      },
+      {
+        "name": "carrier_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Carrier IDs. Use /tool/carrier/ endpoint to get the enum values for this field."
+      },
+      {
+        "name": "interest_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Interest classification. If the interest is specified, users that do not meet interest target will be excluded during delivery. Do not specify if you wish to target everyone. Use /tool/target_recommend_tags/ to get a list of recommended interest categories based on your targeting regions and your industries. Use /tool/interest_category/ endpoint to get the complete list of interest categories."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand safety type for Reach and Frequency ads. Default value: NO_BRAND_SAFETY . Enum values: NO_BRAND_SAFETY : To not use any brand safety solution. Full inventory, which means your ads may appear next to some content featuring mature themes. EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. THIRD_PARTY : Use a third-party brand safety solution. To get the countries and regions that your ads can be deployed to based on your brand safety settings, use the /tool/region/ endpoint. Note : Pre-bid third-party brand safety solutions are currently allowlist-only features. If you would like to access them, please contact your TikTok representative."
+      },
+      {
+        "name": "contextual_tag_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Contextual tag IDs. You can use /tool/contextual_tag/get/ to get available contextual tags. Note : This is an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Only supports RF_REACH as objectives ( objective_type ) at the campaign level. Not supported when brand_safety_type is set to THIRD_PARTY . Not supported when feed_type is set to TOP_FEED . If you set rf_campaign_type to PULSE in /campaign/create/ , then you must enter contextual tags of PREMIUM type in this field. In this case, the CPM ( cpm ) in your ad group is fixed."
+      },
+      {
+        "name": "schedule_start_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start time (UTC+0): format \"YYYY-MM-DD HH:MM:SS\". The HH:MM:SS value must be equal to 00:00:00 for the target region. For example, 2020-10-24 05:00:00 is equal to 2020-10-24 00:00:00 in the UTC-5 time zone. Note : If the targeting locations ( location_ids ) you specify observe Daylight Saving Time, ignore Daylight Saving Time and pass in Standard Time. For example, if you want to start the schedule for the Netherlands at 2022-04-02 00:00:00 local time (Daylight Saving Time has started, UTC+2 timezone), you need to regard the time zone of the Netherlands as Standard Time Zone (UTC+1) and specify this field as 2022-04-02 23:00:00 ."
+      },
+      {
+        "name": "schedule_end_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End time (UTC+0): format \"YYYY-MM-DD HH:MM:SS\". The HH:MM:SS value must be equal to 23:59:59 for the target region. For example, 2020-11-11 04:59:59 is equal to 2020-11-10 23:59:59 in the UTC-5 time zone. The time interval between schedule_end_time and schedule_start_time must not exceed 30 days. Note : If the targeting locations ( location_ids ) you specify observe Daylight Saving Time, ignore Daylight Saving Time and pass in Standard Time. For example, if you want to end the schedule for the Netherlands at 2022-11-02 23:59:59 local time (Daylight Saving Time has started, UTC+2 timezone) , you need to regard the time zone of the Netherlands as Standard Time Zone (UTC+1) and specify this field as 2022-11-02 22:59:59 ."
+      },
+      {
+        "name": "frequency",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Frequency. This parameter, together with the frequency_schedule parameter, determines the upper limit for how frequently an ad is shown to users (only for R&F ads). For example, if frequency = 2 and frequency_schedule = 3, it means the ad will be displayed at most twice every 3 days. The following conditions should be met: 1 ≤ frequency ≤ frequency_schedule 1 ≤ frequency_schedule ≤ min( schedule_end_time - schedule_start_time , 30). The frequency cap determined by frequency and frequency_schedule does not exceed four times a day."
+      },
+      {
+        "name": "frequency_schedule",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Frequency cycle (in days). This parameter, together with the frequency parameter, determines the upper limit for how frequently an ad is displayed to users (only for R&F ads). Please see the description for the frequency field."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The advertising objective. Enum values: RF_REACH ."
+      },
+      {
+        "name": "cpv_video_duration",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The target video view duration. Enum values: SIX_SECONDS , TWO_SECONDS ."
+      },
+      {
+        "name": "feed_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Feed type option. Enum values: STANDARD_FEED , TOP_FEED . STANDARD_FEED refers to large inventory with normal CPM price while TOP_FEED refers to limited inventory with higher CPM price."
+      },
+      {
+        "name": "rf_purchased_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Buying type. Allowed values: FIXED_SHOW : Purchase to achieve a fixed amount of impressions. FIXED_REACH : Purchase to reach a fixed number of users. FIXED_BUDGET : Purchase with a fixed budget."
+      },
+      {
+        "name": "budget Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Budget. Required when rf_purchased_type = FIXED_BUDGET . Based on the budget amount that you specify, we will return the estimated values for other fields."
+      },
+      {
+        "name": "purchased_impression Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Impressions to be purchased, in the unit of 1,000 . Required when rf_purchased_type = FIXED_SHOW . Based on the impression amount that you specify, we will return the estimated values for other fields."
+      },
+      {
+        "name": "purchased_reach Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Number of users reached to be purchased, in the unit of 1,000 . Required when rf_purchased_type = FIXED_REACH . Based on the reach amount that you specify, we will return the estimated values for other fields."
+      },
+      {
+        "name": "rf_campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When objective_type is specified as RF_REACH , use this field to set the campaign as a TikTok Pulse campaign, then you can get available premium contextual tags. Enum values: STANDARD (Reach & Frequency campaign), PULSE (TikTok Pulse campaign). If you set this field as PULSE , only one location ID ( location_id ) will be returned. Note : Do not pass in this field when objective_type is not specified as RF_REACH . You need to pass the location_id value returned in this endpoint to location_ids when you use /adgroup/rf/create/ to create a TikTok Pulse ad group."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"frequency_schedule=FREQUENCY_SCHEDULE\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"audience_info={\\\"languages\\\": [\\\"LANGUAGES\\\"], \\\"gender\\\": \\\"GENDER\\\", \\\"age_groups\\\": [\\\"AGE_GROUPS\\\"], \\\"operating_systems\\\": [\\\"OPERATING_SYSTEMS\\\"], \\\"location_ids\\\": [\\\"LOCATION_IDS\\\"]}\" \\\n--data-urlencode \"frequency=FREQUENCY\" \\\n--data-urlencode \"schedule_start_time=SCHEDULE_START_TIME\" \\\n--data-urlencode \"schedule_end_time=SCHEDULE_END_TIME\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/rf/inventory/estimate/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"default_result\": {\n            \"daily_cost\": [\n                {\n                    \"date\": \"2020-08-07\",\n                    \"cost\": 3587.5169107559\n                },\n                {\n                    \"date\": \"2020-08-08\",\n                    \"cost\": 3565.1767601342\n                },\n                {\n                    \"date\": \"2020-08-09\",\n                    \"cost\": 3512.4961871912\n                },\n                {\n                    \"date\": \"2020-08-10\",\n                    \"cost\": 3537.1785786238\n                }\n            ],\n            \"frequency_per_person\": [\n                {\n                    \"percentage\": 0.28,\n                    \"frequency\": 1\n                },\n                {\n                    \"percentage\": 0.72,\n                    \"frequency\": 2\n                }\n            ],\n            \"base_info\": {\n                \"impression\": 5157,\n                \"average_frequency\": 1.72,\n                \"reach\": 2991,\n                \"max_reach\": 17291,\n                \"cpm\": 2.75,\n                \"budget\": 14202.37\n            }\n        },\n        \"results\": [\n            {\n                \"daily_cost\": [\n                    {\n                        \"date\": \"2020-08-07\",\n                        \"cost\": 163.09\n                    },\n                    {\n                        \"date\": \"2020-08-08\",\n                        \"cost\": 163.27\n                    },\n                    {\n                        \"date\": \"2020-08-09\",\n                        \"cost\": 168.63\n                    },\n                    {\n                        \"date\": \"2020-08-10\",\n                        \"cost\": 164.8\n                    }\n                ],\n                \"frequency_per_person\": [\n                    {\n                        \"percentage\": 0.2480487252,\n                        \"frequency\": 1\n                    },\n                    {\n                        \"percentage\": 0.7519512748,\n                        \"frequency\": 2\n                    }\n                ],\n                \"base_info\": {\n                    \"impression\": 418,\n                    \"average_frequency\": 1.75,\n                    \"reach\": 239,\n                    \"cpm\": 1.58,\n                    \"budget\": 659.8\n                }\n           }\n       ]\n   }"
+    }
+  }
+}

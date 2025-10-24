@@ -1,0 +1,153 @@
+{
+  "title": "Check Value-Based Optimization eligibility",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/vbo_status/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising objective. Set this field to APP_PROMOTION , WEB_CONVERSIONS , or PRODUCT_SALES . When you set this field to any other objective, vo_status will be NOT_SUPPORT because these objectives are not supported for VBO. For enum values and descriptions, see Objectives . Note : When objective_type is set to PRODUCT_SALES and promotion_type is set to LIVE_SHOPPING or VIDEO_SHOPPING , do not pass in pixel_id or app_id . Otherwise, pass in either pixel_id or app_id ."
+      },
+      {
+        "name": "app_promotion_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when objective_type is APP_PROMOTION . App promotion type. Enum values: APP_INSTALL : Get new users to install your app. APP_RETARGETING : Re-engage existing users to take action in your app. Note : Only the enum value APP_INSTALL can be used in an iOS14 Dedicated Campaign."
+      },
+      {
+        "name": "campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Do not pass campaign_type and ios14_quota_type at the same time. If both fields are passed, ios14_quota_type will be ignored. Campaign type. Enums values: REGULAR_CAMPAIGN : non-iOS 14 Dedicated Campaign. IOS14_CAMPAIGN : iOS 14 Dedicated Campaign. The value IOS14_CAMPAIGN can only be used when: objective_type is PRODUCT_SALES . objective_type is APP_PROMOTION and app_promotion_type is APP_INSTALL ."
+      },
+      {
+        "name": "is_advanced_dedicated_campaign",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the campaign is an Advanced Dedicated Campaign. Advanced Dedicated Campaigns leverage advanced delivery models that benefit from real-time signals. Supported values: true , false . Default value: false . To learn about how to create such campaigns, see Create Advanced Dedicated Campaigns . Note : Once set, this field cannot be updated."
+      },
+      {
+        "name": "disable_skan_campaign",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Valid only when the following conditions are all met: objective_type is APP_PROMOTION . app_promotion_type is APP_INSTALL . campaign_type is IOS14_CAMPAIGN . app_id is set to the ID of an iOS app that is eligible for Advanced Dedicated Campaigns . To confirm whether an app is eligible for Advanced Dedicated Campaigns, use /app/list/ and check the returned advanced_dedicated_campaign_allowed . Whether to disable SKAN (SKAdNetwork) attribution, Apple's conversion attribution solution for iOS campaigns Enum values: true : To disable SKAN attribution. The campaign will not be bound by Dedicated Campaign quota limits and you will be able to retrieve Self Attribution Network (SAN) metrics for the campaign. However, you cannot retrieve SKAN reporting metrics for the campaign. Learn more about SAN integration . For a Dedicated Campaign using an app that is eligible for Advanced Dedicated Campaigns, you need to enable SKAN attribution or Advanced Dedicated Campaign or both. You cannot disable SKAN attribution and Advanced Dedicated Campaign simultaneously. false : To enable SKAN attribution. The campaign will be bound by Dedicated Campaign quota limits and you will be able to retrieve SKAN metrics for the campaign. If you enable Advanced Dedicated Campaign by setting is_advanced_dedicated_campaign to true simultaneously, you'll be able to retrieve both SAN and SKAN reporting metrics for the campaign. Note : Disabling SKAN attribution for Dedicated Campaigns is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. If you are allowlisted for disabling SKAN attribution for Dedicated Campaigns, you cannot set bid_type to BID_TYPE_CUSTOM at the ad group level when the following conditions are all met: At the campaign level: is_advanced_dedicated_campaign is false . disable_skan_campaign is false . At the ad group level: optimization_goal is INSTALL or IN_APP_EVENT . Once set, this field cannot be updated. Getting access to Advanced Dedicated Campaign requires the app to meet certain criteria. If your app is ineligible for Advanced Dedicated Campaign, reach out to your TikTok representative. Your TikTok representative will be able to provide troubleshooting support to help your app get access to Advanced Dedicated Campaign."
+      },
+      {
+        "name": "bid_align_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when the following conditions are all met: objective_type is APP_PROMOTION . app_promotion_type is APP_INSTALL . campaign_type is IOS14_CAMPAIGN . app_id is set to the ID of an iOS app that is eligible for Advanced Dedicated Campaigns . To confirm whether an app is eligible for Advanced Dedicated Campaigns, use /app/list/ and check the returned advanced_dedicated_campaign_allowed . The attribution type for the Dedicated Campaign. The type determines which attribution network the target CPA or ROAS at the ad group level is based on. Enum value: SAN : Self Attributing Network(SAN). SKAN : SKAdNetwork (SKAN). When is_advanced_dedicated_campaign is true and you are not allowlisted for disabling SKAN attribution for Dedicated Campaigns, set this field to SKAN . When is_advanced_dedicated_campaign is true , you are allowlisted for disabling SKAN attribution for Dedicated Campaigns, and disable_skan_campaign is false , set this field to SAN . When is_advanced_dedicated_campaign is true and disable_skan_campaign is true , set this field to SAN . When is_advanced_dedicated_campaign is false and disable_skan_campaign is false , set this field to SKAN ."
+      },
+      {
+        "name": "promotion_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Promotion type and you can decide where you'd like to promote your products using this field. For enum values, see Enumeration - Promotion Type . Note : When objective_type is set to PRODUCT_SALES and promotion_type is set to LIVE_SHOPPING or VIDEO_SHOPPING , do not pass in pixel_id or app_id . Otherwise, pass in either pixel_id or app_id ."
+      },
+      {
+        "name": "placements",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The apps where you want to deliver your ads. Note : Currently, we support PLACEMENT_TIKTOK , PLACEMENT_PANGLE and PLACEMENT_GLOBAL_APP_BUNDLE . For Product Sales campaigns ( objective_type = PRODUCT_SALES ), only TikTok placement ( PLACEMENT_TIKTOK ) is supported."
+      },
+      {
+        "name": "ios14_quota_type To be deprecated",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Do not pass campaign_type and ios14_quota_type at the same time. If both fields are passed, ios14_quota_type will be ignored. We recommend using campaign_type alone when you specify an iOS 14 Dedicated Campaign. campaign_type as REGULAR_CAMPAIGN or ios14_quota_type as UNOCCUPIED both indicate a non-iOS 14 Dedicated Campaign. campaign_type as IOS14_CAMPAIGN or ios14_quota_type as OCCUPIED both indicate an iOS 14 Dedicated Campaign. Whether the campaign will be counted towards the iOS 14 Dedicated Campaign quota. Enum values: OCCUPIED : The campaign is an iOS 14 Dedicated Campaign. UNOCCUPIED : The campaign is not an iOS 14 Dedicated Campaign."
+      },
+      {
+        "name": "campaign_app_profile_page_state",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Whether to use App Profile Page at the campaign level to optimize delivery. Enum values: ON , OFF . You can use the field only when objective_type is APP_PROMOTION and your campaign is an iOS14 Dedicated Campaign ( ios14_quota_type = OCCUPIED ). Otherwise, an error will occur."
+      },
+      {
+        "name": "pixel_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Not supported when objective_type is set to PRODUCT_SALES and promotion_type is set to LIVE_SHOPPING or VIDEO_SHOPPING . Otherwise, pass in either pixel_id or app_id . Pixel ID. When you pass in this field, you need to specify optimization_event at the same time. To get Pixel IDs, use the /pixel/list/ endpoint."
+      },
+      {
+        "name": "app_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Not supported when objective_type is set to PRODUCT_SALES and promotion_type is set to LIVE_SHOPPING or VIDEO_SHOPPING . Otherwise, pass in either pixel_id or app_id . The Application ID of the promoted app. To get App IDs, use the /app/list/ endpoint."
+      },
+      {
+        "name": "optimization_event Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when pixel_id is passed. Ignored when app_id is passed. Conversion event for the ad group. See Conversion events for more."
+      },
+      {
+        "name": "store_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when objective_type is PRODUCT_SALES . ID of the TikTok Shop. Note : To get the TikTok Shop ID, you can use /bc/asset/get/ : When in the response asset_type is TIKTOK_SHOP , the returned asset_id is the TikTok Shop ID."
+      },
+      {
+        "name": "is_smart_performance_campaign",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the campaign is a Smart+ Campaign or not. Enum values: true , false ."
+      },
+      {
+        "name": "budget_optimize_on",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable Campaign Budget Optimization (CBO). Enum values: true , false . For details about CBO, see Campaign Budget Optimization ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/vbo_status/?advertiser_id={{advertiser_id}}&promotion_type=LIVE_SHOPPING&placements=[\"PLACEMENT_TIKTOK\"]&objective_type=PRODUCT_SALES&optimization_event=SHOPPING&store_id={{store_id}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"vo_highest_value\": \"QUALIFIED\",\n        \"vo_min_roas\": \"QUALIFIED\",\n        \"vo_status\": \"QUALIFIED\",\n        \"vo_min\": \"NOT_SUPPORT\",\n        \"vo_iaa_highest_value\": \"NOT_SUPPORT\",\n        \"vo_iaa_min_roas\": \"NOT_SUPPORT\",\n        \"vo_iaa_highest_value_zero_day\": \"NOT_SUPPORT\",\n        \"vo_iaa_min_roas_zero_day\": \"NOT_SUPPORT\"\n    }\n}"
+    }
+  }
+}

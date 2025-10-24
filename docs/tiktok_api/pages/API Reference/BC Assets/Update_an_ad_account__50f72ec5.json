@@ -1,0 +1,201 @@
+{
+  "title": "Update an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/advertiser/update/",
+  "method": "POST",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or bc_id has to be set. To update non-budget settings for a single ad account, use advertiser_id . To update the budget for one or more ad accounts, use bc_id . Ad account ID."
+      },
+      {
+        "name": "advertiser_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad account name."
+      },
+      {
+        "name": "company",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Company name. To confirm whether the company name of the ad account can be updated via API, call /advertiser/info/ and set fields to [\"company_name_editable\"] . If the returned company_name_editable is true , you can use this field to update the company name. If the returned company_name_editable is false , you need to contact your TikTok representative to update the company name."
+      },
+      {
+        "name": "contact_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Name of the contact person."
+      },
+      {
+        "name": "contact_email",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Contact email."
+      },
+      {
+        "name": "contact_number",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Contact phone number."
+      },
+      {
+        "name": "promotion_link",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Promotion link. Length cannot exceed 255 characters."
+      },
+      {
+        "name": "license_no",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business license number. Note : This field is supported for ad accounts that are registered in the Chinese mainland, Hong Kong, or in countries Brazil and Mexico."
+      },
+      {
+        "name": "license_image_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image ID ( image_id ) of the business license."
+      },
+      {
+        "name": "qualification_images",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Additional business certificates."
+      },
+      {
+        "name": "image_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image ID of the business certificate."
+      },
+      {
+        "name": "address",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business address that is shown on receipts. Length range: 1-1,024 characters."
+      },
+      {
+        "name": "tax_map",
+        "required": false,
+        "type": "string",
+        "raw_type": "dict[string]",
+        "description": "Billing and invoicing tax number. Different countries use different tax number fields. France uses vat , and Brazil uses tax_id ."
+      },
+      {
+        "name": "need_submit_certificate",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether you want to submit the new certificate images for review. Supported values: true , false . Note : Set this field to true only when you update any of the following fields: compnay promotion_link license_no license_image_id qualification_images If none of these fields change, omit this parameter to avoid re-triggering the certificate review process."
+      },
+      {
+        "name": "bc_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or bc_id has to be set. To update non-budget settings for a single ad account, use advertiser_id . To update the budget for one or more ad accounts, use bc_id . Business Center ID. Only the ad accounts under the specified bc_id can be updated. Note : Only users with Finance Manager permission ( finance_role is MANAGER ) can update the budget and reset the budget consumption of an ad account. You can use /bc/member/invite/ and /bc/member/update/ to configure or update access settings for members."
+      },
+      {
+        "name": "budget_update_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when bc_id is passed. Not supported when advertiser_id is passed. The type of changes you want to perform on your budget. Enum values: UPDATE : To update the budget mode and budget amount. If you set this field to UPDATE , pass in advertiser_id , budget , and optionally budget_mode within the advertiser_budgets object. RESET : To reset the budget consumption of the ad account or ad accounts to 0. You can only reset the budget consumption of an ad account with a custom budget ( budget_mode is CUSTOM_BUDGET ). If you set this field to RESET , only advertiser_id within the advertiser_budgets object is required, and budget_mode and budget , if passed, will be ignored. INCREMENTAL_UPDATE : To add to or deduct from the current ad account budget. ONE_CLICK_SET : To set the ad account budget to the minimum amount. You don't need to specify the budget within the advertiser_budgets object array. You can obtain the budget after the change from the response parameter one_click_set_amount . Default value: UPDATE . Note : UPDATE and RESET are only supported for Auction ad accounts."
+      },
+      {
+        "name": "advertiser_budgets Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when bc_id is passed. Information about the new budget settings of one or more ad accounts. Max size: When budget_update_type is UPDATE or RESET : 50. When budget_update_type is INCREMENTAL_UPDATE or ONE_CLICK_SET : 1. Note : The monthly budget, daily budget, and custom budget of each ad account can be updated up to 20 times a calendar day ."
+      },
+      {
+        "name": "advertiser_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when advertiser_budgets is passed. Ad account ID. The ad account should belong to the specified bc_id ."
+      },
+      {
+        "name": "budget_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when budget_update_type is UPDATE , RESET , or ONE_CLICK_SET . Not supported when budget_update_type is INCREMENTAL_UPDATE . Budget mode of the ad account. Enum values: UNLIMITED : Unlimited budget. No budget limit for the ad account. MONTHLY_BUDGET : Monthly budget. The ad account consumes BC credit balance within the monthly budget. DAILY_BUDGET : Daily budget. The ad account consumes BC credit balance within the daily budget. CUSTOM_BUDGET : Custom budget. The ad account consumes BC credit balance within the one-time custom budget. Default value when budget_update_type is UPDATE : MONTHLY_BUDGET . Note : The default budget mode for each ad account is UNLIMITED unless you customize your budget mode. Reservation ad accounts can not use monthly budget, daily budget or custom budget for Balance Sharing."
+      },
+      {
+        "name": "budget Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Required when budget_mode is MONTHLY_BUDGET , DAILY_BUDGET , or CUSTOM_BUDGET . When budget_update_type is UPDATE or RESET , this field represents the advertiser account budget kept to two decimal places. If budget_mode is set to UNLIMITED , this field will be ignored. If budget_mode is set to MONTHLY_BUDGET , pass in monthly budget. If budget_mode is set to DAILY_BUDGET , pass in daily budget. If budget_mode is set to CUSTOM_BUDGET , pass in your one-time custom budget. When budget_update_type is INCREMENTAL_UPDATE , this field represents the change amount for the ad account budget. If you want to add to the current budget, set budget to a positive number such as 100. If you want to deduct from the current budget, set budget to a negative number such as -10. When budget_update_type is ONE_CLICK_SET , this field is ignored. Note : If budget_mode is set to MONTHLY_BUDGET , DAILY_BUDGET , or CUSTOM_BUDGET , budget should be no less than 105% of the monthly/daily/one-time spending. You can obtain the spending (the metric spend ) by running a report using /report/integrated/get/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Update the non-budget setting of a single ad account",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{access_token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"advertiser_name\": \"{{advertiser_name}}\",\n    \"address\":\"{{address}}\"\n}'"
+      },
+      {
+        "title": "Update the budget settings of multiple ad accounts",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{access_token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"budget_update_type\":\"UPDATE\",\n    \"advertiser_budgets\": [\n        {\n            \"advertiser_id\": \"{{advertiser_id}}\",\n            \"budget_mode\": \"CUSTOM_BUDGET\",\n            \"budget\": {{budget}}\n        },\n        {\n            \"advertiser_id\": \"{{advertiser_id}}\",\n            \"budget_mode\": \"UNLIMITED\"\n        }\n    ]\n}'"
+      },
+      {
+        "title": "Reset the budget consumption of an ad account with Custom Budget",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{access_token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"budget_update_type\":\"RESET\",\n    \"advertiser_budgets\": [\n        {\n            \"advertiser_id\": \"{{advertiser_id}}\"\n        }\n    ]\n}'"
+      },
+      {
+        "title": "Increase the ad account budget",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"budget_update_type\": \"INCREMENTAL_UPDATE\",\n    \"advertiser_budgets\": [{\n        \"advertiser_id\": \"{{advertiser_id}}\"\n        \"budget\": 100\n    }]\n}'"
+      },
+      {
+        "title": "Decrease the ad account budget",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"budget_update_type\": \"INCREMENTAL_UPDATE\",\n    \"advertiser_budgets\": [{\n        \"advertiser_id\": \"{{advertiser_id}}\"\n        \"budget\": -12\n    }]\n}'"
+      },
+      {
+        "title": "Set the ad account budget to the minimum amount",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/advertiser/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"budget_update_type\": \"ONE_CLICK_SET\",\n    \"advertiser_budgets\": [{\n        \"advertiser_id\": \"{{advertiser_id}}\"\n    }]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

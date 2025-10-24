@@ -1,0 +1,83 @@
+{
+  "title": "Search for or list targeting categories and hashtags for interests and behaviors",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/targeting/search/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "targeting_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The primary targeting type. Enum value: INTEREST_AND_BEHAVIOR (Interests & Behaviors)."
+      },
+      {
+        "name": "sub_targeting_types Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when targeting_type is INTEREST_AND_BEHAVIOR and multiple keywords are passed to search_keywords . The secondary targeting types. Enum values: GENERAL_INTEREST : general interests. ADDITIONAL_INTEREST : additional interests. PURCHASE_INTENTION : purchase intention. VIDEO_INTERACTION : video interactions. CREATOR_INTERACTION : creator interactions. HASHTAG_INTERACTION : hashtag interactions. If search_keywords is not passed, the allowed values are GENERAL_INTEREST , PURCHASE_INTENTION , VIDEO_INTERACTION , CREATOR_INTERACTION , HASHTAG_INTERACTION . If you don't pass sub_targeting_types in such cases, the default value for sub_targeting_types will be [\"GENERAL_INTEREST\",\"PURCHASE_INTENTION\",\"VIDEO_INTERACTION\",\"CREATOR_INTERACTION\",\"HASHTAG_INTERACTION\"] . If search_keywords is passed and contains one single keyword, the allowed values are GENERAL_INTEREST , ADDITIONAL_INTEREST , PURCHASE_INTENTION , VIDEO_INTERACTION , CREATOR_INTERACTION , HASHTAG_INTERACTION . If you don't pass sub_targeting_types in such cases, the default value for sub_targeting_types will be [\"GENERAL_INTEREST\",\"ADDITIONAL_INTEREST\",\"PURCHASE_INTENTION\",\"VIDEO_INTERACTION\",\"CREATOR_INTERACTION\",\"HASHTAG_INTERACTION\"] . If search_keywords is passed and contains more than one keyword, the allowed values are ADDITIONAL_INTEREST , HASHTAG_INTERACTION . In such cases, you need to manually pass sub_targeting_types ."
+      },
+      {
+        "name": "search_keywords",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of seed keywords that you provide to search for targeting categories or hashtags. Max size: 10. The length limit for each keyword is 100 characters. If you pass multiple seed keywords to this field, ensure the value of sub_targeting_types includes only ADDITIONAL_INTEREST and HASHTAG_INTERACTION . Note : Searching for hashtag bundles is not supported. Therefore, if you include HASHTAG_INTERACTION in the value of sub_targeting_types and pass search_keywords , you can only get hashtags from the returned search_result within the hashtag_interaction object. To retrieve hashtag bundles, include HASHTAG_INTERACTION in the value of sub_targeting_types and do not pass search_keywords ."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The language of the seed keywords. Default value: en . To find the allowed values, see List of values for language . Note : If you include HASHTAG_INTERACTION in the value of sub_targeting_types and pass one or more non-English seed keywords to search_keywords , hashtags in multiple languages might be returned, even if you specify language . This is because searching for hashtags based on a single language is not supported and some characters or letters are shared among certain languages."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "special_industries",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Special ad categories. By selecting a housing, employment, or credit category for your campaign, you certify not to use TikTok to discriminate based on protected characteristics in ads relating to housing, employment, or credit and to adhere to TikTok's special ad category policy . Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities. Default value: [] . By default, special ad categories are not filtered. If you pass multiple ad categories to this field, the results will include targeting categories or hashtags that support any of the specified ad categories."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/targeting/search/?advertiser_id={{advertiser_id}}&targeting_type=INTEREST_AND_BEHAVIOR' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"1311100\",\n                    \"sub_targeting_type\": \"VIDEO_INTERACTION\",\n                    \"name\": \"Scenery & Plants\",\n                    \"children_ids\": [],\n                    \"level\": 3,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"general_interest\": {\n            \"list_result\": [\n                {\n                    \"id\": \"18110\",\n                    \"sub_targeting_type\": \"GENERAL_INTEREST\",\n                    \"name\": \"Cleaning Supplies\",\n                    \"children_ids\": [],\n                    \"level\": 2,\n                    \"supported_special_industries\": [],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"creator_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"11\",\n                    \"sub_targeting_type\": \"CREATOR_INTERACTION\",\n                    \"name\": \"DIY & Life Hacks\",\n                    \"children_ids\": [\n                        \"11001\"\n                    ],\n                    \"level\": 1,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"hashtag_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"11\",\n                    \"sub_targeting_type\": \"HASHTAG_INTERACTION\",\n                    \"name\": \"cybermonday\",\n                    \"children_ids\": [],\n                    \"level\": 1,\n                    \"supported_special_industries\": [],\n                    \"hashtag_type\": \"HASHTAG_BUNDLE\"\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"purchase_intention\": {\n            \"list_result\": [\n                {\n                    \"id\": \"26101\",\n                    \"sub_targeting_type\": \"PURCHASE_INTENTION\",\n                    \"name\": \"Photography\",\n                    \"children_ids\": [],\n                    \"level\": 2,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"additional_interest\": null\n    },\n    \"code\": 0\n}"
+    }
+  }
+}

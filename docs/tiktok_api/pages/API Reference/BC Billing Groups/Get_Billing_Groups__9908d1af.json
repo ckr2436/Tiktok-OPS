@@ -1,0 +1,108 @@
+{
+  "title": "Get Billing Groups",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/billing_group/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Billing Groups"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions"
+      },
+      {
+        "name": "status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The Billing Group status that you want to filter by. Enum values: VALID (valid), INVALID (invalid)."
+      },
+      {
+        "name": "invoice_group_by",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "How the invoices in the billing groups are handled. Enum values: ACCOUNT : Invoices in this billing groups are combined. ADVERTISER : Invoices in this billing group are handled separately."
+      },
+      {
+        "name": "billed_to_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billed-to parties shown on invoices. Enum values: ACCOUNT : Invoices are billed to agencies. ADVERTISER : Invoices are billed to advertisers."
+      },
+      {
+        "name": "billing_group_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billing Group ID"
+      },
+      {
+        "name": "billing_group_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billing group name."
+      },
+      {
+        "name": "billing_group_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The advertising type of all ad accounts in the billing group. This setting cannot be edited. Enum values: AUCTION , RESERVATION ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page number. Default value: 1"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size, in the range of 1-50. The default value is 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"filtering={\\\"invoice_group_by\\\": \\\"INVOICE_GROUP_BY\\\", \\\"billed_to_type\\\": \\\"BILLED_TO_TYPE\\\", \\\"billing_group_id\\\": \\\"BILLING_GROUP_ID\\\", \\\"billing_group_name\\\": \\\"BILLING_GROUP_NAME\\\", \\\"billing_group_type\\\": \\\"BILLING_GROUP_TYPE\\\"}\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/billing_group/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "title": "Get an Instant Form lead or a direct message lead",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/lead/get/",
+  "method": "GET",
+  "category_path": [
+    "Leads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "lead_source",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The source of the leads. Enum values: INSTANT_FORM : leads generated through an Instant Form. DIRECT_MESSAGE : leads generated from direct messages of the associated Business Account."
+      },
+      {
+        "name": "advertiser_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when the leads are under an ad account. Advertiser ID."
+      },
+      {
+        "name": "library_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when the leads are under a form library of a Business Center. ID of a form library. To obtain the list of form libraries within a Business Center, use /page/library/get/ ."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when lead_source is INSTANT_FORM . Not supported when lead_source is DIRECT_MESSAGE . The page ID of an Instant Form. To obtain a list of Instant Forms, use /page/get/ and set business_type to LEAD_GEN ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get an Instant From lead",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/lead/get/?lead_source=INSTANT_FORM&advertiser_id={{advertiser_id}}&page_id={{page_id}}' \\\n--header 'Access-token: {{Access-token}}'"
+      },
+      {
+        "title": "Get a direct message lead",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/lead/get/?lead_source=DIRECT_MESSAGE&advertiser_id={{advertiser_id}}' \\\n--header 'Access-token: {{Access-token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"lead_data\": {\n            \"email\": \"{{email}}\"\n        },\n        \"meta_data\": {\n            \"ad_id\": \"{{ad_id}}\",\n            \"ad_name\": \"{{ad_name}}\",\n            \"adgroup_id\": \"{{adgroup_id}}\",\n            \"adgroup_name\": \"{{adgroup_name}}\",\n            \"campaign_id\": \"{{campaign_id}}\",\n            \"campaign_name\": \"{{campaign_name}}\",\n            \"create_time\": \"{{create_time}}\",\n            \"lead_id\": \"{{lead_id}}\",\n            \"lead_source\": \"INSTANT_FORM\",\n            \"page_id\": \"{{page_id}}\"\n        }\n    }\n}"
+    }
+  }
+}

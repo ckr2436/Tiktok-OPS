@@ -1,0 +1,643 @@
+{
+  "title": "Update an ad group",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/adgroup/update/",
+  "method": "POST",
+  "category_path": [
+    "Ad Groups"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group name, maximum character allowed is 512 and it cannot contain emoji."
+      },
+      {
+        "name": "catalog_authorized_bc_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For catalogs in Business Center, you must specify the ID of the Business Center that a catalog belongs to. Note : Starting June 30th, 2024, when product_source is STORE , you can no longer use catalog_authorized_bc_id to update the ad group because it will be ignored. If you update existing ad group where product_source is STORE , the existing catalog_authorized_bc_id , if present for the ad groups, will no longer be returned."
+      },
+      {
+        "name": "deep_funnel_optimization_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when promotion_type is LEAD_GENERATION . The status of deep funnel optimization. Deep funnel optimization optimizes both your upper funnel events and deeper funnel events. You can select a secondary event alongside the primary optimization event, which can help improve campaign effectiveness. Enum values: ON : To enable deep funnel optimization. OFF : To disable deep funnel optimization. Default value: OFF . To learn about how to configure deep funnel optimization for Lead Generation ads, see Lead Generation ad with optimization location as Instant Form and Lead Generation ad with optimization location as Website . Note : Deep funnel optimization with CRM events is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Deep funnel optimization with Pixel or Offline events is generally available."
+      },
+      {
+        "name": "deep_funnel_event_source Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when deep_funnel_optimization_status is ON . The event source type. Enum values: PIXEL : Pixel. OFFLINE : Offline Event Set. CRM : CRM Event Set. Note : When deep funnel optimization is enabled, you cannot update deep_funnel_event_source , deep_funnel_event_source_id , and deep_funnel_optimization_event ."
+      },
+      {
+        "name": "deep_funnel_event_source_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when deep_funnel_optimization_status is ON . Event Source ID. When deep_funnel_event_source is PIXEL , specify a Pixel ID via this field. To obtain a list of Pixels, use /pixel/list/ . When deep_funnel_event_source is OFFLINE , specify an Offline Event Set ID via this field. To obtain a list of Offline Event Set IDs, use /offline/get/ . When deep_funnel_event_source is CRM , specify a CRM Event Set ID via this field. To obtain a list of CRM Event Set IDs, use /crm/list/ . Note : When deep funnel optimization is enabled, you cannot update deep_funnel_event_source , deep_funnel_event_source_id , and deep_funnel_optimization_event ."
+      },
+      {
+        "name": "deep_funnel_optimization_event Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when deep_funnel_optimization_status is ON . Deep funnel optimization event. To find out the supported values for Standard Events available for Pixels, Offline Event Sets, and CRM Event Sets, see the \"Event name for ad creation\" column in Supported Pixel events . To find the list of optimization events for a Pixel, use /pixel/list/ and check the returned optimization_event . Example: SHOPPING ."
+      },
+      {
+        "name": "comment_disabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to allow comments on your ads on TikTok. Note : When deep funnel optimization is enabled, you cannot update deep_funnel_event_source , deep_funnel_event_source_id , and deep_funnel_optimization_event ."
+      },
+      {
+        "name": "share_disabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to disable sharing of ads in this ad group to third-party platforms. The value True is valid when the conditions below are all met: objective_type at the campaign level is set as one of the following objectives: APP_PROMOTION , WEB_CONVERSIONS , REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , LEAD_GENERATION . Placement: placement_type = PLACEMENT_TYPE_AUTOMATIC or placement_type = PLACEMENT_TYPE_NORMAL , and placements = PLACEMENT_TIKTOK Note : This field supports incremental updates."
+      },
+      {
+        "name": "blocked_pangle_app_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Pangle app block list ID. You can get an ID via the app_package_id field returned by Get Pangle block list . It only takes effect when Pangle placement is selected."
+      },
+      {
+        "name": "search_result_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to include your ads in Search Ads, namely to show your ads to users when they search for your business on TikTok. You can only use this field when the following conditions are met: Advertising objective: The advertising objective ( objective_type ) is one of the following objectives: APP_PROMOTION , WEB_CONVERSIONS (with is_search_campaign as false), TRAFFIC , and LEAD_GENERATION . When objective_type is LEAD_GENERATION , promotion_type needs to be set to LEAD_GENERATION . Placements: placement_type is set to PLACEMENT_TYPE_AUTOMATIC , or placement_type is set to PLACEMENT_TYPE_NORMAL and PLACEMENT_TIKTOK is included in placements . You want to use this field to update the value of this field from false to true . If is_search_campaign is true , you cannot update the value of this field from false to true . To learn more about Search Ads, see Automatic Search Placement ."
+      },
+      {
+        "name": "automated_keywords_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Valid only when at the campaign level is_search_campaign is true . Whether to enable automated keywords and let the system automatically generate keywords after you add ads. This expands high-quality traffic to improve performance. View high-performing automated keywords in reporting. Supported values: true , false . Default value: false . Note : Automated keywords in Search Ads Campaigns are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "search_keywords",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Valid only in Search Ads Campaigns. A list of search keywords, that is, words or phrases that are used to match your ads with the terms people are searching for. Max size: 1,000. To confirm whether a campaign is a Search Ads Campaign, call /campaign/get/ and check the is_search_campaign returned for the campaign. To learn more about Search Ads Campaigns, see Create Search Ads Campaigns . Note : For each ad group, you can configure a maximum of 1,000 search keywords. Once the search keywords or the targeted locations are updated, the keywords will go into the review process again."
+      },
+      {
+        "name": "keyword Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When search_keywords is passed, you need to provide at least one keyword and the corresponding match_type . The search keyword. Length limit: 80 characters. The name needs to exclude emojis and the following special characters: ! # $ % & ( ) * - / : ; < > ? @ \\ ^ _ ¥ …… . Otherwise, an error will occur. To obtain the review result for search keywords, call /adgroup/get/ and check the audit_status within the search_keywords object array. Important : Search keywords must comply with TikTok's Advertising Terms and Community Guidelines. If all of your keywords are found to be non-compliant, your campaign will not be delivered. If part of your search keywords are rejected, you need to remove the violative keyword(s) or replace them with a suitable alternative by using /adgroup/update/ . Your campaign will continue with the approved keywords."
+      },
+      {
+        "name": "match_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "When search_keywords is passed, you need to provide at least one keyword and the corresponding match_type . The match type for the search keyword. Enum values: PRECISE_WORD : exact match. Your ads will only show for user search queries that exactly match these keywords. PHRASE_WORD : phrase match. Your ads will only show for these specific keywords if users search these keywords in the same order. BROAD_WORD : broad match. Your ads will show for user search queries for any of the words you have included, even if the words are in a different order."
+      },
+      {
+        "name": "keyword_bid_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The bid type for the keyword and match type combination. Enum values: FOLLOW_ADGROUP : To use the ad group level bid ( bid_price ) as the keyword_bid . CUSTOM : To customize the bid via keyword_bid . Default value: FOLLOW_ADGROUP . The enum value CUSTOM is valid only when the following conditions are met: At the campaign level: objective_type is TRAFFIC is_search_campaign is true . At the ad group level: bid_type is BID_TYPE_CUSTOM bid_price is specified."
+      },
+      {
+        "name": "keyword_bid Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Required and valid only when keyword_bid_type is CUSTOM . Ignored when keyword_bid_type is FOLLOW_ADGROUP . The bid price for the keyword and match type combination. Value range: >0."
+      },
+      {
+        "name": "audience_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required and valid only when app_promotion_type is APP_RETARGETING at the campaign level. Not supported when app_promotion_type is not set to APP_RETARGETING at the campaign level. App retargeting audience type. You need to use the same settings as when creating the ad group. Enum value: NEW_CUSTOM_AUDIENCE (retargeting custom audience). If you want to specify an empty retargeting custom audience for your App Retargeting ads, do not pass audience_ids and excluded_audience_ids . If you want to specify a non-empty retargeting custom audience for your App Retargeting ads, you can specify an Include Audience via audience_ids , or an Exclude Audience via excluded_audience_ids , or both simultaneously. If both audience_ids and excluded_audience_ids are specified, they cannot contain the same IDs."
+      },
+      {
+        "name": "audience_rule",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Rules that specify your audience. Valid if objective_type is TRAFFIC or APP_PROMOTION . For details, see Audience Rules ."
+      },
+      {
+        "name": "saved_audience_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "This field is supported under the following conditions: The category of Housing, Employment, or Credit ( specical_industries ) is NOT specified in your campaign. AND the advertising objective ( objective_type ) is NOT Product Sales ( PRODUCT_SALES ) in your campaign. AND TikTok placement is selected in your ad group (i.e., placement_type is set as PLACEMENT_TYPE_AUTOMATIC or placement_type is set as PLACEMENT_TYPE_NORMAL and PLACEMENT_TIKTOK is included in placements ). AND automatic targeting is NOT used in your ad group(i.e., auto_targeting_enabled is NOT set to true ). Saved Audience ID. Before using this field, call /dmp/saved_audience/create/ to create a Saved Audience and get the Saved Audience ID in response. The advertiser ID associated with your Saved Audience should be the same as the advertiser ID in your ad group. Otherwise, an error will occur. If you use saved_audience_id to create an ad group, we will return both the Saved Audience ID and the targeting options that are included within your Saved Audience in response. See Create a Saved Audience to find out the detailed workflow and code examples. Note : When creating a Saved Audience via /dmp/saved_audience/create/ , you can specify targeting options such as gender . However, if you are creating an ad group using a Saved Audience, you must avoid concurrently setting both the saved_audience_id and targeting options (like gender ) already within your Saved Audience. Otherwise, an error will occur. If the device setting of your Saved Audience is in conflict with the device settings of the ad group, an error will occur. Examples include: When the operating system for your Saved Audience is Android, but while creating an ad group, you set ios14_targeting as IOS14_PLUS . When you specify APP_PROMOTION as the objective_type field at the campaign level and use the App ID of an Android App in your ad group, yet your Saved Audience's operating system is iOS. If your API request throws an error that is associated with a conflict between your Saved Audience configurations and ad group configurations, the current error message will indicate that the issue pertains to your audience targeting option. To resolve this, we recommend using /dmp/saved_audience/list/ to check the details of the corresponding targeting option to identify the source of the problem and then create a new Saved Audience if necessary. If the saved_audience_id was created with age_groups specified, the age restriction rules outlined in New age restrictions for ads on TikTok for different advertising objectives also apply. Make sure that the age targeting setting is allowed before you use the Saved Audience ( saved_audience_id ) in the ad group."
+      },
+      {
+        "name": "auto_targeting_enabled To be deprecated",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable automated targeting. Enum values: true , false . Note : Starting June, 2024, you can no longer enable Automatic targeting or Targeting expansion for your ad groups. To ensure a smooth API integration, we recommend you migrate to Smart Targeting ."
+      },
+      {
+        "name": "shopping_ads_retargeting_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid when shopping_ads_type is VIDEO and product_source is CATALOG . The retargeting type of shopping ads. Enum values: LAB1 : Retargeting audiences who viewed products or added products to cart but didn't purchase products. LAB2 : Retargeting audiences who added products to cart but didn't purchase products. LAB3 : Retargeting audiences using custom combination. OFF : No retargeting."
+      },
+      {
+        "name": "shopping_ads_retargeting_actions_days Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The valid time range for the specified audience action. Audiences who have completed the specified action within the time range will be retargeted by the shopping ads. Required when shopping_ads_retargeting_type is LAB1 or LAB2 . Value range: 1, 2, 3, 7, 14, 30, 60, 90, 180."
+      },
+      {
+        "name": "included_custom_actions Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The custom action that you want to use as \"Include\" conditions for filtering out the shopping ads audiences to be retargeted. When shopping_ads_retargeting_type is LAB3 , you need to pass in either included_custom_actions or excluded_custom_actions ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The custom action used to filter out the audiences to be retargeted. Enum values: VIEW_PRODUCT : The audience viewed the product. ADD_TO_CART : The audience added the product to the cart. PURCHASE : The audience purchased the product."
+      },
+      {
+        "name": "days",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The time range used to filter out the audiences that completed the specified action. Value range: [1,180]."
+      },
+      {
+        "name": "excluded_custom_actions Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The custom action that you want to use as \"Exclude\" conditions for filtering out the shopping ads audiences to be retargeted. When shopping_ads_retargeting_type is LAB3 , you need to pass in either included_custom_actions or excluded_custom_actions ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The custom action used to filter out the audiences to be retargeted. Enum values: VIEW_PRODUCT : The audience viewed the product. ADD_TO_CART : The audience added the product to the cart. PURCHASE : The audience purchased the product."
+      },
+      {
+        "name": "days",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The time range used to filter out the audiences that didn't complete the specified action. Value range: [1,180]."
+      },
+      {
+        "name": "shopping_ads_retargeting_custom_audience_relation",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when the following conditions are all met: shopping_ads_type is set to VIDEO . product_source is set to CATALOG . shopping_ads_retargeting_type is passed and set to LAB1 , LAB2 , or LAB3 . audience_ids is passed. The logical relation between the Video Shopping Ads (VSA) retargeting audience specified by shopping_ads_retargeting_type and the custom audience specified by audience_ids . Enum values: OR : To combine the VSA retargeting audience and the custom audience to create the targeted audience. The targeted audience will consist of individuals who belong to either the VSA retargeting audience or the custom audience. AND : To intersect between the VSA retargeting audience and the custom audience to create the targeted audience. The targeted audience will consist of individuals who belong to both the VSA retargeting audience and the custom audience. Note : If you remove the custom audience after shopping_ads_retargeting_custom_audience_relation has been specified, shopping_ads_retargeting_custom_audience_relation will be automatically set to a null value."
+      },
+      {
+        "name": "location_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the locations that you want to target. You can set location_ids or zipcode_ids or both. Max size: 3,000. If you provide both location_ids and zipcode_ids , the combined total of location IDs, zip code IDs, and postal code IDs cannot exceed 3,000 per ad group. To get the available locations and corresponding IDs based on your placement and objective, use the /tool/targeting/search/ or /tool/region/ endpoint. To get the list of location IDs, see Location IDs . Note : Overlapping targeted locations are not supported. For instance, you cannot target the U.S. and the state of California at the same time. If you target locations in the US via location_ids or zipcode_ids during ad group creation, you can subsequently update those IDs to other US locations but you cannot remove all US locations to target only non-US countries. If you create an ad group with TIKTOK_LITE in the tiktok_subplacements value, you cannot update the ad group to exclude Japan and South Korea from your targeted locations ( location_ids ). If you want to remove all the targeted location IDs from the ad group, set this field to an empty array ( [] ). Note that targeted locations are mandatory for ad groups. Therefore, if you initially only specified location IDs during ad group creation and now want to remove these IDs, you need to set location_ids to an empty array ( [] ) and simultaneously specify zip code IDs or postal code IDs via zipcode_ids ."
+      },
+      {
+        "name": "zipcode_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Zip code IDs or postal code IDs that you want to use to target locations. You need to set location_ids or zipcode_ids or both. Max size: 3,000. If you provide both location_ids and zipcode_ids , the combined total of location IDs, zip code IDs, and postal code IDs cannot exceed 3,000 per ad group. You can get the available zip code IDs or postal code IDs based on your placement, objective and keyword via geo_id (when geo_type = ZIP_CODE ) returned from the /tool/targeting/search/ endpoint. Note : Zip code targeting is currently only supported for the US and postal code targeting is currently only supported for Canada, Brazil, Indonesia, Thailand, and Vietnam. Targeting postal code areas in Brazil, Indonesia, Thailand, and Vietnam is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. You cannot use zip code targeting in campaigns that have enabled special ad categories ( special_industries ). You cannot use zip code targeting or postal code targeting in campaigns with the objective_type as RF_REACH . You can only use zip code targeting or postal code targeting on TikTok placement. Therefore, the placements value needs to include PLACEMENT_TIKTOK . Overlapping targeted locations are not supported. For instance, you cannot target the US and the state of California at the same time. If you target locations in the US via location_ids or zipcode_ids during ad group creation, you can subsequently update those IDs to other US locations but you cannot remove all US locations to target only non-US countries. If you want to remove all the targeted zip code or postal code IDs from the ad group, set this field to an empty array ( [] ). Note that targeted locations are mandatory for ad groups. Therefore, if you initially only specified zip code or postal code IDs during ad group creation and now want to remove these IDs, you need to set zipcode_ids to an empty array ( [] ) and simultaneously specify location IDs via location_ids . Incremental updates to this field are supported."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Codes of the languages that you want to target. For the list of languages codes supported, see Enumeration - Language Code . You can get language codes via /tool/language/ , and if you don't want to limit the languages you target, assign an empty value to this field or do not pass in this field."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Gender that you want to target. Enum: GENDER_FEMALE , GENDER_MALE , GENDER_UNLIMITED"
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Age groups you want to target. For enum values, see Enumeration - Age Group . In certain scenarios, creation of ad groups that target the age group 13-17 ( AGE_13_17 ) in the US, Latin America, the European Economic Area, the UK, Switzerland, or Canada will not be allowed. See New age restrictions for ads on TikTok to learn more. If you are impacted by the restrictions and leave the age_groups field unspecified or set it as [] without setting exclude_age_under_eighteen to true , an error will occur. If the ad group targets the age group 13-17 ( AGE_13_17 ) in the US, Latin America, the European Economic Area, the UK, Switzerland, or Canada and you typically leave the age_groups field unspecified or set it as [] , we recommend that you set exclude_age_under_eighteen to true simultaneously to avoid any errors."
+      },
+      {
+        "name": "exclude_age_under_eighteen",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to exclude the ages younger than 18. Use this field only in scenarios where targeting the age group 13-17 ( AGE_13_17 ) in the US, Latin America, the European Economic Area, the UK, Switzerland, or Canada is not supported. In other scenarios, this field is not supported. See the description of age_groups for details. Enum values: true , false . Default value: false ."
+      },
+      {
+        "name": "spending_power",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Spending power that you want to target. Enum values: ALL , HIGH . If it is set to HIGH , you can target high spending users who typically spend more on purchases on TikTok ads than average users. Note: : This field does not support the advertising objectives PRODUCT_SALES and RF_REACH at the campaign level. See Advertising objectives for details. This field supports Automatic Placement and Select Placement with TikTok included. Therefore, you need to set placement_type to PLACEMENT_TYPE_AUTOMATIC , or include PLACEMENT_TIKTOK in the value of placements . Note that if you specify Pangle as a placement, the spending power targeting won't take effect on Pangle. When auto_targeting_enabled is true at the ad group level, then spending_power will be automatically set to ALL ."
+      },
+      {
+        "name": "household_income",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Household income that you want to target. Enum values: TOP5 (Top 5% of ZIP codes), TOP10 (Top 10% of ZIP codes), TOP10_25 (Top 10% -25% of ZIP codes), TOP25_50 (Top 25% - 50% of ZIP codes). Currently, this field has the following limitations: Not supported in Reach&Frequency type ads. Only works on TikTok Placement in the US."
+      },
+      {
+        "name": "audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "An list of audience IDs. You can get audience IDs by using the /dmp/custom_audience/list/ endpoint."
+      },
+      {
+        "name": "smart_audience_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to turn on Smart audience. Enum values: true , false . To learn more about Smart audience and how to turn on Smart audience, see Smart Targeting ."
+      },
+      {
+        "name": "excluded_audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of audience IDs to be excluded. You can get audience IDs by using the /dmp/custom_audience/list/ endpoint."
+      },
+      {
+        "name": "interest_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of general interest categories that you want to use to target audiences. To search for or list general interest category IDs, use /targeting/search/ (recommended) or /tool/interest_category/ . To get recommended interest category IDs based on your industry, use /tool/targeting_category/recommend/ ."
+      },
+      {
+        "name": "interest_keyword_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of additional interest categories that you want to use to target audience. To search for additional interest categories, use /targeting/search/ (recommended) or /tool/interest_keyword/recommend/ ."
+      },
+      {
+        "name": "purchase_intention_keyword_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of purchase intention categories that you want to use to target audiences with an interest in purchases related to a content category. To search for or list purchase intention category IDs, use /targeting/search/ . Note : The endpoint supports the incremental update of purchase_intention_keyword_ids ."
+      },
+      {
+        "name": "actions",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "A list of targeting behavioral category objects."
+      },
+      {
+        "name": "action_scene",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of user behavior that you want to target. Enum values: VIDEO_RELATED : Video interactions. CREATOR_RELATED : Creator interactions. HASHTAG_RELATED : Hashtag interactions."
+      },
+      {
+        "name": "action_period",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Select a time period to include behaviors from. Supported values: 0 , 7 , 15 . If action_scene is CREATOR_RELATED or HASHTAG_RELATED , 0 will be used regardless of the value you pass in. 0 means that there is no definite timeframe to select actions from. Note : Currently, when updating an ad group with video interaction targeting ( action_scene = VIDEO_RELATED ) via TikTok Ads Manager , you cannot update the time period ( action_period ). However, when updating ad groups via API , you can still pass in 0 , 7 , or 15 ."
+      },
+      {
+        "name": "video_user_actions",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The specific user interactions that you want to target for the user behavior type. If action_scene is VIDEO_RELATED , the allowed values are: WATCHED_TO_END , LIKED , COMMENTED , SHARED . If action_scene is CREATOR_RELATED , the allowed values are: FOLLOWING , VIEW_HOMEPAGE . If action_scene is HASHTAG_RELATED , the allowed value is VIEW_HASHTAG . Note : Currently, when updating an ad group via TikTok Ads Manager , you cannot update the kind of user actions ( video_user_actions ). However, when updating ad groups via API , you can still pass in the desired enum value combinations, for example: [\"LIKED\",\"COMMENTED\"] if action_scene = VIDEO_RELATED ."
+      },
+      {
+        "name": "action_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the video interactions categories, creator interactions categories, hashtags, or hashtag bundles that you want to use to target audiences. To search for or list video interactions category IDs or creator interactions category IDs, use /targeting/search/ (recommended) or /tool/action_category/ . To get hashtag IDs or hashtag bundle IDs, use /targeting/search/ (recommended) or /tool/hashtag/recommend/ . To get recommended video interactions category IDs, creator interactions category IDs, hashtag IDs, or hashtag bundle IDs based on your industry, use /tool/targeting_category/recommend/ ."
+      },
+      {
+        "name": "smart_interest_behavior_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to turn on Smart interests & behaviors. Enum values: true , false . To learn more about Smart interests & behaviors and how to turn on Smart interests & behaviors, see Smart Targeting ."
+      },
+      {
+        "name": "included_pangle_audience_package_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the Pangle audiences that you want to include. Valid only for Pangle placement. You can get audience IDs ( package_id ) by using the /pangle_audience_package/get/ endpoint. You need to set bind_type to INCLUDE . Do not specify this field and excluded_pangle_audience_package_ids at the same time."
+      },
+      {
+        "name": "excluded_pangle_audience_package_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the Pangle audiences that you want to exclude. Valid only for Pangle placement. You can get audience IDs ( package_id ) by using the /pangle_audience_package/get/ endpoint. You need to set bind_type to EXCLUDE . Do not specify this field and included_pangle_audience_package_ids at the same time."
+      },
+      {
+        "name": "operating_systems Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Device operating systems that you want to target. Only one value is allowed. Enum values: ANDROID , IOS . This field is required in two scenarios: objective_type is APP_PROMOTION objective_type is TRAFFIC and promotion_type is APP_IOS or APP_ANDROID"
+      },
+      {
+        "name": "min_android_version",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Minimum Android version. For enum values, see Enumeration - Minimum Android Version ."
+      },
+      {
+        "name": "ios14_targeting Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required and must be specified as IOS14_PLUS when campaign_type at the campaign level is IOS14_CAMPAIGN . The iOS devices that you want to target. Enum values: UNSET : Devices with iOS 14.4 or earlier versions. IOS14_MINUS : Devices with versions earlier than iOS 14.0, which are not affected by the iOS 14 privacy update. IOS14_PLUS : Devices with iOS 14.5 or later versions. The iOS 14 privacy update has been enforced in this group of devices. This value is only supported for Dedicated Campaigns. Specify this value if you want to create an iOS 14 campaign. Each iOS 14 campaign can have up to 2 active ad groups. ALL : Devices with iOS 14.5 or later versions. The iOS 14 privacy update has been enforced in this group of devices. This value is only supported for iOS App Retargeting ads and iOS retargeting Video Shopping Ads with product source as catalog and optimization location as App. To target devices with iOS 14.5 or later versions in App Retargeting ads, you need to set ios14_targeting to ALL and set min_ios_version to 14.5 or a later version. Otherwise, an error will occur. To target devices with iOS 14.4 or earlier versions in App Retargeting ads, you don't need to pass ios14_targeting . For the following two scenarios, the value ALL will be used regardless of the value you pass in. iOS App Retargeting ads: app_promotion_type is APP_RETARGETING and promotion_type is APP_IOS iOS retargeting Video Shopping Ads with product source as catalog and optimization location as App: shopping_ads_type is VIDEO product_source is CATALOG promotion_type is APP_IOS and shopping_ads_retargeting_type is not OFF For other scenarios, the default value is UNSET . Once set to IOS14_PLUS , this field cannot be updated, and the following requirements must be met. At the ad group level: app_id is set to the ID of an iOS App. To get iOS App IDs, use /app/list/ . The platform of an iOS App should be IOS . operating_systems is set to [\"IOS\"] . min_ios_version is passed and the value should be consistent with the value of ios14_targeting . optimization_goal is set to CLICK , INSTALL , IN_APP_EVENT or VALUE . The following fields are not specified: min_android_version shopping_ads_retargeting_type shopping_ads_retargeting_actions_days At the ad level: deeplink_type is not set to DEFERRED_DEEPLINK ."
+      },
+      {
+        "name": "min_ios_version Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when ios14_targeting is specified. Minimum iOS version. For enum values, see Enumeration - Minimum iOS Version ."
+      },
+      {
+        "name": "device_model_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the device models that you want to target. Use /tool/device_model/ to get the complete list of device model IDs and their statuses, and only active devices ( is_active = True in the response of /tool/device_model/ ) can be used to create ads. Note : Device model ( device_model_ids ) and device price ( device_price_ranges ) cannot be set at the same time."
+      },
+      {
+        "name": "network_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Device connection types that you want to target. For enum values, see Enumeration - Connection Type ."
+      },
+      {
+        "name": "carrier_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Carriers that you want to target. A carrier is valid only when the in_use field for the carrier is true . The carriers must be consistent with the location(s) that you want to target. See Get Carriers for detailed information."
+      },
+      {
+        "name": "isp_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the Internet service providers (ISP) that you want to target. Valid only when you specify a valid location ID at the country or region level via location_ids at the same time. You can use /tool/targeting/list/ to get the ISP IDs that you can target for a location ID. Note : When you pass in isp_ids , you cannot set the placement as Global App Bundle only ( placements = PLACEMENT_GLOBAL_APP_BUNDLE )."
+      },
+      {
+        "name": "device_price_ranges",
+        "required": false,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important : The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+      },
+      {
+        "name": "targeting_expansion To be deprecated",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Settings about targeting expansion. Note : Starting June, 2024, you can no longer enable Automatic targeting or Targeting expansion for your ad groups. To ensure a smooth API integration, we recommend you migrate to Smart Targeting ."
+      },
+      {
+        "name": "expansion_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable targeting expansion"
+      },
+      {
+        "name": "expansion_types Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The target audience types that you want to expand. Required when expansion_enabled is true . To expand a target audience type is to remove the value for this target audience type and make this target audience type irrelevant. Target audience types that are eligible for expanding must already have a value or selection. Enum values: AGE GENDER INTEREST_AND_BEHAVIOR : This type includes ad_tag_v2 , video_action , action_days , action_categories , and action_scene . CUSTOM_AUDIENCE : This type includes retargeting_tags and retargeting_tags_exclude ."
+      },
+      {
+        "name": "contextual_tag_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Contextual tag IDs. You can use /tool/contextual_tag/get/ to get available contextual tags. See Contextual targeting to learn more about how to use contextual targeting. Note : This is an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Only supports REACH and VIDEO_VIEWS as objectives ( objective_type ) at the campaign level. Not supported when brand_safety_type is set to THIRD_PARTY ."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "To learn about the eligibility for updating this field, see Eligibility for updating pre-bid brand safety filtering settings . Brand safety type. Enum values: EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. To get the countries and regions that your ads can be deployed to based on your brand safety settings, use the /tool/region/ endpoint. Note : Updating Brand Safety settings, including brand_safety_type , category_exclusion_ids , and vertical_sensitivity_id , is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Pre-bid first-party Brand Safety solutions for APP_PROMOTION , WEB_CONVERSIONS , TRAFFIC , LEAD_GENERATION , and PRODUCT_SALES objectives in Auction ads are currently allowlist-only features. If you would like to access it, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives, supported markets, and the general introduction of pre-bid Brand Safety filtering."
+      },
+      {
+        "name": "category_exclusion_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "This field can only be updated when any of the following conditions is met: schedule_start_time of the ad group has not been reached. schedule_start_time of the ad group has been reached, but the operation_status is DISABLE and the cost is 0. To retrieve the schedule_start_time and operation_status of an ad group, use /adgroup/get/ . Content exclusion category IDs. You can use /tool/content_exclusion/get/ to get a list of content category IDs ( excluded_category_list ) that can be excluded from being displayed next to your ads. Note : Updating Brand Safety settings, including brand_safety_type , category_exclusion_ids , and vertical_sensitivity_id , is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "vertical_sensitivity_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "This field can only be updated when any of the following conditions is met: schedule_start_time of the ad group has not been reached. schedule_start_time of the ad group has been reached, but the operation_status is DISABLE and the cost is 0. To retrieve the schedule_start_time and operation_status of an ad group, use /adgroup/get/ . Vertical sensitivity category ID. You can use /tool/content_exclusion/get/ to get a list of vertical categories containing sensitive content ( vertical_sensitivity_list ) that can be excluded from appearing next to your ads. Note : Updating Brand Safety settings, including brand_safety_type , category_exclusion_ids , and vertical_sensitivity_id , is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "budget",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Advertising budget. It cannot be updated when Campaign Budget Optimization ( budget_optimize_on ) is on. For how to configure budget settings, see Budget . To directly see the daily budget value range for a currency, see Currency-Daily budget value range . Note : The new budget should be at least 105% of the current spend. You can run a synchronous report or an asynchronous report to get the spend data via the Basic data metric spend ."
+      },
+      {
+        "name": "schedule_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The schedule type can be either SCHEDULE_START_END or SCHEDULE_FROM_NOW . If you choose SCHEDULE_START_END , you need to specify a start time and an end time. If you choose SCHEDULE_FROM_NOW , you only need to specify a start time and the end time will be automatically set to 10 years later than the start time."
+      },
+      {
+        "name": "schedule_start_time Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "datetime",
+        "description": "Required when you pass in schedule_type . Schedule start time (UTC+0), in the format of \"YYYY-MM-DD HH:MM:SS\" . The start time can be up to 12 hours earlier than the current time, but cannot be later than \"2028-01-01 00:00:00\" . Note : This field cannot be updated if the schedule_start_time for the ad group is earlier than the current time."
+      },
+      {
+        "name": "schedule_end_time Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "datetime",
+        "description": "Required when schedule_type is SCHEDULE_START_END . Schedule end time (UTC+0), in the format of \"YYYY-MM-DD HH:MM:SS\" . The end time cannot be later than \"2038-01-01 00:00:00\" ."
+      },
+      {
+        "name": "dayparting",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad delivery arrangement, in the format of a string that consists of 48 x 7 characters. Each character is mapped to a 30-minute timeframe from Monday to Sunday. Each character can be set to either 0 or 1. 1 represents delivery in the 30-minute timeframe, and 0 stands for non-delivery in the 30-minute timeframe. The first character is mapped to 0:01-0:30 of Monday; The second character is mapped to 0:31-1:00 of Monday, and the last character represents 23:31-0:00 Sunday. Note: If not specified, all-0, or all-1 are considered as full-time delivery."
+      },
+      {
+        "name": "frequency",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Frequency, together with frequency_schedule , controls how often people see your ad (only available for REACH ads). The below conditions should be both met: 1 <= frequency <= 1000 1 <= frequency_schedule <= 3o For example, frequency = 2 & frequency_schedule = 3 means \"show ads no more than twice every 3 day\"."
+      },
+      {
+        "name": "frequency_schedule",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Frequency schedule, together with frequency , controls how often people see your ad (only available for REACH ads). See frequency fields for more."
+      },
+      {
+        "name": "secondary_optimization_event",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The secondary goal when optimization goal ( optimization_goal ) is Install ( INSTALL ) or Value ( VALUE ). For enum values, see Conversion events - Secondary-goal events . Note : When secondary_optimization_event is specified, you need to pass in deep_bid_type at the same time."
+      },
+      {
+        "name": "bid_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Bidding strategy that determines how the system manages your cost per result, spends your budget, and how it delivers ads. For enum values, see Enumeration - Bidding Strategy . This field cannot be updated when Campaign Budget Optimization (CBO) is enabled ( budget_optimize_on = TRUE )."
+      },
+      {
+        "name": "bid_price",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Valid only when bid_type is BID_TYPE_CUSTOM and billing_event is CPC , CPM , or CPV . Bid price. The average cost per result that you want to achieve (for Cost Cap bidding strategy). When Campaign Budget Optimization ( budget_optimize_on ) is on, we suggest that you set the same bid value for all ad groups in the campaign. bid_price needs to be lower than budget set at the campaign level and ad group level. See Bidding-Bidding limits to learn more about the bid verification mechanism."
+      },
+      {
+        "name": "conversion_bid_price",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Valid only when bid_type is BID_TYPE_CUSTOM and billing_event is OCPM . Where you can set a target cost per conversion for oCPM (Optimized Cost per Mille). conversion_bid_price needs to be lower than budget set at the campaign level and ad group level. See Bidding-Bidding limits to learn more about the bid verification mechanism."
+      },
+      {
+        "name": "deep_bid_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Bidding strategy for in-app events. For enum values and their descriptions, see Enumeration - Deep-level Bidding Strategy . Note : When secondary_optimization_event is specified, you need to pass in deep_bid_type at the same time."
+      },
+      {
+        "name": "roas_bid Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Required when deep_bid_type is VO_MIN_ROAS . ROAS goal for Value Optimization. Value range: For in-app advertising scenarios ( objective_type is APP_PROMOTION , optimization_goal is VALUE , and optimization_event is AD_REVENUE_VALUE ): 0.01-10. For Product Shopping Ads with product source as TikTok Shop ( shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE ): 0.01-20. For other scenarios: 0.01-1,000."
+      },
+      {
+        "name": "deep_cpa_bid",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Specify bid price in this field after you've chosen a bidding strategy for in-app events, for example VO_MIN."
+      },
+      {
+        "name": "next_day_retention",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Day 2 retention ratio. Formula: next_day_retention = conversion_bid_price / deep_cpa_bid . Value range is (0, 1]. Only valid when placements is PLACEMENT_PANGLE and secondary_optimization_event is NEXT_DAY_OPEN . Note : If you want to use this field, please pass in conversion_bid_price , deep_bid_type , and next_day_retention at the same time, and make sure the value of them meets the calculation formula. Otherwise there might be unexpected errors."
+      },
+      {
+        "name": "pacing",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "You can choose between PACING_MODE_SMOOTH and PACING_MODE_FAST . For PACING_MODE_SMOOTH , the budget is allocated evenly within the scheduled time. PACING_MODE_FAST would consume budget and produce results as soon as possible. When Campaign Budget Optimization ( budget_optimize_on ) is on, your setting will be ignored and it will be set as PACING_MODE_SMOOTH . Otherwise, this field is required."
+      },
+      {
+        "name": "is_hfss",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the promoted content is HFSS foods (foods that are high in fat, salt, or sugar). Please note that the European market prohibits the promotion of HFSS foods to underage users"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/adgroup/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"adgroup_id\": \"{{adgroup_id}}\",\n    \"adgroup_name\": \"{{adgroup_name}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"purchased_reach\": null,\n        \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n        \"conversion_bid_price\": 0,\n        \"adgroup_app_profile_page_state\": null,\n        \"search_result_enabled\": false,\n        \"create_time\": \"{{create_time}}\",\n        \"rf_purchased_type\": null,\n        \"comment_disabled\": false,\n        \"category_id\": \"0\",\n        \"statistic_type\": null,\n        \"brand_safety_type\": \"NO_BRAND_SAFETY\",\n        \"promotion_type\": \"WEBSITE\",\n        \"modify_time\": \"{{modify_time}}\",\n        \"pixel_id\": null,\n        \"secondary_status\": \"ADGROUP_STATUS_CREATE\",\n        \"is_hfss\": false,\n        \"excluded_audience_ids\": [],\n        \"actions\": [],\n        \"gender\": \"GENDER_UNLIMITED\",\n        \"adgroup_name\": \"{{adgroup_name}}\",\n        \"adgroup_id\": \"{{adgroup_id}}\",\n        \"app_download_url\": null,\n        \"optimization_goal\": \"CLICK\",\n        \"frequency\": null,\n        \"deep_cpa_bid\": 0,\n        \"inventory_filter_enabled\": false,\n        \"audience_ids\": [],\n        \"auto_targeting_enabled\": false,\n        \"deep_bid_type\": null,\n        \"brand_safety_partner\": null,\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"operating_systems\": [\n            \"ANDROID\"\n        ],\n        \"network_types\": [],\n        \"is_new_structure\": true,\n        \"scheduled_budget\": 0,\n        \"schedule_end_time\": \"{{schedule_end_time}}\",\n        \"placement_type\": \"PLACEMENT_TYPE_NORMAL\",\n        \"video_download_disabled\": false,\n        \"app_type\": null,\n        \"category_exclusion_ids\": [],\n        \"age_groups\": null,\n        \"location_ids\": [\n            \"{{location_id}}\"\n        ],\n        \"placements\": [\n            \"PLACEMENT_TIKTOK\"\n        ],\n        \"optimization_event\": null,\n        \"interest_keyword_ids\": [],\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"bid_price\": 0,\n        \"dayparting\": \"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n        \"ios14_quota_type\": \"UNOCCUPIED\",\n        \"delivery_mode\": null,\n        \"secondary_optimization_event\": null,\n        \"app_id\": null,\n        \"creative_material_mode\": \"CUSTOM\",\n        \"share_disabled\": false,\n        \"purchased_impression\": null,\n        \"rf_estimated_frequency\": null,\n        \"operation_status\": \"ENABLE\",\n        \"next_day_retention\": null,\n        \"schedule_type\": \"SCHEDULE_START_END\",\n        \"frequency_schedule\": null,\n        \"schedule_infos\": null,\n        \"keywords\": null,\n        \"bid_type\": \"BID_TYPE_NO_BID\",\n        \"bid_display_mode\": \"CPMV\",\n        \"skip_learning_phase\": false,\n        \"billing_event\": \"CPC\",\n        \"interest_category_ids\": [],\n        \"rf_estimated_cpr\": null,\n        \"isp_ids\": [],\n        \"pacing\": \"PACING_MODE_SMOOTH\",\n        \"feed_type\": null,\n        \"schedule_start_time\": \"{{schedule_start_time}}\",\n        \"languages\": [],\n        \"conversion_window\": null,\n        \"budget\": {{budget}},\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"device_price_ranges\": null,\n        \"need_audit\": false\n    }\n}"
+    }
+  }
+}

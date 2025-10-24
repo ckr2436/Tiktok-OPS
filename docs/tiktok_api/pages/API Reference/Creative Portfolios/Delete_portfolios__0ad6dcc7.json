@@ -1,0 +1,55 @@
+{
+  "title": "Delete portfolios",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/portfolio/delete/",
+  "method": "POST",
+  "category_path": [
+    "Creative Portfolios"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed value: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "creative_portfolio_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of creative portfolio IDs to delete. Max size: 100. To obtain creative portfolio IDs within an ad account, use /creative/portfolio/list/ . Note : If any creative portfolio ID is invalid, the entire deletion process will fail. Invalid portfolio IDs include: Portfolio IDs that do not exist. Portfolio IDs that have already been deleted."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/portfolio/delete/' \\\n--header 'Access-Token: {{Access_Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"creative_portfolio_ids\": [\"{{creative_portfolio_ids}}\"]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

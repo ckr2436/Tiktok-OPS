@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Upload a video template",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Video Templates"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

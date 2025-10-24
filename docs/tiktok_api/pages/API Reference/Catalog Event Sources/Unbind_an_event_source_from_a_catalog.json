@@ -1,0 +1,11 @@
+{
+  "title": "Unbind an event source from a catalog",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Event Sources"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

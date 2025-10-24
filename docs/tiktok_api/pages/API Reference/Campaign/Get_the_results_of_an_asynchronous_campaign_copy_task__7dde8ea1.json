@@ -1,0 +1,48 @@
+{
+  "title": "Get the results of an asynchronous campaign copy task",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/copy/task/check/",
+  "method": "GET",
+  "category_path": [
+    "Campaign"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the asynchronous campaign copy task. To get the task ID, use /campaign/copy/task/create/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/copy/task/check/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"task_id\": \"{{task_id}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"task_result\": {\n            \"campaign_name\": \"{{campaign_name}}\",\n            \"adgroup_result_list\": [\n                {\n                    \"total_ad_count\": 1,\n                    \"adgroup_id\": \"{{adgroup_id}}\",\n                    \"adgroup_name\": \"{{adgroup_name}}\",\n                    \"adgroup_error_list\": [],\n                    \"success_ad_count\": 1,\n                    \"ad_result_list\": [\n                        {\n                            \"ad_name\": \"{{ad_name}}\",\n                            \"is_success\": true,\n                            \"ad_error_list\": [],\n                            \"ad_id\": \"{{ad_id}}\"\n                        }\n                    ],\n                    \"is_smart_creative\": false,\n                    \"ad_status\": \"ALL_SUCCESS\"\n                }\n            ],\n            \"campaign_id\": \"{{campaign_id}}\",\n            \"campaign_error_infos\": []\n        },\n        \"task_status\": \"SUCCESS\",\n        \"task_info\": {\n            \"total_ad_count\": 1,\n            \"total_smart_creative_adgroup_count\": 0,\n            \"success_smart_creative_adgroup_count\": 0,\n            \"success_ad_count\": 1\n        }\n    }\n}"
+    }
+  }
+}

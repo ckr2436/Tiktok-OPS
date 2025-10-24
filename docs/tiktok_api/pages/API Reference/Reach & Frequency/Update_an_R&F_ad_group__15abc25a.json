@@ -1,0 +1,293 @@
+{
+  "title": "Update an R&F ad group",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/adgroup/rf/update/",
+  "method": "POST",
+  "category_path": [
+    "Reach & Frequency"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowed format: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the ad group to be modified. The objective_type of the campaign it belongs to must be RF_REACH ."
+      },
+      {
+        "name": "share_disabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether sharing to third-party platforms is disabled for ads in this ad group"
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Name of the ad group. It must not exceed 100 characters or contain any emojis."
+      },
+      {
+        "name": "comment_disabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to prohibit users from posting comments to your ads on TikTok."
+      },
+      {
+        "name": "audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the audiences that you want to target. For an audience to be targeted or excluded in R&F ads, you must set audience_sub_type to REACH_FREQUENCY when creating or updating the audience. Note : You cannot use Lookalike Audience in R&F ads. Otherwise, an error will occur."
+      },
+      {
+        "name": "excluded_audience_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the audiences that you want to exclude. For an audience to be targeted or excluded in R&F ads, you must set audience_sub_type to REACH_FREQUENCY when creating or updating the audience. Note : You cannot use Lookalike Audience in R&F ads. Otherwise, an error will occur."
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Audience age range. If your targeting locations include Israel or Brazil, AGE_13_17 cannot be used. For enum values, see Appendix - Enumeration - Audience Age Range . In certain scenarios, creation of ad groups that target the age group 13-17 ( AGE_13_17 ) in the US will not be allowed. See New age restrictions for ads on TikTok to learn more. If you use targeting options that are not supported for the age group 13-17 in the US and leave the age_groups field unspecified or set it as [] , an error will occur. You need to explicitly specify the exact age groups that you want to target, such as AGE_18_24 , in the field to avoid any errors."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Target gender. For enum values, see Appendix - Enumeration - Audience Gender ."
+      },
+      {
+        "name": "languages",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Audience language. Available values: see Appendix - Enumeration - Audience Language ."
+      },
+      {
+        "name": "location_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the targeted locations. The location can be at the country or region level, the Province, DMA (Designated Market Area) or Metropolitan level, or the city level. Location targeting supports a single country or region only. If you want to target multiple locations, they must be from the same country or region. You can find the supported countries and regions from Reach & Frequency ."
+      },
+      {
+        "name": "is_hfss",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the promoted content is HFSS foods (foods that are high in fat, salt, or sugar). Please note that the European market prohibits the promotion of HFSS foods to underage users."
+      },
+      {
+        "name": "operating_systems",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Operating system. See Appendix - Enumeration - Audience Operating System ."
+      },
+      {
+        "name": "network_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Device connection types that you want to target. Default value: unlimited . For enum values, see Enumeration - Connection Type ."
+      },
+      {
+        "name": "device_model_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the device models that you want to target. Currently only brand-level model IDs are supported. When this field is specified, device_price_ranges must not be specified. For enum values of device model IDs on different levels, please see Device Models . Note : Only active devices ( is_active = True in the response of /tool/device_model/ ) can be used to create ads."
+      },
+      {
+        "name": "device_price_ranges",
+        "required": false,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important : The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+      },
+      {
+        "name": "carrier_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Carriers that you want to target. A carrier is valid only when the in_use field for the carrier is true . The carriers must be consistent with the location(s) that you want to target. For enum values ( carrier_id ), see Appendix - Carriers ."
+      },
+      {
+        "name": "interest_category_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Interest classification. If the interest is specified, users that do not meet interest target will be excluded during delivery. Do not specify if you wish to target everyone. Use /tool/target_recommend_tags/ to get a list of recommended interest categories based on your targeting regions and your industries. Use /tool/interest_category/ endpoint to get the complete list of interest categories."
+      },
+      {
+        "name": "rf_purchased_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Buying type. Allowed values: FIXED_SHOW : Purchase to achieve a fixed amount of impressions. FIXED_REACH : Purchase to reach a fixed number of users. FIXED_BUDGE : Purchase with a fixed budget."
+      },
+      {
+        "name": "budget",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Budget. Please fill in this number based on the data returned via the ad inventory estimate API."
+      },
+      {
+        "name": "purchased_impression",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Impressions to be purchased, in the unit of 1,000 . Please fill in this number based on the data returned via the ad inventory estimate API."
+      },
+      {
+        "name": "purchased_reach",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Number of users reached to be purchased, in the unit of 1,000 . Please fill in this number based on the results of inventory estimation."
+      },
+      {
+        "name": "schedule_start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Schedule start time (UTC+0), in the format of YYYY-MM-DD HH:MM:SS . The time interval between schedule_start_time and schedule_end_time must not exceed 90 days. The value of this field must be at YYYY-MM-DD HH:00:00 for the time zone where the ad will be delivered. For instance, if an advertiser in the UTC-5 time zone wants to create an R&F ad group that starts delivery on November 1st, 2023, this field must be set to \"2023-11-01 05:00:00\" ."
+      },
+      {
+        "name": "schedule_end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Schedule end time (UTC+0), in the format of YYYY-MM-DD HH:MM:SS . The time interval between schedule_start_time and schedule_end_time must not exceed 90 days. The value of this field must be at YYYY-MM-DD HH:59:59 for the time zone where the ad will be delivered. For instance, if an advertiser in the UTC-5 time zone wants to create an R&F ad group that ends delivery on November 10th, 2023, this field must be set to \"2023-11-10 04:59:59\" ."
+      },
+      {
+        "name": "frequency",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "frequency , together with frequency_schedule , controls how often people see your ad (only available for REACH ads). For example, frequency = 2 & frequency_schedule = 3 means \"show ads no more than twice every 3 days\". The following conditions should be met: 1 ≤ frequency ≤ frequency_schedule . 1 ≤ frequency_schedule ≤ min ( schedule_end_time - schedule_start_time , 30). The frequency cap determined by frequency and frequency_schedule does not exceed four times a day."
+      },
+      {
+        "name": "frequency_schedule",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "frequency_schedule , together with frequency , controls how often people see your ad (only available for REACH ads). See frequency field for more."
+      },
+      {
+        "name": "feed_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Feed type option. Enum: STANDARD_FEED , TOP_FEED . STANDARD_FEED refers to large inventory with normal CPM price while TOP_FEED refers to limited inventory with higher CPM price."
+      },
+      {
+        "name": "delivery_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The strategy for sequencing and scheduling your ad delivery. Enum values: STANDARD : Standard delivery. Your ads will be distributed evenly and are expected to achieve similar traffic size. SCHEDULE : Scheduled delivery. Set specific time periods to deliver each ad in. If you use this value, you need to pass the object array schedules at the same time. SEQUENCE : Sequenced delivery. Set a specific sequence to deliver your ads in. If you use this value, you need to pass the field expected_orders at the same time. OPTIMIZE : Optimized delivery that delivers ads to achieve the best performance."
+      },
+      {
+        "name": "schedule_infos",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Ad delivery information. When delivery_mode is set to SEQUENCE , the number of objects in this array represents the number of ads that you will specify the sequence for."
+      },
+      {
+        "name": "schedules Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when delivery_mode is set to SCHEDULE . The details of the scheduled delivery that you want to set for the ad. Ensure that the schedule is continuous and covers the whole delivery period that is specified through schedule_start_time and schedule_end_time ."
+      },
+      {
+        "name": "start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad delivery start time, in the format of \"YYYY-MM-DD HH:MM:SS\" ."
+      },
+      {
+        "name": "end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad delivery end time, in the format of \"YYYY-MM-DD HH:MM:SS\" ."
+      },
+      {
+        "name": "expected_orders Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "number[]",
+        "description": "Required when delivery_mode is set to SEQUENCE . The delivery order for an ad within the ad group. To set a fixed sequence for each ad within the ad group, pass only one number (for instance, [1] ) to this field. A value of [1] indicates that the ad will be delivered first."
+      },
+      {
+        "name": "contextual_tag_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Contextual tag IDs. You can use /tool/contextual_tag/get/ to get available contextual tags. Note : This is an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Only supports RF_REACH as objectives ( objective_type ) at the campaign level. Not supported when brand_safety_type is set to THIRD_PARTY . Not supported when feed_type is set to TOP_FEED . If you set rf_campaign_type to PULSE in /campaign/create/ , then you must enter contextual tags of PREMIUM type in this field. In this case, the CPM in your ad group is fixed."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "To learn about the eligibility for updating this field, see Eligibility for updating pre-bid brand safety filtering settings . Brand safety type. Enum values: EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. To get the countries and regions that your ads can be deployed to based on your brand safety settings, use the /tool/region/ endpoint. Note : Updating Brand Safety settings, including brand_safety_type , category_exclusion_ids , and vertical_sensitivity_id , is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. See Brand safety to learn about the supported advertising objectives, supported markets, and the general introduction of pre-bid Brand Safety filtering."
+      },
+      {
+        "name": "category_exclusion_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "This field can only be updated when any of the following conditions is met: schedule_start_time of the ad group has not been reached. schedule_start_time of the ad group has been reached, but the operation_status is DISABLE and the cost is 0. To retrieve the schedule_start_time and operation_status of an ad group, use /adgroup/get/ . Content exclusion category IDs. You can use /tool/content_exclusion/get/ to get a list of content category IDs ( excluded_category_list ) that can be excluded from being displayed next to your ads. Note : Updating Brand Safety settings, including brand_safety_type , category_exclusion_ids , and vertical_sensitivity_id , is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"languages\": [\n        \"LANGUAGES\"\n    ], \n    \"buy_impression\": \"BUY_IMPRESSION\", \n    \"is_comment_disable\": \"IS_COMMENT_DISABLE\", \n    \"gender\": \"GENDER\", \n    \"age\": [\n        \"AGE\"\n    ], \n    \"frequency_schedule\": \"FREQUENCY_SCHEDULE\", \n    \"budget\": \"BUDGET\", \n    \"rf_buy_type\": \"RF_BUY_TYPE\", \n    \"advertiser_id\": \"ADVERTISER_ID\", \n    \"frequency\": \"FREQUENCY\", \n    \"location\": [\n        \"LOCATION\"\n    ], \n    \"schedule_end_time\": \"SCHEDULE_END_TIME\", \n    \"request_id\": \"REQUEST_ID\", \n    \"operation_system\": [\n        \"OPERATION_SYSTEM\"\n    ], \n    \"buy_reach\": \"BUY_REACH\", \n    \"adgroup_name\": \"ADGROUP_NAME\", \n    \"adgroup_id\": \"ADGROUP_ID\", \n    \"schedule_start_time\": \"SCHEDULE_START_TIME\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/adgroup/rf/update/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

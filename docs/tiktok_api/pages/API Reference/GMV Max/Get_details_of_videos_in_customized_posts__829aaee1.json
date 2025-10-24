@@ -1,0 +1,115 @@
+{
+  "title": "Get details of videos in customized posts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/custom_anchor_video_list/get/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_custom_anchor_video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the collection of customized posts created in a Product GMV Max Campaign. To obtain the customized post collection associated with a Product GMV Max Campaign, use /campaign/gmv_max/info/ and check the returned campaign_custom_anchor_video_id ."
+      },
+      {
+        "name": "custom_anchor_video_list",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The list of videos with customized product links (custom anchor videos) to filter the results by. Max size: 20. To obtain the customized posts associated with a Product GMV Max Campaign, use /campaign/gmv_max/info/ and check the returned custom_anchor_video_list ."
+      },
+      {
+        "name": "item_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok video."
+      },
+      {
+        "name": "identity_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Information about the identity associated with the post."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: AUTH_CODE : Authorized User. This type of identity is created when you use the authorization code to access a TikTok account or a TikTok post. TT_USER : TikTok User. This type of identity is created when you bind your TikTok For Business account with your TikTok Business Account, or when you bind your TikTok For Business account with your regular TikTok account and then upgrade the account to Business Account. BC_AUTH_TT : TikTok Account User in Business Center. This type of identity is created when you add a TikTok account to your Business Center, and the TikTok account owner approves your request. TTS_TT : TikTok Account User for TikTok Shop. This type of identity is created when you set an official TikTok account for the TikTok Shop."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . The ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "identity_authorized_shop_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only when identity_type is BC_AUTH_TT and identity_authorized_shop_id is returned for the identity from /gmv_max/identity/get/ . The ID of the TikTok Shop that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is TTS_TT . The ID of the TikTok Shop that a TikTok Account User for TikTok Shop identity is associated with."
+      },
+      {
+        "name": "spu_id_list",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The SPU IDs of the products associated with the customized product anchor link in the TikTok video. Max size: 1. If you want to have spu_id_list included in the response, specify spu_id_list in the request."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Include spu_id_list in the response",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/custom_anchor_video_list/get/?advertiser_id={{advertiser_id}}&campaign_custom_anchor_video_id={{campaign_custom_anchor_video_id}}&custom_anchor_video_list=[{\"item_id\":\"{{item_id}}\",\"identity_info\":{\"identity_id\":\"{{identity_id}}\",\"identity_type\":\"TT_USER\"},\"spu_id_list\":[\"{{spu_id}}\"]}]'\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Exclude spu_id_list from the response",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/custom_anchor_video_list/get/?advertiser_id={{advertiser_id}}&campaign_custom_anchor_video_id={{campaign_custom_anchor_video_id}}&custom_anchor_video_list=[{\"item_id\":\"{{item_id}}\",\"identity_info\":{\"identity_id\":\"{{identity_id}}\",\"identity_type\":\"TT_USER\"}}]'\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"custom_anchor_video_list\": [\n            {\n                \"identity_info\": {\n                    \"identity_id\": \"{{identity_id}}\",\n                    \"identity_type\": \"TT_USER\",\n                    \"profile_image\": \"{{profile_image}}\",\n                    \"user_name\": \"{{user_name}}\"\n                },\n                \"item_id\": \"{{item_id}}\",\n                \"spu_id_list\": [\n                    \"{{spu_id}}\"\n                ],\n                \"text\": \"{{text}}\",\n                \"video_info\": {\n                    \"bit_rate\": 824497,\n                    \"definition\": \"540p\",\n                    \"duration\": 10.444,\n                    \"format\": \"mp4\",\n                    \"fps\": 30,\n                    \"height\": 960,\n                    \"preview_url\": \"{{preview_url}}\",\n                    \"signature\": \"{{signature}}\",\n                    \"size\": 1076382,\n                    \"video_cover_url\": \"{{video_cover_url}}\",\n                    \"video_id\": \"{{video_id}}\",\n                    \"width\": 540\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

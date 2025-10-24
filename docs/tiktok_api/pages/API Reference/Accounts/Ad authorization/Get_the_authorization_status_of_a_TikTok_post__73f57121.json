@@ -1,0 +1,49 @@
+{
+  "title": "Get the authorization status of a TikTok post",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/post/authorize/status/",
+  "method": "GET",
+  "category_path": [
+    "Accounts",
+    "Ad authorization"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "item_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok post. To obtain the public posts of a TikTok account, use /business/video/list/ . Example: 7123456789123456789 . Note : If the TikTok post doesn't have an authorization code, either because the code is not generated or is deleted, an error will occur."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/post/authorize/status/?business_id={{business_id}}&item_id={{item_id}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auth_code\": \"{{auth_code}}\",\n        \"auth_code_end_time\": \"2024-12-07 00:21:37\",\n        \"auth_code_start_time\": \"2024-10-31 00:21:37\",\n        \"auth_code_status\": \"NOT_USED\",\n        \"authorization_days\": 37,\n        \"item_id\": \"{{item_id}}\"\n    }\n}"
+    }
+  }
+}

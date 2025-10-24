@@ -1,0 +1,55 @@
+{
+  "title": "Get review info of ads",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/ad/review_info/",
+  "method": "GET",
+  "category_path": [
+    "Ad Review"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "ad_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The list of ad IDs. Quantity: 1-100."
+      },
+      {
+        "name": "lang",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id={{ADVERTISER_ID}}\" \\\n--data-urlencode \"ad_ids=[\\\"AD_IDS\\\"]\" \\\n--data-urlencode \"lang=[\\\"LANG\\\"]\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/ad/review_info/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"ad_review_map\": {\n            \"AD_ID\": {\n                \"reject_info\": [\n                    {\n                        \"content_info\": {\n                            \"text_content\": null,\n                            \"content_type\": \"MODE_VIDEO\",\n                            \"image_content\": {\n                                \"image_id\": \"IMAGE_ID\"\n                            },\n                            \"video_content\": {\n                                \"video_id\": \"VIDEO_ID\",\n\n                            }\n                        },\n                        ],\n                        \"suggestion\": \"Please add background audio or modify the unclear audio. For more policy details, please check \\\" Ad Caption/Text, Image and Video\\\" in \\\"TikTok Advertising Policies - Ad Creatives\\\".\",\n                        \"reasons\": [\n                            \"The ad or video has no background audio or the background audio is incoherent/unclear. \"\n                        ]\n                    }\n                ],\n                \"is_approved\": true,\n                \"last_audit_time\": 1596023135,\n                \"forbidden_placements\": [\n                    \"PLACEMENT_HELO\",\n                    \"PLACEMENT_TIKTOK\",\n                    \"PLACEMENT_TOPBUZZ\"\n                ],\n                \"ad_id\": AD_ID,\n                \"review_status\": \"PART_AVAILABLE\",\n                \"appeal_status\": null,\n                \"forbidden_locations\": [\n                    \"RU\"\n                ],\n                \"forbidden_operation_systems\": [\n                    \"IOS\"\n                ],\n                \"forbidden_ages\": [\n                ]\n            }\n        }\n    }\n}"
+    }
+  }
+}

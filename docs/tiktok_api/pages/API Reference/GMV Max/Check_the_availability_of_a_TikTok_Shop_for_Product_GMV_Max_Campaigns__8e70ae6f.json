@@ -1,0 +1,48 @@
+{
+  "title": "Check the availability of a TikTok Shop for Product GMV Max Campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/store/shop_ad_usage_check/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok Shop. To obtain a TikTok Shop that is available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/store/shop_ad_usage_check/?advertiser_id={{advertiser_id}}&store_id={{store_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"is_running_custom_shop_ads\": true,\n        \"promote_all_products_allowed\": false\n    }\n}"
+    }
+  }
+}

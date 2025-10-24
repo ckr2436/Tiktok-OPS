@@ -1,0 +1,91 @@
+{
+  "title": "Get info about TikTok posts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/identity/video/info/",
+  "method": "GET",
+  "category_path": [
+    "Identity"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: AUTH_CODE , TT_USER , BC_AUTH_TT . See Identities for details."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID. To get the identities within an ad account, use /identity/get/ ."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "item_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either item_id or item_ids must be specified. If you want to retrieve the information for a single TikTok post, pass item_id . If you want to retrieve the information for multiple TikTok posts, pass item_ids . The TikTok post ID that is associated with the provided Identity ID ( identity_id ). To get the TikTok posts associated with an identity, use /identity/video/get/ and extract the TikTok post ID ( item_id ) from the response."
+      },
+      {
+        "name": "item_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Either item_id or item_ids must be specified. If you want to retrieve the information for a single TikTok post, pass item_id . If you want to retrieve the information for multiple TikTok posts, pass item_ids . A list of TikTok post IDs that are associated with the provided Identity ID ( identity_id ). Max size: 20. To get the TikTok posts associated with an identity, use /identity/video/get/ and extract the TikTok post ID ( item_id ) from the response."
+      },
+      {
+        "name": "item_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of TikTok posts that you want to retrieve. Enum values: VIDEO : video post. CAROUSEL : photo post. Default value: VIDEO ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get info about one TikTok post associated with a TT_USER identity",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/identity/video/info/?advertiser_id={{advertiser_id}}&identity_type=TT_USER&identity_id={{identity_id}}&item_id={{item_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get info about one TikTok post associated with a AUTH_CODE identity",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/identity/video/info/?advertiser_id={{advertiser_id}}&identity_type=AUTH_CODE&identity_id={{identity_id}}&item_ids=[\"{{item_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get info about multiple TikTok posts associated with a BC_AUTH_TT identity",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/identity/video/info/?advertiser_id={{advertiser_id}}&identity_type=BC_AUTH_TT&identity_id={{identity_id}}&identity_authorized_bc_id={{identity_authorized_bc_id}}&item_ids=[\"{{item_id}}\",\"{{item_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_detail\": {\n            \"auth_info\": null,\n            \"anchor_list\": null,\n            \"item_id\": \"{{item_id}}\",\n            \"text\": \"\",\n            \"status\": \"ITEM_STATUS_HESITATE_RECOMMEND\",\n            \"video_info\": {\n                \"duration\": 1.6,\n                \"width\": 720,\n                \"url\": \"{{url}}\",\n                \"size\": 244797,\n                \"bit_rate\": 1223985,\n                \"height\": 1280,\n                \"poster_url\": \"{{poster_url}}\",\n                \"format\": \"mp4\",\n                \"signature\": \"{{signature}}\"\n            }\n        }\n    }\n}"
+    }
+  }
+}

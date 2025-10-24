@@ -1,0 +1,48 @@
+{
+  "title": "Get the verification results of a URL",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/url_validate/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "url",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The URL that you want to get verification results for."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tool/url_validate/?advertiser_id={{advertiser_id}}&url={{url}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"url_info\": {\n            \"validate_info\": {\n                \"is_valid_scheme\": true,\n                \"is_scheme_link\": true,\n                \"is_valid_url\": true\n            }\n        }\n    }\n}"
+    }
+  }
+}

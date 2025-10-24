@@ -1,0 +1,48 @@
+{
+  "title": "Get the results of a split test",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/split_test/result/get/",
+  "method": "GET",
+  "category_path": [
+    "Super Split Test"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "split_test_group_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Split test group ID."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/split_test/result/get/?advertiser_id={{advertiser_id}}&split_test_group_id={{split_test_group_id}}' \\\n--header 'Content-Type: application/json' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"key_metric\": \"FOCUSED_VIEW_RATE\",\n        \"object_info\": [\n            {\n                \"optimization_goal\": \"FOCUSED_VIEW_RATE\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"adgroup_id\": \"{{adgroup_id}}\"\n            },\n            {\n                \"optimization_goal\": \"ENGAGED_VIEW_FIFTEEN\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"adgroup_id\": \"{{adgroup_id}}\"\n            }\n        ],\n        \"start_time\": \"{{start_time}}\",\n        \"test_variable\": \"BIDDING_OPTIMIZATION\",\n        \"p_value_info\": [],\n        \"end_time\": \"{{end_time}}\",\n        \"split_test_status\": \"NOT_STARTED\"\n    }\n}"
+    }
+  }
+}

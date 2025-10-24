@@ -1,0 +1,48 @@
+{
+  "title": "Get the MMM data request history",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/mmm/api/history/",
+  "method": "GET",
+  "category_path": [
+    "Media Mix Modeling"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "from_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start date, in the format of YYYY-MM-DD (UTC+0 time). The start date cannot be earlier than four years ago."
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End date, in the format of YYYY-MM-DD (UTC+0 time)."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/mmm/api/history/?from_date=2024-11-01&end_date=2024-12-03' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"historical_requests\": [\n            \"{\\\"RequestID\\\":\\\"{{RequestID}}\\\",\\\"CreateTime\\\":\\\"2024-11-07T22:03:39Z\\\",\\\"Message\\\":\\\"{\\\\\\\"targets\\\\\\\":[{\\\\\\\"advertiser_id\\\\\\\":\\\\\\\"{{advertiser_id}}\\\\\\\"}],\\\\\\\"from_date\\\\\\\":\\\\\\\"20240729\\\\\\\",\\\\\\\"to_date\\\\\\\":\\\\\\\"20240829\\\\\\\",\\\\\\\"media_type\\\\\\\":2}\\\",\\\"Status\\\":5}\",\n            \"{\\\"RequestID\\\":\\\"{{RequestID}}\\\",\\\"CreateTime\\\":\\\"2024-11-19T19:54:58Z\\\",\\\"Message\\\":\\\"{\\\\\\\"targets\\\\\\\":[{\\\\\\\"advertiser_id\\\\\\\":\\\\\\\"{{advertiser_id}}\\\\\\\"}],\\\\\\\"from_date\\\\\\\":\\\\\\\"20241104\\\\\\\",\\\\\\\"to_date\\\\\\\":\\\\\\\"20241108\\\\\\\",\\\\\\\"country_code\\\\\\\":[\\\\\\\"JP\\\\\\\"],\\\\\\\"media_type\\\\\\\":2}\\\",\\\"Status\\\":1}\"\n        ]\n    }\n}"
+    }
+  }
+}

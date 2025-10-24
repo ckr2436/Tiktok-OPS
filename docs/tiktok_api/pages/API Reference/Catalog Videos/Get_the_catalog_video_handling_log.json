@@ -1,0 +1,11 @@
+{
+  "title": "Get the catalog video handling log",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Videos"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

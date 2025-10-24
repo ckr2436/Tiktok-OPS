@@ -1,0 +1,69 @@
+{
+  "title": "Get Spark Ad posts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tt_video/list/",
+  "method": "GET",
+  "category_path": [
+    "Spark Ads Using Authorized Posts"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The Advertiser ID."
+      },
+      {
+        "name": "item_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The types of Spark Ads posts to filter. Enum values: VIDEO : video post. CAROUSEL : photo post. Default value: [\"VIDEO\", \"CAROUSEL\"] ."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The text or TikTok post ID as a keyword to search TikTok posts by. If you want to search for TikTok posts based on text, provide a text string with a maximum length of 500 characters. This search type supports searching in multiple languages and fuzzy matches. Example: \"summer\". If you want to search for TikTok posts based on item_id , provide a numeric string with a minimum length of 19 characters. This search type supports exact matches. Example: \"1234567891234567891\""
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The current page number. The default value is 1 . The value must be ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The page size. The default value: 20 . The value must be in the range of 1-50."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/tt_video/list/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"xxx\",\n    \"data\": {\n        \"page_info\": {\n            \"total_page\": 15,\n            \"total_number\": 300,\n            \"page\": 1,\n            \"page_size\": 20\n        },\n        \"list\": [\n            {\n                \"user_info\": {\n                    \"tiktok_name\": \"{{tiktok_name}}\",\n                    \"identity_id\": \"{{identity_id}}\",\n                    \"identity_type\": \"AUTH_CODE\"\n                },\n                \"item_info\": {\n                    \"anchor_list\": [\n                        {\n                            \"id\": \"{{id}}\",\n                            \"status\": \"CHECK_FAILED\",\n                            \"product_regions\": [\n                                \"ID\"\n                            ],\n                            \"url\": \"\",\n                            \"title\": \"{{title}}\"\n                        }\n                    ],\n                    \"text\": \"{{text}}\",\n                    \"status\": \"HESITATE_RECOMMEND\",\n                    \"auth_code\": \"{{auth_code}\",\n                    \"item_id\": \"{{item_id}}\",\n                    \"item_type\": \"VIDEO\",\n                    \"carousel_info\": null\n                },\n                \"auth_info\": {\n                    \"auth_start_time\": \"2021-05-23 11:26:45\",\n                    \"ad_auth_status\": \"AUTHORIZED\",\n                    \"invite_start_time\": \"2021-05-23 11:28:02\",\n                    \"auth_end_time\": \"2022-07-22 11:26:45\"\n                },\n                \"video_info\": {\n                    \"duration\": 8.081,\n                    \"preview_url\": \"{{preview_url}}\",\n                    \"bit_rate\": {{bit_rate}},\n                    \"height\": {{height}},\n                    \"width\": {{width}},\n                    \"signature\": \"{{signature}}\",\n                    \"size\": 2379969,\n                    \"poster_url\": \"{{poster_url}}\"\n                }\n            },\n            ...\n           ]\n}"
+    }
+  }
+}

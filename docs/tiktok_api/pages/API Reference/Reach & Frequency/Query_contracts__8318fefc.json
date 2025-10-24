@@ -1,0 +1,59 @@
+{
+  "title": "Query contracts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/rf/contract/query/",
+  "method": "GET",
+  "category_path": [
+    "Reach & Frequency"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "included_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A certain date within the contract validity, or the start/end time of an ad group. Format: \"2020-09-18\"."
+      },
+      {
+        "name": "rf_campaign_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Use this field to specify whether you want to query TikTok Pulse contract. Enum values: STANDARD (Reach & Frequency), PULSE (TikTok Pulse). Note : This is an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      }
+    ],
+    "examples": []
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "has_valid_contract": true,
+          "start_date": "2020-10-01",
+          "end_date": "2020-11-30"
+        },
+        "request_id": "1E044AD4"
+      }
+    }
+  }
+}

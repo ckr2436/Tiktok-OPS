@@ -1,0 +1,77 @@
+{
+  "title": "Create/Delete an audience segment",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/segment/audience/",
+  "method": "POST",
+  "category_path": [
+    "Audience",
+    "Audience segment"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "action",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of action to be performed. Enum values: create : To create an audience segment. You will also need to include custom_audience_name in the request. delete : To delete an audience segment. You will also need to include delete_audience_id in the request. If no value is specified, the default value is create ."
+      },
+      {
+        "name": "custom_audience_name Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Custom audience name of audience to be created. Please note that names over 70 characters will be truncated to 67 characters with \"...\" appended. This field is required when the value of action is create ."
+      },
+      {
+        "name": "delete_audience_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Audience ID to be deleted. This field is required when the value of action is delete ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -verbose  -i --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/segment/audience/' \\\n--header 'Access-Token: <put_your_access_token_here>' \\\n--header 'Content-Type: application/json' \\\n-d '{\n    \"custom_audience_name\": \"mens shoes\",\n    \"advertiser_id\": 1356789172,\n    \"action\": \"create\" // create/delete (optional, default is creation)\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": {
+        "code": 200,
+        "message": "OK",
+        "request_id": "XXXXXXXXXXXXXX",
+        "data": {
+          "audience_id": 100008357
+        }
+      }
+    }
+  }
+}

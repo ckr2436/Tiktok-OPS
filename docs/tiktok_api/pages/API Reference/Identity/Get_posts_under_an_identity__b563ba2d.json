@@ -1,0 +1,90 @@
+{
+  "title": "Get posts under an identity",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/identity/video/get/",
+  "method": "GET",
+  "category_path": [
+    "Identity"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: AUTH_CODE , TT_USER , BC_AUTH_TT . See Identities for details."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that a TikTok Account User in Business Center identity is associated with. Required when identity_type is BC_AUTH_TT ."
+      },
+      {
+        "name": "item_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of TikTok posts that you want to retrieve. Enum values: VIDEO : video post. CAROUSEL : photo post. Default value: VIDEO ."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when identity_type is set to AUTH_CODE . Otherwise, an error will occur. The text or TikTok post ID as a keyword to search TikTok posts by. If you want to search for TikTok posts based on text, provide a text string with a maximum length of 500 characters. This search type supports searching in multiple languages and fuzzy matches. Example: \"summer\". If you want to search for TikTok posts based on item_id , provide a numeric string with a minimum length of 19 characters. This search type supports exact matches. Example: \"1234567891234567891\""
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Cursor for pagination."
+      },
+      {
+        "name": "count",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Number of TikTok posts you want to get. Value range: 1-20. If you specify a value greater than 20, this field will be ignored and a maximum of 20 TikTok posts associated with the identity will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"identity_id=IDENTITY_ID\" \\\n--data-urlencode \"identity_type=IDENTITY_TYPE\" \\\n--data-urlencode \"identity_authorized_bc_id=IDENTITY_AUTHORIZED_BC_ID\" \\\n--data-urlencode \"cursor=CURSOR\" \\\n--data-urlencode \"count=COUNT\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/identity/video/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"has_more\": true,\n        \"cursor\": \"1657313235\",\n        \"video_list\": [\n            {\n                \"auth_info\": AUTH_INFO,\n                \"anchor_list\": ANCHOR_LIST,\n                \"text\": TEXT,\n                \"status\": \"ITEM_STATUS_HESITATE_RECOMMEND\",\n                \"item_id\": ITEM_ID,\n                \"video_info\": {\n                    \"format\": \"mp4\",\n                    \"bit_rate\": 816171,\n                    \"height\": 360,\n                    \"signature\": SIGNATURE,\n                    \"duration\": 30.527,\n                    \"url\": URL,\n                    \"size\": 3114374,\n                    \"poster_url\": POSTER_URL,\n                    \"width\": 640\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

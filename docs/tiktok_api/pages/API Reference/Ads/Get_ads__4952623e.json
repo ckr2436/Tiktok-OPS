@@ -1,0 +1,174 @@
+{
+  "title": "Get ads",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/ad/get/",
+  "method": "GET",
+  "category_path": [
+    "Ads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Fields that you want to get. For the list of fields that you can specify, see the fields under list in the response. If not set, all fields are returned by default."
+      },
+      {
+        "name": "exclude_field_types_in_response",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The type of fields that you want to remove from the response. Allowed enum values: NULL_FIELD : Fields with null values."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filters on the data. This parameter is an array of filter objects."
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Campaign IDs. Max size: 100."
+      },
+      {
+        "name": "campaign_system_origins",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The origins (sources) of the campaigns that the ads belong to. Enum values: PROMOTE : The campaign is a Promote campaign created through the TikTok mobile App. TT_ADS_PLATFORM : The campaign is a non-Promote campaign created through the API or in TikTok Ads Manager. Default value: [\"TT_ADS_PLATFORM\"] . Only the following settings can be retrieved for a Promote ad: advertiser_id campaign_id campaign_name adgroup_id adgroup_name ad_id ad_name create_time operation_status secondary_status To learn more about the availability of and the supported filters for Promote ads, see Promote campaigns ."
+      },
+      {
+        "name": "adgroup_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Ad group IDs. Max size: 100."
+      },
+      {
+        "name": "ad_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of Ad IDs. Max size: 100."
+      },
+      {
+        "name": "primary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Primary status. For enum values, see Enumeration -Primary status ."
+      },
+      {
+        "name": "secondary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad secondary status. For enum values, see Enumeration - Ad Status - Secondary Status . Note : This field is not returned in the sandbox environment because the ad is not actually delivered. See Supported secondary statuses for a primary status to learn about the valid values you can pass in via secondary_status for the primary status you specify."
+      },
+      {
+        "name": "objective_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising Objective. For enum values, see Enumeration - Advertising Objective . Note : Whether you choose WEB_CONVERSIONS or CONVERSIONS as the objective filter, we will return data of both WEB_CONVERSIONS and CONVERSIONS ."
+      },
+      {
+        "name": "buying_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by buying types. Enum values: AUCTION : Auction ads. RESERVATION_RF : Reservation Reach & Frequency ads and TikTok Pulse ads. RESERVATION_TOP_VIEW : Reservation TopView ads. Default value: [\"AUCTION\", \"RESERVATION_RF\"] . To learn more about the availability of TopView ads in the API, see TopView . Note : The enum value RESERVATION_TOP_VIEW cannot be combined with other values. To filter TopView ads, set this field to [\"RESERVATION_TOP_VIEW\"] ."
+      },
+      {
+        "name": "optimization_goal",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Optimization goal. Enum values: Enumeration - Optimization Goal ."
+      },
+      {
+        "name": "creative_material_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The strategy that your creatives will be delivered. Enum values: CUSTOM (custom), DYNAMIC (automated), SMART_CREATIVE (Smart Creative)."
+      },
+      {
+        "name": "destination",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The destination page type that you want to filter by. Enum values: APP : The download page for the promoted App in Google Play or Apple Store. The promotion_type for the corresponding ad group is set as APP_ANDROID or APP_IOS . TIKTOK_INSTANT_PAGE : TikTok Instant Pages, including Custom Page, Instant Form, App Profile Page, and Instant Product Page. The page ID ( page_id ) of a TikTok Instant Page is specified for the ad. WEBSITE : Website page. A landing page URL ( landing_page_url ) is specified for the ad. SOCIAL_MEDIA_APP : Social media URL. To learn about the ads where the destination can be set as social media URL, see Create a Lead Generation ad with promotion type as instant messaging apps . PHONE_CALL : Phone number. To learn about the ads where the destination can be set as phone number, see Create a Lead Generation ad with promotion type as phone call . If you specify objective_type at the same type, see Filterable destination page type for an advertising objective to learn about the value you can set for this field."
+      },
+      {
+        "name": "creation_filter_start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter ads created later than a specific time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Suggestion: To ensure the success and speed of the task, limit the creation time filter to a six-month range."
+      },
+      {
+        "name": "creation_filter_end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter ads created earlier than a specific time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Suggestion: To ensure the success and speed of the task, limit the creation time filter to a six-month range."
+      },
+      {
+        "name": "modified_after",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter ads modified after a specific time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Suggestion: To ensure the success and speed of the task, limit the modification time filter to a six-month range."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value:10. Value range: 1-1,000."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/ad/get/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"landing_page_urls\": null,\n                \"operation_status\": \"ENABLE\",\n                \"image_ids\": [\n                    \"{{image_id}}\"\n                ],\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"avatar_icon_web_uri\": \"{{avatar_icon_web_uri}}\",\n                \"landing_page_url\": \"{{landing_page_url}}\",\n                \"call_to_action\": \"{{call_to_action}}\",\n                \"ad_name\": \"{{ad_name}}\",\n                \"app_name\": \"\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"click_tracking_url\": null,\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"fallback_type\": \"UNSET\",\n                \"profile_image_url\": \"{{profile_image_url}}\",\n                \"identity_type\": \"CUSTOMIZED_USER\",\n                \"call_to_action_id\": null,\n                \"playable_url\": \"\",\n                \"ad_text\": \"{{ad_text}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"is_aco\": false,\n                \"ad_format\": \"SINGLE_VIDEO\",\n                \"create_time\": \"{{create_time}}\",\n                \"page_id\": null,\n                \"secondary_status\": \"AD_STATUS_BALANCE_EXCEED\",\n                \"optimization_event\": null,\n                \"video_id\": \"{{video_id}}\",\n                \"viewability_vast_url\": null,\n                \"brand_safety_postbid_partner\": \"UNSET\",\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"brand_safety_vast_url\": null,\n                \"identity_id\": \"{{identity_id}}\",\n                \"impression_tracking_url\": null,\n                \"deeplink_type\": \"NORMAL\",\n                \"is_new_structure\": true,\n                \"deeplink\": \"\",\n                \"creative_type\": null,\n                \"card_id\": null,\n                \"viewability_postbid_partner\": \"UNSET\",\n                \"ad_texts\": null,\n                \"modify_time\": \"{{modify_time}}\",\n                \"tracking_pixel_id\": 0,\n                \"ad_id\": \"{{ad_id}}\",\n                \"creative_authorized\": false,\n                \"vast_moat_enabled\": false\n            },\n            {\n                \"landing_page_urls\": null,\n                \"operation_status\": \"ENABLE\",\n                \"image_ids\": [\n                    \"{{image_id}}\"\n                ],\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"avatar_icon_web_uri\": \"{{avatar_icon_web_uri}}\",\n                \"landing_page_url\": \"{{landing_page_url}}\",\n                \"call_to_action\": \"{{call_to_action}}\",\n                \"ad_name\": \"{{ad_name}}\",\n                \"app_name\": \"\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"click_tracking_url\": null,\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"fallback_type\": \"UNSET\",\n                \"profile_image_url\": \"{{profile_image_url}}\",\n                \"identity_type\": \"CUSTOMIZED_USER\",\n                \"call_to_action_id\": null,\n                \"playable_url\": \"\",\n                \"ad_text\": \"{{ad_text}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"is_aco\": false,\n                \"ad_format\": \"SINGLE_VIDEO\",\n                \"create_time\": \"{{create_time}}\",\n                \"page_id\": null,\n                \"secondary_status\": \"AD_STATUS_BALANCE_EXCEED\",\n                \"optimization_event\": null,\n                \"video_id\": \"{{video_id}}\",\n                \"viewability_vast_url\": null,\n                \"brand_safety_postbid_partner\": \"UNSET\",\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"brand_safety_vast_url\": null,\n                \"identity_id\": \"{{identity_id}}\",\n                \"impression_tracking_url\": null,\n                \"deeplink_type\": \"NORMAL\",\n                \"is_new_structure\": true,\n                \"deeplink\": \"\",\n                \"creative_type\": null,\n                \"card_id\": null,\n                \"viewability_postbid_partner\": \"UNSET\",\n                \"ad_texts\": null,\n                \"modify_time\": \"{{modify_time}}\",\n                \"tracking_pixel_id\": 0,\n                \"ad_id\": \"{{ad_id}}\",\n                \"creative_authorized\": false,\n                \"vast_moat_enabled\": false\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1,\n            \"total_number\": 2\n        }\n    }\n}"
+    }
+  }
+}

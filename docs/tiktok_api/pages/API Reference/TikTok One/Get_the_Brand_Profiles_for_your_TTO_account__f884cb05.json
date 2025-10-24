@@ -1,0 +1,62 @@
+{
+  "title": "Get the Brand Profiles for your TTO account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/brand/profile/get/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TTO Creator Marketplace account. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TTO Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "brand_profile_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The IDs of existing Brand Profiles to filter the results by. Max size: 20."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-100. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/brand/profile/get/?tto_tcm_account_id={{tto_tcm_account_id}}&page=1&page_size=100' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"brands\": [\n            {\n                \"brand_industry_id\": \"10102102000\",\n                \"brand_name\": \"{{brand_name}}\",\n                \"brand_profile_id\": \"{{brand_profile_id}}\",\n                \"brand_website\": \"{{brand_website}}\",\n                \"logo_url\": null\n            },\n            {\n                \"brand_industry_id\": \"17103000000\",\n                \"brand_name\": \"{{brand_name}}\",\n                \"brand_profile_id\": \"{{brand_profile_id}}\",\n                \"brand_website\": \"{{brand_website}}\",\n                \"logo_url\": \"{{logo_url}}\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 100,\n            \"total_number\": 2,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

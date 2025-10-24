@@ -1,0 +1,75 @@
+{
+  "title": "Get suggested thumbnails for a video",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/video/suggestcover/",
+  "method": "GET",
+  "category_path": [
+    "Video"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video ID."
+      },
+      {
+        "name": "poster_number",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Number of cover candidates you want to get. Range: 1-10 . Default value: 10 . If the total number of cover candidates is less than the number given, all candidates will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id={advertiser_id}\" \\\n--data-urlencode \"video_id={video_id}\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/file/video/suggestcover/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "list": [
+            {
+              "url": "http://p1.ipstatp.com/large/tos-useast2a-p-0000/8cc546a4b96a4933a27b0c7fefdd66a9_1584964597",
+              "width": 560,
+              "id": "tos-useast2a-p-0000/8cc546a4b96a4938a27b0c7fefdd66a9_1584964597",
+              "height": 320
+            },
+            {
+              "url": "http://p1.ipstatp.com/large/tos-useast2a-p-0000/36973f6fd2344c9fa5889db57d743ac6_1584964597",
+              "width": 560,
+              "id": "tos-useast2a-p-0000/36973f6fd2344c90a5889db57d743ac6_1584964597",
+              "height": 320
+            }
+          ]
+        },
+        "request_id": "2020032312235001018904922349195A66"
+      }
+    }
+  }
+}

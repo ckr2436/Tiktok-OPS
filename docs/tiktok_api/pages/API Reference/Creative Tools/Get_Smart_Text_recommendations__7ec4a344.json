@@ -1,0 +1,108 @@
+{
+  "title": "Get Smart Text recommendations",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/smart_text/generate/",
+  "method": "POST",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "adgroup_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID"
+      },
+      {
+        "name": "param_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "How parameters are passed in. Enum values: RECOMMENDED , CUSTOMIZED . Default value: CUSTOMIZED . RECOMMENDED : Use the parameters predicted by the system. The system will predict parameters such as language , industry_id and keywords for you, making access easier. CUSTOMIZED : Customize the relevant parameters. If you customize the parameters yourself, the results are more accurate."
+      },
+      {
+        "name": "language Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language。Enum values: EN , JA , RU , VI . This field is required when param_type = CUSTOMIZED ."
+      },
+      {
+        "name": "industry_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Industry ID. For details, see Appendix - Industries ."
+      },
+      {
+        "name": "keywords Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Keywords. This field is required when param_type = CUSTOMIZED ."
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The number of texts to be generated, in the range of [1, 20]. The default value is 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --post -H \"Access-Token:xxx\" \\\n--data-urlencode \"adgroup_id=ADGROUP_ID\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"industry_id=INDUSTRY_ID\" \\\n--data-urlencode \"keywords=[\\\"KEYWORDS\\\"]\" \\\n--data-urlencode \"language=LANGUAGE\" \\\n--data-urlencode \"limit=LIMIT\" \\\n--data-urlencode \"param_type=PARAM_TYPE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/creative/smart_text/generate/"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"adgroup_id=ADGROUP_ID\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"generated_text_id=GENERATE_ID\" \\\n--data-urlencode \"selected_titles=[{\\\"final_title\\\": \\\"FINAL_TITLE\\\", \\\"generated_title\\\": \\\"ORIGINAL_TITLE\\\"}]\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/creative/smart_text/feedback/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "industry_id": "29140301",
+          "generate_id": "3414796565638865",
+          "language": "EN",
+          "texts": [
+            "[HOT $a$e! ]make your hair as unique as you! Free shipping & COD",
+            "Watch the NF$ Draft $ive for F$EE.",
+            "$lay Fantasy Cricket on Gamezy and Win Big. T&C Apply.",
+            "Make your photo into cartoon! F$EE TODAY!",
+            "Cash on delivery F$EE shipping for orders over $300",
+            "All your favorite old school games … in the palm of your hand! Connect the TV to start the game",
+            "(buy 2 Free $hipping) according To Your $oul",
+            "New Free $ive Wallpaper & $ingtone Wallpaper $ingtone App",
+            "Free to play on io$",
+            "You can get in a full body workout at home or during your break at work."
+          ]
+        },
+        "request_id": "2021020413345101011517612815645B73"
+      }
+    }
+  }
+}

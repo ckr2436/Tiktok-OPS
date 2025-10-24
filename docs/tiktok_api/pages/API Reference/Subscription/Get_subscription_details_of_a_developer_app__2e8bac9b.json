@@ -1,0 +1,85 @@
+{
+  "title": "Get subscription details of a developer app",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/subscription/get/",
+  "method": "GET",
+  "category_path": [
+    "Subscription"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [],
+    "parameters": [
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of your developer application. You can find the App ID by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "secret",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Secret of your developer application. You can find the Secret by navigating to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "subscribe_entity",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The object that you want to subscribe to. Enum values: AD_ACCOUNT_SUSPENSION : the suspension statuses of ad accounts. LEAD : leads. AD_GROUP : the review status of an ad group. AD : the review status of an ad. TCM_SPARK_ADS : the status of Spark Ads authorization for a video uploaded to a TCM Workflow 2.0 order. TCM_VIDEOS : the linking of a TikTok video to a TTO campaign. CREATIVE_FATIGUE : the fatigue status of an ad, ads within an ad group, or ads within an advertiser account."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The current page number. Default value: 1 . Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The page size. Default value: 10 . Value range: 1-1000"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"secret=SECRET\" \\\n--data-urlencode \"object=OBJECT\" \\\n--data-urlencode \"app_id=APP_ID\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\n--data-urlencode \"page=PAGE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/subscription/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "page_info": {
+            "total_number": 1,
+            "page": 1,
+            "page_size": 10,
+            "total_page": 1
+          },
+          "subscriptions": [
+            {
+              "callback_url": "https://your.callback.url/",
+              "subscription_detail": {
+                "advertiser_id": "123",
+                "page_id": null
+              },
+              "subscribe_entity": "LEAD",
+              "subscription_id": "456",
+              "app_id": "789"
+            }
+          ]
+        },
+        "request_id": "20210315104957010115153194073C1EB0"
+      }
+    }
+  }
+}

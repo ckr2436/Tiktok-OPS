@@ -1,0 +1,55 @@
+{
+  "title": "Get available content exclusion categories",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/content_exclusion/get/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising objective. Only supports REACH , VIDEO_VIEWS and ENGAGEMENT ."
+      },
+      {
+        "name": "brand_safety_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand safety type. Default value: NO_BRAND_SAFETY . Enum values: NO_BRAND_SAFETY : To not use any brand safety solution. Full inventory, which means your ads may appear next to some content featuring mature themes. EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. Note : EXPANDED_INVENTORY is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. Note : If you want to retrieve vertical sensitivity category IDs( vertical_sensitivity_list ), you can only use STANDARD_INVENTORY or LIMITED_INVENTORY . If you are not on the allowlist for vertical sensitivity, the vertical_sensitivity_list will be null in the response."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/tool/content_exclusion/get/?advertiser_id={{advertiser_id}}&objective_type=VIDEO_VIEWS' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

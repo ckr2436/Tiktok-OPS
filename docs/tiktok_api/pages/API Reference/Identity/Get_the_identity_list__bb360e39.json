@@ -1,0 +1,83 @@
+{
+  "title": "Get the identity list",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/identity/get/",
+  "method": "GET",
+  "category_path": [
+    "Identity"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "identity_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: CUSTOMIZED_USER , AUTH_CODE , TT_USER , BC_AUTH_TT . See Identities for details. If this field is not specified, all identities will be returned."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions. Note This field is valid only when identity_type = CUSTOMIZED_USER or when identity_type is not specified."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Keyword to filter by. When identity_type = CUSTOMIZED_USER , you can use fuzzy matching by specifying display name to this field."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size.. Value range: 1-100. Default value: 20."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/identity/get/?advertiser_id={{advertiser_id}}&identity_type=TT_USER' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"total_number\": 1,\n            \"page_size\": 20,\n            \"total_page\": 1,\n            \"page\": 1\n        },\n        \"identity_list\": [\n            {\n                \"profile_image\": \"{{profile_image}}\",\n                \"identity_type\": \"TT_USER\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"can_pull_video\": true,\n                \"display_name\": \"{{display_name}}\",\n                \"identity_authorized_bc_id\": null,\n                \"can_push_video\": true,\n                \"can_use_live_ads\": true,\n                \"can_manage_message\": true,\n                \"available_status\": \"AVAILABLE\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

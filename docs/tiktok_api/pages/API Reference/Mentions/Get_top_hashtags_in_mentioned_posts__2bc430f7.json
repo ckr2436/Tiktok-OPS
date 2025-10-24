@@ -1,0 +1,48 @@
+{
+  "title": "Get top hashtags in mentioned posts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/mention/top_hashtag/list/",
+  "method": "GET",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "regions",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The regions of mentioned posts that you want to filter the results by. If you specify this field, only the top hashtags in mentioned posts posted by TikTok users registered in the specified regions will be returned. If this field is not specified, the top hashtags in all mentioned posts will be returned. To learn about the allowed values for this field, refer to List of values for regions ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/business/mention/top_hashtag/list/?business_id={{business_id}}&regions=[\"US\"]' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"results\": [\n            {\n                \"count\": 72,\n                \"hashtag\": \"{{hashtag}}\"\n            },\n            {\n                \"count\": 31,\n                \"hashtag\": \"{{hashtag}}\"\n            },\n            {\n                \"count\": 24,\n                \"hashtag\": \"{{hashtag}}\"\n            },\n            {\n                \"count\": 17,\n                \"hashtag\": \"{{hashtag}}\"\n            },\n            {\n                \"count\": 13,\n                \"hashtag\": \"{{hashtag}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

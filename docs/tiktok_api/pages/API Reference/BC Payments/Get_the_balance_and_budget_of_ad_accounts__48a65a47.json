@@ -1,0 +1,90 @@
+{
+  "title": "Get the balance and budget of ad accounts",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/advertiser/balance/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Payments"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of additional fields to return in the response. Supported values: budget_remaining : The remaining budget. budget_frequency_restriction : Restrictions on the number of budget changes allowed for the current day. budget_amount_restriction : Restrictions on the minimum amount that can be changed for the budget. min_transferable_amount : Details of the minimal amount that you can transfer to the ad account. max_transferable_amount : Details of the maximum amounts that you can transfer from the ad account to the Business Center. balance_info : Details of the balances for the ad account. If this field is not specified, all information will be returned by default excluding budget_remaining , budget_frequency_restriction , min_transferable_amount , max_transferable_amount , and balance_info . If you want to retrieve the additional fields ( budget_remaining , budget_frequency_restriction , budget_amount_restriction , min_transferable_amount , max_transferable_amount , and balance_info ) together with other fields, set fields to [\"budget_remaining\", \"budget_frequency_restriction\", \"budget_amount_restriction\", \"min_transferable_amount\", \"max_transferable_amount\", \"balance_info\"] and page_size to 1."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Keywords, you can search for ad account name or ad account ID."
+      },
+      {
+        "name": "advertiser_status",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Ad Account display status. Enum values： SHOW_ACCOUNT_STATUS_NOT_APPROVED : failed. SHOW_ACCOUNT_STATUS_APPROVED : passed. SHOW_ACCOUNT_STATUS_IN_REVIEW : under review. SHOW_ACCOUNT_STATUS_PUNISHED : punishment."
+      },
+      {
+        "name": "payment_portfolio_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid when you have enabled the multiple Payment Portfolios feature. The ID of the Payment Portfolio to filter the results by. Note : Multiple Payment Portfolios for one client is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. If this field is specified, the balance information in the response will be for the ad account linked to the Payment Portfolio ( payment_portfolio_id )."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current number of pages. Default value: 1 . Value range : ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10 . Value range: 1-50."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"bc_id=BC_ID\" \\\n--data-urlencode \"filtering={\\\"keyword\\\": \\\"KEYWORD\\\", \\\"status\\\": [\\\"STATUS\\\"]}\" \\\n--data-urlencode \"page=PAGE\" \\\n--data-urlencode \"page_size=PAGE_SIZE\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/advertiser/balance/get/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"page_info\": {\n            \"page\": 1,\n            \"total_number\": 2,\n            \"page_size\": 5,\n            \"total_page\": 1\n        },\n        \"advertiser_account_list\": [\n            {\n                \"advertiser_type\": \"AUCTION\",\n                \"frozen_balance\": 0,\n                \"grant_balance\": 0,\n                \"account_open_days\": 282,\n                \"valid_cash_balance\": 0,\n                \"company\": \"tiktok\",\n                \"advertiser_id\": \"ADVERTISER_ID\",\n                \"latest_recharge_time\": null,\n                \"cash_balance\": 0,\n                \"timezone\": \"Etc/GMT-12\",\n                \"balance_reminder\": false,\n                \"create_time\": \"2021-11-02 02:15:32\",\n                \"first_recharge_amount\": 0,\n                \"contact_name\": \"CONTACT_NAME\",\n                \"account_balance\": 0,\n                \"valid_grant_balance\": 0,\n                \"recharge_amount\": 0,\n                \"valid_account_balance\": 0,\n                \"contact_email\": \"\"\n                \"recharge_count\": 0,\n                \"currency\": \"USD\",\n                \"advertiser_status\": null,\n                \"tax\": 0,\n                \"advertiser_name\": \"ADVERTISER_NAME\",\n                \"budget_mode\": \"UNLIMITED\",\n                \"budget\": 0,\n                \"budget_cost\": 0\n            }\n        ]\n    }\n}"
+    }
+  }
+}

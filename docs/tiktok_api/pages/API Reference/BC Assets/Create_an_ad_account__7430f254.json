@@ -1,0 +1,234 @@
+{
+  "title": "Create an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/create/",
+  "method": "POST",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you can access, use /bc/get/ ."
+      },
+      {
+        "name": "tied_to_billing_group",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to add the ad account to a billing group. Default value: False . Note : This field is an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "advertiser_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Ad Account information."
+      },
+      {
+        "name": "name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad Account name, length cannot exceed 100 characters."
+      },
+      {
+        "name": "currency",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad Account currency, note: need to be consistent with the Business Center, the value range is shown in Appendix-Currency ."
+      },
+      {
+        "name": "timezone",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad Account time zone code, the value range is shown in Appendix-Time Zone ."
+      },
+      {
+        "name": "type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of ad account that you want to create. Enum values: RESERVATION , AUCTION (default). Note : DIRECT Business Centers can only create an ad account of AUCTION type ."
+      },
+      {
+        "name": "customer_info",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Business Information."
+      },
+      {
+        "name": "company",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad Account company name. Length cannot exceed 255 characters."
+      },
+      {
+        "name": "industry",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Ad Account industry ID. The value range is shown in Appendix-Industries ."
+      },
+      {
+        "name": "registered_area",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad Account registration code. The value range is shown in Appendix-Location code ."
+      },
+      {
+        "name": "qualification_info Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required when your Business Center type is AGENCY or SELF_SERVICE_AGENCY . Qualification information. Note : Don't specify this object when your Business Center type is DIRECT , or an error will occur."
+      },
+      {
+        "name": "promotion_link Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when your Business Center type is AGENCY or SELF_SERVICE_AGENCY . Promotion link. The value must be the company's website URL. Length limit: 255 characters."
+      },
+      {
+        "name": "license_no Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required for ad accounts that are registered in the Chinese mainland, Hong Kong, or in countries Brazil and Mexico. Business license number. Note : If the ad account is registered in the Chinese Mainland, you might need to submit UnionPay verification for your business license. To check the UnionPay verification requirement for your business license, use /bc/advertiser/unionpay_info/check/ . To learn more about UnionPay verification and how to create ad accounts in a Business Center, see Create an ad account ."
+      },
+      {
+        "name": "license_image_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required for ad accounts that are registered in the Chinese mainland or Hong Kong. Qualified Document picture ID, see Upload a business certificate ."
+      },
+      {
+        "name": "qualification_image_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required if the ad account or the Business Center is registered in France, Brazil, or Mexico. Other Qualified Documents picture ID. See Upload a business certificate ."
+      },
+      {
+        "name": "qualification_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Qualification id. You can use this field to reuse the qualification information of other ad accounts. You can get the ID via the response of /bc/advertiser/qualification/get/ endpoint. Note : If you pass in this field, you can not pass in other parameters under qualification_info ."
+      },
+      {
+        "name": "contact_info",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Contact Information."
+      },
+      {
+        "name": "email Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Contact email. Required if the place of registration of the ad account or the Business Center is France, Brazil, or Mexico."
+      },
+      {
+        "name": "number",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Contact phone."
+      },
+      {
+        "name": "billing_info Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Billing information. Required if the place of registration of the ad account or the agency that owns the Business Center is France, Brazil, or Mexico. Code example for Mexican ad account creation: \"billing_info\":{\"address\":\"xxxx\",\"tax_field_dict\": {\"tax_id\": \"xxxx\", \"tax_regime\": \"xxxx\"}}"
+      },
+      {
+        "name": "address",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billing address, no more than 512 characters in length."
+      },
+      {
+        "name": "tax_field_dict",
+        "required": true,
+        "type": "string",
+        "raw_type": "dict",
+        "description": "Billing and invoicing tax number. Different countries use different tax number fields. The tax number field vat is used for European countries, for instance, France. The tax number field tax_id is used for Brazil (required), Mexico (required), United Arab Emirates, Egypt, Saudi Arabia, Israel, Turkey, Canada, and the United States. The tax number field abn is used for Australia and New Zealand."
+      },
+      {
+        "name": "billing_group_info",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Billing group information."
+      },
+      {
+        "name": "invoice_group_by",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Invoicing mode. Enum values: ACCOUNT : Invoices in this billing groups are combined. ADVERTISER : Invoices in this billing group are handled separately."
+      },
+      {
+        "name": "billing_group_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Billing group ID. Valid when invoice_group_by is ACCOUNT ."
+      },
+      {
+        "name": "invoice_payer Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Party who pays the invoices. Enum values: AGENCY , ADVERTISER . This field is required when the registered area of the ad account is FR (France)."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"bc_id\": \"BC_ID\", \n    \"advertiser_info\": {\"currency\": \"CURRENCY\", \"name\": \"NAME\", \"timezone\": \"TIMEZONE\"}, \n    \"billing_info\": {\"address\": \"ADDRESS\", \"vat\": \"VAT\"}, \n    \"contact_info\": {\"email\": \"EMAIL\", \"name\": \"NAME\", \"number\": \"NUMBER\"}, \n    \"customer_info\": {\"company\": \"COMPANY\", \"industry\": \"INDUSTRY\", \"registered_area\": \"REGISTERED_AREA\"},\n    \"qualification_info\": {\"license_image_id\": \"LICENSE_IMAGE_ID\", \"license_no\": \"LICENSE_NO\", \"promotion_link\": \"PROMOTION_LINK\", \"qualification_image_ids\": [\"QUALIFICATION_IMAGE_IDS\"]}\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/bc/advertiser/create/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {}
+      }
+    }
+  }
+}

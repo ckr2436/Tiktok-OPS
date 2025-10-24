@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Preview video templates",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Video Templates"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

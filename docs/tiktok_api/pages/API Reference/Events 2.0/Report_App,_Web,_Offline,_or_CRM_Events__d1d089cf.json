@@ -1,0 +1,442 @@
+{
+  "title": "Report App, Web, Offline, or CRM Events",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/event/track/",
+  "method": "POST",
+  "category_path": [
+    "Events 2.0"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. To obtain an access token, refer to Events API 2.0 - Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "event_source",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "This field is used to specify the type of events you are uploading through Events API. Enum values: web : The events took place on your website and are measured by a Pixel Code. To generate sample code in cURL, Python, or Node.js format for reporting Web Events via the Events API 2.0, use the Payload Helper for Web . app : The events took place on your app and are measured by a TikTok App ID. offline : The conversions took place in a physical store and are measured by an Offline Event Set ID. crm : The lead events took place in a CRM system and are measured by a CRM Event Set ID. Note : Reporting App Events using Events API 2.0 is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "event_source_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "An Event Source ID that is used to measure events. When event_source is set to web , specify a Pixel Code through this field. To obtain a Pixel Code, refer to FAQs - Where can I find the Pixel Code . When event_source is set to offline , specify an Offline Event Set ID through this field. To obtain an Offline Event Set ID, refer to Setup Guide for Offline . When event_source is set to app , specify a TikTok App ID through this field. To obtain a TikTok App ID, refer to Setup Guide for App . When event_source is set to crm , specify a CRM Event Set ID through this field. To obtain a CRM Event Set ID, use /crm/list/ ."
+      },
+      {
+        "name": "data",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "An object array of the events you want to report. If you are sending a single event, pass one object in the array. If you are batching multiple events in a single payload, you can report up to 1,000 events in one request . If a request contains more than 1,000 events, the entire request will be rejected. To optimize campaign performance, it's highly recommended to send the event in real-time (without batching) as soon as it is seen on the advertiser's server."
+      },
+      {
+        "name": "event",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web, app, offline, and CRM events. Conversion event name. For web and app events, it can be either a Standard Event or Custom Event. For offline events, it can only be a Standard Event. For CRM events, it can only be a Custom Event. To find out the supported values for Standard Events, refer to Events API 2.0-Supported events . To report a Custom Web Event or Custom App Event, pass a customized name in this field. Do not use sensitive words in the name of Custom Events. Otherwise, the responsibility for any consequences that may arise will be borne by you."
+      },
+      {
+        "name": "event_time",
+        "required": true,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "For web, app, offline, and CRM events. The time when the event occurred, indicated as a Unix timestamp measured in seconds, and in UTC+0 time zone."
+      },
+      {
+        "name": "event_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web, offline, and CRM events. Required in any of the following scenarios: You are sending web events ( event_source = web ) from both TikTok browser pixel and Events API. You are sending CRM events ( event_source = crm ) from both Events API and by uploading CSV files on Events Manager. The ID that is used to identify a unique event. It can be hashed or unhashed. TikTok uses the event_source_id , event_id and event to deduplicate the same event sent multiple times from a single channel or across multiple channels (for instance browser pixel and Events API). For more information on event deduplication and how to complete the setup, refer to Events API 2.0 - Event Deduplication ."
+      },
+      {
+        "name": "user",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "For web, app, offline, and CRM events. Information about the customer. To view the list of fields included in the user object, refer to the \" user parameters \" section below."
+      },
+      {
+        "name": "properties",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "For web, app, offline, and CRM events. Information about the product, order and additional information to help improve ad performance. To view the list of fields included in the properties object, refer to the \" properties parameters \" section below."
+      },
+      {
+        "name": "page Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required for web events. Information about the web page. To view the list of fields included in the page object, refer to the \" page parameters \" section below."
+      },
+      {
+        "name": "app Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required for app events. Information about the app. To view the list of fields included in the app object, refer to the \" app parameters \" section below. Note : Reporting App Events using Events API 2.0 is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+      },
+      {
+        "name": "ad",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Only for app events. Information about the ad. To view the list of fields included in the ad object, refer to the \" ad parameters \" section below."
+      },
+      {
+        "name": "limited_data_use",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "For web and app events. To learn more about the Limited Data Use feature, refer to Events API 2.0 - Limited Data Use ."
+      },
+      {
+        "name": "lead Conditional",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Required for CRM events. Information about the lead. To view the list of fields included in the lead object, refer to the \" lead parameters \" section below."
+      },
+      {
+        "name": "ttclid",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web events only. TikTok Click ID, a data connection parameter appended to a landing page URL whenever a user clicks on an ad on TikTok. The ttclid valid period is the same as your CTA window setting in Attribution Manager . For more information on sending TikTok Click IDs, refer to Events API 2.0 - Send TikTok Click ID ( ttclid ) ."
+      },
+      {
+        "name": "email",
+        "required": true,
+        "type": "array",
+        "raw_type": "string or string[]",
+        "description": "For web, app, offline, and CRM events. SHA-256 hashing is required. The email address, or email addresses of the customer. Follow the instructions below to obtain a valid value: Trim any leading and trailing spaces of each email before hashing. Lowercase all characters before hashing. Hash the normalized email values using SHA-256. Example : Original: \" ALICE_abc@gmail.com \" Normalized: \"alice_abc@gmail.com\" (leading and trailing spaces trimmed and lowercased) SHA-256 hashed: \"848a771458438fc2ec420560d769fb9b9b86851ee338ec56517baabd79d3bb4f\""
+      },
+      {
+        "name": "phone",
+        "required": true,
+        "type": "array",
+        "raw_type": "string or string[]",
+        "description": "For web, app, offline, and CRM events. SHA-256 hashing is required. The phone number or phone numbers of the customer. Follow the instructions below to obtain a valid value: Normalize the phone number to E.164 format (for example, \"+12133734253\"). We recommend using https://github.com/catamphetamine/libphonenumber-js for E.164 parsing. Country code must be included and prefixed with the + sign, without any parentheses or leading 0 s. For example, a US phone number should be prefixed with the +1 country code. No spaces, letters or symbols except the + for the country code are included. SHA-256 hash the phone number after normalizing. Example : Original: \"(+1)2133734253\" Normalized to E.164 format: \"+12133734253\" SHA256 hashed: \"9f7ec22d72092cd3c0b58726ed9c2d91b92e51a3f29837508fb2948bb22dd2fd\""
+      },
+      {
+        "name": "external_id",
+        "required": true,
+        "type": "array",
+        "raw_type": "string or string[]",
+        "description": "For web and CRM events only. SHA-256 hashing is required. External ID, a unique identifier on the advertiser's side, such as loyalty membership IDs, user IDs, and external cookie IDs. To learn more about the external_id parameter, refer to Events API 2.0 - Set up External ID . Example : Original: \"user_123\" SHA-256 hashed: \"80fba0ae1c48e3978e43e4efc365e14e12ea0c830ba8ba5b9a2dafc7e3f2ab8b\""
+      },
+      {
+        "name": "ttp",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web events only. Cookie ID. If you also use Pixel SDK and have enabled cookies, Pixel SDK automatically saves a unique identifier in the _ttp cookie. The value of _ttp is used to match website visitor events with TikTok ads. You can extract the value of _ttp and attach the value here. To learn more about the ttp parameter, refer to Events API 2.0 - Send TikTok Cookie ( _ttp ) ."
+      },
+      {
+        "name": "ip",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web and app events only. Non-hashed public IP address of the user's device. To increase the probability of matching website visitor events with TikTok ads, we recommend sending both ip and user_agent . Both IPv4 and IPv6 addresses are supported. For IPv6 addresses, both full and compressed formats are acceptable. For example: Full format: 2001:0db8:1111:000a:00b0:0000:0000:0200 Compressed format: 2001:db8:1111:a:b0::200"
+      },
+      {
+        "name": "user_agent",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web and app events only. Non-hashed user agent from the user’s device. To increase the probability of matching website visitor events with TikTok ads, we recommend sending both ip and user_agent ."
+      },
+      {
+        "name": "idfa",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The iOS IDFA for app events only. For iOS 14 and above, ensure that IDFA data collection follows Apple’s policies . Both raw and SHA-256 IDFAs are accepted: For raw IDFAs, all characters must be UPPERCASE . For SHA-256 IDFAs, all characters must be lowercase , and any leading/trailing spaces must be trimmed before hashing."
+      },
+      {
+        "name": "idfv",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The iOS IDFV for app events only ."
+      },
+      {
+        "name": "gaid",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The GAID (Google Advertising ID) for app events only . Both raw and SHA-256 GAIDs are accepted. For both raw and SHA-256 GAIDs: All characters must be lowercase . Leading/trailing spaces must be trimmed before hashing"
+      },
+      {
+        "name": "locale",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For web and app events only. The BCP 47 language identifier. For reference, refer to the IETF BCP 47 standardized code ."
+      },
+      {
+        "name": "att_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "For app events only. Whether the user has authorized your mobile app to access app-related data for measuring the user or the device. This is an iOS only field. Enum values: AUTHORIZED : The user has authorized access to app-related data that can be used for measuring the user or the device. DENIED : The user has not agreed to authorize your mobile app to access app-related data for measuring the user or the device via Apple's AppTrackingTransparency framework . If this field is set to DENIED , TikTok will not use the PII data (for instance, user email address or phone number) in this App Event for user-level matching. NOT_DETERMINED : The user has not yet received an authorization request to authorize access to app-related data that can be used for measuring the user or the device. RESTRICTED : The authorization to access app-related data is restricted. NOT_APPLICABLE : The iOS version is below 14 or the device is running Android."
+      },
+      {
+        "name": "content_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Unique ID or array of multiple IDs of the products or content. Example: [\"987\", \"654\"] . We recommend using sku_id or item_group_id that matches the sku_id or item_group_id you set up in the catalog, if available. This field is required for Video Shopping Ads (VSA)."
+      },
+      {
+        "name": "contents Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Relevant products in an event with product information. To view the list of fields included in the contents object, refer to the \" contents parameters \" section below."
+      },
+      {
+        "name": "content_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of content in the event. Enum values: product , product_group . When the content_id in the contents parameter is specified as sku_id , set this field to product . When the content_id in the contents parameter is specified as item_group_id , set this field to product_group ."
+      },
+      {
+        "name": "currency Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Recommended for revenue related events. The ISO 4217 currency code. Examples: EUR , USD , JPY . List of currencies currently supported : AED , ARS , AUD , BDT , BHD , BIF , BOB , BRL , CAD , CHF , CLP , CNY , COP , CRC , CZK , DKK , DZD , EGP , EUR , GBP , GTQ , HKD , HNL , HUF , IDR , ILS , INR , ISK , JPY , KES , KHR , KRW , KWD , KZT , MAD , MOP , MXN , MYR , NGN , NIO , NOK , NZD , OMR , PEN , PHP , PHP , PKR , PLN , PYG , QAR , RON , RUB , SAR , SEK , SGD , THB , TRY , TWD , UAH , USD , VES , VND , ZAR ."
+      },
+      {
+        "name": "value Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Recommended for revenue related events. Value of the order or items sold. The value should always be formatted as an integer or decimal (for instance, 10.00) regardless of the location, currency, or other factors. It should not contain any currency symbols, special characters, letters, or commas. Note : price specifies the price for a single item, and value specifies the total price of the order. For example, if you have two items each sold for ten dollars, the price parameter would be 10.00 and the value parameter would be 20.00 ."
+      },
+      {
+        "name": "num_items",
+        "required": true,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "The quantity of items."
+      },
+      {
+        "name": "search_string",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The user-entered string for search."
+      },
+      {
+        "name": "description",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Description of the item or page."
+      },
+      {
+        "name": "order_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Order ID."
+      },
+      {
+        "name": "shop_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Shop ID."
+      },
+      {
+        "name": "price",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "The price of the item. Note : price specifies the price for a single item, and value specifies the total price of the order. For example, if you have two items each sold for ten dollars, the price parameter would be 10.00 and the value parameter would be 20.00 . Example: 10 , 10.5 ."
+      },
+      {
+        "name": "content_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the product or content. We recommend using sku_id or item_group_id if you have one. If you have set up sku_id or item_group_id in the catalog, the ID should match the sku_id or item_group_id ."
+      },
+      {
+        "name": "content_category",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Category of the page or product."
+      },
+      {
+        "name": "content_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Name of the page or product."
+      },
+      {
+        "name": "brand",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand name of the product item."
+      },
+      {
+        "name": "url",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The browser URL where the event happened, for example, the value of location.href in the client side Javascript. It is recommended to use the full URL, including all URL parameters."
+      },
+      {
+        "name": "referrer",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The referrer URL. For example, document.referrer in the client side Javascript, or the server side Referer http header . It is recommended to use the full URL, including all URL parameters."
+      },
+      {
+        "name": "app_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required for app events. Mobile App ID. For iOS Apps, use the app ID found in the App Store URL Example: Apple Store URL: https://apps.apple.com/us/app/angry-birds/id343200656 id = \"343200656\" For Android Apps in the Google Play store, use the app ID found in the Google Play store URL. Example: Google Play store URL: https://play.google.com/store/apps/details?id=com.rovio.angrybird id = \"com.rovio.angrybirds\" For Android Apps not in the Google Play store, use the package name."
+      },
+      {
+        "name": "app_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application name."
+      },
+      {
+        "name": "app_version",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "App version number. Example: \"3.0.2\" ."
+      },
+      {
+        "name": "callback",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Callback information to help attribute events"
+      },
+      {
+        "name": "campaign_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign ID."
+      },
+      {
+        "name": "ad_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group ID."
+      },
+      {
+        "name": "creative_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad ID."
+      },
+      {
+        "name": "is_retargeting",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the user is a retargeting user."
+      },
+      {
+        "name": "attributed",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the event is attributed."
+      },
+      {
+        "name": "attribution_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Attribution type."
+      },
+      {
+        "name": "attribution_provider",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Attribution provider."
+      },
+      {
+        "name": "lead_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required for CRM events. ID of TikTok leads. Every lead will have its lead_id when exported from TikTok. To obtain the ID of a lead, download the lead by using the endpoints /page/lead/task/ and /page/lead/task/download/ , or export the lead from TikTok Leads Center, the first-party CRM platform located within TikTok Ads Manager."
+      },
+      {
+        "name": "lead_event_source",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Lead event source. You can set this field to the name of your CRM system, such as HubSpot or Salesforce."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Reporting Web Events",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/event/track/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n  \"event_source\": \"web\",\n  \"event_source_id\": \"{{PIXEL-CODE}}\",\n  \"data\": [\n    {\n      \"event\": \"Purchase\",\n      \"event_time\": 1687758765,\n      \"event_id\": \"12345\",\n      \"user\": {\n        \"external_id\": \"user_12345678\",\n        \"phone\": \"0c7e6a405862e402eb76a70f8a26fc732d07c32931e9fae9ab1582911d2e8a3b\",\n        \"email\": \"123456405862e402eb76a70f8a26fc732d07c32931e9fae9ab1582911d2e8a3b\",\n        \"ip\": \"123.456.789.1\",\n        \"user_agent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.1 Safari/605.1.15\",\n        \"locale\": \"en_US\"\n      },\n      \"properties\": {\n        \"currency\": \"USD\",\n        \"value\": 200.0,\n        \"content_type\": \"product\",\n        \"description\": \"some product decription\",\n        \"contents\": [\n          {\n            \"price\": 100.0,\n            \"quantity\": 2,\n            \"content_id\": \"12345\",\n            \"content_name\": \"Fancy-AirMax2.0 Black\",\n            \"content_category\": \"Shoes - Running Shoes\",\n            \"brand\": \"Fancy Sneakers\"\n          }\n        ]\n      }\n    }\n  ]\n}'"
+      },
+      {
+        "title": "Reporting Offline Events",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/event/track/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n  \"event_source\": \"offline\",\n  \"event_source_id\": \"{{Offline-Event-Set-ID}}\",\n  \"data\": [\n    {\n      \"event\": \"Purchase\",\n      \"event_time\": 1684574395,\n      \"user\": {\n        \"email\": [\"848a771458438fc2ec420560d769fb9b9b86851ee338ec56517baabd79d3bb4f\",\n        \"dd6ff77f54e2106661089bae4d40cdb600979bf7edc9eb65c0942ba55c7c2d7f\"],\n        \"phone\": [\"2f9d2b4df907e5c9a7b3434351b55700167b998a83dc479b825096486ffcf4ea\"]\n      },\n      \"properties\": {\n        \"order_id\": \"abc_xyz\",\n        \"shop_id\": \"123abc\",\n        \"contents\": [\n          {\n            \"price\": 8,\n            \"quantity\": 2,\n            \"content_id\": \"1077218\",\n            \"content_name\": \"running shoes\",\n            \"content_category\": \"Shoes > Sneakers > running shoes\",\n            \"brand\": \"your_brand_name\"\n          },\n          {\n            \"price\": 30,\n            \"quantity\": 1,\n            \"content_id\": \"1197218\",\n            \"content_name\": \"running shoes\",\n            \"content_category\": \"Shoes > Sneakers > running shoes\",\n            \"brand\": \"your_brand_name\"\n          }\n        ],\n        \"content_type\": \"product\",\n        \"currency\": \"USD\",\n        \"value\": 46.00\n      }\n    }\n  ]\n}'"
+      },
+      {
+        "title": "Reporting App Events",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/event/track/' \\\n--header 'Access-Token: {{ACCESS_TOKEN}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n  \"event_source\": \"app\",\n  \"event_source_id\": \"{{TIKTOK_APP_ID}}\",\n  \"data\": [\n    {\n      \"event\": \"InstallApp\",\n      \"event_time\": 1687758765,\n      \"user\": {\n        \"phone\": \"{{HASHED_PHONE}}\",\n        \"email\": \"{{HASHED_EMAIL}}\",\n        \"idfa\": \"{{IDFA}}\",\n        \"idfv\": \"{{IDFV}}\",\n        \"gaid\": \"{{GAID}}\",\n        \"att_status\": \"AUTHORIZED\",\n        \"locale\": \"en-US\"\n      },\n      \"app\": {\n        \"app_id\": \"com.test.flyingsneakers\",\n        \"app_name\": \"Flying Sneakers\",\n        \"app_version\": \"3.0.2\"\n      },\n      \"ad\": {\n        \"attributed\": true,\n        \"callback\": \"{{CALLBACK}}\",\n        \"campaign_id\": \"1700817380525057\",\n        \"ad_id\": \"1700817380806706\",\n        \"creative_id\": \"1700817378256945\",\n        \"is_retargeting\": false,        \n        \"attribution_type\": \"click_through\"\n      },\n      \"properties\": {\n        \"currency\": \"USD\",\n        \"value\": 200.0,\n        \"content_type\": \"product\",\n        \"contents\": [\n          {\n            \"price\": 100.0,\n            \"quantity\": 2,\n            \"content_id\": \"12345\",\n            \"content_name\": \"Fancy-AirMax2.0 Black\",\n            \"content_category\": \"Shoes - Running Shoes\",\n            \"brand\": \"Fancy Sneakers\"\n          }\n        ]\n      }\n    }\n  ]\n}'"
+      },
+      {
+        "title": "Reporting CRM Events",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/event/track/' \\\n--header 'Access-Token: {{ACCESS_TOKEN}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n  \"event_source\": \"crm\",\n  \"event_source_id\": \"{{CRM-Event-Set-ID}}\",\n  \"data\": [\n    {\n      \"event\": \"AddToCart\",\n      \"event_time\": 1687673101,\n      \"lead\": {\n        \"lead_id\": \"{{lead_id}}\"\n      }\n    }\n  ]\n}'"
+      },
+      {
+        "title": "Reporting CRM Events",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/event/track/' \\\n--header 'Access-Token: {{ACCESS_TOKEN}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n  \"event_source\": \"crm\",\n  \"event_source_id\": \"{{CRM-Event-Set-ID}}\",\n  \"data\": [\n    {\n      \"event\": \"AddToCart\",\n      \"event_time\": 1687673101,\n      \"lead\": {\n        \"lead_id\": \"{{lead_id}}\",\n        \"lead_event_source\": \"Salesforce\"\n      }\n      \"user\": {\n        \"external_id\": \"{{external_id}}\",\n        \"phone\": \"0c7e6a405862e402eb76a70f8a26fc732d07c32931e9fae9ab1582911d2e8a3b\",\n        \"email\": \"0c7e6a405862e402eb76a70f8a26fc732d07c32931e9fae9ab1582911d2e8a3b\"\n      },\n      \"event_id\": \"{{event_id}}\",\n    }\n  ]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n  \"code\": 0, \n  \"message\": \"OK\", \n  \"request_id\": \"{{request_id}}\", \n  \"data\": {}\n}"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "title": "Get welcome messages within an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/auto_message/get/",
+  "method": "GET",
+  "category_path": [
+    "Welcome Messages"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "auto_message_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of automatic message to greet people with when they start a conversation with you. Enum value: WELCOME_MESSAGE : welcome message. A welcome message is a message that is automatically sent to welcome people to the conversation after they tap on your ad."
+      },
+      {
+        "name": "auto_message_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the automatic message. When auto_message_type is WELCOME_MESSAGE , you can specify the ID of a welcome message via this field to filter the results. If this field is not passed, all messages that belong to the specified automatic message type will be returned."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-100. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/creative/auto_message/get/?advertiser_id={{advertiser_id}}&auto_message_type=WELCOME_MESSAGE&page=1&page_size=100' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auto_message_list\": [\n            {\n                \"audit_status\": \"PASS\",\n                \"auto_message_id\": \"{{auto_message_id}}\",\n                \"auto_message_type\": \"WELCOME_MESSAGE\",\n                \"create_time\": \"{{create_time}}\",\n                \"welcome_message\": {\n                    \"content\": \"{{content}}\",\n                    \"suggested_questions\": [\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        },\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        },\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        }\n                    ],\n                    \"title\": \"{{title}}\"\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "title": "Get the activity log of a Business Center",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/changelog/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Management"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you can access, use /bc/get/ ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "start_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date, in the format of YYYY-MM-DD (UTC+0). You need to specify both start_date and end_date or neither. If both start_date and end_date are not specified, the activity log for the past seven days will be returned. Recommended date range: six months. Example: 2025-01-01 ."
+      },
+      {
+        "name": "end_date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date, in the format of YYYY-MM-DD (UTC+0). You need to specify both start_date and end_date or neither. If both start_date and end_date are not specified, the activity log for the past seven days will be returned. Recommended date range: six months. Example: 2025-01-01 ."
+      },
+      {
+        "name": "activity_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Activity type to query. Enum values: ALL : All types of changes. USER : User. Changes mainly related to members and organization, including but not limited to the following scenarios: Invitation of a member to the Business Center Acceptance of the invitation to join the Business Center Removal of a member from the Business Center ACCOUNT : Account. Changes mainly related to creation and access management of ad accounts, including but not limited to the following scenarios: Creating an ad account Assigning a member access to an ad account Revoking a member's access to an ad account Sharing access to an ad account with a partner Revoking a partner's access to an ad account ASSET : Asset. Changes mainly related to assets, including but not limited to the following scenarios: Creating or deleting a catalog Requesting to add or approving the request to add a TikTok Shop Assigning a member access to an asset Revoking a member's access to an asset BUSINESS : Business. Changes mainly related to the Business Center, including but not limited to the following scenarios: Creating the Business Center Changing the setting of the Business Center, including name and company name Default value: ALL ."
+      },
+      {
+        "name": "lang",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The language of the activity log. Default value: en . To find out the enum values, see Enum values for lang ."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. Enum value: operation_time : To sort by the time when the activity occurred, which corresponds to the time parameter within the returned object array changelog_list . Default value: operation_time ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: DESC : Descending. When sort_field is operation_time or not passed, this value means to sort from the most recent to earliest activity. ASC : Ascending. When sort_field is operation_time or not passed, this value means to sort from the earliest to the most recent activity. Default value: DESC ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥ 1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-50. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/changelog/get/?bc_id={{bc_id}}&filtering={\"start_date\":\"{{start_date}}\",\"end_date\":\"{{end_date}}\", \"activity_type\":\"ALL\"}&page_size=50' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"changelog_list\": [\n            {\n                \"activity_type\": \"USER\",\n                \"activity_log\": \"{{activity_log}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"time\": \"{{time}}\"\n            },\n            {\n                \"activity_type\": \"ASSET\",\n                \"activity_log\": \"{{activity_log}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"time\": \"{{time}}\"\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page_size\": 50,\n            \"total_page\": 1,\n            \"page\": 1\n        }\n    }\n}"
+    }
+  }
+}

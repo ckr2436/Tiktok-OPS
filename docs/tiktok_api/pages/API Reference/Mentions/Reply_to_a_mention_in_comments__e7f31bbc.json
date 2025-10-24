@@ -1,0 +1,69 @@
+{
+  "title": "Reply to a mention in comments",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/create/",
+  "method": "POST",
+  "category_path": [
+    "Mentions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok Business Accounts. To obtain an access token, use /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok Business Account. You can get the ID through the open_id field returned by /tt_user/oauth2/token/ ."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the video on which you want to create a reply. You can get the video_id from the item_id field returned by /business/mention/comment/list/ ."
+      },
+      {
+        "name": "comment_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the comment to which you want to create a reply. You can get the comment_id from the comment_id field returned by /business/mention/comment/list/ ."
+      },
+      {
+        "name": "text",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Text content of the reply you want to create. Length limit: 150 characters (UTF-8 encoding). Example: This is a comment #comment 🙂 ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"business_id\" : \"{{business_id}}\",\n    \"video_id\": \"{{video_id}}\",\n    \"comment_id\" : \"{{comment_id}}\",\n    \"text\": \"{{text}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_id\": \"{{video_id}}\",\n        \"parent_comment_id\": \"{{parent_comment_id}}\",\n        \"comment_id\": \"{{comment_id}}\",\n        \"create_time\": \"1701334608\",\n        \"text\": \"{{text}}\",\n        \"user_id\": \"{{user_id}}\"\n    }\n}"
+    }
+  }
+}

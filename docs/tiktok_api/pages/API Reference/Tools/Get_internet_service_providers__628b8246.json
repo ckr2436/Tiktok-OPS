@@ -1,0 +1,62 @@
+{
+  "title": "Get internet service providers",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/targeting/list/",
+  "method": "GET",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "location_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the locations that you want to get the supported ISP IDs for. Max size: 1000. To find out the list of location IDs, see Location IDs . Note : You need to pass location IDs at the country or region level. To get the available locations and corresponding IDs based on your placement and objective, use the /tool/region/ and the returned level for location IDs at the country or region level will be COUNTRY ."
+      },
+      {
+        "name": "scene",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The targeting type that the targeting tags are used for. The allowed enum values: ISP ( Internet Service Provider targeting)."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location \"https://business-api.tiktok.com/open_api/v1.3/tool/targeting/list/?advertiser_id={{advertiser_id}}&location_ids=[\"357994\"]&scene=ISP\" \n--header \"Access-Token: {{Access-Token}}\" \n--header \"Content-Type: application/json\""
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"parent_tags\": [],\n        \"targeting_tag_list\": [\n            {\n                \"name\": \"Etisalat Misr\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00045\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Orange Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00081\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Telecom Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00098\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Vodafone Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00105\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"other\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG0\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

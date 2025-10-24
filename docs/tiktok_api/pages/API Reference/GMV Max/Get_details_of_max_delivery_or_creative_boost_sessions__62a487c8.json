@@ -1,0 +1,48 @@
+{
+  "title": "Get details of max delivery or creative boost sessions",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/session/get/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "session_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "An ID list of the max delivery or creative boost sessions for products in a Product GMV Max Campaign. Max size: 20. To obtain the ID list of active max delivery sessions within a Product GMV Max Campaign, use /campaign/gmv_max/session/list/ and select sessions with bid_type as NO_BID . To obtain the ID list of active creative boost sessions within a Product GMV Max Campaign, use /campaign/gmv_max/session/list/ and select sessions with bid_type as CREATIVE_NO_BID ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/session/get/?advertiser_id={{advertiser_id}}&session_ids=[\"{{session_id}}\"]' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"session_list\": [\n            {\n                \"bid_type\": \"NO_BID\",\n                \"budget\": {{budget}},\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"product_list\": [\n                    {\n                        \"spu_id\": \"{{spu_id}}\"\n                    }\n                ],\n                \"schedule_start_time\": \"{{schedule_start_time}}\",\n                \"schedule_type\": \"SCHEDULE_FROM_NOW\",\n                \"session_id\": \"{{session_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

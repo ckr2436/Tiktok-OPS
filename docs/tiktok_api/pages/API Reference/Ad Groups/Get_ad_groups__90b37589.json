@@ -1,0 +1,200 @@
+{
+  "title": "Get ad groups",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/adgroup/get/",
+  "method": "GET",
+  "category_path": [
+    "Ad Groups"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Fields that you want to get. When not specified, all fields are returned by default. For allowed fields, see the fields under list in the response section."
+      },
+      {
+        "name": "exclude_field_types_in_response",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The type of fields that you want to remove from the response. Allowed enum values: NULL_FIELD : Fields with null values."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filter conditions. Set these conditions according to your requirements. If not set, all ad groups under the advertiser will be returned. The request can be filtered by:"
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of campaign IDs. Max size: 100."
+      },
+      {
+        "name": "campaign_system_origins",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The origins (sources) of the campaigns that the ad groups belong to. Enum values: PROMOTE : The campaign is a Promote campaign created through the TikTok mobile App. TT_ADS_PLATFORM : The campaign is a non-Promote campaign created through the API or in TikTok Ads Manager. Default value: [\"TT_ADS_PLATFORM\"] . Only the following settings can be retrieved for a Promote ad group: advertiser_id campaign_id campaign_name adgroup_id adgroup_name create_time budget schedule_type schedule_start_time schedule_end_time operation_status secondary_status To learn more about the availability of and the supported filters for Promote ad groups, see Promote campaigns ."
+      },
+      {
+        "name": "adgroup_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of Ad group IDs. Max size: 100."
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group name."
+      },
+      {
+        "name": "primary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Primary status. For enum values, see Enumeration - Primary Status . The default value is STATUS_NOT_DELETE , which returns ad groups in all statuses excluding STATUS_DELETE . If you want to get ad groups in all statuses including STATUS_DELETE , use STATUS_ALL instead."
+      },
+      {
+        "name": "secondary_status",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group secondary status. For enum values, see Enumeration - Ad Group Status - Secondary Status . Note : This field is not returned in the sandbox environment because the ad group is not actually delivered. See Supported secondary statuses for a primary status to learn about the valid values you can pass in via secondary_status for the primary status you specify."
+      },
+      {
+        "name": "objective_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising objective. For details, see Enumeration - Advertising Objective . Note : Whether you choose WEB_CONVERSIONS or CONVERSIONS as the objective filter, we will return data of both WEB_CONVERSIONS and CONVERSIONS ."
+      },
+      {
+        "name": "buying_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by buying types. Enum values: AUCTION : Auction ads. RESERVATION_RF : Reservation Reach & Frequency ads and TikTok Pulse ads. RESERVATION_TOP_VIEW : Reservation TopView ads. Default value: [\"AUCTION\", \"RESERVATION_RF\"] . To learn more about the availability of TopView ads in the API, see TopView . Note : The enum value RESERVATION_TOP_VIEW cannot be combined with other values. To filter TopView ads, set this field to [\"RESERVATION_TOP_VIEW\"] ."
+      },
+      {
+        "name": "optimization_goal",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Optimization goal. Enum values: Enumeration - Optimization Goal ."
+      },
+      {
+        "name": "promotion_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The promotion type (optimization location) that you want to filter by. Enum values: APP : App. WEBSITE : Landing page. INSTANT_FORM : Instant Form. LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE : TikTok direct message. LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE : Social media app. LEAD_GEN_CLICK_TO_CALL : Phone call. Note : This filter field is different from the promotion_type used for ad group creation, which is also returned in the response of this endpoint. promotion_type as filter is also supported in synchronous basic reports and synchronous DSA reports. See Appendix-Mapping between different promotion types to learn about how you can set this field to filter out certain promotion types that are used for ad group creation."
+      },
+      {
+        "name": "bid_strategy",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Bidding strategy. Enum values: BID_STRATEGY_COST_CAP , BID_STRATEGY_BID_CAP , BID_STRATEGY_MAX_CONVERSION and BID_STRATEGY_LOWEST_COST"
+      },
+      {
+        "name": "creative_material_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The strategy that your creatives will be delivered. Enum values: CUSTOM (custom), SMART_CREATIVE (Smart Creative)."
+      },
+      {
+        "name": "billing_events",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Events that you want to pay for. For enum values, see Enumeration - Billing Event ."
+      },
+      {
+        "name": "creation_filter_start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by lower range of ad group creation time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Ad groups created later than this time will be returned. Suggestion: A time range within 6 months is suggested when applying a creation time filter, to ensure that the success and speed of the task won't be affected."
+      },
+      {
+        "name": "creation_filter_end_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by higher range of ad group creation time, in the format of YYYY-MM-DD HH:MM:SS (UTC time zone). Ad groups created earlier than this time will be returned. Suggestion: A time range within 6 months is suggested when applying a creation time filter, to ensure that the success and speed of the task won't be affected."
+      },
+      {
+        "name": "split_test_enabled",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Filter by whether split test has been enabled for the ad group or not. true : Only get ad groups with enabled split test, false : Only get disabled ad groups. Note : If you do not specify this field, you will get all ad groups."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value is: 10. Value range: 1-1,000. Note : If you use the enum value RESERVATION_TOP_VIEW for the filter field buying_types , the maximum value you can specify for this field is 100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Get undeleted ad groups within your ad account",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/adgroup/get/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get all ad groups within your ad account",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/adgroup/get/?advertiser_id={{advertiser_id}}&filtering={\"primary_status\":\"STATUS_ALL\"}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get ad groups within a specific campaign",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/adgroup/get/?advertiser_id={{advertiser_id}}&filtering={\"campaign_ids\":[\"{{campaign_id}}\"]}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Get ad groups created within a specific time range",
+        "curl": "curl --location --request GET  'https://business-api.tiktok.com/open_api/v1.3/adgroup/get/?advertiser_id={{advertiser_id}}&filtering={\"creation_filter_start_time\":\"2024-01-01 00:00:00\",\"creation_filter_end_time\":\"2024-01-30 00:00:00\"}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n                \"included_custom_actions\": [],\n                \"delivery_mode\": null,\n                \"auto_targeting_enabled\": false,\n                \"app_download_url\": null,\n                \"placements\": [\n                    \"PLACEMENT_TIKTOK\"\n                ],\n                \"pixel_id\": null,\n                \"conversion_window\": null,\n                \"schedule_type\": \"SCHEDULE_START_END\",\n                \"brand_safety_partner\": null,\n                \"interest_category_ids\": [],\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"schedule_infos\": null,\n                \"share_disabled\": false,\n                \"brand_safety_type\": \"NO_BRAND_SAFETY\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"ios14_quota_type\": \"UNOCCUPIED\",\n                \"network_types\": [],\n                \"app_type\": null,\n                \"bid_type\": \"BID_TYPE_NO_BID\",\n                \"conversion_bid_price\": 0,\n                \"optimization_goal\": \"CLICK\",\n                \"deep_bid_type\": null,\n                \"video_download_disabled\": false,\n                \"schedule_end_time\": \"{{schedule_end_time}}\",\n                \"scheduled_budget\": 0,\n                \"is_hfss\": false,\n                \"frequency\": null,\n                \"bid_price\": 0,\n                \"actions\": [],\n                \"deep_cpa_bid\": 0,\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"category_id\": \"0\",\n                \"purchased_impression\": null,\n                \"budget\": {{budget}},\n                \"app_id\": null,\n                \"promotion_type\": \"WEBSITE\",\n                \"age_groups\": null,\n                \"next_day_retention\": null,\n                \"pacing\": \"PACING_MODE_SMOOTH\",\n                \"device_price_ranges\": null,\n                \"location_ids\": [\n                    \"{{location_id}}\"\n                ],\n                \"secondary_status\": \"ADGROUP_STATUS_CREATE\",\n                \"billing_event\": \"CPC\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"operation_status\": \"ENABLE\",\n                \"placement_type\": \"PLACEMENT_TYPE_NORMAL\",\n                \"optimization_event\": null,\n                \"audience_ids\": [],\n                \"secondary_optimization_event\": null,\n                \"excluded_custom_actions\": [],\n                \"languages\": [],\n                \"modify_time\": \"{{modify_time}}\",\n                \"excluded_audience_ids\": [],\n                \"rf_estimated_cpr\": null,\n                \"skip_learning_phase\": false,\n                \"operating_systems\": [\n                    \"ANDROID\"\n                ],\n                \"creative_material_mode\": \"CUSTOM\",\n                \"search_result_enabled\": false,\n                \"rf_purchased_type\": null,\n                \"inventory_filter_enabled\": false,\n                \"adgroup_app_profile_page_state\": null,\n                \"rf_estimated_frequency\": null,\n                \"gender\": \"GENDER_UNLIMITED\",\n                \"statistic_type\": null,\n                \"purchased_reach\": null,\n                \"is_new_structure\": true,\n                \"interest_keyword_ids\": [],\n                \"bid_display_mode\": \"CPMV\",\n                \"dayparting\": \"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n                \"keywords\": null,\n                \"schedule_start_time\": \"{{schedule_start_time}}\",\n                \"comment_disabled\": false,\n                \"frequency_schedule\": null,\n                \"feed_type\": null\n            },\n            {\n                \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n                \"included_custom_actions\": [],\n                \"delivery_mode\": null,\n                \"auto_targeting_enabled\": false,\n                \"app_download_url\": null,\n                \"placements\": [\n                    \"PLACEMENT_TIKTOK\"\n                ],\n                \"pixel_id\": null,\n                \"conversion_window\": null,\n                \"schedule_type\": \"SCHEDULE_START_END\",\n                \"brand_safety_partner\": null,\n                \"interest_category_ids\": [],\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"schedule_infos\": null,\n                \"share_disabled\": false,\n                \"brand_safety_type\": \"NO_BRAND_SAFETY\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"ios14_quota_type\": \"UNOCCUPIED\",\n                \"network_types\": [],\n                \"app_type\": null,\n                \"bid_type\": \"BID_TYPE_NO_BID\",\n                \"conversion_bid_price\": 0,\n                \"optimization_goal\": \"CLICK\",\n                \"deep_bid_type\": null,\n                \"video_download_disabled\": false,\n                \"schedule_end_time\": \"{{schedule_end_time}}\",\n                \"scheduled_budget\": 0,\n                \"is_hfss\": false,\n                \"frequency\": null,\n                \"bid_price\": 0,\n                \"actions\": [],\n                \"deep_cpa_bid\": 0,\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"category_id\": \"0\",\n                \"purchased_impression\": null,\n                \"budget\": {{budget}},\n                \"app_id\": null,\n                \"promotion_type\": \"WEBSITE\",\n                \"age_groups\": null,\n                \"next_day_retention\": null,\n                \"pacing\": \"PACING_MODE_SMOOTH\",\n                \"device_price_ranges\": null,\n                \"location_ids\": [\n                    \"{{location_id}}\"\n                ],\n                \"secondary_status\": \"ADGROUP_STATUS_CREATE\",\n                \"billing_event\": \"CPC\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"operation_status\": \"ENABLE\",\n                \"placement_type\": \"PLACEMENT_TYPE_NORMAL\",\n                \"optimization_event\": null,\n                \"audience_ids\": [],\n                \"secondary_optimization_event\": null,\n                \"excluded_custom_actions\": [],\n                \"languages\": [],\n                \"modify_time\": \"{{modify_time}}\",\n                \"excluded_audience_ids\": [],\n                \"rf_estimated_cpr\": null,\n                \"skip_learning_phase\": false,\n                \"operating_systems\": [\n                    \"ANDROID\"\n                ],\n                \"creative_material_mode\": \"CUSTOM\",\n                \"search_result_enabled\": false,\n                \"rf_purchased_type\": null,\n                \"inventory_filter_enabled\": false,\n                \"adgroup_app_profile_page_state\": null,\n                \"rf_estimated_frequency\": null,\n                \"gender\": \"GENDER_UNLIMITED\",\n                \"statistic_type\": null,\n                \"purchased_reach\": null,\n                \"is_new_structure\": true,\n                \"interest_keyword_ids\": [],\n                \"bid_display_mode\": \"CPMV\",\n                \"dayparting\": \"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n                \"keywords\": null,\n                \"schedule_start_time\": \"{{schedule_start_time}}\",\n                \"comment_disabled\": false,\n                \"frequency_schedule\": null,\n                \"feed_type\": null\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1,\n            \"total_number\": 2\n        }\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "title": "Get available stores under an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/store/list/",
+  "method": "GET",
+  "category_path": [
+    "TikTok Store"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the first-party store (TikTok Shop) that you want to filter by. If not specified, the results for all available store_id under the specified advertiser account will be returned. Note : To get the TikTok Shop ID, you can use /bc/asset/get/ : When in the response asset_type is TIKTOK_SHOP , the returned asset_id is the TikTok Shop ID."
+      },
+      {
+        "name": "store_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Store type that you want to filter by. Enum values: TIKTOK_SHOP (TikTok Shop) . If not specified, the results for all stores under the specified advertiser account will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api/open_api/v1.3/store/list/?advertiser_id={{advertiser_id}}' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"stores\": [\n            {\n                \"tiktok_account_binding_status\": null,\n                \"store_id\": \"{{store_id}}\",\n                \"store_type\": \"TIKTOK_SHOP\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_code\": \"{{store_code}}\",\n                \"targeting_region_codes\": [\n                    \"ID\"\n                ]\n            }\n        ]\n    }\n}"
+    }
+  }
+}

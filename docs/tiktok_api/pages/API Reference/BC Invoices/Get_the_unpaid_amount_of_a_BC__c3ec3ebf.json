@@ -1,0 +1,37 @@
+{
+  "title": "Get the unpaid amount of a BC",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/invoice/unpaid/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Invoices"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "invoice_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Invoice type. Enum values: RECON (Reconciliation Invoice)."
+      }
+    ]
+  },
+  "response": {}
+}

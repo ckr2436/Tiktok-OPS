@@ -1,0 +1,56 @@
+{
+  "title": "Get the status of an async report task",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/task/check/",
+  "method": "GET",
+  "category_path": [
+    "Reporting"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. Please use the same access token as the /report/task/create/ point."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Note : If you use advertiser_ids when calling /report/task/create/ (POST method), you need to set this field to one of the Advertiser IDs specified via advertiser_ids ."
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the asynchronous report task. You can get the ID via the response of /report/task/create/ endpoint."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"task_id=TASK_ID\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/report/task/check/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "status": "SUCCESS",
+          "message": ""
+        },
+        "request_id": "2021022606090301011517615608212B1C"
+      }
+    }
+  }
+}

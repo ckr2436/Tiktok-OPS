@@ -1,0 +1,56 @@
+{
+  "title": "Delete a Business Messaging Webhook configuration",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/webhook/delete/",
+  "method": "POST",
+  "category_path": [
+    "Business Messaging",
+    "Webhooks"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "app_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of your developer application. To find the App ID , navigate to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "secret",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Secret of your developer application. To find the Secret , navigate to My Apps > App Detail > Basic Information ."
+      },
+      {
+        "name": "event_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of Webhook event configuration that you want to delete. Enum value: DIRECT_MESSAGE : Business Messaging events. To learn more about the schema and sample payload of the events within this event category, see Webhook schema ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/webhook/delete/' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"app_id\": \"{{app_id}}\",\n    \"secret\": \"{{secret}}\",\n    \"event_type\": \"DIRECT_MESSAGE\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"app_id\": \"{{app_id}}\",\n        \"event_type\": \"DIRECT_MESSAGE\"\n    }\n}"
+    }
+  }
+}

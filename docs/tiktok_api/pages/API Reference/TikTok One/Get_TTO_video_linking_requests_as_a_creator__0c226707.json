@@ -1,0 +1,48 @@
+{
+  "title": "Get TTO video linking requests as a creator",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/creator/link/request/get/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. Use /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ endpoint to get or renew an access token."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "creator_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique ID of the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ or /tt_user/oauth2/refresh_token/ to this field."
+      },
+      {
+        "name": "tto_invite_link",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The invite link associated with a TTO Creator Marketplace campaign that the creator (TikTok account) has been invited to. To create a TTO Creator Marketplace campaign as a brand and obtain the associated invite link, use /tto/tcm/campaign/create/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/tto/creator/link/request/get/?creator_id={{creator_id}}&tto_invite_link={{tto_invite_link}}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"link_requests\": [\n            {\n                \"link_request_id\": \"{{link_request_id}}\",\n                \"video_id\": \"{{video_id}}\"\n            }\n        ],\n        \"spark_authorization_days\": 7\n    }\n}"
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "title": "Get a suggested bid",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tool/bid/recommend/",
+  "method": "POST",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign ID."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign objective. The current API endpoint only supports Traffic and Website conversions objectives. For enum values and descriptions, see Objectives . Note : This API is being revamped to support larger function scope and more accurate result. Please stay tuned for updates."
+      },
+      {
+        "name": "location_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the locations that you want to target."
+      },
+      {
+        "name": "external_action",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Conversion event for the ad group."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\",\n    \"campaign_id\": \"CAMPAIGN_ID\",\n    \"objective_type\": \"OBJECTIVE_TYPE\",\n    \"locations\": [\n        \"LOCATIONS\"\n    ],\n    \"external_action\": \"EXTERNAL_ACTION\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/tool/bid/recommend/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "code": 0,
+        "message": "OK",
+        "request_id": "1234",
+        "data": {
+          "bid": 1
+        }
+      }
+    }
+  }
+}

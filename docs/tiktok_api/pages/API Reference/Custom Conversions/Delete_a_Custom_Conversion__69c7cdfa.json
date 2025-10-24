@@ -1,0 +1,55 @@
+{
+  "title": "Delete a Custom Conversion",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/custom_conversion/delete/",
+  "method": "POST",
+  "category_path": [
+    "Custom Conversions"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "custom_conversion_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the Custom Conversion. To obtain the list of Custom Conversions associated with a Pixel or an App, use /custom_conversion/list/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/custom_conversion/delete/' \\\n--header 'Access-token: {{Access-token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"custom_conversion_id\": \"{{custom_conversion_id}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

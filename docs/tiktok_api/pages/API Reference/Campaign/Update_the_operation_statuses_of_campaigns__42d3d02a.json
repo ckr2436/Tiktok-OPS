@@ -1,0 +1,80 @@
+{
+  "title": "Update the operation statuses of campaigns",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/status/update/",
+  "method": "POST",
+  "category_path": [
+    "Campaign"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type Allowed format: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": ""
+      },
+      {
+        "name": "campaign_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": ""
+      },
+      {
+        "name": "operation_status",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": ""
+      },
+      {
+        "name": "postback_window_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": ""
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\",\n    \"campaign_ids\": [\n        \"CAMPAIGN_IDS\"\n    ],\n    \"opt_status\": \"OPT_STATUS\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/campaign/status/update/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "status": "ENABLE",
+          "campaign_ids": [
+            11,
+            22
+          ]
+        },
+        "request_id": "2019091810032301011023224213551"
+      }
+    }
+  }
+}

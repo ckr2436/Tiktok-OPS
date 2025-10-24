@@ -1,0 +1,52 @@
+{
+  "title": "Link a pixel to ad accounts / Unlink",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/pixel/link/update/",
+  "method": "POST",
+  "category_path": [
+    "BC Assets",
+    "Manage a pixel"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID"
+      },
+      {
+        "name": "pixel_code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Pixel Code"
+      },
+      {
+        "name": "advertiser_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Advertiser ID list"
+      },
+      {
+        "name": "relation_status",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Enum values: LINK , UNLINK ."
+      }
+    ]
+  },
+  "response": {}
+}

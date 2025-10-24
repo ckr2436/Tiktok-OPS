@@ -1,0 +1,90 @@
+{
+  "title": "Get assets",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/asset/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "asset_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of asset that you want to get. Enum values: ADVERTISER : ad account (advertiser account). CATALOG : catalog. TIKTOK_SHOP : TikTok Shop. PIXEL : Pixel. LEAD : Leads. TT_ACCOUNT : TikTok account. This asset type corresponds to the identity type BC_AUTH_TT . Learn more from Identities ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions. Note : You cannot use user_id and user_email at the same time. If you don't specify any filter values, the system will pass in to the user_id field the user ID of the TikTok for Business account that gives you the authorization code ( auth_code )."
+      },
+      {
+        "name": "user_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the user that you want to get assets for. Note : user_id and user_mail cannot be set at the same time. For users that are in BOUND status, use user_id to get their assets. For users that are in PENDING status, use user_email to get their assets."
+      },
+      {
+        "name": "user_email",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Email of the user that you want to get assets for. Note : user_id and user_mail cannot be set at the same time. For users that are in BOUND status, use user_id to get their assets. For users that are in PENDING status, use user_email to get their assets. Use user_email as filter only when you've set asset_type as ADVERTISER and the invitation for the user to join Business Center is still pending."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Keyword of the asset you are looking for."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Value range: 1-50. Default value: 10."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET'https://business-api.tiktok.com/open_api/v1.3/bc/asset/get/?bc_id={{bc_id}}&asset_type=ADVERTISER' \\\n--header 'Access-Token: {{Access-Token}}"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1\n        },\n        \"list\": [\n            {\n                \"asset_name\": \"{{asset_name}}\",\n                \"store_role\": null,\n                \"catalog_role\": null,\n                \"advertiser_role\": \"ADMIN\",\n                \"tt_account_roles\": null,\n                \"owner_bc_name\": \"{{owner_bc_name}}\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"asset_id\": \"{{asset_id}}\",\n                \"asset_type\": \"ADVERTISER\"\n            },\n            {\n                \"asset_name\": \"{{asset_name}}\",\n                \"store_role\": null,\n                \"catalog_role\": null,\n                \"advertiser_role\": \"ADMIN\",\n                \"tt_account_roles\": null,\n                \"owner_bc_name\": \"{{owner_bc_name}}\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"asset_id\": \"{{asset_id}}\",\n                \"asset_type\": \"ADVERTISER\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

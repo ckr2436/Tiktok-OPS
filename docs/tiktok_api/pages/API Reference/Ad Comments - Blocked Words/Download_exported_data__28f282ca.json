@@ -1,0 +1,48 @@
+{
+  "title": "Download exported data",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/blockedword/task/download/",
+  "method": "GET",
+  "category_path": [
+    "Ad Comments - Blocked Words"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "task_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Task ID"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"task_id=TASK_ID\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/blockedword/task/download"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

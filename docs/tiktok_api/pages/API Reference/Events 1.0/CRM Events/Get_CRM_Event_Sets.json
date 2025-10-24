@@ -1,0 +1,12 @@
+{
+  "title": "Get CRM Event Sets",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "CRM Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

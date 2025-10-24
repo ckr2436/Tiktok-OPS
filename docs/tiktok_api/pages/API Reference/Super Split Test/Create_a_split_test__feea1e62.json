@@ -1,0 +1,104 @@
+{
+  "title": "Create a split test",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/split_test/create/",
+  "method": "POST",
+  "category_path": [
+    "Super Split Test"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "split_test_level",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Split test level. Enum values: ADGROUP (Ad group level split test.) CAMPAIGN (Campaign level split test.) Default value: ADGROUP . Note : Campaign-level split tests are currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Comparing two ad groups from different campaigns in a split test is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. The campaigns can have different advertising objectives."
+      },
+      {
+        "name": "object_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "adgroup_ids bound to this split-test. For ad group level split test, input either this field or cells . For campaign level split test, input cells instead of this field."
+      },
+      {
+        "name": "cells Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when split_test_level is set to CAMPAIGN . List of cells in split test. The length must be 2."
+      },
+      {
+        "name": "object_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If you select ADGROUP in split_test_level , pass adgroup_id to this field. The length of each cell must be 1. If you select CAMPAIGN in split_test_level , pass campaign_id to this field. Length range: [1,10]."
+      },
+      {
+        "name": "test_variable",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Split test variable. It will NOT affect your test results. Enum values: BIDDING_OPTIMIZATION : Set different optimization values for bidding & optimization fields to compare how optimization methods impact your ad performance. TARGTING : Set different targeting values at the ad group level for comparing how effective your ad groups are at reaching different audiences or demographics. CREATIVE : Set different creatives to compare how different creatives impact your ad performance. CUSTOM : Set multiple variables to compare how these variables impact your ad performance. This enum value is only available for campaign level split test. Default value: For ad group level split test, the default value is BIDDING_OPTIMIZATION . For campaign level split test, the default value is CUSTOM . Note: The test_variable cannot be updated once specified."
+      },
+      {
+        "name": "key_metric",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The key metric you want to monitor. Enum values: UNSET : Unset. CONVERT_RATE : CVR (Conversion rate). CLICK_THROUGH_RATE : Click through rate (CTR). COST_PER_SHOW : Cost per mille (CPM). COST_PER_CONVERT : Cost per conversion. COST_PER_REACH : Cost per reach. COST_PER_CLICK : Cost per click. COST_PER_FOCUSED_VIEW : Cost per focused view. FOCUSED_VIEW_RATE : Focused view rate. COMPLETE_PAYMENT_ROAS : Complete Payment ROAS. COST_PER_LANDING_PAGE_VIEW : Cost per landing page view. LANDING_PAGE_VIEW_RATE : Landing page view rate. CLICK ( deprecated ): Click. REACH ( deprecated ): Reach. SHOW ( deprecated ): Impression. CONVERT ( deprecated ): Conversion. COST ( deprecated ): Cost. See Super Split Test - Supported optimization goals to find out the key metrics supported under different optimization goals. If no value is specified for this field, the following default values will be used: For ad group level split test, if both ad groups use REACH optimization goal, the default key metric will be COST_PER_REACH . Otherwise, the default key metric will be COST_PER_SHOW . For campaign level split test, the default key metric is UNSET ."
+      },
+      {
+        "name": "budget Conditional",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Required when split_test_level is set to ADGROUP . Do not specify this field when split_test_level is set to CAMPAIGN . Otherwise, an error will occur. The total split test budget. For ad group level split test, the budget will be distributed to each group evenly. This budget specified here will overwrite the existing budgets in the two ad groups. If you want to change the total budget after the test has started, we recommend you update the budgets in the two ad groups to the same value. For campaign level split test, the budget will follow the existing budget amount set for each campaign."
+      },
+      {
+        "name": "start_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The start time of this split test, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2022-01-01 00:00:00. Note: The time of campaign level split test can only be set to hour level. Thus, any MM and SS input will default to 00. The start time set for campaign level split test will not overwrite the start time of campaigns and ad groups in this test."
+      },
+      {
+        "name": "end_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The end time of this split test, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2022-01-01 00:00:00. Note: The time of campaign level split test can only be set to hour level. Thus, any MM and SS input will default to 00. The end time set for campaign level split test will not overwrite the end time of campaigns and ad groups in this test."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/split_test/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"start_time\": \"2024-03-09 02:42:13\",\n    \"end_time\": \"2024-03-10 02:42:13\",\n    \"object_ids\": [\n        \"{{object_ids}}\",\n        \"{{object_ids}}\"\n    ],\n    \"key_metric\": \"FOCUSED_VIEW_RATE\",\n    \"test_variable\": \"BIDDING_OPTIMIZATION\",\n    \"budget\": 100\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"split_test_group_id\": \"{{split_test_group_id}}\"\n    }\n}"
+    }
+  }
+}

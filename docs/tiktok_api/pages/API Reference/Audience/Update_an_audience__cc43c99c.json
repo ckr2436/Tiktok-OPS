@@ -1,0 +1,83 @@
+{
+  "title": "Update an audience",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/update/",
+  "method": "POST",
+  "category_path": [
+    "Audience"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "custom_audience_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Custom audience ID."
+      },
+      {
+        "name": "custom_audience_name Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "New name for the audience. Length limit: 128 characters. You must pass in either this field or file_paths ."
+      },
+      {
+        "name": "audience_sub_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Audience sub type, indicating the type of ads that the audience can be used for. The allowed enum value: REACH_FREQUENCY (To enable the audience to be used in Reach & Frequency campaigns). It means you can only convert audience sub type from NORMAL to REACH_FREQUENCY , but not the other way round. Note : If you update this field, changes to other data fields will be ignored. If you want to update a Lookalike audience, you cannot change the audience_sub_type to REACH_FREQUENCY . Otherwise, an error will occur."
+      },
+      {
+        "name": "file_paths Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The files you upload to update the Customer File audience. You must pass in either this field or custom_audience_name . The recommended size is <50 per request to ensure stability. Once you pass in this field, you can specify the modification type ( APPEND , REMOVE or REPLACE ) via action . The files must be encrypted with the same encryption method/type with the audience that you want to update."
+      },
+      {
+        "name": "action",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Modification type. This field is valid when file_paths is passed. Enum values: APPEND : Upload files to expand the Customer File audience. Only data not included in the original file will be added. REMOVE : Upload files to remove the Customer File audience. Only the data that coincide with the original file will be removed. REPLACE : Upload files to replace the Customer File audience. All the data in the original file will be replaced. Default value: REPLACE . Note : The APPEND , REMOVE and REPLACE operations will fail if the audience size is less than 1,000 after the operation."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\\\n-d '{\n    \"action\": \"ACTION\", \n    \"advertiser_id\": \"ADVERTISER_ID\", \n    \"custom_audience_id\": \"CUSTOM_AUDIENCE_ID\", \n    \"file_paths\": [\"FILE_PATHS\"]\n}' \\\\\nhttps://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/update/"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

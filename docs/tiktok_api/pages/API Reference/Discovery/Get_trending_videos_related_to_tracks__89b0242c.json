@@ -1,0 +1,55 @@
+{
+  "title": "Get trending videos related to tracks",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/discovery/cml/video_list/",
+  "method": "GET",
+  "category_path": [
+    "Discovery"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by TikTok creators. To obtain an access token, use /tt_user/oauth2/token/ ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "business_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Application specific unique identifier for the TikTok account. Pass the value of the open_id field returned in the response of /tt_user/oauth2/token/ to this field."
+      },
+      {
+        "name": "commercial_music_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the track."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The code of the location to filter the results by. Default value: US . See Location code for the supported values."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request GET 'https://business-api.tiktok.com/open_api/v1.3/discovery/cml/video_list/?business_id={{business_id}}&commercial_music_id={{commercial_music_id}}&country_code=US' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"commercial_music_id\": \"{{commercial_music_id}}\",\n        \"commercial_music_name\": \"{{commercial_music_name}}\",\n        \"top_video_list\": [\n            {\n                \"embed_url\": \"{{embed_url}}\",\n                \"share_url\": \"{{share_url}}\",\n                \"video_id\": \"{{video_id}}\"\n            },\n            ...,\n            {\n                \"embed_url\": \"{{embed_url}}\",\n                \"share_url\": \"{{share_url}}\",\n                \"video_id\": \"{{video_id}}\"\n            }\n        ]\n    }\n}"
+    }
+  }
+}

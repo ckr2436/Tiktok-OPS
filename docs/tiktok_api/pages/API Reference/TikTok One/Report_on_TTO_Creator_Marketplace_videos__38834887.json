@@ -1,0 +1,83 @@
+{
+  "title": "Report on TTO Creator Marketplace videos",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/tto/tcm/report/",
+  "method": "GET",
+  "category_path": [
+    "TikTok One"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Access token authorized by a TikTok One Creator Marketplace account. For details, see Authentication ."
+      },
+      {
+        "name": "Country-Code",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A country or region code that is associated with the TikTok One Creator Marketplace campaign ( campaign_id ). To obtain a valid country or region code associated with the TikTok One Creator Marketplace campaign, use /tto/tcm/campaign/ and select one code from the returned country_codes ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "tto_tcm_account_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok One Creator Marketplace account. To obtain the IDs of the accounts that you can access via Access-Token , use /tto/oauth2/tcm/ ."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of a TikTok One Creator Marketplace campaign with a campaign-level invite link or brand-level invite link . To create a campaign and obtain the campaign ID, use /tto/tcm/campaign/create/ ."
+      },
+      {
+        "name": "start_date Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when end_date is passed. If you specify both start_date and end_date , the response will include the daily_stats parameter that shows the daily metrics for the specified time range. If you don't specify both start_date and end_date , the response will not include the daily metrics ( daily_stats ). Report start date, in the format of YYYY-MM-DD (UTC+0 time). The start_date should not be earlier than the campaign creation time. To obtain the campaign creation time, check the create_time returned from /tto/tcm/campaign/create/ or /tto/tcm/campaign/ . Example: 2024-01-01 ."
+      },
+      {
+        "name": "end_date Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when start_date is passed. If you specify both start_date and end_date , the response will include the daily_stats parameter that shows the daily metrics for the specified time range. If you don't specify both start_date and end_date , the response will not include the daily metrics ( daily_stats ). Report end date, in the format of YYYY-MM-DD (UTC+0 time). Example: 2024-02-01 ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. This field specifies which page of results to retrieve. The number of pages is based on the total number of records and the page_size . Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. This specifies the number of records (the performance metrics for videos linked to the specified campaign ID) that you try to retrieve for each request. Default value: 25. Value range: 1-100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/tto/tcm/report/?tto_tcm_account_id={{tto_tcm_account_id}}&campaign_id={{campaign_id}}&start_date=2024-09-25&end_date=2024-09-27' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Country-Code: {{Country-Code}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"campaign_channel_type\": \"API_LITE_CAMPAIGN\",\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"campaign_type\": \"CAMPAIGN\",\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 25,\n            \"total_number\": 1,\n            \"total_page\": 1\n        },\n        \"tto_tcm_account_id\": \"{{tto_tcm_account_id}}\",\n        \"videos\": [\n            {\n                \"ad_cost\": 0,\n                \"ad_cpa\": 0,\n                \"ad_ctr\": 0,\n                \"ad_cvr\": 0,\n                \"ad_impressions\": 0,\n                \"ad_roas\": 0,\n                \"anchor_id\": null,\n                \"anchor_metrics\": null,\n                \"audience_age_distribution\": [\n                    {\n                        \"age\": \"4\",\n                        \"percentage\": 0.625\n                    },\n                    {\n                        \"age\": \"3\",\n                        \"percentage\": 0.375\n                    }\n                ],\n                \"audience_countries_distribution\": [\n                    {\n                        \"country\": \"US\",\n                        \"percentage\": 0.7142857142857143\n                    },\n                    {\n                        \"country\": \"GB\",\n                        \"percentage\": 0.14285714285714285\n                    },\n                    {\n                        \"country\": \"SA\",\n                        \"percentage\": 0.14285714285714285\n                    }\n                ],\n                \"audience_device_distribution\": [\n                    {\n                        \"device\": \"ios\",\n                        \"percentage\": 1\n                    },\n                    {\n                        \"device\": \"android\",\n                        \"percentage\": 0\n                    }\n                ],\n                \"audience_genders_distribution\": [\n                    {\n                        \"gender\": \"MALE\",\n                        \"percentage\": 0.875\n                    },\n                    {\n                        \"gender\": \"FEMALE\",\n                        \"percentage\": 0.125\n                    }\n                ],\n                \"audience_interest_distribution\": [\n                    {\n                        \"interest_tag\": \"14\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"18\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"11\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"10\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"17\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"20\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"21\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"22\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"26\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"30\",\n                        \"percentage\": 0.047619047619047616\n                    }\n                ],\n                \"audience_locale_distribution\": null,\n                \"average_view_time\": 3.63,\n                \"comments\": 0,\n                \"comments_organic\": null,\n                \"comments_paid\": null,\n                \"creator_info\": {\n                    \"display_name\": \"{{display_name}}\",\n                    \"handle_name\": \"{{handle_name}}\"\n                },\n                \"daily_stats\": null,\n                \"engagement_count\": 0,\n                \"engagement_rate\": 0,\n                \"engagement_rate_organic\": null,\n                \"engagement_rate_paid\": null,\n                \"likes\": 0,\n                \"likes_organic\": null,\n                \"likes_paid\": null,\n                \"reach\": 6,\n                \"shares\": 0,\n                \"shares_organic\": null,\n                \"shares_paid\": null,\n                \"six_seconds_views\": 0.2222222222222222,\n                \"total_play_time\": 29,\n                \"two_seconds_views\": 0.6666666666666666,\n                \"video_completion_rate\": 0.5,\n                \"video_info\": {\n                    \"create_time\": \"{{create_time}}\",\n                    \"embed_url\": \"{{embed_url}}\",\n                    \"thumbnail_url\": \"{{thumbnail_url}}\",\n                    \"video_id\": \"{{video_id}}\"\n                },\n                \"video_view_retention\": [\n                    1,\n                    1,\n                    0.83,\n                    0.67,\n                    0.5\n                ],\n                \"video_views\": 6,\n                \"video_views_by_source\": [\n                    {\n                        \"source\": \"sound\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"hashtag\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"following\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"for_you\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"search\",\n                        \"video_views\": 3\n                    },\n                    {\n                        \"source\": \"personal_profile\",\n                        \"video_views\": 3\n                    }\n                ],\n                \"video_views_organic\": 6,\n                \"video_views_paid\": null\n            }\n        ]\n    }\n}"
+    }
+  }
+}

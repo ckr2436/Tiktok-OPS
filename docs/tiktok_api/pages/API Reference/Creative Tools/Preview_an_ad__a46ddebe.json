@@ -1,0 +1,635 @@
+{
+  "title": "Preview an ad",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/",
+  "method": "POST",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request content type. Allowed Value: application/json ."
+      },
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Note : You need to have Operator or Admin permission for the ad account. To check your permission for an ad account, use /bc/asset/get/ . The returned advertiser_role should be ADMIN or OPERATOR ."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Preview type. To preview ads by ads creation parameters, use ADS_CREATION ."
+      },
+      {
+        "name": "objective_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising objective. For enum values and descriptions, see Objectives . Note : Currently the supported objectives are: REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , APP_PROMOTION , LEAD_GENERATION , WEB_CONVERSIONS , PRODUCT_SALES , and RF_REACH ."
+      },
+      {
+        "name": "is_smart_performance_campaign",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the campaign is a Smart+ Campaign. Default value: false . Note : This field can only be set to false when any of the following conditions is met: ad_fomat is set to CAROUSEL_ADS or CATALOG_CAROUSEL . placement is set to PLACEMENT_PANGLE or ALL . objective_type is set to TRAFFIC , REACH , VIDEO_VIEWS , or PRODUCT_SALES ."
+      },
+      {
+        "name": "placement",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The app where you want to deliver your ads. When ad_format is set to CAROUSEL_ADS or CATALOG_CAROUSEL , specify this field as PLACEMENT_TIKTOK , or do not pass this field. Enum values: PLACEMENT_TIKTOK : Supported only when objective_type is REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , APP_PROMOTION , LEAD_GENERATION , WEB_CONVERSIONS , or PRODUCT_SALES . PLACEMENT_PANGLE : Supported only when objective_type is TRAFFIC , LEAD_GENERATION (only when promotion_type is LEAD_GENERATION ), APP_PROMOTION , or WEB_CONVERSIONS . ALL : Supported only when objective_type is TRAFFIC , LEAD_GENERATION (only when promotion_type is LEAD_GENERATION ), APP_PROMOTION , or WEB_CONVERSIONS ."
+      },
+      {
+        "name": "preview_format",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Based on the placement you've selected, the allowed preview formats are different. When placement is PLACEMENT_TIKTOK , the allowed preview formats are: IN_FEED : In-feed. Ads will be placed in the For You feed and might also be placed in Profile Page and Following feeds. SEARCH_RESULTS : Search result. SEARCH_FEED : Search feed. TIKTOK_LITE : TikTok Lite, a streamlined version of TikTok that features a smaller app size and faster video loading speed. The TikTok Lite subplacement is currently available for Japan or South Korea as targeting locations. PRODUCT_SEARCH : Search (Shopping Center). Show your products in the Shop Tab search results, as well as general search results in the TikTok App. Learn more about Shop Tab placements for Shop Ads . PRODUCT_SHOP_CENTER : Recommendations (Shopping Center). Show your products to people who are likely to buy them in a Recommended for you section. Default value: IN_FEED . Note : The values SEARCH_FEED and TIKTOK_LITE are valid only when the following conditions are met: objective_type is REACH , VIDEO_VIEWS , or ENGAGEMENT . placement is PLACEMENT_TIKTOK . The values PRODUCT_SEARCH and PRODUCT_SHOP_CENTER are only available for Video Shopping Ads and Product Shopping Ads. When placement is PLACEMENT_PANGLE , the allowed preview formats are INTERSTITIAL , REWARDED , APP_OPEN ， NORMAL_BANNER , VIDEO_THUMBNAIL_BANNER , SMALL_VIDEO_BANNER , ICON_ONLY_BANNER , NORMAL_NATIVE , and VIDEO_THUMBNAIL_NATIVE . Default value: INTERSTITIAL ."
+      },
+      {
+        "name": "shopping_ads_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when objective_type is PRODUCT_SALES and catalog_id is not specified. Shopping ads type. Enum values: VIDEO : Video Shopping Ads. LIVE : Live Shopping Ads. PRODUCT_SHOPPING_ADS : Product Shopping Ads. When ad_format is set to CATALOG_CAROUSEL , specify this field as VIDEO , or do not pass this field."
+      },
+      {
+        "name": "product_source Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required only for Video Shopping Ads and Product Shopping Ads. Product source where you want to get products for promotion. Enum values: STORE (TikTok Shop), SHOWCASE (TikTok Showcase). For Video Shopping Ads, you can set this field to STORE or SHOWCASE . For Product Shopping Ads, set this field to STORE ."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required in any of the following scenarios: shopping_ads_type is VIDEO and product_source is STORE . shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE . Optional when shopping_ads_type is LIVE . ID of the TikTok Shop. To get the TikTok Shop ID, use /bc/asset/get/ and set asset_type to TIKTOK_SHOP . The returned asset_id will be the TikTok Shop ID."
+      },
+      {
+        "name": "store_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when store_id is passed. ID of the Business Center that is authorized to access the TikTok Shop ( store_id )."
+      },
+      {
+        "name": "showcase_products Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Required when shopping_ads_type is VIDEO and product_source is SHOWCASE . See Create Video Shopping Ads with products from Showcase to learn more. The list of Showcase products that you want to use in your ad. Max size: 20. You can get the available Showcase products via /showcase/product/get/ ."
+      },
+      {
+        "name": "item_group_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when showcase_products is passed. SPU ID of the product."
+      },
+      {
+        "name": "store_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when showcase_products is passed. The ID of the TikTok Shop that the product ( item_group_id ) belongs to."
+      },
+      {
+        "name": "promotion_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Promotion type. You can decide where you'd like to promote your products using this field. Enum values: APP_ANDROID : Android application. APP_IOS : iOS application. WEBSITE : landing page. LEAD_GENERATION : Instant Form or Website. LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE : TikTok direct messages. LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE : instant messaging apps. LEAD_GEN_CLICK_TO_CALL : phone call. Note : The following enum values are valid only when objective_type is LEAD_GENERATION : LEAD_GENERATION LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE LEAD_GEN_CLICK_TO_CALL"
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID. If you are not using Spark Ads, identity_id and identity_type ( CUSTOMIZED_USER ) can be used for better management of ad information."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: CUSTOMIZED_USER , AUTH_CODE , TT_USER , BC_AUTH_TT . Use CUSTOMIZED_USER for custom identity and use AUTH_CODE , TT_USER , BC_AUTH_TT in Spark Ads. For details about identities, see Identities . When ad_format is CATALOG_CAROUSEL , you can only set this field to CUSTOMIZED_USER . If objective_type is LEAD_GENERATION : When promotion_type is LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE , Spark Ads must be used and identity_type must be TT_USER or BC_AUTH_TT . When promotion_type is not LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE , both Spark Ads & non-Spark Ads are supported, so identity_type can be set to any of the enum values. If objective_type is ENGAGEMENT , only Spark Ads are supported and identity_type must be AUTH_CODE , TT_USER or BC_AUTH_TT ."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "ad_format",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad format. For single video ads, set this field to SINGLE_VIDEO . For single image ads, set this field to SINGLE_IMAGE . Supported only on Pangle. For TikTok Standard Carousel ads, set this field to CAROUSEL_ADS . For TikTok VSA Carousel ads, set this field to CATALOG_CAROUSEL . See here to learn about the steps of creating TikTok Carousel Ads. For Live Shopping Ads, set this field to LIVE_CONTENT ."
+      },
+      {
+        "name": "video_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video ID. Required when ad_format is SINGLE_VIDEO . Not supported when ad_format is SINGLE_IMAGE , CAROUSEL_ADS or CATALOG_CAROUSEL . To create video Spark Ads using Spark Ads Push or create video Non-Spark Ads, use video_id . You can find video IDs using /file/video/ad/search/ . To create video Spark Ads using Spark Ads Pull, use tiktok_item_id to specify the TikTok post ID."
+      },
+      {
+        "name": "image_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required in any of the following scenarios: ad_format is SINGLE_IMAGE . ad_format is CAROUSEL_ADS and you want to create Standard Carousel Spark Ads via Spark Ads Push or Standard Carousel Non-Spark Ads. ad_format is CATALOG_CAROUSEL , catalog_enabled is set to true , and an Auto-Model catalog is specified through catalog_id . A list of image IDs (images used in an ad or as a video cover). When ad_format is set to CAROUSEL_ADS , the size range for this field is [1, 35], and the sequence of the image IDs specified via this field is the order in which the images are shown in the Carousel Ads. See Create Carousel Ads to learn about the requirements for images that can be used in TikTok Carousel Ads. When ad_format is set to CATALOG_CAROUSEL and catalog_enabled is set to true , the value of this field will be used as the summary photo in the Automotive Ads for Models (only one value is allowed). To learn about the requirements for the summary photo that can be used in Automotive Ads for Models, see Automotive Ads for Models . When ad_format is set to SINGLE_IMAGE , you can only assign one image ID to this field. To learn about the requirements for images that can be used in single image ads, see Create single image ads ."
+      },
+      {
+        "name": "end_card_cta Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when the following conditions are met: objective_type is LEAD_GENERATION . catalog_enabled is true . An Auto-Model catalog is specified through catalog_id . ad_format is CATALOG_CAROUSEL . Call-to-action for the end card ( image_ids ) of an Automotive Carousel Ad for Models . Enum values: SEARCH_INVENTORY (Recommended): Search inventory. LEARN_MORE : Learn more. SHOP_NOW : Shop now. SIGN_UP : Sign up. CONTACT_US : Contact us. BOOK_NOW : Book now. READ_MORE : Read more. VIEW_MORE : View now. ORDER_NOW : Order now."
+      },
+      {
+        "name": "music_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required in any of the following scenarios: ad_format is CAROUSEL_ADS and you create Standard Carousel Spark Ads via Spark Ads Push or Standard Carousel Non-Spark Ads. ad_format is CATALOG_CAROUSEL . The ID of the piece of music that you want to use in the TikTok Carousel Ad."
+      },
+      {
+        "name": "tiktok_item_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is AUTH_CODE or BC_AUTH_TT and you want to create Spark Ads through Spark Ads Pull. Not supported when identity_type is CUSTOMIZED_USER . The ID of the TikTok post to be used as Spark Ad. To learn more about Spark Ads, see Create Spark Ads . Pass in the item_id you get from the response of the /tt_video/info/ or /identity/video/get/ endpoint. Note : By using Spark Ads, you confirm that you have the rights to use the music in the videos for commercial purposes."
+      },
+      {
+        "name": "carousel_image_index",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Valid only when you set ad_format to CATALOG_CAROUSEL , and a list of additional images has been configured for the specified products. The index that specifies the additional images to be used in the VSA Carousel ad. If this field is not passed, the main images of catalog products will be used in the VSA Carousel ad. Value range: [0, 9]. The number you set via this field represents the position of the product image within the additional image list ( additional_image_urls ) for each catalog product. For instance, carousel_image_index = 1 means that you will use all the images specified via the second image URL in each additional_image_urls value as images in the Carousel Ad. You can retrieve the additional images configured for a product via additional_image_urls returned by /catalog/product/get/ . If you set a number greater than the total number of additional Image URLs specified for the product, this field will be ignored, and the main image ( image_url ) for the product will be used. You can retrieve the main image for a product via image_url returned by /catalog/product/get/ ."
+      },
+      {
+        "name": "ad_text Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "An ad text. It is shown to your audience as part of your ad creative, to deliver the message you intend to communicate to them. If you don't know how to create effective ad texts, you can try the Smart Text feature, which generates ad text recommendations based on the industry and language. This field is required if your ad is non-Spark Ads. Ad text must be 1-100 characters long and cannot contain emoji. Each word in Chinese or Japanese counts as two characters, while each letter in English counts as one character."
+      },
+      {
+        "name": "call_to_action Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Call-to-action text. For TikTok ads, either this field or call_to_action_id must be specified. If both are specified, this field will be ignored. For enum values, see Enumeration - Call-to-Action . For live shopping ads, the call to action must be WATCH_LIVE . Note If objective_type is REACH or VIDEO_VIEW , and landing_page_url or page_id has been specified, then either call_to_action or call_to_action_id is required. If objective_type is APP_PROMOTION , WEB_CONVERSIONS , or TRAFFIC , then either call_to_action or call_to_action_id is required. If objective_type is LEAD_GENERATION : When promotion_type is LEAD_GENERATION , either call_to_action or call_to_action_id is required. When promotion_type is LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE , call_to_action is required and must be set to SEND_MESSAGE . When promotion_type is LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE , call_to_action is required and cannot be set to CALL_NOW . When promotion_type is LEAD_GEN_CLICK_TO_CALL , call_to_action is required. If objective_type is PRODUCT_SALES , call_to_action is required."
+      },
+      {
+        "name": "call_to_action_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the CTA portfolio that you want to use in your ads. A CTA portfolio is a group of auto-optimized CTAs. If both this field and call_to_action are specified, call_to_action will be ignored. For details about auto-optimized CTAs, see CTA recommendations > Dynamic CTAs . Note If objective_type is REACH or VIDEO_VIEW , and landing_page_url or page_id has been specified, then either call_to_action or call_to_action_id is required. If objective_type is APP_PROMOTION , WEB_CONVERSIONS , or TRAFFIC , then either call_to_action or call_to_action_id is required. If ad_format is CAROUSEL_ADS or CATALOG_CAROUSEL , call_to_action_id is not supported. If objective_type is LEAD_GENERATION : When promotion_type is LEAD_GENERATION , either call_to_action or call_to_action_id is required. When promotion_type is LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE , LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE , or LEAD_GEN_CLICK_TO_CALL , call_to_action_id is not supported."
+      },
+      {
+        "name": "card_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Creative portfolio ID. Pass the ID of one of the following creative portfolio types: Display Card. Website info card. Product Card. Product Tiles. Countdown Sticker. Gift Code Sticker. Gesture. Superlike. To create a creative portfolio, use /creative/portfolio/create/ . To learn about how to get the ID of a Display Card, Website info card, Product Card, or Product Tiles portfolio, see Cards . To learn about how to get the ID of a Countdown Sticker or Giftcode Sticker portfolio, see Stickers . To learn about how to get the ID of a Gesture or Superlike portfolio, see Premium Add-ons . Note : You can use this field in the following scenarios. When objective_type = REACH , promotion_type = WEBSITE , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO . When objective_type = TRAFFIC , promotion_type = WEBSITE , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO . When objective_type = VIDEO_VIEWS , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO . When objective_type = ENGAGEMENT , you can only specify a Countdown Sticker portfolio through this field. When objective_type = APP_PROMOTION , promotion_type = WEBSITE , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO . When objective_type = LEAD_GENERATION , you can only specify a Display Card portfolio through this field. When objective_type = WEB_CONVERSIONS , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO . When objective_type = PRODUCT_SALES , placements = PLACEMENT_TIKTOK , and ad_format = SINGLE_VIDEO ."
+      },
+      {
+        "name": "landing_page_url Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Landing page URL. Note If objective_type is APP_PROMOTION , WEB_CONVERSIONS or TRAFFIC , and promotion_type is WEBSITE , then either page_id or landing_page_url is required. If objective_type is APP_PROMOTION or TRAFFIC , and promotion_type is APP_ANDROID / APP_IOS , then neither page_id nor landing_page_url can be used."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Used to preview TikTok Instant Page. Note If objective_type is APP_PROMOTION , WEB_CONVERSIONS or TRAFFIC , and promotion_type is WEBSITE , then either page_id or landing_page_url is required. If objective_type is APP_PROMOTION , or TRAFFIC , and promotion_type is APP_ANDROID / APP_IOS , then neither page_id nor landing_page_url can be used. If ad_format is CATALOG_CAROUSEL , this field is not supported."
+      },
+      {
+        "name": "catalog_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Product catalog ID. Products whose links are shown in the ad are from this catalog. When ad_format is CATALOG_CAROUSEL , this field is required. Note : You need to have Ad promotion or Catalog management permission for the catalog. To check your permission for a catalog, use /bc/asset/get/ . The returned catalog_role should be ADMIN or AD_PROMOTE ."
+      },
+      {
+        "name": "product_specific_type Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Different dimensions to choose products. When ad_format is CATALOG_CAROUSEL , this field is required. The Carousel images will be dynamically chosen from the images for the specified catalog products, and the specified product range needs to include at least two products. Enum values: ALL : Allow TikTok to dynamically choose from all catalog products. PRODUCT_SET : Specify a product set. TikTok will dynamically choose products from this set. CUSTOMIZED_PRODUCTS :Specify up to 20 products from your catalog. If this field is set to ALL , you don't need to input sku_ids or item_group_ids or product_set_id . If this field is set to PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . If this field is set to CUSTOMIZED_PRODUCTS , you need to pass in sku_ids or vehicle_ids . Note : When shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE , you can set this field to ALL or CUSTOMIZED_PRODUCTS . If this field is set to ALL , you don't need to input sku_ids , vehicle_ids , item_group_ids , and product_set_id . If this field is set to CUSTOMIZED_PRODUCTS , item_group_ids is required. When shopping_ads_type is VIDEO and product_source is STORE , specify the products through item_group_ids . When shopping_ads_type is VIDEO and product_source is SHOWCASE , specify the products through showcase_products . When shopping_ads_type is LIVE , you don't need to specify the products."
+      },
+      {
+        "name": "item_group_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "If catalog_id is specified and product_specific_type is set to PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . Required in any of the following scenarios: shopping_ads_type is VIDEO and product_source is STORE . shopping_ads_type is PRODUCT_SHOPPING_ADS , product_source is STORE , and product_specific_type is CUSTOMIZED_PRODUCTS . Product SPU IDs."
+      },
+      {
+        "name": "product_set_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "If catalog_id is specified and product_specific_type is set to PRODUCT_SET , you need to pass in either item_group_ids or product_set_id . The ID of the product set."
+      },
+      {
+        "name": "sku_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when the following conditions are both met: An E-commerce catalog is specified through catalog_id . product_specific_type is set to CUSTOMIZED_PRODUCTS . IDs of the SKUs. Max size: 20."
+      },
+      {
+        "name": "vehicle_ids Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when the following conditions are both met: An Auto-Model catalog is specified through catalog_id . product_specific_type is set to CUSTOMIZED_PRODUCTS . IDs of vehicles. Max size: 20."
+      },
+      {
+        "name": "auto_disclaimer_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Valid only when the following conditions are met: objective_type is LEAD_GENERATION . catalog_enabled is true. An Auto-Model catalog is specified through catalog_id . ad_format is CATALOG_CAROUSEL . The type of disclaimer to show in the Automotive Carousel Ads for Models . Enum values: EMISSION : Emission disclaimer. DISCOUNT : Discount or offer disclaimer. Max size: 1."
+      },
+      {
+        "name": "catalog_authorized_bc_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Same as bc_id . Please use this field when previewing catalog items."
+      },
+      {
+        "name": "dynamic_format",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Not supported when ad_format is CAROUSEL_ADS or CATALOG_CAROUSEL . Dynamic format. Enum values: UNSET : Unset. DYNAMIC_CREATIVE : smart creative. To display different videos, product cards and destinations to each person based on purchase intent, maximizing conversions."
+      },
+      {
+        "name": "vertical_video_strategy",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Not supported when ad_format is CAROUSEL_ADS or CATALOG_CAROUSEL . Video strategy. Enum values: SINGLE_VIDEO : Use a video creative to promote your products. CATALOG_VIDEOS : Generate a dynamic video based on information from the product catalog. LIVE_STREAM : Use livestream to promote your products. Supported only for Live Shopping Ads with ad format as Real-time LIVE. UNSET : Unset. It must be UNSET if dynamic_format = DYNAMIC_CREATIVE ."
+      },
+      {
+        "name": "shopping_ads_video_package_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Product video package ID. Use the /catalog/video/get/ endpoint to get video package IDs."
+      },
+      {
+        "name": "shopping_ads_fallback_type Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "In the Shopping Ads retargeting scenario, the fallback website type when the deeplink fails to be triggered. Enum values: DEFAULT : Unset. CUSTOM : Custom link. Fall back to the web page link you provide. You need to pass in landing_page_url at the same time. SHOPPING_ADS : Product link. Fall back to the web page link you've provided for each product in the catalog. The SHOPPING_ADS value is not supported when the following conditions are met: shopping_ads_type is set to VIDEO (Video Shopping Ads) product_source is set to CATALOG ad_format is set to SINGLE_VIDEO and vertical_video_strategy is set to SINGLE_VIDEO or ad_format is set to CATALOG_CAROUSEL To learn about the supported scenarios for fallback types, see the \" Deeplink - Availability - Fallback type \" section."
+      },
+      {
+        "name": "dynamic_destination",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Not supported when ad_format is CAROUSEL_ADS or CATALOG_CAROUSEL . Dynamic destination strategy. Enum values: DLP : Dynamic Landing Page. Displaying different destinations including a custom website or Instant Product Page to each person based on their profile, behavior, and intent to maximize ad conversion. UNSET : Unset."
+      },
+      {
+        "name": "instant_product_page_used",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Not supported when ad_format is CAROUSEL_ADS or CATALOG_CAROUSEL . Whether to use TikTok Instant Product Page, an auto-generated TikTok instant page that displays a range of products and provides a native experience landing page. When dynamic_destination = DLP , you don't need this parameter. When dynamic_destination = UNSET , you can set this field to true to use TikTok Instant Product Page, and you don't need to pass in page_id ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID. Note : You need to have Operator or Admin permission for the ad account. To check your permission for an ad account, use /bc/asset/get/ . The returned advertiser_role should be ADMIN or OPERATOR . If the ad uses a catalog, you need to have Ad promotion or Catalog management permission for the catalog. To check your permission for a catalog, use /bc/asset/get/ . The returned catalog_role should be ADMIN or AD_PROMOTE ."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of the ad you want to preview. To preview existing regular ads, please use AD . Note : Currently the supported objectives are: REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , APP_PROMOTION , LEAD_GENERATION , WEB_CONVERSIONS , PRODUCT_SALES , and RF_REACH ."
+      },
+      {
+        "name": "ad_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the ad that you want to preview."
+      },
+      {
+        "name": "device",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of device models. Use /tool/device_model/ to get the enum values of device models."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language for the ad. Enum values: ENGLISH , CHINESE , JAPANESE . Default value: ENGLISH ."
+      },
+      {
+        "name": "placement",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The app where you want to deliver your ads. Enum values: PLACEMENT_TIKTOK : Supported only when objective_type is REACH , TRAFFIC , VIDEO_VIEWS , ENGAGEMENT , APP_PROMOTION , LEAD_GENERATION , WEB_CONVERSIONS , or PRODUCT_SALES . PLACEMENT_PANGLE : Supported only when objective_type is TRAFFIC , APP_PROMOTION , LEAD_GENERATION (only when promotion_type is LEAD_GENERATION ), or WEB_CONVERSIONS . ALL : Supported only when objective_type is TRAFFIC , APP_PROMOTION , LEAD_GENERATION (only when promotion_type is LEAD_GENERATION ), or WEB_CONVERSIONS . Note : You need to pass in this field if you want to set non-TikTok placement for your ad. Otherwise, this field will be set as TikTok placement ( PLACEMENT_TIKTOK ) by default."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Preview type. To preview an existing interactive add-on, use CARD ."
+      },
+      {
+        "name": "card_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Creative portfolio ID. Pass the ID of one of the following creative portfolio types: Display Card. Countdown Sticker. Gift Code Sticker. To create a creative portfolio, use /creative/portfolio/create/ . To learn about how to get the ID of a Display Card portfolio, see Cards . To learn about how to get the ID of a Countdown Sticker or Giftcode Sticker portfolio, see Stickers ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of the ad that you want to preview. To preview instant product landing page, use PAGE ."
+      },
+      {
+        "name": "page_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Page ID. To create instant pages, use Instant Page Editor SDK . After you create an instant page, call /page/get/ to get the page ID. ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of the ad that you want to preview. To preview video ads based on parameters, use SINGLE_VIDEO ."
+      },
+      {
+        "name": "video_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video ID. Different placements have different creative specifications. See the Ad Formats chapter on TikTok Business Help Center for details."
+      },
+      {
+        "name": "thumbnail",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the thumbnail. You can get suggested thumbnails by using the Get suggested thumbnails endpoint."
+      },
+      {
+        "name": "profile_image",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the profile image."
+      },
+      {
+        "name": "display_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand name. Number of characters allowed: 1-40 English characters, or 1-20 Chinese/Japanese/Korean characters."
+      },
+      {
+        "name": "ad_text",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad text. Number of characters allowed: 1-100."
+      },
+      {
+        "name": "call_to_action Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Call-to-action text. For TikTok ads, either this field or call_to_action_id must be specified. If both are specified, this field will be ignored. For enum values, see Enumeration - Call-to-action . For live shopping events, the call to action must be WATCH_LIVE ."
+      },
+      {
+        "name": "call_to_action_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the CTA portfolio that you want to use in your ads. A CTA portfolio is a group of auto-optimized CTAs. If both this field and call_to_action are specified, this field will be used, and call_to_action will be ignored. For details about auto-optimized CTAs, see CTA recommendations > Dynamic CTAs ."
+      },
+      {
+        "name": "placements",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Placement. For enum values, see Enumeration - Placement . Different placements have different creative specifications. See the Ad Formats chapter on TikTok Business Help Center for details."
+      },
+      {
+        "name": "device",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of device models. Use Get device models to get the enum values of device models."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language for the ad. Enum values: ENGLISH , CHINESE , JAPANESE . Default: ENGLISH ."
+      },
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "preview_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Type of the ad that you want to preview. To preview image ads based on parameters, use SINGLE_IMAGE ."
+      },
+      {
+        "name": "image_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Image ID. Different placements have different creative specifications. See the Ad Formats chapter on TikTok Business Help Center for details."
+      },
+      {
+        "name": "display_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Brand name. Number of characters allowed: 1-40 English characters, or 1-20 Chinese/Japanese/Korean characters."
+      },
+      {
+        "name": "ad_text",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad text. Number of characters allowed: 1-100."
+      },
+      {
+        "name": "call_to_action Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Call-to-action text. For TikTok ads, either this field or call_to_action_id must be specified. If both are specified, this field will be ignored. For enum values, see Enumeration - Call-to-action . For live shopping events, the call to action must be WATCH_LIVE ."
+      },
+      {
+        "name": "call_to_action_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the CTA portfolio that you want to use in your ads. A CTA portfolio is a group of auto-optimized CTAs. If both this field and call_to_action are specified, this field will be used, and call_to_action will be ignored. For details about auto-optimized CTAs, see CTA recommendations > Dynamic CTAs ."
+      },
+      {
+        "name": "placements",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Placement. For enum values, see Enumeration - Placement . Different placements have different creative specifications. See the Ad Formats chapter on TikTok Business Help Center for details."
+      },
+      {
+        "name": "device",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of device models. Use Get device models to get the enum values of device models."
+      },
+      {
+        "name": "language",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Language for the ad. Enum values: ENGLISH , CHINESE , JAPANESE . Default: ENGLISH ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"PRODUCT_SALES\",\n    \"shopping_ads_type\": \"VIDEO\",\n    \"product_source\": \"STORE\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"TT_USER\",\n    \"ad_format\": \"SINGLE_VIDEO\",\n    \"item_group_ids\": [\"{{item_group_id_1}}\", \"{{item_group_id_2}}\"],\n    \"vertical_video_strategy\": \"SINGLE_VIDEO\",\n    \"video_id\": \"{{video_id}}\",\n    \"ad_text\": \"{{ad_text}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"PRODUCT_SALES\",\n    \"shopping_ads_type\": \"VIDEO\",\n    \"product_source\": \"SHOWCASE\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n    \"identity_type\": \"BC_AUTH_TT\",\n    \"showcase_products\" : [\n        {\n            \"item_group_id\": \"{{item_group_id_1}}\",\n            \"store_id\": \"{{store_id_1}}\"\n        },\n        {\n            \"item_group_id\": \"{{item_group_id_2}}\",\n            \"store_id\": \"{{store_id_2}}\"\n        }\n    ],\n    \"ad_format\": \"SINGLE_VIDEO\",\n    \"vertical_video_strategy\": \"SINGLE_VIDEO\",\n    \"video_id\": \"{{video_id}}\",\n    \"call_to_action\": \"BOOK_NOW\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"card_id\": \"{{card_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"PRODUCT_SALES\",\n    \"shopping_ads_type\": \"PRODUCT_SHOPPING_ADS\",\n    \"product_source\": \"STORE\",\n    \"store_id\": \"{{store_id}}\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"product_specific_type\": \"ALL\",\n    \"item_group_ids\": [\"{{item_group_id_1}}\", \"{{item_group_id_2}}\"]\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location  --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"PRODUCT_SALES\",\n    \"shopping_ads_type\": \"LIVE\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"TT_USER\",\n    \"ad_format\": \"LIVE_CONTENT\",\n    \"vertical_video_strategy\": \"SINGLE_VIDEO\",\n    \"video_id\": \"{{video_id}}\",\n    \"ad_text\": \"{{ad_text}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"PRODUCT_SALES\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"TT_USER\",\n    \"shopping_ads_type\": \"LIVE\",\n    \"ad_format\": \"LIVE_CONTENT\",\n    \"vertical_video_strategy\": \"LIVE_STREAM\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"CUSTOMIZED_USER\",\n    \"objective_type\": \"TRAFFIC\",\n    \"ad_format\": \"SINGLE_VIDEO\",\n    \"promotion_type\": \"WEBSITE\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"call_to_action\": \"SHOP_NOW\",\n    \"placement\": \"ALL\",\n    \"video_id\": \"{{video_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"CUSTOMIZED_USER\",\n    \"objective_type\": \"TRAFFIC\",\n    \"ad_format\": \"SINGLE_VIDEO\",\n    \"promotion_type\": \"WEBSITE\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"call_to_action\": \"SHOP_NOW\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"preview_format\": \"SEARCH_RESULTS\",\n    \"video_id\": \"{{video_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"ADS_CREATION\",\n    \"objective_type\": \"APP_PROMOTION\",\n    \"is_smart_performance_campaign\": false,\n    \"promotion_type\": \"APP_ANDROID\",\n    \"placement\": \"PLACEMENT_TIKTOK\",\n    \"ad_format\": \"CAROUSEL_ADS\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"call_to_action\": \"DOWNLOAD_NOW\",\n    \"instant_product_page_used\": false,  \n    \"image_ids\": [\"{{image_id}}\", \"{{image_id}}\"],\n    \"music_id\": \"{{music_id}}\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"identity_type\": \"CUSTOMIZED_USER\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"AD\",\n    \"ad_id\": \"{{ad_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"CARD\",\n    \"card_id\": \"{{card_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"PAGE\",\n    \"page_id\": \"{{page_id}}\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"SINGLE_VIDEO\",\n    \"video_id\": \"{{video_id}}\",\n    \"display_name\": \"{{display_name}}\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"call_to_action\": \"APPLY_NOW\",\n    \"placements\": [\n        \"PLACEMENT_TIKTOK\"\n    ],\n    \"device\": [\n        \"{{device}}\"\n    ],\n    \"language\": \"CHINESE\"\n}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location 'https://ads.tiktok.com/open_api/v1.3/creative/ads_preview/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"preview_type\": \"SINGLE_IMAGE\",\n    \"image_id\": \"{{image_id}}\",\n    \"ad_text\": \"{{ad_text}}\",\n    \"display_name\": \"{{display_name}}\",\n    \"call_to_action\": \"CONTACT_US\",\n    \"placements\": [\n        \"PLACEMENT_PANGLE\"\n    ],\n    \"device\": [\n        \"{{device}}\"\n    ],\n    \"language\": \"CHINESE\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"tips\": [\n            {\n                \"messages\": [\n                    \"The resolution should be 1280*720 at least.\"\n                ],\n                \"placement\": \"PLACEMENT_TIKTOK\"\n            }\n        ],\n        \"preview_link\": \"https://ads.tiktok.com/ad_preview_tool?ad_preview_id=5681cba0fcd211eab33c351a98xxxxx\",\n        \"iframe\": \"<iframe src=\"https://ads.tiktok.com/ad_preview_tool?ad_preview_id=5681cba0fcd211eab33c351a98xxxxx\"></iframe>\"\n    },\n    \"request_id\": \"202009221251300101151531921B1D3F96\"\n}"
+    }
+  }
+}
