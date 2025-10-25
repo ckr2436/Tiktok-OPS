@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.core.deps import SessionUser, require_platform_admin, require_session
 from app.data.models.audit_logs import AuditLog
-from app.data.models.providers import PlatformPolicy, PlatformProvider, PolicyMode
+from app.data.models.providers import PlatformPolicy, PolicyMode
 
 
 def _make_admin_user() -> SessionUser:
@@ -19,26 +19,11 @@ def _make_admin_user() -> SessionUser:
         role="owner",
         is_active=True,
     )
-
-
-def _seed_provider(db_session) -> PlatformProvider:
-    provider = PlatformProvider(
-        key="tiktok-business",
-        display_name="TikTok Business",
-        is_enabled=True,
-    )
-    db_session.add(provider)
-    db_session.commit()
-    return provider
-
-
 def test_policy_crud_flow(app_client, db_session) -> None:
     app, client = app_client
     admin_user = _make_admin_user()
     app.dependency_overrides[require_session] = lambda: admin_user
     app.dependency_overrides[require_platform_admin] = lambda: admin_user
-
-    _seed_provider(db_session)
 
     create_payload = {
         "provider_key": "tiktok-business",
@@ -144,13 +129,43 @@ def test_policy_crud_flow(app_client, db_session) -> None:
     assert toggle_details["new"]["is_enabled"] is False
 
 
-def test_list_policies_pagination(app_client, db_session) -> None:
+def test_create_policy_unknown_provider_returns_400(app_client) -> None:
     app, client = app_client
     admin_user = _make_admin_user()
     app.dependency_overrides[require_session] = lambda: admin_user
     app.dependency_overrides[require_platform_admin] = lambda: admin_user
 
-    _seed_provider(db_session)
+    resp = client.post(
+        "/api/admin/platform/policies",
+        json={
+            "provider_key": "unknown-provider",
+            "mode": PolicyMode.WHITELIST.value,
+            "domain": "example.com",
+        },
+    )
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"]["code"] == "PROVIDER_NOT_FOUND"
+
+
+def test_list_providers_returns_seeded_provider(app_client) -> None:
+    app, client = app_client
+    admin_user = _make_admin_user()
+    app.dependency_overrides[require_session] = lambda: admin_user
+    app.dependency_overrides[require_platform_admin] = lambda: admin_user
+
+    resp = client.get("/api/admin/platform/policies/providers")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert any(item["key"] == "tiktok-business" for item in payload)
+
+def test_list_policies_pagination(app_client, db_session) -> None:
+    app, client = app_client
+    admin_user = _make_admin_user()
+    app.dependency_overrides[require_session] = lambda: admin_user
+    app.dependency_overrides[require_platform_admin] = lambda: admin_user
 
     for idx in range(35):
         policy = PlatformPolicy(
