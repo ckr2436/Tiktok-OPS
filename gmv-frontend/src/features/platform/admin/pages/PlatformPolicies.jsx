@@ -604,7 +604,27 @@ function PolicyModal({ open, mode, policy, providers, onClose, onSuccess }) {
         onSuccess('策略已创建')
       }
     } catch (err) {
-      setSubmitError(err?.message || '保存失败')
+      const apiError = err?.payload?.error || {}
+      const nextFieldErrors = {}
+      if (apiError.code === 'PROVIDER_NOT_FOUND' || apiError.code === 'PROVIDER_NOT_CONFIGURED') {
+        nextFieldErrors.provider_key = apiError.message || '所选提供方不可用'
+      }
+      if (apiError.code === 'PROVIDER_DISABLED') {
+        nextFieldErrors.provider_key = apiError.message || '该提供方已停用'
+      }
+      if (apiError.code === 'INVALID_DOMAIN') {
+        nextFieldErrors.domain = apiError.message || '域名格式不正确'
+      }
+      if (apiError.code === 'POLICY_EXISTS') {
+        nextFieldErrors.domain = apiError.message || '该域名策略已存在'
+      }
+
+      if (Object.keys(nextFieldErrors).length > 0) {
+        setErrors(nextFieldErrors)
+        setSubmitError('')
+      } else {
+        setSubmitError(err?.message || '保存失败')
+      }
     } finally {
       setSubmitting(false)
     }

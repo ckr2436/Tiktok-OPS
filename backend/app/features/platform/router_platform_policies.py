@@ -17,7 +17,7 @@ from app.core.errors import APIError
 from app.data.db import get_db
 from app.data.models.providers import PlatformPolicy, PlatformProvider, PolicyMode
 from app.services.audit import log_event
-from app.services.providers.base import registry
+from app.services.providers import catalog as provider_catalog
 
 
 logger = logging.getLogger("gmv.platform.policies")
@@ -50,6 +50,16 @@ class PolicyPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ErrorDetail(BaseModel):
+    code: str = Field(description="Stable error code")
+    message: str = Field(description="Human readable error message")
+    data: dict[str, Any] | None = Field(default=None, description="Optional structured data")
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
 
 
 class PolicyCreateRequest(BaseModel):
@@ -98,23 +108,32 @@ def _normalize_description(value: str | None) -> str | None:
 
 
 def _ensure_provider(db: Session, key: str) -> PlatformProvider:
-    provider = db.scalar(
-        select(PlatformProvider).where(PlatformProvider.key == key)
-    )
+    provider_catalog.sync_registry_with_session(db)
+    normalized = _normalize_provider_key(key)
+
+    registry_keys = {definition.key for definition in provider_catalog.iter_registry_definitions()}
+    if normalized not in registry_keys:
+        raise APIError(
+            "PROVIDER_NOT_FOUND",
+            f"Provider '{key}' is not registered.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    provider = provider_catalog.get_provider(db, normalized)
     if provider is None:
-        try:
-            registry.get(key)
-        except KeyError as exc:
-            raise APIError(
-                "PROVIDER_NOT_FOUND",
-                f"Provider '{key}' is not registered.",
-                status.HTTP_404_NOT_FOUND,
-            ) from exc
         raise APIError(
             "PROVIDER_NOT_CONFIGURED",
             f"Provider '{key}' is not configured in the platform.",
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_400_BAD_REQUEST,
         )
+
+    if not bool(provider.is_enabled):
+        raise APIError(
+            "PROVIDER_DISABLED",
+            f"Provider '{key}' is currently disabled.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     return provider
 
 
@@ -187,15 +206,20 @@ def _parse_enabled_filter(value: str | None) -> bool | None:
     "/providers",
     response_model=list[ProviderOption],
     summary="List registered platform policy providers",
+    responses={
+        status.HTTP_403_FORBIDDEN: {
+            "model": ErrorResponse,
+            "description": "User is not a platform administrator.",
+        }
+    },
 )
 def list_providers(
     _: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> list[ProviderOption]:
-    providers = db.scalars(
-        select(PlatformProvider).order_by(PlatformProvider.display_name)
-    ).all()
-    result = [
+    provider_catalog.sync_registry_with_session(db)
+    providers = provider_catalog.list_configured_providers(db)
+    return [
         ProviderOption(
             key=p.key,
             name=p.display_name,
@@ -203,17 +227,6 @@ def list_providers(
         )
         for p in providers
     ]
-    if not result:
-        # fallback to registry so UI still shows options even if DB is empty
-        for provider in registry.list():
-            result.append(
-                ProviderOption(
-                    key=provider.key(),
-                    name=provider.display_name(),
-                    is_enabled=True,
-                )
-            )
-    return result
 
 
 @router.get(
@@ -270,6 +283,20 @@ def list_policies(
     response_model=PolicyResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a platform policy",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Validation failed (unknown provider, invalid domain, duplicate policy, etc.)",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "model": ErrorResponse,
+            "description": "User is not a platform administrator.",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "A policy with the same provider, mode and domain already exists.",
+        },
+    },
 )
 def create_policy(
     req: PolicyCreateRequest,
