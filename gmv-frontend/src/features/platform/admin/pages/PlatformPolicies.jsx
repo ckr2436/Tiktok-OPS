@@ -15,11 +15,24 @@ import {
 const PAGE_SIZE = 20
 const DOMAIN_PATTERN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
+const MODE_VALUES = ['WHITELIST', 'BLACKLIST']
+
 const MODE_OPTIONS = [
   { value: '', label: '全部模式' },
-  { value: 'whitelist', label: '白名单' },
-  { value: 'blacklist', label: '黑名单' },
+  { value: MODE_VALUES[0], label: '白名单' },
+  { value: MODE_VALUES[1], label: '黑名单' },
 ]
+
+const normalizePolicyMode = (value, fallback = MODE_VALUES[0]) => {
+  const normalized = (value ?? '').toString().trim().toUpperCase()
+  if (MODE_VALUES.includes(normalized)) return normalized
+  return fallback
+}
+
+const normalizeFilterMode = (value) => {
+  const normalized = (value ?? '').toString().trim().toUpperCase()
+  return MODE_VALUES.includes(normalized) ? normalized : ''
+}
 
 const ENABLED_OPTIONS = [
   { value: '', label: '全部状态' },
@@ -31,7 +44,7 @@ export default function PlatformPolicies() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [providerKey, setProviderKey] = useState(() => searchParams.get('provider_key') || '')
-  const [mode, setMode] = useState(() => searchParams.get('mode') || '')
+  const [mode, setMode] = useState(() => normalizeFilterMode(searchParams.get('mode')))
   const [domainFilter, setDomainFilter] = useState(() => searchParams.get('domain') || '')
   const [enabledFilter, setEnabledFilter] = useState(() => searchParams.get('enabled') || '')
   const [page, setPage] = useState(() => {
@@ -83,7 +96,10 @@ export default function PlatformPolicies() {
   const updateSearchParams = useCallback((next) => {
     const params = new URLSearchParams()
     if (next.provider_key) params.set('provider_key', next.provider_key)
-    if (next.mode) params.set('mode', next.mode)
+    if (next.mode) {
+      const normalized = normalizeFilterMode(next.mode)
+      if (normalized) params.set('mode', normalized)
+    }
     if (next.domain?.trim()) params.set('domain', next.domain.trim())
     if (next.enabled) params.set('enabled', next.enabled)
     params.set('page', String(next.page))
@@ -92,7 +108,7 @@ export default function PlatformPolicies() {
 
   useEffect(() => {
     const nextProvider = searchParams.get('provider_key') || ''
-    const nextMode = searchParams.get('mode') || ''
+    const nextMode = normalizeFilterMode(searchParams.get('mode'))
     const nextDomain = searchParams.get('domain') || ''
     const nextEnabled = searchParams.get('enabled') || ''
     const nextPageRaw = parseInt(searchParams.get('page') || '1', 10)
@@ -121,7 +137,12 @@ export default function PlatformPolicies() {
         }
         const data = await listPolicies(query)
         if (cancelled) return
-        const items = Array.isArray(data?.items) ? data.items : []
+        const items = Array.isArray(data?.items)
+          ? data.items.map((item) => ({
+              ...item,
+              mode: normalizePolicyMode(item.mode),
+            }))
+          : []
         setPolicies(items)
         setTotal(Number.isFinite(data?.total) ? data.total : 0)
         const pageSize = Number.isFinite(data?.page_size) ? data.page_size : PAGE_SIZE
@@ -176,8 +197,9 @@ export default function PlatformPolicies() {
         setProviderKey(value)
       }
       if (key === 'mode') {
-        next.mode = value
-        setMode(value)
+        const normalized = normalizeFilterMode(value)
+        next.mode = normalized
+        setMode(normalized)
       }
       if (key === 'domain') {
         next.domain = value
@@ -383,7 +405,7 @@ export default function PlatformPolicies() {
               policies.map((item) => (
                 <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <Td>{providerLabel.get(item.provider_key) || item.provider_key}</Td>
-                  <Td>{item.mode === 'whitelist' ? '白名单' : '黑名单'}</Td>
+                  <Td>{item.mode === MODE_VALUES[0] ? '白名单' : '黑名单'}</Td>
                   <Td mono>{item.domain}</Td>
                   <Td>
                     <StatusBadge enabled={item.is_enabled} />
@@ -547,7 +569,7 @@ function Toast({ toast, onDismiss }) {
 
 function PolicyModal({ open, mode, policy, providers, onClose, onSuccess }) {
   const [providerKey, setProviderKey] = useState(policy?.provider_key || '')
-  const [policyMode, setPolicyMode] = useState(policy?.mode || 'whitelist')
+  const [policyMode, setPolicyMode] = useState(normalizePolicyMode(policy?.mode))
   const [domain, setDomain] = useState(policy?.domain || '')
   const [description, setDescription] = useState(policy?.description || '')
   const [enabled, setEnabled] = useState(policy?.is_enabled ?? true)
@@ -558,7 +580,7 @@ function PolicyModal({ open, mode, policy, providers, onClose, onSuccess }) {
   useEffect(() => {
     if (!open) return
     setProviderKey(policy?.provider_key || '')
-    setPolicyMode(policy?.mode || 'whitelist')
+    setPolicyMode(normalizePolicyMode(policy?.mode))
     setDomain(policy?.domain || '')
     setDescription(policy?.description || '')
     setEnabled(policy?.is_enabled ?? true)
@@ -650,9 +672,13 @@ function PolicyModal({ open, mode, policy, providers, onClose, onSuccess }) {
         </FormField>
 
         <FormField label="策略模式" error={errors.mode}>
-          <select className="input" value={policyMode} onChange={(e) => setPolicyMode(e.target.value)}>
-            <option value="whitelist">白名单</option>
-            <option value="blacklist">黑名单</option>
+          <select
+            className="input"
+            value={policyMode}
+            onChange={(e) => setPolicyMode(normalizePolicyMode(e.target.value))}
+          >
+            <option value={MODE_VALUES[0]}>白名单</option>
+            <option value={MODE_VALUES[1]}>黑名单</option>
           </select>
         </FormField>
 

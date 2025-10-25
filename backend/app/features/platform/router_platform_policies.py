@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BeforeValidator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/api/admin/platform/policies", tags=["Platform"])
 _DOMAIN_PATTERN = re.compile(
     r"^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
 )
+_ALLOWED_POLICY_MODE_VALUES = [mode.value for mode in PolicyMode]
 
 
 class ProviderOption(BaseModel):
@@ -62,16 +64,76 @@ class ErrorResponse(BaseModel):
     error: ErrorDetail
 
 
+def _coerce_policy_mode(value: Any) -> PolicyMode:
+    if isinstance(value, PolicyMode):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if not normalized:
+            raise PydanticCustomError(
+                "policy_invalid_mode",
+                "Policy mode is required.",
+                {"allowed": _ALLOWED_POLICY_MODE_VALUES},
+            )
+        try:
+            return PolicyMode(normalized)
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise PydanticCustomError(
+                "policy_invalid_mode",
+                "Invalid policy mode.",
+                {"allowed": _ALLOWED_POLICY_MODE_VALUES},
+            ) from exc
+    raise PydanticCustomError(
+        "policy_invalid_mode",
+        "Invalid policy mode type.",
+        {"allowed": _ALLOWED_POLICY_MODE_VALUES},
+    )
+
+
+def _coerce_optional_policy_mode(value: Any) -> PolicyMode | None:
+    if value is None:
+        return None
+    return _coerce_policy_mode(value)
+
+
+def _parse_mode_filter(value: Any) -> PolicyMode | None:
+    if value is None:
+        return None
+    if isinstance(value, PolicyMode):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if not normalized:
+            return None
+        try:
+            return PolicyMode(normalized)
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise APIError(
+                "POLICY_INVALID_MODE",
+                "Invalid policy mode. Allowed values: WHITELIST, BLACKLIST.",
+                status.HTTP_400_BAD_REQUEST,
+            ) from exc
+    raise APIError(
+        "POLICY_INVALID_MODE",
+        "Invalid policy mode. Allowed values: WHITELIST, BLACKLIST.",
+        status.HTTP_400_BAD_REQUEST,
+    )
+
+
+PolicyModeInput = Annotated[PolicyMode, BeforeValidator(_coerce_policy_mode)]
+PolicyModeOptionalInput = Annotated[PolicyMode | None, BeforeValidator(_coerce_optional_policy_mode)]
+
+
 class PolicyCreateRequest(BaseModel):
     provider_key: str = Field(min_length=1, max_length=64)
-    mode: PolicyMode
+    mode: PolicyModeInput
     domain: str = Field(min_length=1, max_length=255)
     is_enabled: bool = True
     description: str | None = Field(default=None, max_length=512)
 
 
 class PolicyUpdateRequest(BaseModel):
-    mode: PolicyMode | None = None
+    mode: PolicyModeOptionalInput = None
     domain: str | None = Field(default=None, min_length=1, max_length=255)
     is_enabled: bool | None = None
     description: str | None = Field(default=None, max_length=512)
@@ -236,7 +298,7 @@ def list_providers(
 )
 def list_policies(
     provider_key: str | None = Query(default=None, max_length=64),
-    mode: PolicyMode | None = Query(default=None),
+    mode: str | None = Query(default=None),
     domain: str | None = Query(default=None, max_length=255),
     enabled: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -245,6 +307,7 @@ def list_policies(
     db: Session = Depends(get_db),
 ) -> PolicyPage:
     normalized_key = _normalize_provider_key(provider_key) if provider_key else None
+    mode_filter = _parse_mode_filter(mode)
     enabled_filter = _parse_enabled_filter(enabled)
     domain_filter = domain.strip().lower() if domain else None
 
@@ -252,7 +315,7 @@ def list_policies(
     base_stmt = _apply_policy_filters(
         base_stmt,
         provider_key=normalized_key,
-        mode=mode,
+        mode=mode_filter,
         domain=domain_filter,
         enabled=enabled_filter,
     )
@@ -260,7 +323,7 @@ def list_policies(
     count_stmt = _apply_policy_filters(
         select(func.count()).select_from(PlatformPolicy),
         provider_key=normalized_key,
-        mode=mode,
+        mode=mode_filter,
         domain=domain_filter,
         enabled=enabled_filter,
     )
