@@ -32,8 +32,8 @@ UBigInt = (
 
 
 class PolicyMode(str, Enum):
-    WHITELIST = "whitelist"
-    BLACKLIST = "blacklist"
+    WHITELIST = "WHITELIST"
+    BLACKLIST = "BLACKLIST"
 
 
 class PolicyDomain(str, Enum):
@@ -94,7 +94,15 @@ class PlatformPolicy(Base):
         ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="SET NULL"),
         nullable=True,
     )
-    mode: Mapped[str] = mapped_column(SAEnum(PolicyMode, name="ttb_policy_mode"), nullable=False)
+    mode: Mapped[str] = mapped_column(
+        SAEnum(
+            PolicyMode,
+            name="ttb_policy_mode",
+            validate_strings=True,
+        ),
+        nullable=False,
+        server_default=PolicyMode.WHITELIST.value,
+    )
     domain: Mapped[str | None] = mapped_column(String(255), default=None)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     description: Mapped[str | None] = mapped_column(Text, default=None)

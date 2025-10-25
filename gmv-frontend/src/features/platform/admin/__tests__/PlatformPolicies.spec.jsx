@@ -29,7 +29,7 @@ const policyFixtures = [
   {
     id: 1,
     provider_key: 'tiktok-business',
-    mode: 'whitelist',
+    mode: 'WHITELIST',
     domain: 'api.example.com',
     is_enabled: true,
     description: 'Allow',
@@ -84,7 +84,7 @@ describe('PlatformPolicies page', () => {
     const modal = await screen.findByRole('dialog')
     const providerSelect = within(modal).getByLabelText('提供方')
     await userEvent.selectOptions(providerSelect, 'tiktok-business')
-    await userEvent.selectOptions(within(modal).getByLabelText('策略模式'), 'whitelist')
+    await userEvent.selectOptions(within(modal).getByLabelText('策略模式'), 'WHITELIST')
     const domainInput = within(modal).getByPlaceholderText('例如：api.example.com 或 *.example.com')
     await userEvent.clear(domainInput)
     await userEvent.type(domainInput, 'API.EXAMPLE.COM')
@@ -97,7 +97,7 @@ describe('PlatformPolicies page', () => {
     await waitFor(() => {
       expect(createPolicy).toHaveBeenCalledWith({
         provider_key: 'tiktok-business',
-        mode: 'whitelist',
+        mode: 'WHITELIST',
         domain: 'api.example.com',
         description: 'Created via test',
         is_enabled: true,

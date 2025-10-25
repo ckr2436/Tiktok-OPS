@@ -27,7 +27,7 @@ def test_policy_crud_flow(app_client, db_session) -> None:
 
     create_payload = {
         "provider_key": "tiktok-business",
-        "mode": PolicyMode.WHITELIST.value,
+        "mode": "whitelist",
         "domain": "api.example.com",
         "description": "Allow API domain",
     }
@@ -63,7 +63,7 @@ def test_policy_crud_flow(app_client, db_session) -> None:
 
     # update policy
     update_payload = {
-        "mode": PolicyMode.BLACKLIST.value,
+        "mode": "blacklist",
         "domain": "shop.example.com",
         "description": "Block shop",
     }
@@ -94,6 +94,15 @@ def test_policy_crud_flow(app_client, db_session) -> None:
     assert resp.status_code == 200
     disabled = resp.json()
     assert disabled["total"] == 1
+
+    # ensure mode filter is case-insensitive
+    resp = client.get(
+        "/api/admin/platform/policies",
+        params={"mode": "blacklist"},
+    )
+    assert resp.status_code == 200
+    mode_filtered = resp.json()
+    assert mode_filtered["total"] == 1
 
     # delete policy
     resp = client.delete(f"/api/admin/platform/policies/{policy_id}")
@@ -147,6 +156,26 @@ def test_create_policy_unknown_provider_returns_400(app_client) -> None:
     assert resp.status_code == 400
     body = resp.json()
     assert body["error"]["code"] == "PROVIDER_NOT_FOUND"
+
+
+def test_create_policy_invalid_mode_returns_400(app_client) -> None:
+    app, client = app_client
+    admin_user = _make_admin_user()
+    app.dependency_overrides[require_session] = lambda: admin_user
+    app.dependency_overrides[require_platform_admin] = lambda: admin_user
+
+    resp = client.post(
+        "/api/admin/platform/policies",
+        json={
+            "provider_key": "tiktok-business",
+            "mode": "blocklist",
+            "domain": "example.com",
+        },
+    )
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"]["code"] == "POLICY_INVALID_MODE"
 
 
 def test_list_providers_returns_seeded_provider(app_client) -> None:

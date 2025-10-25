@@ -19,7 +19,7 @@ UBigInt = (
     .with_variant(sa.Integer(), "sqlite")
 )
 
-policy_mode_enum = sa.Enum("whitelist", "blacklist", name="ttb_policy_mode")
+policy_mode_enum = sa.Enum("WHITELIST", "BLACKLIST", name="ttb_policy_mode")
 policy_domain_enum = sa.Enum("bc", "advertiser", "shop", "product", name="ttb_policy_domain")
 
 
@@ -81,8 +81,9 @@ def upgrade() -> None:
         ),
         sa.Column(
             "mode",
-            policy_mode_enum if not is_mysql else sa.Enum("whitelist", "blacklist", name="ttb_policy_mode"),
+            policy_mode_enum if not is_mysql else sa.Enum("WHITELIST", "BLACKLIST", name="ttb_policy_mode"),
             nullable=False,
+            server_default=sa.text("'WHITELIST'"),
         ),
         sa.Column("is_enabled", sa.Boolean, nullable=False, server_default=sa.text("1")),
         sa.Column("description", sa.Text, nullable=True),
