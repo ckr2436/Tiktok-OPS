@@ -16,6 +16,7 @@ from .providers import (
     PlatformPolicy,
     PlatformPolicyItem,
     PolicyMode,
+    PolicyEnforcementMode,
     PolicyDomain,
 )
 
@@ -36,5 +37,6 @@ __all__ = [
     "PlatformPolicy",
     "PlatformPolicyItem",
     "PolicyMode",
+    "PolicyEnforcementMode",
     "PolicyDomain",
 ]

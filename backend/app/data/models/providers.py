@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -34,6 +35,11 @@ UBigInt = (
 class PolicyMode(str, Enum):
     WHITELIST = "WHITELIST"
     BLACKLIST = "BLACKLIST"
+
+
+class PolicyEnforcementMode(str, Enum):
+    ENFORCE = "ENFORCE"
+    OBSERVE = "OBSERVE"
 
 
 class PolicyDomain(str, Enum):
@@ -74,6 +80,12 @@ class PlatformPolicy(Base):
     __table_args__ = (
         Index("idx_policies_provider_enabled", "provider_key", "is_enabled"),
         Index("idx_policies_workspace_enabled", "workspace_id", "is_enabled"),
+        Index(
+            "idx_policies_workspace_provider_enabled",
+            "workspace_id",
+            "provider_key",
+            "is_enabled",
+        ),
         UniqueConstraint(
             "provider_key",
             "mode",
@@ -106,6 +118,27 @@ class PlatformPolicy(Base):
     domain: Mapped[str | None] = mapped_column(String(255), default=None)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     description: Mapped[str | None] = mapped_column(Text, default=None)
+    scope_bc_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    scope_advertiser_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    scope_shop_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    scope_region_codes_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    scope_product_id_patterns_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    rate_limit_rps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rate_burst: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    window_cron: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    max_concurrency: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_entities_per_run: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enforcement_mode: Mapped[str] = mapped_column(
+        SAEnum(
+            PolicyEnforcementMode,
+            name="ttb_policy_enforcement_mode",
+            validate_strings=True,
+        ),
+        nullable=False,
+        server_default=PolicyEnforcementMode.ENFORCE.value,
+    )
+    extra_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         UBigInt,
         ForeignKey("users.id", onupdate="RESTRICT", ondelete="SET NULL"),
