@@ -1,0 +1,458 @@
+openapi: 3.1.0
+info:
+  title: Admin Platform Policies API
+  version: 1.0.0
+  description: |
+    Versioned admin endpoints for managing provider platform policies with validation,
+    normalization, runtime enforcement, and dry-run evaluation helpers.
+servers:
+  - url: /api/v1
+paths:
+  /admin/platform/policies:
+    get:
+      tags: [Admin / Platform Policies]
+      summary: List platform policies
+      parameters:
+        - in: query
+          name: provider_key
+          schema:
+            type: string
+            description: Filter by provider key
+        - in: query
+          name: mode
+          schema:
+            $ref: '#/components/schemas/PolicyMode'
+        - in: query
+          name: domain
+          schema:
+            type: string
+            description: Case-insensitive domain substring filter
+        - in: query
+          name: name
+          schema:
+            type: string
+            description: Case-insensitive name substring filter
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [enabled, disabled]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [created_at, -created_at, updated_at, -updated_at, name, -name]
+            default: -updated_at
+      responses:
+        '200':
+          description: Paginated policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyPage'
+    post:
+      tags: [Admin / Platform Policies]
+      summary: Create a new policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyWriteRequest'
+      responses:
+        '201':
+          description: Created policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/PolicyDenied'
+  /admin/platform/policies/{policy_id}:
+    put:
+      tags: [Admin / Platform Policies]
+      summary: Update an existing policy
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyWriteRequest'
+      responses:
+        '200':
+          description: Updated policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/PolicyDenied'
+    delete:
+      tags: [Admin / Platform Policies]
+      summary: Delete a policy
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      responses:
+        '200':
+          description: Deletion acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/PolicyDenied'
+  /admin/platform/policies/{policy_id}/enable:
+    post:
+      tags: [Admin / Platform Policies]
+      summary: Enable a policy (idempotent)
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      responses:
+        '200':
+          description: Enabled policy state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/PolicyDenied'
+  /admin/platform/policies/{policy_id}/disable:
+    post:
+      tags: [Admin / Platform Policies]
+      summary: Disable a policy (idempotent)
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      responses:
+        '200':
+          description: Disabled policy state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/PolicyDenied'
+  /admin/platform/policies/{policy_id}/dry-run:
+    post:
+      tags: [Admin / Platform Policies]
+      summary: Dry-run evaluate provider policies and return trace output
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyDryRunRequest'
+      responses:
+        '200':
+          description: Dry-run decision report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyDryRunResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    PolicyId:
+      in: path
+      name: policy_id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            not_found:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Policy not found.
+    ValidationError:
+      description: Validation failure with field errors
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_domains:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation failed.
+                  data:
+                    fields:
+                      domains: domains must contain at least one valid host.
+    PolicyDenied:
+      description: Provider policy enforcement denied request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            denied:
+              value:
+                error:
+                  code: POLICY_DENIED
+                  message: Provider policy denied request.
+                  data:
+                    hint: Review platform policy configuration.
+                    decision:
+                      allowed: false
+                      enforcement_mode: ENFORCE
+                      reason: Matched blacklist policy
+                      matched_policy_ids: [1]
+                      observed_policy_ids: []
+  schemas:
+    PolicyMode:
+      type: string
+      enum: [WHITELIST, BLACKLIST]
+    PolicyEnforcementMode:
+      type: string
+      enum: [ENFORCE, DRYRUN, OFF]
+    BusinessScopes:
+      type: object
+      properties:
+        include:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        exclude:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      additionalProperties: false
+    PolicyLimits:
+      type: object
+      properties:
+        rate_limit_rps:
+          type: integer
+          minimum: 1
+          nullable: true
+        rate_burst:
+          type: integer
+          minimum: 1
+          nullable: true
+        cooldown_seconds:
+          type: integer
+          minimum: 0
+          default: 0
+        window_cron:
+          type: string
+          nullable: true
+        max_concurrency:
+          type: integer
+          minimum: 1
+          nullable: true
+        max_entities_per_run:
+          type: integer
+          minimum: 1
+          nullable: true
+    PolicyResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        provider_key:
+          type: string
+        name:
+          type: string
+        mode:
+          $ref: '#/components/schemas/PolicyMode'
+        enforcement_mode:
+          $ref: '#/components/schemas/PolicyEnforcementMode'
+        status:
+          type: string
+          enum: [ENABLED, DISABLED]
+        is_enabled:
+          type: boolean
+        domains:
+          type: array
+          items:
+            type: string
+        business_scopes:
+          $ref: '#/components/schemas/BusinessScopes'
+        limits:
+          $ref: '#/components/schemas/PolicyLimits'
+        description:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PolicyPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+    PolicyWriteRequest:
+      type: object
+      required:
+        - provider_key
+        - name
+        - mode
+        - enforcement_mode
+        - domains
+      properties:
+        provider_key:
+          type: string
+        name:
+          type: string
+          maxLength: 128
+        mode:
+          $ref: '#/components/schemas/PolicyMode'
+        enforcement_mode:
+          $ref: '#/components/schemas/PolicyEnforcementMode'
+        domains:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            description: Lowercase host without scheme or port.
+        business_scopes:
+          $ref: '#/components/schemas/BusinessScopes'
+        description:
+          type: string
+          nullable: true
+        is_enabled:
+          type: boolean
+          default: true
+        rate_limit_rps:
+          type: integer
+          minimum: 1
+          nullable: true
+        rate_burst:
+          type: integer
+          minimum: 1
+          nullable: true
+        cooldown_seconds:
+          type: integer
+          minimum: 0
+          default: 0
+        max_concurrency:
+          type: integer
+          minimum: 1
+          nullable: true
+        max_entities_per_run:
+          type: integer
+          minimum: 1
+          nullable: true
+        window_cron:
+          type: string
+          nullable: true
+    PolicyDryRunRequest:
+      type: object
+      properties:
+        resource_type:
+          type: string
+          default: admin.platform.policy.test
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: string
+    PolicyDryRunResponse:
+      type: object
+      properties:
+        provider_key:
+          type: string
+        allowed:
+          type: boolean
+        enforcement_mode:
+          $ref: '#/components/schemas/PolicyEnforcementMode'
+        reason:
+          type: string
+          nullable: true
+        matched_policy_ids:
+          type: array
+          items:
+            type: integer
+        observed_policy_ids:
+          type: array
+          items:
+            type: integer
+        limits:
+          $ref: '#/components/schemas/PolicyLimits'
+        trace:
+          type: array
+          items:
+            type: object
+            properties:
+              policy_id:
+                type: integer
+              mode:
+                $ref: '#/components/schemas/PolicyMode'
+              enforcement_mode:
+                $ref: '#/components/schemas/PolicyEnforcementMode'
+              matched:
+                type: boolean
+              domain_match:
+                type: boolean
+              scope_match:
+                type: boolean
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            data:
+              type: object
+          required: [code, message]

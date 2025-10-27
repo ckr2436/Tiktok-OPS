@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import re
 from typing import Iterable, Mapping, Sequence
@@ -40,6 +40,7 @@ class PolicyDecision:
     matched_policy_ids: tuple[int, ...]
     observed_policy_ids: tuple[int, ...]
     limits: PolicyLimits
+    trace: tuple[dict[str, object], ...]
 
 
 CandidateMapping = Mapping[str, str | None]
@@ -53,7 +54,11 @@ _SCOPE_FIELD_MAP = {
 }
 
 
-def _normalize_candidates(candidate_ids: Mapping[str, str | None] | Sequence[Mapping[str, str | None]] | None) -> list[CandidateMapping]:
+def _normalize_candidates(
+    candidate_ids: Mapping[str, str | None]
+    | Sequence[Mapping[str, str | None]]
+    | None,
+) -> list[CandidateMapping]:
     if candidate_ids is None:
         return [{}]
     if isinstance(candidate_ids, Mapping):
@@ -164,6 +169,35 @@ def _matches_scope(policy: PlatformPolicy, candidate: CandidateMapping) -> bool:
     return True
 
 
+def _matches_domain(policy: PlatformPolicy, candidate: CandidateMapping) -> bool:
+    domains = policy.domains_json or []
+    if not domains:
+        return True
+
+    value = candidate.get("domain") or candidate.get("host")
+    if value is None:
+        return False
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return False
+
+    for raw in domains:
+        if raw is None:
+            continue
+        candidate_domain = str(raw).strip().lower()
+        if not candidate_domain:
+            continue
+        if candidate_domain.startswith("*."):
+            suffix = candidate_domain[2:]
+            if not suffix:
+                continue
+            if normalized == suffix or normalized.endswith(f".{suffix}"):
+                return True
+        elif normalized == candidate_domain:
+            return True
+    return False
+
+
 def _merge_limits(policies: Iterable[PlatformPolicy]) -> PolicyLimits:
     rps_values: list[int] = []
     burst_values: list[int] = []
@@ -211,6 +245,8 @@ class PolicyEngine:
         now_utc: datetime,
     ) -> PolicyDecision:
         normalized_candidates = _normalize_candidates(candidate_ids)
+        if not normalized_candidates:
+            normalized_candidates = [{}]
 
         stmt = (
             select(PlatformPolicy)
@@ -229,6 +265,8 @@ class PolicyEngine:
         enforce_policies: list[PlatformPolicy] = []
         dryrun_policies: list[PlatformPolicy] = []
 
+        trace: list[dict[str, object]] = []
+
         enforce_blacklist_hits: list[int] = []
         dryrun_blacklist_hits: list[int] = []
         enforce_whitelist_hits = [False] * len(normalized_candidates)
@@ -237,10 +275,10 @@ class PolicyEngine:
         deny_reason: str | None = None
         dryrun_reason: str | None = None
 
-        def _matches_policy(policy: PlatformPolicy, candidate: CandidateMapping) -> bool:
-            if policy.domain and policy.domain not in {"*", resource_type, resource_type.lower()}:
-                return False
-            return _matches_scope(policy, candidate)
+        def _matches_policy(policy: PlatformPolicy, candidate: CandidateMapping) -> tuple[bool, bool]:
+            domain_match = _matches_domain(policy, candidate)
+            scope_match = _matches_scope(policy, candidate)
+            return domain_match, scope_match
 
         for policy in policies:
             try:
@@ -255,8 +293,22 @@ class PolicyEngine:
             collection = enforce_policies if target_mode is PolicyEnforcementMode.ENFORCE else dryrun_policies
             collection.append(policy)
 
+            entry = {
+                "policy_id": int(policy.id),
+                "mode": policy.mode,
+                "enforcement_mode": target_mode.value,
+                "matched": False,
+                "domain_match": False,
+                "scope_match": False,
+            }
+
             for idx, candidate in enumerate(normalized_candidates):
-                if not _matches_policy(policy, candidate):
+                domain_match, scope_match = _matches_policy(policy, candidate)
+                if domain_match:
+                    entry["domain_match"] = True
+                if scope_match:
+                    entry["scope_match"] = True
+                if not (domain_match and scope_match):
                     continue
                 if policy.mode == PolicyMode.BLACKLIST.value:
                     if target_mode is PolicyEnforcementMode.ENFORCE:
@@ -265,11 +317,14 @@ class PolicyEngine:
                     else:
                         dryrun_blacklist_hits.append(int(policy.id))
                         dryrun_reason = "Matched blacklist policy in dryrun mode"
+                    entry["matched"] = True
                 else:
                     if target_mode is PolicyEnforcementMode.ENFORCE:
                         enforce_whitelist_hits[idx] = True
                     else:
                         dryrun_whitelist_hits[idx] = True
+                    entry["matched"] = True
+            trace.append(entry)
 
         if enforce_blacklist_hits:
             decision_mode = PolicyEnforcementMode.ENFORCE
@@ -292,6 +347,7 @@ class PolicyEngine:
                 matched_policy_ids=tuple(enforce_blacklist_hits),
                 observed_policy_ids=tuple(dryrun_blacklist_hits),
                 limits=limits,
+                trace=tuple(trace),
             )
 
         has_enforce_whitelist = any(
@@ -318,6 +374,7 @@ class PolicyEngine:
                 matched_policy_ids=tuple(int(p.id) for p in policies if p in enforce_policies),
                 observed_policy_ids=tuple(dryrun_blacklist_hits),
                 limits=limits,
+                trace=tuple(trace),
             )
 
         window_violations: list[int] = []
@@ -353,6 +410,7 @@ class PolicyEngine:
                 matched_policy_ids=tuple(window_violations),
                 observed_policy_ids=tuple(dryrun_blacklist_hits),
                 limits=limits,
+                trace=tuple(trace),
             )
 
         decision_mode = PolicyEnforcementMode.ENFORCE
@@ -398,6 +456,7 @@ class PolicyEngine:
             matched_policy_ids=tuple(int(p.id) for p in limits_source),
             observed_policy_ids=tuple(dryrun_blacklist_hits + dryrun_window_violations),
             limits=limits,
+            trace=tuple(trace),
         )
 
 

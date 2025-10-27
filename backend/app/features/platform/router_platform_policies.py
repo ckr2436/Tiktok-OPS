@@ -6,7 +6,9 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query, Request, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_platform_admin
 from app.core.errors import APIError
+from app.core.policy import enforce_provider_policy
 from app.data.db import get_db
 from app.data.models.providers import (
     PlatformPolicy,
@@ -22,6 +25,7 @@ from app.data.models.providers import (
     PolicyMode,
 )
 from app.services.audit import log_event
+from app.services.policy_engine import PolicyEngine
 from app.services.providers import catalog as provider_catalog
 
 
@@ -36,6 +40,12 @@ _DOMAIN_PATTERN = re.compile(
 )
 _ALLOWED_SCOPE_KEYS = {"bc_ids", "advertiser_ids", "shop_ids", "product_ids"}
 _ALLOWED_TOP_SCOPE_KEYS = {"include", "exclude"}
+_SCOPE_TO_FIELD = {
+    "bc_ids": "bc_id",
+    "advertiser_ids": "advertiser_id",
+    "shop_ids": "shop_id",
+    "product_ids": "product_id",
+}
 _SORT_FIELDS = {
     "created_at": PlatformPolicy.created_at.asc(),
     "-created_at": PlatformPolicy.created_at.desc(),
@@ -51,6 +61,15 @@ class BusinessScopesResponse(BaseModel):
     exclude: dict[str, list[str]] = Field(default_factory=dict)
 
 
+class PolicyLimitsResponse(BaseModel):
+    rate_limit_rps: int | None = None
+    rate_burst: int | None = None
+    cooldown_seconds: int = 0
+    window_cron: str | None = None
+    max_concurrency: int | None = None
+    max_entities_per_run: int | None = None
+
+
 class PolicyResponse(BaseModel):
     id: int
     provider_key: str
@@ -61,6 +80,7 @@ class PolicyResponse(BaseModel):
     is_enabled: bool
     domains: list[str]
     business_scopes: BusinessScopesResponse
+    limits: PolicyLimitsResponse
     description: str | None = None
     created_at: str
     updated_at: str
@@ -71,6 +91,39 @@ class PolicyPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PolicyDecisionTrace(BaseModel):
+    policy_id: int
+    mode: PolicyMode
+    enforcement_mode: PolicyEnforcementMode
+    matched: bool
+    domain_match: bool
+    scope_match: bool
+
+
+class PolicyDryRunCandidate(BaseModel):
+    domain: str | None = Field(default=None, description="Host-only value")
+    bc_id: str | None = None
+    advertiser_id: str | None = None
+    shop_id: str | None = None
+    product_id: str | None = None
+
+
+class PolicyDryRunRequest(BaseModel):
+    resource_type: str = Field(default="admin.platform.policy.test", max_length=128)
+    candidates: list[PolicyDryRunCandidate] = Field(default_factory=list)
+
+
+class PolicyDryRunResponse(BaseModel):
+    provider_key: str
+    allowed: bool
+    enforcement_mode: PolicyEnforcementMode
+    reason: str | None = None
+    matched_policy_ids: list[int]
+    observed_policy_ids: list[int]
+    limits: PolicyLimitsResponse
+    trace: list[PolicyDecisionTrace]
 
 
 class ErrorDetail(BaseModel):
@@ -97,7 +150,7 @@ class ValidationCollector:
             raise APIError(
                 "VALIDATION_ERROR",
                 "Validation failed.",
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 {"fields": self._fields},
             )
 
@@ -216,6 +269,56 @@ def _normalize_domains(value: Any, errors: ValidationCollector) -> list[str]:
     return normalized
 
 
+def _normalize_optional_positive_int(
+    value: Any,
+    errors: ValidationCollector,
+    *,
+    field: str,
+    minimum: int = 1,
+) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        errors.add(field, f"{field} must be an integer.")
+        return None
+    if number < minimum:
+        errors.add(field, f"{field} must be greater than or equal to {minimum}.")
+        return None
+    return number
+
+
+def _normalize_cooldown(value: Any, errors: ValidationCollector) -> int:
+    if value is None or value == "":
+        return 0
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        errors.add("cooldown_seconds", "cooldown_seconds must be an integer.")
+        return 0
+    if number < 0:
+        errors.add("cooldown_seconds", "cooldown_seconds must be zero or positive.")
+        return 0
+    return number
+
+
+def _normalize_window_cron(value: Any, errors: ValidationCollector) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        from croniter import croniter  # local import to avoid weight at module load
+
+        croniter(text)
+    except Exception:
+        errors.add("window_cron", "window_cron must be a valid cron expression.")
+        return None
+    return text
+
+
 def _normalize_scope_bucket(
     value: Any, errors: ValidationCollector, *, path: str
 ) -> dict[str, list[str]]:
@@ -277,6 +380,25 @@ def _normalize_business_scopes(
     return {"include": include, "exclude": exclude}
 
 
+def _candidate_from_business_scopes(scopes: dict[str, dict[str, list[str]]]) -> dict[str, str] | None:
+    include = scopes.get("include") or {}
+    candidate: dict[str, str] = {}
+    for key, field in _SCOPE_TO_FIELD.items():
+        values = include.get(key)
+        if values:
+            candidate[field] = str(values[0])
+    return candidate or None
+
+
+def _merge_candidates(*candidates: dict[str, str] | None) -> dict[str, str] | None:
+    merged: dict[str, str] = {}
+    for candidate in candidates:
+        if not candidate:
+            continue
+        merged.update(candidate)
+    return merged or None
+
+
 def _parse_bool(value: Any, errors: ValidationCollector, field: str) -> bool | None:
     if value is None:
         return None
@@ -301,6 +423,20 @@ def _prepare_policy_payload(
     )
     is_enabled = _parse_bool(raw.get("is_enabled", True), errors, "is_enabled")
     description = _normalize_description(raw.get("description"))
+    rate_limit_rps = _normalize_optional_positive_int(
+        raw.get("rate_limit_rps"), errors, field="rate_limit_rps"
+    )
+    rate_burst = _normalize_optional_positive_int(
+        raw.get("rate_burst"), errors, field="rate_burst"
+    )
+    cooldown_seconds = _normalize_cooldown(raw.get("cooldown_seconds"), errors)
+    max_concurrency = _normalize_optional_positive_int(
+        raw.get("max_concurrency"), errors, field="max_concurrency"
+    )
+    max_entities = _normalize_optional_positive_int(
+        raw.get("max_entities_per_run"), errors, field="max_entities_per_run"
+    )
+    window_cron = _normalize_window_cron(raw.get("window_cron"), errors)
 
     errors.raise_if_errors()
 
@@ -320,6 +456,12 @@ def _prepare_policy_payload(
         "business_scopes": business_scopes,
         "is_enabled": is_enabled,
         "description": description,
+        "rate_limit_rps": rate_limit_rps,
+        "rate_burst": rate_burst,
+        "cooldown_seconds": cooldown_seconds,
+        "max_concurrency": max_concurrency,
+        "max_entities_per_run": max_entities,
+        "window_cron": window_cron,
     }
 
 
@@ -331,7 +473,7 @@ def _ensure_provider(db: Session, key: str) -> PlatformProvider:
         raise APIError(
             "VALIDATION_ERROR",
             "Validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             {"fields": {"provider_key": "provider is not registered."}},
         )
 
@@ -340,7 +482,7 @@ def _ensure_provider(db: Session, key: str) -> PlatformProvider:
         raise APIError(
             "VALIDATION_ERROR",
             "Validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             {"fields": {"provider_key": "provider is not configured."}},
         )
 
@@ -348,7 +490,7 @@ def _ensure_provider(db: Session, key: str) -> PlatformProvider:
         raise APIError(
             "VALIDATION_ERROR",
             "Validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             {"fields": {"provider_key": "provider is currently disabled."}},
         )
 
@@ -366,9 +508,51 @@ def _policy_snapshot(policy: PlatformPolicy) -> dict[str, Any]:
         "business_scopes": policy.business_scopes_json or {"include": {}, "exclude": {}},
         "is_enabled": bool(policy.is_enabled),
         "description": policy.description,
+        "rate_limit_rps": policy.rate_limit_rps,
+        "rate_burst": policy.rate_burst,
+        "cooldown_seconds": policy.cooldown_seconds,
+        "max_concurrency": policy.max_concurrency,
+        "max_entities_per_run": policy.max_entities_per_run,
+        "window_cron": policy.window_cron,
         "created_at": policy.created_at.isoformat(timespec="microseconds"),
         "updated_at": policy.updated_at.isoformat(timespec="microseconds"),
     }
+
+
+def _limits_to_response(policy: PlatformPolicy) -> PolicyLimitsResponse:
+    return PolicyLimitsResponse(
+        rate_limit_rps=policy.rate_limit_rps,
+        rate_burst=policy.rate_burst,
+        cooldown_seconds=int(policy.cooldown_seconds or 0),
+        window_cron=policy.window_cron,
+        max_concurrency=policy.max_concurrency,
+        max_entities_per_run=policy.max_entities_per_run,
+    )
+
+
+def _trace_to_response(entries: tuple[dict[str, Any], ...]) -> list[PolicyDecisionTrace]:
+    results: list[PolicyDecisionTrace] = []
+    for entry in entries:
+        policy_id = int(entry.get("policy_id", 0) or 0)
+        try:
+            mode = PolicyMode(entry.get("mode", PolicyMode.WHITELIST.value))
+        except ValueError:
+            mode = PolicyMode.WHITELIST
+        try:
+            enforcement = PolicyEnforcementMode(entry.get("enforcement_mode", PolicyEnforcementMode.ENFORCE.value))
+        except ValueError:
+            enforcement = PolicyEnforcementMode.ENFORCE
+        results.append(
+            PolicyDecisionTrace(
+                policy_id=policy_id,
+                mode=mode,
+                enforcement_mode=enforcement,
+                matched=bool(entry.get("matched")),
+                domain_match=bool(entry.get("domain_match")),
+                scope_match=bool(entry.get("scope_match")),
+            )
+        )
+    return results
 
 
 def _policy_to_response(policy: PlatformPolicy) -> PolicyResponse:
@@ -386,6 +570,7 @@ def _policy_to_response(policy: PlatformPolicy) -> PolicyResponse:
             include={k: list(v) for k, v in (scopes.get("include") or {}).items()},
             exclude={k: list(v) for k, v in (scopes.get("exclude") or {}).items()},
         ),
+        limits=_limits_to_response(policy),
         description=policy.description,
         created_at=policy.created_at.isoformat(timespec="microseconds"),
         updated_at=policy.updated_at.isoformat(timespec="microseconds"),
@@ -462,6 +647,24 @@ def _handle_integrity_error(exc: IntegrityError) -> None:
     raise exc
 
 
+def _ensure_unique_name(
+    db: Session, provider_key: str, name_normalized: str, *, exclude_id: int | None = None
+) -> None:
+    stmt = select(PlatformPolicy.id).where(
+        PlatformPolicy.provider_key == provider_key,
+        PlatformPolicy.name_normalized == name_normalized,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(PlatformPolicy.id != exclude_id)
+    existing = db.scalar(stmt)
+    if existing is not None:
+        raise APIError(
+            "DUPLICATE_NAME",
+            "A policy with this provider and name already exists.",
+            status.HTTP_409_CONFLICT,
+        )
+
+
 def _request_id(request: Request) -> str | None:
     return request.headers.get("x-request-id") or request.headers.get("x-requestid")
 
@@ -523,23 +726,25 @@ def list_policies(
 
 
 @router.post("", response_model=PolicyResponse, status_code=status.HTTP_201_CREATED)
-def create_policy(
-    req: dict[str, Any] = Body(...),
-    request: Request = None,
+async def create_policy(
+    request: Request,
+    response: Response,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
-    if not isinstance(req, dict):
+    raw = await request.json()
+    if not isinstance(raw, dict):
         raise APIError(
             "VALIDATION_ERROR",
             "Validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             {"fields": {"body": "payload must be an object."}},
         )
 
     errors = ValidationCollector()
-    payload = _prepare_policy_payload(req, errors=errors)
+    payload = _prepare_policy_payload(raw, errors=errors)
     _ensure_provider(db, payload["provider_key"])
+    _ensure_unique_name(db, payload["provider_key"], payload["name_normalized"])
 
     policy = PlatformPolicy(
         provider_key=payload["provider_key"],
@@ -554,12 +759,30 @@ def create_policy(
         description=payload["description"],
         created_by_user_id=int(me.id),
         updated_by_user_id=int(me.id),
+        rate_limit_rps=payload["rate_limit_rps"],
+        rate_burst=payload["rate_burst"],
+        cooldown_seconds=payload["cooldown_seconds"],
+        max_concurrency=payload["max_concurrency"],
+        max_entities_per_run=payload["max_entities_per_run"],
+        window_cron=payload["window_cron"],
     )
     db.add(policy)
     try:
         db.flush()
     except IntegrityError as exc:
         _handle_integrity_error(exc)
+
+    enforce_provider_policy(
+        db,
+        provider_key=payload["provider_key"],
+        resource_type="admin.platform.policy.write",
+        me=me,
+        request=request,
+        response=response,
+        candidate_ids=_candidate_from_business_scopes(payload["business_scopes"]),
+        domain=request.headers.get("x-policy-domain"),
+        audit_details={"action": "policy.create"},
+    )
 
     db.refresh(policy)
     snapshot = _policy_snapshot(policy)
@@ -583,10 +806,10 @@ def create_policy(
 
 
 @router.put("/{policy_id}", response_model=PolicyResponse)
-def update_policy(
+async def update_policy(
     policy_id: int,
-    req: dict[str, Any] = Body(...),
-    request: Request = None,
+    request: Request,
+    response: Response,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
@@ -594,17 +817,39 @@ def update_policy(
     if policy is None:
         raise APIError("NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
 
-    if not isinstance(req, dict):
+    raw = await request.json()
+    if not isinstance(raw, dict):
         raise APIError(
             "VALIDATION_ERROR",
             "Validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             {"fields": {"body": "payload must be an object."}},
         )
 
     errors = ValidationCollector()
-    payload = _prepare_policy_payload(req, errors=errors)
+    payload = _prepare_policy_payload(raw, errors=errors)
     _ensure_provider(db, payload["provider_key"])
+    _ensure_unique_name(
+        db,
+        payload["provider_key"],
+        payload["name_normalized"],
+        exclude_id=int(policy_id),
+    )
+
+    enforce_provider_policy(
+        db,
+        provider_key=payload["provider_key"],
+        resource_type="admin.platform.policy.write",
+        me=me,
+        request=request,
+        response=response,
+        candidate_ids=_merge_candidates(
+            _candidate_from_business_scopes(payload["business_scopes"]),
+            _candidate_from_business_scopes(policy.business_scopes_json or {}),
+        ),
+        domain=request.headers.get("x-policy-domain"),
+        audit_details={"action": "policy.update", "policy_id": int(policy_id)},
+    )
 
     old_snapshot = _policy_snapshot(policy)
 
@@ -618,6 +863,12 @@ def update_policy(
     policy.business_scopes_json = payload["business_scopes"]
     policy.is_enabled = payload["is_enabled"]
     policy.description = payload["description"]
+    policy.rate_limit_rps = payload["rate_limit_rps"]
+    policy.rate_burst = payload["rate_burst"]
+    policy.cooldown_seconds = payload["cooldown_seconds"]
+    policy.max_concurrency = payload["max_concurrency"]
+    policy.max_entities_per_run = payload["max_entities_per_run"]
+    policy.window_cron = payload["window_cron"]
     policy.updated_by_user_id = int(me.id)
 
     db.add(policy)
@@ -651,12 +902,25 @@ def update_policy(
 def delete_policy(
     policy_id: int,
     request: Request = None,
+    response: Response = None,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
     policy = db.get(PlatformPolicy, int(policy_id))
     if policy is None:
         raise APIError("NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
+
+    enforce_provider_policy(
+        db,
+        provider_key=policy.provider_key,
+        resource_type="admin.platform.policy.write",
+        me=me,
+        request=request,
+        response=response,
+        candidate_ids=_candidate_from_business_scopes(policy.business_scopes_json or {}),
+        domain=request.headers.get("x-policy-domain") if request else None,
+        audit_details={"action": "policy.delete", "policy_id": int(policy_id)},
+    )
 
     snapshot = _policy_snapshot(policy)
     db.delete(policy)
@@ -686,12 +950,25 @@ def _toggle_policy(
     desired_state: bool,
     action_name: str,
     request: Request,
+    response: Response,
     me: SessionUser,
     db: Session,
 ) -> PolicyResponse:
     policy = db.get(PlatformPolicy, int(policy_id))
     if policy is None:
         raise APIError("NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
+
+    enforce_provider_policy(
+        db,
+        provider_key=policy.provider_key,
+        resource_type="admin.platform.policy.toggle",
+        me=me,
+        request=request,
+        response=response,
+        candidate_ids=_candidate_from_business_scopes(policy.business_scopes_json or {}),
+        domain=request.headers.get("x-policy-domain") if request else None,
+        audit_details={"action": action_name, "policy_id": int(policy_id)},
+    )
 
     if bool(policy.is_enabled) == desired_state:
         return _policy_to_response(policy)
@@ -727,17 +1004,91 @@ def _toggle_policy(
 def enable_policy(
     policy_id: int,
     request: Request = None,
+    response: Response = None,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
-    return _toggle_policy(policy_id, True, "policy.enable", request, me, db)
+    return _toggle_policy(policy_id, True, "policy.enable", request, response, me, db)
 
 
 @router.post("/{policy_id}/disable", response_model=PolicyResponse)
 def disable_policy(
     policy_id: int,
     request: Request = None,
+    response: Response = None,
     me: SessionUser = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> PolicyResponse:
-    return _toggle_policy(policy_id, False, "policy.disable", request, me, db)
+    return _toggle_policy(policy_id, False, "policy.disable", request, response, me, db)
+
+
+@router.post("/{policy_id}/dry-run", response_model=PolicyDryRunResponse)
+def dry_run_policy(
+    policy_id: int,
+    req: PolicyDryRunRequest,
+    request: Request,
+    response: Response,
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> PolicyDryRunResponse:
+    policy = db.get(PlatformPolicy, int(policy_id))
+    if policy is None:
+        raise APIError("NOT_FOUND", "Policy not found.", status.HTTP_404_NOT_FOUND)
+
+    resource_type = req.resource_type.strip() if req.resource_type else "admin.platform.policy.test"
+    if not resource_type:
+        resource_type = "admin.platform.policy.test"
+
+    candidates: list[dict[str, str]] = []
+    for candidate in req.candidates:
+        data = {k: v for k, v in candidate.model_dump().items() if v is not None}
+        if not data:
+            continue
+        if "domain" in data and data["domain"]:
+            data["domain"] = data["domain"].strip().lower()
+        candidates.append(data)  # type: ignore[arg-type]
+
+    engine = PolicyEngine(db)
+    decision = engine.evaluate_policy(
+        workspace_id=me.workspace_id,
+        provider_key=policy.provider_key,
+        resource_type=resource_type,
+        candidate_ids=candidates or None,
+        now_utc=datetime.now(timezone.utc),
+    )
+
+    response.headers["X-Policy-Decision"] = "allow" if decision.allowed else "deny"
+    response.headers["X-Policy-Enforcement-Mode"] = decision.enforcement_mode.value
+    if decision.reason:
+        response.headers["X-Policy-Reason"] = decision.reason
+    limits = decision.limits
+    if limits.rate_limit_rps is not None:
+        response.headers["X-Policy-Limit-RPS"] = str(limits.rate_limit_rps)
+    if limits.rate_burst is not None:
+        response.headers["X-Policy-Limit-Burst"] = str(limits.rate_burst)
+    if limits.cooldown_seconds:
+        response.headers["X-Policy-Cooldown-Seconds"] = str(limits.cooldown_seconds)
+    if limits.max_concurrency is not None:
+        response.headers["X-Policy-Max-Concurrency"] = str(limits.max_concurrency)
+    if limits.max_entities_per_run is not None:
+        response.headers["X-Policy-Max-Entities"] = str(limits.max_entities_per_run)
+    if limits.window_cron:
+        response.headers["X-Policy-Window"] = limits.window_cron
+
+    return PolicyDryRunResponse(
+        provider_key=policy.provider_key,
+        allowed=decision.allowed,
+        enforcement_mode=decision.enforcement_mode,
+        reason=decision.reason,
+        matched_policy_ids=list(decision.matched_policy_ids),
+        observed_policy_ids=list(decision.observed_policy_ids),
+        limits=PolicyLimitsResponse(
+            rate_limit_rps=limits.rate_limit_rps,
+            rate_burst=limits.rate_burst,
+            cooldown_seconds=limits.cooldown_seconds,
+            window_cron=limits.window_cron,
+            max_concurrency=limits.max_concurrency,
+            max_entities_per_run=limits.max_entities_per_run,
+        ),
+        trace=_trace_to_response(decision.trace),
+    )

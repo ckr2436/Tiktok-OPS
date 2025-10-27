@@ -34,6 +34,7 @@ def test_admin_endpoints_require_platform_admin(app_client) -> None:
                     "mode": PolicyMode.WHITELIST.value,
                     "enforcement_mode": "ENFORCE",
                     "domains": ["example.com"],
+                    "business_scopes": {},
                 }
             },
         ),
@@ -47,11 +48,13 @@ def test_admin_endpoints_require_platform_admin(app_client) -> None:
                     "mode": PolicyMode.WHITELIST.value,
                     "enforcement_mode": "ENFORCE",
                     "domains": ["example.com"],
+                    "business_scopes": {},
                 }
             },
         ),
         (client.post, "/api/v1/admin/platform/policies/1/enable"),
         (client.post, "/api/v1/admin/platform/policies/1/disable"),
+        (client.post, "/api/v1/admin/platform/policies/1/dry-run", {"json": {}}),
         (client.delete, "/api/v1/admin/platform/policies/1"),
     ]
 

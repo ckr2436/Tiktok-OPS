@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import Modal from '../../../../components/ui/Modal.jsx'
@@ -10,276 +11,589 @@ import {
   updatePolicy,
   togglePolicy,
   deletePolicy,
+  dryRunPolicy,
 } from '../service.js'
 
-const PAGE_SIZE = 20
 const DOMAIN_PATTERN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
-
 const MODE_VALUES = ['WHITELIST', 'BLACKLIST']
+const ENFORCEMENT_VALUES = ['ENFORCE', 'DRYRUN', 'OFF']
+const ALLOWED_SCOPE_KEYS = ['bc_ids', 'advertiser_ids', 'shop_ids', 'product_ids']
 
 const MODE_OPTIONS = [
   { value: '', label: '全部模式' },
-  { value: MODE_VALUES[0], label: '白名单' },
-  { value: MODE_VALUES[1], label: '黑名单' },
+  { value: 'WHITELIST', label: '白名单' },
+  { value: 'BLACKLIST', label: '黑名单' },
 ]
 
-const normalizePolicyMode = (value, fallback = MODE_VALUES[0]) => {
-  const normalized = (value ?? '').toString().trim().toUpperCase()
-  if (MODE_VALUES.includes(normalized)) return normalized
-  return fallback
-}
-
-const normalizeFilterMode = (value) => {
-  const normalized = (value ?? '').toString().trim().toUpperCase()
-  return MODE_VALUES.includes(normalized) ? normalized : ''
-}
-
-const ENABLED_OPTIONS = [
+const STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
   { value: 'enabled', label: '仅启用' },
   { value: 'disabled', label: '仅停用' },
 ]
 
+function normalizeMode(value, fallback = MODE_VALUES[0]) {
+  const normalized = (value ?? '').toString().trim().toUpperCase()
+  if (MODE_VALUES.includes(normalized)) return normalized
+  return fallback
+}
+
+function normalizeEnforcement(value, fallback = ENFORCEMENT_VALUES[0]) {
+  const normalized = (value ?? '').toString().trim().toUpperCase()
+  if (ENFORCEMENT_VALUES.includes(normalized)) return normalized
+  return fallback
+}
+
+function normalizeStatus(value) {
+  const normalized = (value ?? '').toString().trim().toLowerCase()
+  if (['enabled', 'disabled'].includes(normalized)) return normalized
+  return ''
+}
+
+function DomainEditor({ value, onChange, error }) {
+  const [input, setInput] = useState('')
+
+  const addDomain = useCallback(() => {
+    const candidate = input.trim().toLowerCase()
+    if (!candidate) return
+    if (!DOMAIN_PATTERN.test(candidate)) return
+    if (value.includes(candidate)) {
+      setInput('')
+      return
+    }
+    onChange([...value, candidate])
+    setInput('')
+  }, [input, onChange, value])
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      addDomain()
+    }
+  }
+
+  const removeDomain = (domain) => {
+    onChange(value.filter((item) => item !== domain))
+  }
+
+  return (
+    <FormField label="域名列表" error={error} description="输入域名后回车，可选 *. 前缀。">
+      <div className="chip-editor">
+        <div className="chip-list">
+          {value.map((domain) => (
+            <span key={domain} className="chip">
+              {domain}
+              <button type="button" className="chip__remove" onClick={() => removeDomain(domain)}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <input
+          className="input"
+          placeholder="例如：api.example.com 或 *.example.com"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={addDomain}
+        />
+      </div>
+    </FormField>
+  )
+}
+
+function useToast() {
+  const [toast, setToast] = useState(null)
+
+  const showToast = useCallback((message, tone = 'info', duration = 3000) => {
+    setToast({ id: Date.now(), message, tone, duration })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), toast.duration)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  return [toast, showToast]
+}
+
+function parseBusinessScopes(raw, setError) {
+  if (!raw.trim()) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    const allowedTopKeys = ['include', 'exclude']
+    const result = {}
+    for (const topKey of allowedTopKeys) {
+      if (!parsed[topKey]) continue
+      if (typeof parsed[topKey] !== 'object') {
+        setError(`${topKey} 必须是对象`)
+        return null
+      }
+      result[topKey] = {}
+      for (const key of Object.keys(parsed[topKey])) {
+        if (!ALLOWED_SCOPE_KEYS.includes(key)) {
+          setError(`不支持的业务范围键：${key}`)
+          return null
+        }
+        const items = parsed[topKey][key]
+        if (!Array.isArray(items)) {
+          setError(`${topKey}.${key} 必须是字符串数组`)
+          return null
+        }
+        const sanitized = Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)))
+        result[topKey][key] = sanitized
+      }
+    }
+    return result
+  } catch (err) {
+    setError('业务范围 JSON 解析失败')
+    return null
+  }
+}
+
+function stringifyBusinessScopes(scopes) {
+  const include = scopes?.include ?? {}
+  const exclude = scopes?.exclude ?? {}
+  if (!Object.keys(include).length && !Object.keys(exclude).length) return ''
+  return JSON.stringify({ include, exclude }, null, 2)
+}
+
+function PolicyFormModal({ open, onClose, onSubmit, providers, initial }) {
+  const [providerKey, setProviderKey] = useState(initial?.provider_key || '')
+  const [name, setName] = useState(initial?.name || '')
+  const [mode, setMode] = useState(() => normalizeMode(initial?.mode, MODE_VALUES[0]))
+  const [enforcementMode, setEnforcementMode] = useState(() => normalizeEnforcement(initial?.enforcement_mode, ENFORCEMENT_VALUES[0]))
+  const [domains, setDomains] = useState(() => initial?.domains?.slice?.() || [])
+  const [businessScopes, setBusinessScopes] = useState(() => stringifyBusinessScopes(initial?.business_scopes || {}))
+  const [description, setDescription] = useState(initial?.description || '')
+  const [isEnabled, setIsEnabled] = useState(initial?.is_enabled ?? true)
+  const [rateLimitRps, setRateLimitRps] = useState(initial?.limits?.rate_limit_rps ?? '')
+  const [rateBurst, setRateBurst] = useState(initial?.limits?.rate_burst ?? '')
+  const [cooldownSeconds, setCooldownSeconds] = useState(initial?.limits?.cooldown_seconds ?? 0)
+  const [maxConcurrency, setMaxConcurrency] = useState(initial?.limits?.max_concurrency ?? '')
+  const [maxEntities, setMaxEntities] = useState(initial?.limits?.max_entities_per_run ?? '')
+  const [windowCron, setWindowCron] = useState(initial?.limits?.window_cron ?? '')
+  const [errors, setErrors] = useState({})
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setErrors({})
+    setProviderKey(initial?.provider_key || '')
+    setName(initial?.name || '')
+    setMode(normalizeMode(initial?.mode, MODE_VALUES[0]))
+    setEnforcementMode(normalizeEnforcement(initial?.enforcement_mode, ENFORCEMENT_VALUES[0]))
+    setDomains(initial?.domains?.slice?.() || [])
+    setBusinessScopes(stringifyBusinessScopes(initial?.business_scopes || {}))
+    setDescription(initial?.description || '')
+    setIsEnabled(initial?.is_enabled ?? true)
+    setRateLimitRps(initial?.limits?.rate_limit_rps ?? '')
+    setRateBurst(initial?.limits?.rate_burst ?? '')
+    setCooldownSeconds(initial?.limits?.cooldown_seconds ?? 0)
+    setMaxConcurrency(initial?.limits?.max_concurrency ?? '')
+    setMaxEntities(initial?.limits?.max_entities_per_run ?? '')
+    setWindowCron(initial?.limits?.window_cron ?? '')
+  }, [open, initial])
+
+  const providerOptions = useMemo(() => {
+    return providers.map((item) => (
+      <option key={item.key} value={item.key}>
+        {item.name}
+      </option>
+    ))
+  }, [providers])
+
+  const submit = async (event) => {
+    event.preventDefault()
+    const nextErrors = {}
+    if (!providerKey) nextErrors.provider_key = '请选择提供方'
+    if (!name.trim()) nextErrors.name = '请输入策略名称'
+    if (!domains.length) nextErrors.domains = '至少添加 1 个域名'
+    const scopes = parseBusinessScopes(businessScopes, (message) => {
+      nextErrors.business_scopes = message
+    })
+    if (scopes === null) {
+      setErrors(nextErrors)
+      return
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
+      return
+    }
+
+    const payload = {
+      provider_key: providerKey,
+      name: name.trim(),
+      mode,
+      enforcement_mode: enforcementMode,
+      domains,
+      business_scopes: scopes,
+      description: description.trim(),
+      is_enabled: Boolean(isEnabled),
+      rate_limit_rps: rateLimitRps === '' ? null : Number(rateLimitRps),
+      rate_burst: rateBurst === '' ? null : Number(rateBurst),
+      cooldown_seconds: Number(cooldownSeconds || 0),
+      max_concurrency: maxConcurrency === '' ? null : Number(maxConcurrency),
+      max_entities_per_run: maxEntities === '' ? null : Number(maxEntities),
+      window_cron: windowCron.trim() || null,
+    }
+
+    setErrors({})
+    setPending(true)
+    try {
+      await onSubmit(payload)
+      onClose()
+    } catch (err) {
+      const response = err?.response?.data
+      if (response?.error?.data?.fields) {
+        setErrors(response.error.data.fields)
+      } else {
+        setErrors({ form: err?.message || '保存失败' })
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <Modal open={open} onClose={onClose} title={initial ? '编辑策略' : '新建策略'}>
+      <form onSubmit={submit} className="form-grid">
+        <FormField label="提供方" error={errors.provider_key}>
+          <select className="input" value={providerKey} onChange={(e) => setProviderKey(e.target.value)}>
+            <option value="">请选择提供方</option>
+            {providerOptions}
+          </select>
+        </FormField>
+
+        <FormField label="策略名称" error={errors.name}>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={128} />
+        </FormField>
+
+        <FormField label="策略模式">
+          <select className="input" value={mode} onChange={(e) => setMode(normalizeMode(e.target.value))}>
+            {MODE_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField label="执行模式">
+          <select className="input" value={enforcementMode} onChange={(e) => setEnforcementMode(normalizeEnforcement(e.target.value))}>
+            {ENFORCEMENT_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </FormField>
+
+        <DomainEditor value={domains} onChange={setDomains} error={errors.domains} />
+
+        <FormField
+          label="业务范围 JSON"
+          description={'可选，示例：{"include":{"bc_ids":["123"]}}'}
+          error={errors.business_scopes}
+        >
+          <textarea
+            className="input"
+            value={businessScopes}
+            onChange={(e) => setBusinessScopes(e.target.value)}
+            rows={6}
+          />
+        </FormField>
+
+        <FormField label="描述">
+          <textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+        </FormField>
+
+        <FormField label="速率限制 (RPS)">
+          <input
+            className="input"
+            type="number"
+            min="1"
+            value={rateLimitRps}
+            onChange={(e) => setRateLimitRps(e.target.value)}
+            placeholder="留空表示不限制"
+          />
+        </FormField>
+
+        <FormField label="突发容量">
+          <input
+            className="input"
+            type="number"
+            min="1"
+            value={rateBurst}
+            onChange={(e) => setRateBurst(e.target.value)}
+            placeholder="留空表示不限制"
+          />
+        </FormField>
+
+        <FormField label="冷却秒数">
+          <input
+            className="input"
+            type="number"
+            min="0"
+            value={cooldownSeconds}
+            onChange={(e) => setCooldownSeconds(e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="最大并发">
+          <input
+            className="input"
+            type="number"
+            min="1"
+            value={maxConcurrency}
+            onChange={(e) => setMaxConcurrency(e.target.value)}
+            placeholder="留空表示不限制"
+          />
+        </FormField>
+
+        <FormField label="单次最大实体数">
+          <input
+            className="input"
+            type="number"
+            min="1"
+            value={maxEntities}
+            onChange={(e) => setMaxEntities(e.target.value)}
+            placeholder="留空表示不限制"
+          />
+        </FormField>
+
+        <FormField label="Cron 窗口">
+          <input
+            className="input"
+            value={windowCron}
+            onChange={(e) => setWindowCron(e.target.value)}
+            placeholder="可选，例如：0 * * * *"
+          />
+        </FormField>
+
+        <FormField label="启用状态">
+          <label className="checkbox">
+            <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
+            <span>启用此策略</span>
+          </label>
+        </FormField>
+
+        {errors.form && <div className="alert alert--error">{errors.form}</div>}
+
+        <footer className="modal__footer">
+          <button type="button" className="btn ghost" onClick={onClose} disabled={pending}>
+            取消
+          </button>
+          <button type="submit" className="btn" disabled={pending}>
+            {pending ? '保存中…' : '保存'}
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  )
+}
+
+function DryRunModal({ open, onClose, onSubmit, policy }) {
+  const [domain, setDomain] = useState(policy?.domains?.[0] ?? '')
+  const [payload, setPayload] = useState('')
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setDomain(policy?.domains?.[0] ?? '')
+    setPayload('')
+    setResult(null)
+    setError('')
+  }, [open, policy])
+
+  if (!open) return null
+
+  const run = async (event) => {
+    event.preventDefault()
+    setError('')
+    let candidates = []
+    if (payload.trim()) {
+      try {
+        const parsed = JSON.parse(payload)
+        if (!Array.isArray(parsed)) throw new Error('需要数组')
+        candidates = parsed
+      } catch (err) {
+        setError('候选 JSON 解析失败，应为数组结构')
+        return
+      }
+    }
+    if (!candidates.length && domain.trim()) {
+      candidates = [{ domain }]
+    }
+    setPending(true)
+    try {
+      const body = await onSubmit({
+        candidates,
+      })
+      setResult(body)
+    } catch (err) {
+      setError(err?.message || '测试失败')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`测试策略 #${policy?.id || ''}`}>
+      <form onSubmit={run} className="form-grid">
+        <FormField label="测试域名" description="默认取策略第一个域名">
+          <input className="input" value={domain} onChange={(e) => setDomain(e.target.value)} />
+        </FormField>
+        <FormField
+          label="候选 JSON"
+          description={'可选，数组形式，例如：[{"shop_id":"s1"}]'}
+        >
+          <textarea className="input" rows={4} value={payload} onChange={(e) => setPayload(e.target.value)} />
+        </FormField>
+        {error && <div className="alert alert--error">{error}</div>}
+        <footer className="modal__footer">
+          <button type="button" className="btn ghost" onClick={onClose} disabled={pending}>
+            关闭
+          </button>
+          <button type="submit" className="btn" disabled={pending}>
+            {pending ? '测试中…' : '执行测试'}
+          </button>
+        </footer>
+      </form>
+      {result && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h4>测试结果</h4>
+          <pre className="code-block" style={{ maxHeight: 320, overflow: 'auto' }}>
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </section>
+      )}
+    </Modal>
+  )
+}
+
 export default function PlatformPolicies() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [providerKey, setProviderKey] = useState(() => searchParams.get('provider_key') || '')
-  const [mode, setMode] = useState(() => normalizeFilterMode(searchParams.get('mode')))
+  const [mode, setMode] = useState(() => normalizeMode(searchParams.get('mode'), ''))
   const [domainFilter, setDomainFilter] = useState(() => searchParams.get('domain') || '')
-  const [enabledFilter, setEnabledFilter] = useState(() => searchParams.get('enabled') || '')
+  const [statusFilter, setStatusFilter] = useState(() => normalizeStatus(searchParams.get('status')))
   const [page, setPage] = useState(() => {
-    const p = parseInt(searchParams.get('page') || '1', 10)
-    return Number.isFinite(p) && p > 0 ? p : 1
+    const raw = parseInt(searchParams.get('page') || '1', 10)
+    return Number.isFinite(raw) && raw > 0 ? raw : 1
   })
 
   const [providers, setProviders] = useState([])
-  const providerLabel = useMemo(() => {
-    const map = new Map()
-    providers.forEach(item => map.set(item.key, item.name))
-    return map
-  }, [providers])
-
   const [policies, setPolicies] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [modalState, setModalState] = useState({ open: false, policy: null })
+  const [dryRunState, setDryRunState] = useState({ open: false, policy: null })
+  const [toast, showToast] = useToast()
   const [refreshToken, setRefreshToken] = useState(0)
-
-  const [modalState, setModalState] = useState({ open: false, mode: 'create', policy: null })
-  const [togglePending, setTogglePending] = useState(new Set())
-  const [toast, setToast] = useState(null)
-
-  const showToast = useCallback((message, tone = 'info') => {
-    setToast({ id: Date.now(), message, tone })
-  }, [])
 
   useEffect(() => {
     let cancelled = false
-    async function run() {
+    async function loadProviders() {
       try {
         const data = await listPolicyProviders()
-        if (!cancelled) {
-          setProviders(Array.isArray(data) ? data : [])
+        if (!cancelled && Array.isArray(data)) {
+          setProviders(data)
         }
       } catch (err) {
-        if (!cancelled) {
-          showToast(err?.message || '加载平台提供方失败', 'error')
-        }
+        if (!cancelled) showToast(err?.message || '加载提供方失败', 'error')
       }
     }
-    run()
+    loadProviders()
     return () => {
       cancelled = true
     }
   }, [showToast])
 
-  const updateSearchParams = useCallback((next) => {
-    const params = new URLSearchParams()
-    if (next.provider_key) params.set('provider_key', next.provider_key)
-    if (next.mode) {
-      const normalized = normalizeFilterMode(next.mode)
-      if (normalized) params.set('mode', normalized)
-    }
-    if (next.domain?.trim()) params.set('domain', next.domain.trim())
-    if (next.enabled) params.set('enabled', next.enabled)
-    params.set('page', String(next.page))
-    setSearchParams(params, { replace: true })
-  }, [setSearchParams])
-
-  useEffect(() => {
-    const nextProvider = searchParams.get('provider_key') || ''
-    const nextMode = normalizeFilterMode(searchParams.get('mode'))
-    const nextDomain = searchParams.get('domain') || ''
-    const nextEnabled = searchParams.get('enabled') || ''
-    const nextPageRaw = parseInt(searchParams.get('page') || '1', 10)
-    const nextPage = Number.isFinite(nextPageRaw) && nextPageRaw > 0 ? nextPageRaw : 1
-
-    if (nextProvider !== providerKey) setProviderKey(nextProvider)
-    if (nextMode !== mode) setMode(nextMode)
-    if (nextDomain !== domainFilter) setDomainFilter(nextDomain)
-    if (nextEnabled !== enabledFilter) setEnabledFilter(nextEnabled)
-    if (nextPage !== page) setPage(nextPage)
-  }, [searchParams, providerKey, mode, domainFilter, enabledFilter, page])
-
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError('')
-      try {
-        const query = {
-          provider_key: providerKey || undefined,
-          mode: mode || undefined,
-          domain: domainFilter.trim() || undefined,
-          enabled: enabledFilter || undefined,
-          page,
-          page_size: PAGE_SIZE,
-        }
-        const data = await listPolicies(query)
-        if (cancelled) return
-        const items = Array.isArray(data?.items)
-          ? data.items.map((item) => ({
-              ...item,
-              mode: normalizePolicyMode(item.mode),
-            }))
-          : []
-        setPolicies(items)
-        setTotal(Number.isFinite(data?.total) ? data.total : 0)
-        const pageSize = Number.isFinite(data?.page_size) ? data.page_size : PAGE_SIZE
-        const totalPages = Math.max(1, Math.ceil((data?.total || 0) / pageSize))
-        if (page > totalPages) {
-          setPage(totalPages)
-          updateSearchParams({
-            provider_key: providerKey,
-            mode,
-            domain: domainFilter,
-            enabled: enabledFilter,
-            page: totalPages,
-          })
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPolicies([])
-          setTotal(0)
-          setError(err?.message || '加载策略失败')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [providerKey, mode, domainFilter, enabledFilter, page, refreshToken, updateSearchParams])
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = setTimeout(() => setToast(null), toast.duration || 3200)
-    return () => clearTimeout(timer)
-  }, [toast])
-
-  const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil((total || 0) / PAGE_SIZE))
-  }, [total])
-
-  const handleFilterChange = useCallback(
-    (key, value) => {
-      const next = {
-        provider_key: providerKey,
-        mode,
-        domain: domainFilter,
-        enabled: enabledFilter,
+  const loadPolicies = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const query = {
+        provider_key: providerKey || undefined,
+        mode: mode || undefined,
+        domain: domainFilter || undefined,
+        status: statusFilter || undefined,
         page,
+        page_size: 20,
+        sort: '-updated_at',
       }
-      if (key === 'provider_key') {
-        next.provider_key = value
-        setProviderKey(value)
-      }
-      if (key === 'mode') {
-        const normalized = normalizeFilterMode(value)
-        next.mode = normalized
-        setMode(normalized)
-      }
-      if (key === 'domain') {
-        next.domain = value
-        setDomainFilter(value)
-      }
-      if (key === 'enabled') {
-        next.enabled = value
-        setEnabledFilter(value)
-      }
-      if (key !== 'page') {
-        next.page = 1
-        setPage(1)
-      }
-      updateSearchParams(next)
-    },
-    [providerKey, mode, domainFilter, enabledFilter, page, updateSearchParams]
-  )
+      const data = await listPolicies(query)
+      const items = Array.isArray(data?.items) ? data.items : []
+      setPolicies(items)
+      setTotal(Number.isFinite(data?.total) ? data.total : 0)
+    } catch (err) {
+      setPolicies([])
+      setTotal(0)
+      setError(err?.message || '加载策略失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [providerKey, mode, domainFilter, statusFilter, page])
 
-  const handlePageChange = useCallback(
-    (nextPage) => {
-      const target = Math.min(Math.max(1, nextPage), totalPages)
-      setPage(target)
-      updateSearchParams({
-        provider_key: providerKey,
-        mode,
-        domain: domainFilter,
-        enabled: enabledFilter,
-        page: target,
-      })
-    },
-    [providerKey, mode, domainFilter, enabledFilter, totalPages, updateSearchParams]
-  )
+  useEffect(() => {
+    loadPolicies()
+  }, [loadPolicies, refreshToken])
 
-  const openCreateModal = () => {
-    setModalState({ open: true, mode: 'create', policy: null })
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (providerKey) params.set('provider_key', providerKey)
+    if (mode) params.set('mode', mode)
+    if (domainFilter) params.set('domain', domainFilter)
+    if (statusFilter) params.set('status', statusFilter)
+    params.set('page', String(page))
+    setSearchParams(params, { replace: true })
+  }, [providerKey, mode, domainFilter, statusFilter, page, setSearchParams])
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / 20)), [total])
+
+  const openCreateModal = () => setModalState({ open: true, policy: null })
+  const openEditModal = (policy) => setModalState({ open: true, policy })
+  const closeModal = () => setModalState({ open: false, policy: null })
+
+  const openDryRunModal = (policy) => setDryRunState({ open: true, policy })
+  const closeDryRunModal = () => setDryRunState({ open: false, policy: null })
+
+  const refresh = () => setRefreshToken((x) => x + 1)
+
+  const handleSubmit = async (payload) => {
+    if (modalState.policy) {
+      await updatePolicy(modalState.policy.id, payload)
+      showToast('策略已更新', 'success')
+    } else {
+      await createPolicy(payload)
+      showToast('策略已创建', 'success')
+    }
+    refresh()
   }
-
-  const openEditModal = (policy) => {
-    setModalState({ open: true, mode: 'edit', policy })
-  }
-
-  const closeModal = () => {
-    setModalState({ open: false, mode: 'create', policy: null })
-  }
-
-  const refresh = useCallback(() => {
-    setRefreshToken((x) => x + 1)
-  }, [])
-
-  const handleModalSuccess = useCallback(
-    (message) => {
-      closeModal()
-      showToast(message, 'success')
-      refresh()
-    },
-    [refresh, showToast]
-  )
 
   const handleToggle = async (policy) => {
-    const nextState = !policy.is_enabled
-    setPolicies((prev) => prev.map((item) => (item.id === policy.id ? { ...item, is_enabled: nextState } : item)))
-    setTogglePending((prev) => new Set([...prev, policy.id]))
+    const next = !policy.is_enabled
+    setPolicies((prev) => prev.map((item) => (item.id === policy.id ? { ...item, is_enabled: next } : item)))
     try {
-      await togglePolicy(policy.id, nextState)
-      showToast(`策略已${nextState ? '启用' : '停用'}`, 'success')
+      await togglePolicy(policy.id, next)
+      showToast(`策略已${next ? '启用' : '停用'}`, 'success')
       refresh()
     } catch (err) {
       setPolicies((prev) => prev.map((item) => (item.id === policy.id ? { ...item, is_enabled: policy.is_enabled } : item)))
-      showToast(err?.message || '更新失败', 'error')
-    } finally {
-      setTogglePending((prev) => {
-        const next = new Set(prev)
-        next.delete(policy.id)
-        return next
-      })
+      showToast(err?.message || '切换失败', 'error')
     }
   }
 
   const handleDelete = async (policy) => {
-    if (!confirm(`确定删除策略「${policy.domain}」吗？`)) return
+    if (!window.confirm(`确定删除策略「${policy.name}」吗？`)) return
     try {
       await deletePolicy(policy.id)
       showToast('策略已删除', 'success')
@@ -289,37 +603,27 @@ export default function PlatformPolicies() {
     }
   }
 
+  const handleDryRun = async (payload) => {
+    const response = await dryRunPolicy(dryRunState.policy.id, payload)
+    return response
+  }
+
   return (
     <div className="card card--elevated" style={{ padding: 16 }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+      <header className="page-header">
         <div>
-          <h3 style={{ margin: 0 }}>平台域名策略</h3>
-          <p className="small-muted" style={{ margin: '4px 0 0' }}>
-            管理各平台的白名单 / 黑名单域名，配置更改即时生效并记录审计日志。
-          </p>
+          <h3>平台策略管理</h3>
+          <p className="small-muted">配置白名单 / 黑名单、业务范围以及限流，所有操作将记录审计日志。</p>
         </div>
         <button className="btn" onClick={openCreateModal}>
           新建策略
         </button>
       </header>
 
-      <section
-        aria-label="筛选条件"
-        style={{
-          display: 'flex',
-          gap: 12,
-          flexWrap: 'wrap',
-          marginBottom: 16,
-          alignItems: 'center',
-        }}
-      >
+      <section className="filters">
         <label className="input-group">
           <span className="input-group__label">提供方</span>
-          <select
-            className="input"
-            value={providerKey}
-            onChange={(e) => handleFilterChange('provider_key', e.target.value)}
-          >
+          <select className="input" value={providerKey} onChange={(e) => setProviderKey(e.target.value)}>
             <option value="">全部提供方</option>
             {providers.map((item) => (
               <option key={item.key} value={item.key}>
@@ -331,7 +635,7 @@ export default function PlatformPolicies() {
 
         <label className="input-group">
           <span className="input-group__label">模式</span>
-          <select className="input" value={mode} onChange={(e) => handleFilterChange('mode', e.target.value)}>
+          <select className="input" value={mode} onChange={(e) => setMode(normalizeMode(e.target.value, ''))}>
             {MODE_OPTIONS.map((opt) => (
               <option key={opt.value || 'all'} value={opt.value}>
                 {opt.label}
@@ -342,22 +646,13 @@ export default function PlatformPolicies() {
 
         <label className="input-group" style={{ minWidth: 220, flex: '1 1 220px' }}>
           <span className="input-group__label">域名包含</span>
-          <input
-            className="input"
-            placeholder="输入域名关键字"
-            value={domainFilter}
-            onChange={(e) => handleFilterChange('domain', e.target.value)}
-          />
+          <input className="input" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)} placeholder="关键字" />
         </label>
 
         <label className="input-group">
           <span className="input-group__label">状态</span>
-          <select
-            className="input"
-            value={enabledFilter}
-            onChange={(e) => handleFilterChange('enabled', e.target.value)}
-          >
-            {ENABLED_OPTIONS.map((opt) => (
+          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(normalizeStatus(e.target.value))}>
+            {STATUS_OPTIONS.map((opt) => (
               <option key={opt.value || 'all'} value={opt.value}>
                 {opt.label}
               </option>
@@ -367,68 +662,72 @@ export default function PlatformPolicies() {
       </section>
 
       {error && (
-        <div className="alert alert--error" role="alert" style={{ marginBottom: 12 }}>
+        <div className="alert alert--error" role="alert">
           {error}
-          <button className="btn ghost" style={{ marginLeft: 12 }} onClick={() => refresh()}>
+          <button className="btn ghost" onClick={loadPolicies} style={{ marginLeft: 12 }}>
             重试
           </button>
         </div>
       )}
 
-      <div className="table-wrap" style={{ border: '1px solid var(--border)', borderRadius: 12, overflowX: 'auto' }}>
-        <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse' }}>
-          <thead style={{ background: 'var(--panel-2)' }}>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
             <tr>
-              <Th>提供方</Th>
-              <Th>模式</Th>
-              <Th>域名</Th>
-              <Th>状态</Th>
-              <Th>描述</Th>
-              <Th>最近更新</Th>
-              <Th align="right">操作</Th>
+              <th>提供方</th>
+              <th>模式</th>
+              <th>域名数量</th>
+              <th>执行模式</th>
+              <th>状态</th>
+              <th>限流</th>
+              <th>最近更新</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} style={{ padding: 24 }}>
+                <td colSpan={8} style={{ padding: 24 }}>
                   <Loading text="加载中..." />
                 </td>
               </tr>
             ) : policies.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
-                  暂无策略，可通过右上角按钮创建。
+                <td colSpan={8} className="empty">
+                  暂无策略
                 </td>
               </tr>
             ) : (
-              policies.map((item) => (
-                <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
-                  <Td>{providerLabel.get(item.provider_key) || item.provider_key}</Td>
-                  <Td>{item.mode === MODE_VALUES[0] ? '白名单' : '黑名单'}</Td>
-                  <Td mono>{item.domain}</Td>
-                  <Td>
-                    <StatusBadge enabled={item.is_enabled} />
-                  </Td>
-                  <Td>{item.description || <span className="small-muted">未填写</span>}</Td>
-                  <Td>{formatDate(item.updated_at)}</Td>
-                  <Td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-                      <button className="btn ghost" onClick={() => openEditModal(item)}>
+              policies.map((policy) => (
+                <tr key={policy.id}>
+                  <td>{policy.provider_key}</td>
+                  <td>{policy.mode}</td>
+                  <td>{policy.domains?.length ?? 0}</td>
+                  <td>{policy.enforcement_mode}</td>
+                  <td>{policy.is_enabled ? '启用' : '停用'}</td>
+                  <td>
+                    {policy.limits?.rate_limit_rps
+                      ? `${policy.limits.rate_limit_rps} rps`
+                      : '—'}
+                    {policy.limits?.cooldown_seconds ? ` / 冷却 ${policy.limits.cooldown_seconds}s` : ''}
+                  </td>
+                  <td>{new Date(policy.updated_at).toLocaleString()}</td>
+                  <td>
+                    <div className="table-actions">
+                      <button className="btn ghost" onClick={() => openEditModal(policy)}>
                         编辑
                       </button>
-                      <button
-                        className="btn ghost"
-                        onClick={() => handleToggle(item)}
-                        disabled={togglePending.has(item.id)}
-                      >
-                        {item.is_enabled ? '停用' : '启用'}
+                      <button className="btn ghost" onClick={() => handleToggle(policy)}>
+                        {policy.is_enabled ? '停用' : '启用'}
                       </button>
-                      <button className="btn ghost" style={{ color: '#dc2626' }} onClick={() => handleDelete(item)}>
+                      <button className="btn ghost" onClick={() => openDryRunModal(policy)}>
+                        测试
+                      </button>
+                      <button className="btn danger ghost" onClick={() => handleDelete(policy)}>
                         删除
                       </button>
                     </div>
-                  </Td>
+                  </td>
                 </tr>
               ))
             )}
@@ -436,292 +735,40 @@ export default function PlatformPolicies() {
         </table>
       </div>
 
-      <footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, flexWrap: 'wrap', gap: 12 }}>
-        <div className="small-muted">共 {total} 条记录</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn ghost" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
+      <footer className="pagination">
+        <span>
+          第 {page} / {totalPages} 页，共 {total} 条记录
+        </span>
+        <div className="pagination__controls">
+          <button className="btn ghost" onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1}>
             上一页
           </button>
-          <span className="small-muted">
-            第 {page} / {totalPages} 页
-          </span>
-          <button className="btn ghost" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)}>
+          <button className="btn ghost" onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>
             下一页
           </button>
         </div>
       </footer>
 
-      <PolicyModal
-        open={modalState.open}
-        mode={modalState.mode}
-        policy={modalState.policy}
-        providers={providers}
-        onClose={closeModal}
-        onSuccess={handleModalSuccess}
-      />
-
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
-    </div>
-  )
-}
-
-function Th({ children, align = 'left' }) {
-  return (
-    <th
-      style={{
-        textAlign: align,
-        padding: '10px 12px',
-        fontWeight: 700,
-        fontSize: 14,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </th>
-  )
-}
-
-function Td({ children, mono }) {
-  return (
-    <td
-      style={{
-        padding: '10px 12px',
-        fontFamily: mono
-          ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-          : undefined,
-      }}
-    >
-      {children}
-    </td>
-  )
-}
-
-function StatusBadge({ enabled }) {
-  const bg = enabled ? '#16a34a' : '#dc2626'
-  const label = enabled ? '启用' : '停用'
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '4px 10px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        color: '#fff',
-        background: bg,
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#fff' }}
-      />
-      {label}
-    </span>
-  )
-}
-
-function formatDate(value) {
-  if (!value) return '—'
-  try {
-    return new Date(value).toLocaleString()
-  } catch (e) {
-    return value
-  }
-}
-
-function Toast({ toast, onDismiss }) {
-  if (!toast) return null
-  const background = toast.tone === 'error' ? '#dc2626' : '#16a34a'
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        position: 'fixed',
-        right: 24,
-        bottom: 24,
-        background,
-        color: '#fff',
-        padding: '12px 16px',
-        borderRadius: 12,
-        boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
-        zIndex: 2000,
-        maxWidth: 360,
-      }}
-    >
-      <span style={{ flex: 1 }}>{toast.message}</span>
-      <button
-        className="btn ghost"
-        style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }}
-        onClick={onDismiss}
-        aria-label="关闭通知"
-      >
-        ×
-      </button>
-    </div>
-  )
-}
-
-function PolicyModal({ open, mode, policy, providers, onClose, onSuccess }) {
-  const [providerKey, setProviderKey] = useState(policy?.provider_key || '')
-  const [policyMode, setPolicyMode] = useState(normalizePolicyMode(policy?.mode))
-  const [domain, setDomain] = useState(policy?.domain || '')
-  const [description, setDescription] = useState(policy?.description || '')
-  const [enabled, setEnabled] = useState(policy?.is_enabled ?? true)
-  const [errors, setErrors] = useState({})
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    setProviderKey(policy?.provider_key || '')
-    setPolicyMode(normalizePolicyMode(policy?.mode))
-    setDomain(policy?.domain || '')
-    setDescription(policy?.description || '')
-    setEnabled(policy?.is_enabled ?? true)
-    setErrors({})
-    setSubmitError('')
-  }, [open, policy])
-
-  const title = mode === 'edit' ? '编辑策略' : '创建策略'
-
-  const onSubmit = async (e) => {
-    e.preventDefault()
-    const nextErrors = {}
-    if (!providerKey) nextErrors.provider_key = '请选择提供方'
-    if (!policyMode) nextErrors.mode = '请选择模式'
-    const normalizedDomain = domain.trim().toLowerCase()
-    if (!normalizedDomain) {
-      nextErrors.domain = '请输入域名'
-    } else if (!DOMAIN_PATTERN.test(normalizedDomain)) {
-      nextErrors.domain = '域名格式不正确，支持可选的 *. 前缀'
-    }
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
-
-    setSubmitting(true)
-    setSubmitError('')
-    try {
-      if (mode === 'edit' && policy) {
-        await updatePolicy(policy.id, {
-          mode: policyMode,
-          domain: normalizedDomain,
-          description: description.trim() || null,
-          is_enabled: enabled,
-        })
-        onSuccess('策略已更新')
-      } else {
-        await createPolicy({
-          provider_key: providerKey,
-          mode: policyMode,
-          domain: normalizedDomain,
-          description: description.trim() || null,
-          is_enabled: enabled,
-        })
-        onSuccess('策略已创建')
-      }
-    } catch (err) {
-      const apiError = err?.payload?.error || {}
-      const nextFieldErrors = {}
-      if (apiError.code === 'PROVIDER_NOT_FOUND' || apiError.code === 'PROVIDER_NOT_CONFIGURED') {
-        nextFieldErrors.provider_key = apiError.message || '所选提供方不可用'
-      }
-      if (apiError.code === 'PROVIDER_DISABLED') {
-        nextFieldErrors.provider_key = apiError.message || '该提供方已停用'
-      }
-      if (apiError.code === 'INVALID_DOMAIN') {
-        nextFieldErrors.domain = apiError.message || '域名格式不正确'
-      }
-      if (apiError.code === 'POLICY_EXISTS') {
-        nextFieldErrors.domain = apiError.message || '该域名策略已存在'
-      }
-
-      if (Object.keys(nextFieldErrors).length > 0) {
-        setErrors(nextFieldErrors)
-        setSubmitError('')
-      } else {
-        setSubmitError(err?.message || '保存失败')
-      }
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Modal open={open} title={title} onClose={onClose}>
-      <form onSubmit={onSubmit} className="form" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <FormField label="提供方" error={errors.provider_key}>
-          <select
-            className="input"
-            value={providerKey}
-            onChange={(e) => setProviderKey(e.target.value)}
-            disabled={mode === 'edit'}
-          >
-            <option value="">选择提供方</option>
-            {providers.map((item) => (
-              <option key={item.key} value={item.key}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        <FormField label="策略模式" error={errors.mode}>
-          <select
-            className="input"
-            value={policyMode}
-            onChange={(e) => setPolicyMode(normalizePolicyMode(e.target.value))}
-          >
-            <option value={MODE_VALUES[0]}>白名单</option>
-            <option value={MODE_VALUES[1]}>黑名单</option>
-          </select>
-        </FormField>
-
-        <FormField label="作用域名" error={errors.domain}>
-          <input
-            className="input"
-            placeholder="例如：api.example.com 或 *.example.com"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            autoFocus
-          />
-        </FormField>
-
-        <FormField label="描述">
-          <textarea
-            className="input"
-            rows={3}
-            placeholder="可选说明，帮助团队理解策略用途"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </FormField>
-
-        <label className="checkbox">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          <span>启用此策略</span>
-        </label>
-
-        {submitError && (
-          <div className="alert alert--error" role="alert">
-            {submitError}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          <button type="button" className="btn ghost" onClick={onClose}>
-            取消
-          </button>
-          <button type="submit" className="btn" disabled={submitting}>
-            {submitting ? '保存中…' : '保存'}
-          </button>
+      {toast && (
+        <div className={`toast toast--${toast.tone}`} role="status">
+          {toast.message}
         </div>
-      </form>
-    </Modal>
+      )}
+
+      <PolicyFormModal
+        open={modalState.open}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+        providers={providers}
+        initial={modalState.policy}
+      />
+
+      <DryRunModal
+        open={dryRunState.open}
+        onClose={closeDryRunModal}
+        onSubmit={handleDryRun}
+        policy={dryRunState.policy}
+      />
+    </div>
   )
 }
