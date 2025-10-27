@@ -3,6 +3,9 @@
 const prefix = (wid) =>
   `/api/v1/tenants/${encodeURIComponent(wid)}/oauth/tiktok-business`;
 
+const syncPrefix = (wid) =>
+  `/api/v1/tenants/${encodeURIComponent(wid)}/providers/tiktok-business`;
+
 /* ---------- 公司信息 ---------- */
 export async function getTenantMeta(wid) {
   const r = await fetch(`/api/v1/tenants/${encodeURIComponent(wid)}/meta`, {
@@ -109,5 +112,52 @@ export async function updateAlias(wid, auth_id, alias) {
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+/* ---------- 新业务 / 同步域 ---------- */
+
+export async function triggerSync(wid, payload) {
+  const r = await fetch(`${syncPrefix(wid)}/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function getSyncRun(wid, run_id) {
+  const r = await fetch(`${syncPrefix(wid)}/sync-runs/${encodeURIComponent(run_id)}`, {
+    credentials: 'include',
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function pagedFetch(url, params = {}) {
+  const qp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qp.append(k, v);
+  });
+  const r = await fetch(`${url}?${qp.toString()}`, { credentials: 'include' });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export function listBusinessCenters(wid, params = {}) {
+  return pagedFetch(`${syncPrefix(wid)}/business-centers`, params);
+}
+
+export function listAdvertisers(wid, params = {}) {
+  return pagedFetch(`${syncPrefix(wid)}/advertisers`, params);
+}
+
+export function listShops(wid, params = {}) {
+  return pagedFetch(`${syncPrefix(wid)}/shops`, params);
+}
+
+export function listProducts(wid, params = {}) {
+  return pagedFetch(`${syncPrefix(wid)}/products`, params);
 }
 

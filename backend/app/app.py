@@ -34,6 +34,7 @@ from app.features.tenants.oauth_ttb.router_sync import router as sync_router
 from app.features.tenants.oauth_ttb.router_sync_all import router as sync_all_router
 from app.features.tenants.oauth_ttb.router_cursors import router as cursors_router
 from app.features.tenants.oauth_ttb.router_jobs import router as jobs_router
+from app.features.tenants.ttb.router import router as tenant_ttb_router
 
 from app.providers import load_builtin_providers
 
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(sync_all_router)
     app.include_router(cursors_router)
     app.include_router(jobs_router)
+    app.include_router(tenant_ttb_router)
 
     app.include_router(oauth_callback_router)  # /api/oauth/tiktok-business/callback（不版本化）
 
