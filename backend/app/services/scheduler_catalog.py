@@ -24,7 +24,7 @@ class PeriodicTaskSpec:
 CATALOG: List[PeriodicTaskSpec] = [
     PeriodicTaskSpec(
         name="ttb:products:incremental",
-        task="tenant.ttb.sync.products",
+        task="ttb.sync.products",
         crontab="*/30 * * * *",  # 每 30 分钟
         args=[],
         kwargs={"mode": "incremental", "limit": 500},
@@ -33,7 +33,7 @@ CATALOG: List[PeriodicTaskSpec] = [
     ),
     PeriodicTaskSpec(
         name="ttb:shops:incremental",
-        task="tenant.ttb.sync.shops",
+        task="ttb.sync.shops",
         crontab="0 * * * *",  # 每小时
         args=[],
         kwargs={"mode": "incremental", "limit": 200},
@@ -42,7 +42,7 @@ CATALOG: List[PeriodicTaskSpec] = [
     ),
     PeriodicTaskSpec(
         name="ttb:advertisers:incremental",
-        task="tenant.ttb.sync.advertisers",
+        task="ttb.sync.advertisers",
         crontab="0 */6 * * *",  # 每 6 小时
         args=[],
         kwargs={"mode": "incremental", "limit": 200},
@@ -51,7 +51,7 @@ CATALOG: List[PeriodicTaskSpec] = [
     ),
     PeriodicTaskSpec(
         name="ttb:bc:incremental",
-        task="tenant.ttb.sync.bc",
+        task="ttb.sync.bc",
         crontab="0 3 * * *",  # 每天 03:00
         args=[],
         kwargs={"mode": "incremental", "limit": 200},

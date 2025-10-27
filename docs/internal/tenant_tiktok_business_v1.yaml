@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: Tenant TikTok Business API
+  version: 1.0.0
+  description: |
+    Tenant-scoped TikTok Business sync orchestration and read APIs with provider-aware
+    routing that can be extended to other marketing platforms.
+servers:
+  - url: /api/v1
+paths:
+  /tenants/{workspace_id}/oauth/tiktok-business/bind:
+    post:
+      tags: [Tenant / TikTok Business OAuth]
+      summary: Trigger a background sync after binding a TikTok Business account
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingSyncRequest'
+            examples:
+              default:
+                value:
+                  auth_id: 123
+                  scope: all
+      responses:
+        '202':
+          description: Sync accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400': {description: Invalid scope or binding status}
+        '404': {description: Binding not found}
+  /tenants/{workspace_id}/providers/{provider}/sync:
+    post:
+      tags: [Tenant / TikTok Business]
+      summary: Dispatch a TikTok Business sync run
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+            examples:
+              incremental-products:
+                value:
+                  auth_id: 123
+                  scope: products
+                  mode: incremental
+                  product_limit: 500
+                  shop_id: "12345"
+                  idempotency_key: sync-123
+      responses:
+        '202':
+          description: Sync accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400': {description: Validation error}
+        '404': {description: Binding not found or provider unsupported}
+  /tenants/{workspace_id}/providers/{provider}/sync-runs/{run_id}:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: Inspect a sync run
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRun'
+        '404': {description: Run not found}
+  /tenants/{workspace_id}/providers/{provider}/business-centers:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: List TikTok Business Centers
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - in: query
+          name: auth_id
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional OAuth binding id filter
+      responses:
+        '200':
+          description: Paged business centers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedBusinessCenters'
+  /tenants/{workspace_id}/providers/{provider}/advertisers:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: List TikTok advertisers
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - in: query
+          name: bc_id
+          schema:
+            type: string
+            maxLength: 64
+          description: Filter advertisers by business center id
+      responses:
+        '200':
+          description: Paged advertisers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedAdvertisers'
+  /tenants/{workspace_id}/providers/{provider}/shops:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: List TikTok shops
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - in: query
+          name: advertiser_id
+          schema:
+            type: string
+            maxLength: 64
+          description: Filter shops by advertiser id
+      responses:
+        '200':
+          description: Paged shops
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedShops'
+  /tenants/{workspace_id}/providers/{provider}/products:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: List TikTok products
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - in: query
+          name: shop_id
+          schema:
+            type: string
+            maxLength: 64
+          description: Filter products by shop id
+      responses:
+        '200':
+          description: Paged products
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedProducts'
+components:
+  parameters:
+    WorkspaceId:
+      in: path
+      name: workspace_id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    ProviderParam:
+      in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+        enum: [tiktok-business]
+      description: Marketing provider identifier
+    RunId:
+      in: path
+      name: run_id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      in: query
+      name: page_size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  schemas:
+    SyncRequest:
+      type: object
+      required: [auth_id]
+      properties:
+        auth_id:
+          type: integer
+          minimum: 1
+        scope:
+          type: string
+          enum: [bc, advertisers, shops, products, all]
+          default: all
+        mode:
+          type: string
+          enum: [incremental, full]
+          default: incremental
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        product_limit:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        shop_id:
+          type: string
+          maxLength: 128
+        since:
+          type: string
+          format: date-time
+          description: Optional override for incremental start time
+        idempotency_key:
+          type: string
+          maxLength: 128
+          description: Reuse the same key to avoid duplicate dispatch within 24h
+    BindingSyncRequest:
+      type: object
+      required: [auth_id]
+      properties:
+        auth_id:
+          type: integer
+          minimum: 1
+        scope:
+          type: string
+          enum: [bc, advertisers, shops, products, all]
+        mode:
+          type: string
+          enum: [incremental, full]
+        idempotency_key:
+          type: string
+          maxLength: 128
+    SyncResponse:
+      type: object
+      required: [run_id, schedule_id, task_name, status]
+      properties:
+        run_id:
+          type: integer
+        schedule_id:
+          type: integer
+        task_name:
+          type: string
+          example: ttb.sync.all
+        task_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          example: enqueued
+        idempotent:
+          type: boolean
+          default: false
+    SyncRun:
+      type: object
+      required: [id, schedule_id, task_name, status, scheduled_for]
+      properties:
+        id: {type: integer}
+        schedule_id: {type: integer}
+        task_name: {type: string}
+        status: {type: string}
+        scheduled_for: {type: string, format: date-time}
+        enqueued_at: {type: string, format: date-time, nullable: true}
+        duration_ms: {type: integer, nullable: true}
+        error_code: {type: string, nullable: true}
+        error_message: {type: string, nullable: true}
+        stats:
+          type: object
+          additionalProperties: true
+          nullable: true
+    PagedResult:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items: {type: object}
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    PagedBusinessCenters:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  bc_id: {type: string}
+                  name: {type: string}
+                  status: {type: string}
+                  timezone: {type: string}
+                  country_code: {type: string}
+                  owner_user_id: {type: string}
+                  ext_created_time: {type: string, format: date-time, nullable: true}
+                  ext_updated_time: {type: string, format: date-time, nullable: true}
+    PagedAdvertisers:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  advertiser_id: {type: string}
+                  bc_id: {type: string}
+                  name: {type: string}
+                  display_name: {type: string}
+                  status: {type: string}
+                  industry: {type: string}
+                  currency: {type: string}
+                  timezone: {type: string}
+                  country_code: {type: string}
+    PagedShops:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  shop_id: {type: string}
+                  advertiser_id: {type: string}
+                  bc_id: {type: string}
+                  name: {type: string}
+                  status: {type: string}
+                  region_code: {type: string}
+    PagedProducts:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id: {type: string}
+                  shop_id: {type: string}
+                  title: {type: string}
+                  status: {type: string}
+                  currency: {type: string}
+                  price: {type: number, format: float}
+                  stock: {type: integer, nullable: true}
