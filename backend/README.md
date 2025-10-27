@@ -21,3 +21,11 @@ COOKIE_MAX_AGE=604800
 COOKIE_SECURE=True
 COOKIE_SAMESITE=lax
 ```
+
+## Migration notes
+
+- **0008_ttb_sync_schedule_stats**: The revision now performs existence checks before
+  creating the `schedule_runs.stats_json` column and only drops it during downgrade when
+  it is present. If a database already has the column but the Alembic revision is still at
+  `0007_platform_policy_v1`, simply run `alembic upgrade head`; the migration will detect
+  the pre-existing column and skip the creation without requiring any manual repair steps.

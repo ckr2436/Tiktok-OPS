@@ -5,7 +5,15 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    String, Boolean, Integer, Enum, JSON, ForeignKey, UniqueConstraint, Index, text
+    String,
+    Boolean,
+    Integer,
+    Enum,
+    JSON,
+    ForeignKey,
+    UniqueConstraint,
+    Index,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import BigInteger as _BigInteger
@@ -16,7 +24,11 @@ from sqlalchemy.dialects.mysql import ENUM as MySQL_ENUM
 from app.data.db import Base
 
 # 通用 BigInt + MySQL 无符号 BIGINT 变体
-UBigInt = _BigInteger().with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+UBigInt = (
+    _BigInteger()
+    .with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+    .with_variant(Integer, "sqlite")
+)
 
 
 # ========================= 任务目录 =========================
@@ -151,6 +163,8 @@ class ScheduleRun(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
     error_code: Mapped[str | None] = mapped_column(String(64), default=None)
     error_message: Mapped[str | None] = mapped_column(String(512), default=None)
+
+    stats_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     # 幂等键（每个触发窗口唯一）
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

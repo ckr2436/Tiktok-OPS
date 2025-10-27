@@ -15,7 +15,11 @@ from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 from app.data.db import Base
 
 # 统一：BigInt + MySQL 无符号变体
-UBigInt = _BigInteger().with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+UBigInt = (
+    _BigInteger()
+    .with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+    .with_variant(Integer, "sqlite")
+)
 
 
 # --------------------------- 同步游标 ---------------------------

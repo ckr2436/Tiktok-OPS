@@ -1,7 +1,7 @@
 # app/features/tenants/oauth_ttb/router.py
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.services.oauth_ttb import (
     update_oauth_account_alias,
     revoke_oauth_account,
 )
+from app.services.ttb_sync_dispatch import SYNC_TASKS, dispatch_sync
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants" + "/{workspace_id}/oauth/tiktok-business",
@@ -181,6 +182,66 @@ def update_alias(
         actor_user_id=int(me.id),
     )
     return AliasUpdateResp(auth_id=int(acc.id), alias=acc.alias)
+
+
+# ----------- 绑定后触发同步（仅租户管理员）-----------
+class BindingSyncReq(BaseModel):
+    auth_id: int = Field(gt=0)
+    scope: str | None = Field(default=None, description="bc|advertisers|shops|products|all")
+    mode: str | None = Field(default=None, description="incremental|full")
+    idempotency_key: str | None = Field(default=None, max_length=128)
+
+
+class BindingSyncResp(BaseModel):
+    run_id: int
+    schedule_id: int
+    task_name: str
+    task_id: str | None
+    status: str
+    idempotent: bool = False
+
+
+@router.post("/bind", response_model=BindingSyncResp, status_code=status.HTTP_202_ACCEPTED)
+def trigger_binding_sync(
+    workspace_id: int,
+    req: BindingSyncReq,
+    http: Request,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    account = db.get(OAuthAccountTTB, int(req.auth_id))
+    if not account or account.workspace_id != int(workspace_id):
+        raise HTTPException(status_code=404, detail="binding not found")
+    if account.status not in {"active", "invalid"}:
+        raise HTTPException(status_code=400, detail=f"binding status {account.status} cannot be synced")
+
+    scope = (req.scope or "all").lower()
+    if scope not in SYNC_TASKS:
+        raise HTTPException(status_code=400, detail="invalid scope")
+
+    params = {
+        "mode": (req.mode or "full"),
+    }
+    result = dispatch_sync(
+        db,
+        workspace_id=int(workspace_id),
+        provider="tiktok-business",
+        auth_id=int(account.id),
+        scope=scope,
+        params=params,
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id),
+        actor_ip=client_ip(http),
+        idempotency_key=req.idempotency_key,
+    )
+    return BindingSyncResp(
+        run_id=int(result.run.id),
+        schedule_id=int(result.run.schedule_id),
+        task_name=SYNC_TASKS[scope],
+        task_id=result.task_id,
+        status=result.status,
+        idempotent=result.idempotent,
+    )
 
 
 # ----------- 取消授权（撤销长期令牌；仅租户管理员）-----------

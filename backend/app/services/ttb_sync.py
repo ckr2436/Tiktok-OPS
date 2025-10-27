@@ -1,10 +1,14 @@
 # app/services/ttb_sync.py
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, Optional, List
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, List, Tuple
+import logging
+import contextlib
 
-from sqlalchemy import text
+logger = logging.getLogger("gmv.ttb.sync")
+
+from sqlalchemy import text, and_
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
@@ -16,8 +20,6 @@ from app.data.models.ttb_entities import (
     TTBProduct,
 )
 from app.services.ttb_api import TTBApiClient
-from app.services.oauth_ttb import get_access_token_for_auth_id
-from app.core.config import settings
 
 
 # --------------------------- 工具：字段提取与时间解析 ---------------------------
@@ -78,10 +80,56 @@ def _get_or_create_cursor(
 
 
 # --------------------------- UPSERTs ---------------------------
-def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
+def _dialect(db: Session) -> str:
+    bind = getattr(db, "bind", None)
+    if not bind or not getattr(bind, "dialect", None):
+        return ""
+    return bind.dialect.name
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _upsert(
+    db: Session,
+    model,
+    *,
+    values: Dict[str, Any],
+    conflict_columns: tuple[str, ...],
+    update_columns: tuple[str, ...],
+) -> None:
+    table = model.__table__
+    dialect = _dialect(db)
+    if dialect == "sqlite":
+        filters = [getattr(table.c, col) == values[col] for col in conflict_columns]
+        update_payload = {col: values[col] for col in update_columns if col in values}
+        if "last_seen_at" in table.c:
+            update_payload["last_seen_at"] = _now()
+        result = db.execute(table.update().where(and_(*filters)).values(**update_payload))
+        if result.rowcount == 0:
+            insert_values = dict(values)
+            if "last_seen_at" in table.c and "last_seen_at" not in insert_values:
+                insert_values["last_seen_at"] = _now()
+            db.execute(table.insert().values(**insert_values))
+        return
+
+    stmt = mysql_insert(table).values(values)
+    update_payload = {
+        col: getattr(stmt.inserted, col)
+        for col in update_columns
+        if col != "last_seen_at"
+    }
+    if "last_seen_at" in table.c:
+        update_payload["last_seen_at"] = text("CURRENT_TIMESTAMP(6)")
+    stmt = stmt.on_duplicate_key_update(**update_payload)
+    db.execute(stmt)
+
+
+def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
     bc_id = str(_pick(item, "bc_id", "business_center_id", "id", "bcId"))
     if not bc_id:
-        return
+        return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
@@ -96,26 +144,30 @@ def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> N
         sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
         raw_json=item,
     )
-    stmt = mysql_insert(TTBBusinessCenter).values(values)
-    ondup = stmt.on_duplicate_key_update(
-        name=stmt.inserted.name,
-        status=stmt.inserted.status,
-        timezone=stmt.inserted.timezone,
-        country_code=stmt.inserted.country_code,
-        owner_user_id=stmt.inserted.owner_user_id,
-        ext_created_time=stmt.inserted.ext_created_time,
-        ext_updated_time=stmt.inserted.ext_updated_time,
-        sync_rev=stmt.inserted.sync_rev,
-        raw_json=stmt.inserted.raw_json,
-        last_seen_at=text("CURRENT_TIMESTAMP(6)"),
+    _upsert(
+        db,
+        TTBBusinessCenter,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "bc_id"),
+        update_columns=(
+            "name",
+            "status",
+            "timezone",
+            "country_code",
+            "owner_user_id",
+            "ext_created_time",
+            "ext_updated_time",
+            "sync_rev",
+            "raw_json",
+        ),
     )
-    db.execute(ondup)
+    return True
 
 
-def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
+def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
     advertiser_id = str(_pick(item, "advertiser_id", "id"))
     if not advertiser_id:
-        return
+        return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
@@ -133,29 +185,33 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
         raw_json=item,
     )
-    stmt = mysql_insert(TTBAdvertiser).values(values)
-    ondup = stmt.on_duplicate_key_update(
-        bc_id=stmt.inserted.bc_id,
-        name=stmt.inserted.name,
-        display_name=stmt.inserted.display_name,
-        status=stmt.inserted.status,
-        industry=stmt.inserted.industry,
-        currency=stmt.inserted.currency,
-        timezone=stmt.inserted.timezone,
-        country_code=stmt.inserted.country_code,
-        ext_created_time=stmt.inserted.ext_created_time,
-        ext_updated_time=stmt.inserted.ext_updated_time,
-        sync_rev=stmt.inserted.sync_rev,
-        raw_json=stmt.inserted.raw_json,
-        last_seen_at=text("CURRENT_TIMESTAMP(6)"),
+    _upsert(
+        db,
+        TTBAdvertiser,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "advertiser_id"),
+        update_columns=(
+            "bc_id",
+            "name",
+            "display_name",
+            "status",
+            "industry",
+            "currency",
+            "timezone",
+            "country_code",
+            "ext_created_time",
+            "ext_updated_time",
+            "sync_rev",
+            "raw_json",
+        ),
     )
-    db.execute(ondup)
+    return True
 
 
-def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
+def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
     shop_id = str(_pick(item, "shop_id", "store_id", "id"))
     if not shop_id:
-        return
+        return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
@@ -170,26 +226,30 @@ def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) ->
         sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
         raw_json=item,
     )
-    stmt = mysql_insert(TTBShop).values(values)
-    ondup = stmt.on_duplicate_key_update(
-        advertiser_id=stmt.inserted.advertiser_id,
-        bc_id=stmt.inserted.bc_id,
-        name=stmt.inserted.name,
-        status=stmt.inserted.status,
-        region_code=stmt.inserted.region_code,
-        ext_created_time=stmt.inserted.ext_created_time,
-        ext_updated_time=stmt.inserted.ext_updated_time,
-        sync_rev=stmt.inserted.sync_rev,
-        raw_json=stmt.inserted.raw_json,
-        last_seen_at=text("CURRENT_TIMESTAMP(6)"),
+    _upsert(
+        db,
+        TTBShop,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "shop_id"),
+        update_columns=(
+            "advertiser_id",
+            "bc_id",
+            "name",
+            "status",
+            "region_code",
+            "ext_created_time",
+            "ext_updated_time",
+            "sync_rev",
+            "raw_json",
+        ),
     )
-    db.execute(ondup)
+    return True
 
 
-def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> None:
+def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
     product_id = str(_pick(item, "product_id", "id"))
     if not product_id:
-        return
+        return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
@@ -205,21 +265,25 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
         sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
         raw_json=item,
     )
-    stmt = mysql_insert(TTBProduct).values(values)
-    ondup = stmt.on_duplicate_key_update(
-        shop_id=stmt.inserted.shop_id,
-        title=stmt.inserted.title,
-        status=stmt.inserted.status,
-        currency=stmt.inserted.currency,
-        price=stmt.inserted.price,
-        stock=stmt.inserted.stock,
-        ext_created_time=stmt.inserted.ext_created_time,
-        ext_updated_time=stmt.inserted.ext_updated_time,
-        sync_rev=stmt.inserted.sync_rev,
-        raw_json=stmt.inserted.raw_json,
-        last_seen_at=text("CURRENT_TIMESTAMP(6)"),
+    _upsert(
+        db,
+        TTBProduct,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "product_id"),
+        update_columns=(
+            "shop_id",
+            "title",
+            "status",
+            "currency",
+            "price",
+            "stock",
+            "ext_created_time",
+            "ext_updated_time",
+            "sync_rev",
+            "raw_json",
+        ),
     )
-    db.execute(ondup)
+    return True
 
 
 # --------------------------- 同步服务 ---------------------------
@@ -236,72 +300,113 @@ class TTBSyncService:
         self.workspace_id = int(workspace_id)
         self.auth_id = int(auth_id)
 
-    async def sync_bc(self, *, limit: int = 200) -> dict:
-        cursor = _get_or_create_cursor(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="bc")
-        count = 0
-        async for item in self.client.iter_business_centers(limit=limit):
-            _upsert_bc(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
-            count += 1
-        cursor.last_rev = str(int(datetime.utcnow().timestamp()))
+    def _cursor_checkpoint(self, cursor: TTBSyncCursor, *, last_rev: str | None) -> None:
+        cursor.last_rev = last_rev or str(int(datetime.now(timezone.utc).timestamp()))
+        cursor.since_time = datetime.now(timezone.utc)
         self.db.add(cursor)
-        return {"synced": count, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def sync_advertisers(self, *, limit: int = 200, app_id: Optional[str] = None, secret: Optional[str] = None) -> dict:
+    async def sync_bc(self, *, limit: int = 200) -> dict:
+        cursor = _get_or_create_cursor(
+            self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="bc"
+        )
+        stats = {"fetched": 0, "upserts": 0, "skipped": 0}
+        latest_rev: str | None = cursor.last_rev
+        async for item in self.client.iter_business_centers(limit=limit):
+            stats["fetched"] += 1
+            ok = _upsert_bc(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+            if ok:
+                stats["upserts"] += 1
+                rev = _pick(item, "sync_rev", "rev", "version")
+                if rev:
+                    latest_rev = str(rev)
+            else:
+                stats["skipped"] += 1
+        self._cursor_checkpoint(cursor, last_rev=latest_rev)
+        return {"resource": "bc", **stats, "cursor": {"last_rev": cursor.last_rev}}
+
+    async def sync_advertisers(
+        self, *, limit: int = 200, app_id: Optional[str] = None, secret: Optional[str] = None
+    ) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="advertiser"
         )
-        count = 0
+        stats = {"fetched": 0, "upserts": 0, "skipped": 0}
+        latest_rev: str | None = cursor.last_rev
         async for item in self.client.iter_advertisers(limit=limit, app_id=app_id, secret=secret):
-            _upsert_adv(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
-            count += 1
-        cursor.last_rev = str(int(datetime.utcnow().timestamp()))
-        self.db.add(cursor)
-        return {"synced": count, "cursor": {"last_rev": cursor.last_rev}}
+            stats["fetched"] += 1
+            ok = _upsert_adv(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+            if ok:
+                stats["upserts"] += 1
+                rev = _pick(item, "sync_rev", "rev", "version")
+                if rev:
+                    latest_rev = str(rev)
+            else:
+                stats["skipped"] += 1
+        self._cursor_checkpoint(cursor, last_rev=latest_rev)
+        return {"resource": "advertisers", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
     async def sync_shops(self, *, limit: int = 200) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="shop"
         )
-        # 确保有广告主；若 DB 为空先拉一次
-        advs: List[TTBAdvertiser] = self.db.query(TTBAdvertiser).filter(
-            TTBAdvertiser.workspace_id == self.workspace_id,
-            TTBAdvertiser.auth_id == self.auth_id,
-        ).all()
-        if not advs:
-            # 如果没有广告主，本方法不主动去调用 token API；由上游编排先执行 advertisers
-            pass
+        stats = {"fetched": 0, "upserts": 0, "skipped": 0}
+        latest_rev: str | None = cursor.last_rev
+        advs: List[TTBAdvertiser] = (
+            self.db.query(TTBAdvertiser)
+            .filter(
+                TTBAdvertiser.workspace_id == self.workspace_id,
+                TTBAdvertiser.auth_id == self.auth_id,
+            )
+            .all()
+        )
 
-        count = 0
         for adv in advs:
-            if not adv.advertiser_id:
+            if not adv or not adv.advertiser_id:
                 continue
-            async for item in self.client.iter_shops(advertiser_id=str(adv.advertiser_id), page_size=min(limit, 1000)):
-                _upsert_shop(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
-                count += 1
+            async for item in self.client.iter_shops(
+                advertiser_id=str(adv.advertiser_id), page_size=min(limit, 1000)
+            ):
+                stats["fetched"] += 1
+                ok = _upsert_shop(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+                if ok:
+                    stats["upserts"] += 1
+                    rev = _pick(item, "sync_rev", "rev", "version")
+                    if rev:
+                        latest_rev = str(rev)
+                else:
+                    stats["skipped"] += 1
 
-        cursor.last_rev = str(int(datetime.utcnow().timestamp()))
-        self.db.add(cursor)
-        return {"synced": count, "cursor": {"last_rev": cursor.last_rev}}
+        self._cursor_checkpoint(cursor, last_rev=latest_rev)
+        return {"resource": "shops", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
     async def sync_products(self, *, limit: int = 200, shop_id: str | None = None) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="product"
         )
+        stats = {"fetched": 0, "upserts": 0, "skipped": 0}
+        latest_rev: str | None = cursor.last_rev
         shops: List[TTBShop]
         if shop_id:
-            row = self.db.query(TTBShop).filter(
-                TTBShop.workspace_id == self.workspace_id,
-                TTBShop.auth_id == self.auth_id,
-                TTBShop.shop_id == str(shop_id),
-            ).one_or_none()
+            row = (
+                self.db.query(TTBShop)
+                .filter(
+                    TTBShop.workspace_id == self.workspace_id,
+                    TTBShop.auth_id == self.auth_id,
+                    TTBShop.shop_id == str(shop_id),
+                )
+                .one_or_none()
+            )
             shops = [row] if row else []
         else:
-            shops = self.db.query(TTBShop).filter(
-                TTBShop.workspace_id == self.workspace_id,
-                TTBShop.auth_id == self.auth_id,
-            ).all()
+            shops = (
+                self.db.query(TTBShop)
+                .filter(
+                    TTBShop.workspace_id == self.workspace_id,
+                    TTBShop.auth_id == self.auth_id,
+                )
+                .all()
+            )
 
-        count = 0
         for s in shops:
             if not s or not s.shop_id or not s.bc_id:
                 continue
@@ -311,10 +416,55 @@ class TTBSyncService:
                 advertiser_id=str(s.advertiser_id) if s.advertiser_id else None,
                 page_size=min(limit, 1000),
             ):
-                _upsert_product(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
-                count += 1
+                stats["fetched"] += 1
+                ok = _upsert_product(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+                if ok:
+                    stats["upserts"] += 1
+                    rev = _pick(item, "sync_rev", "rev", "version")
+                    if rev:
+                        latest_rev = str(rev)
+                else:
+                    stats["skipped"] += 1
 
-        cursor.last_rev = str(int(datetime.utcnow().timestamp()))
-        self.db.add(cursor)
-        return {"synced": count, "cursor": {"last_rev": cursor.last_rev}}
+        self._cursor_checkpoint(cursor, last_rev=latest_rev)
+        return {"resource": "products", **stats, "cursor": {"last_rev": cursor.last_rev}}
+
+    async def sync_all(
+        self,
+        *,
+        limit: int = 200,
+        app_id: Optional[str] = None,
+        secret: Optional[str] = None,
+        product_limit: Optional[int] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        phases: list[Tuple[str, dict]] = []
+        logger.info(
+            "ttb_sync.start", extra={"workspace_id": self.workspace_id, "auth_id": self.auth_id, "scope": "all"}
+        )
+        phases.append(("bc", await self.sync_bc(limit=limit)))
+        phases.append(
+            (
+                "advertisers",
+                await self.sync_advertisers(limit=limit, app_id=app_id, secret=secret),
+            )
+        )
+        phases.append(("shops", await self.sync_shops(limit=limit)))
+        phases.append(("products", await self.sync_products(limit=product_limit or limit)))
+
+        return {name: stats for name, stats in phases}
+
+
+async def run_sync_all(
+    service: TTBSyncService,
+    *,
+    limit: int = 200,
+    app_id: Optional[str] = None,
+    secret: Optional[str] = None,
+    product_limit: Optional[int] = None,
+) -> Dict[str, Dict[str, Any]]:
+    try:
+        return await service.sync_all(limit=limit, app_id=app_id, secret=secret, product_limit=product_limit)
+    finally:
+        with contextlib.suppress(Exception):
+            await service.client.aclose()
 
