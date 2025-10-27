@@ -23,30 +23,39 @@ def test_admin_endpoints_require_platform_admin(app_client) -> None:
     app.dependency_overrides[require_session] = _non_admin
 
     endpoints = [
-        (client.get, "/api/admin/platform/policies"),
-        (client.get, "/api/admin/platform/policies/providers"),
+        (client.get, "/api/v1/admin/platform/policies"),
         (
             client.post,
-            "/api/admin/platform/policies",
+            "/api/v1/admin/platform/policies",
             {
                 "json": {
                     "provider_key": "tiktok-business",
+                    "name": "Test",
                     "mode": PolicyMode.WHITELIST.value,
-                    "domain": "example.com",
+                    "enforcement_mode": "ENFORCE",
+                    "domains": ["example.com"],
+                    "business_scopes": {},
                 }
             },
         ),
         (
-            client.patch,
-            "/api/admin/platform/policies/1",
-            {"json": {"description": "noop"}},
+            client.put,
+            "/api/v1/admin/platform/policies/1",
+            {
+                "json": {
+                    "provider_key": "tiktok-business",
+                    "name": "Test",
+                    "mode": PolicyMode.WHITELIST.value,
+                    "enforcement_mode": "ENFORCE",
+                    "domains": ["example.com"],
+                    "business_scopes": {},
+                }
+            },
         ),
-        (
-            client.post,
-            "/api/admin/platform/policies/1/toggle",
-            {"json": {"is_enabled": False}},
-        ),
-        (client.delete, "/api/admin/platform/policies/1"),
+        (client.post, "/api/v1/admin/platform/policies/1/enable"),
+        (client.post, "/api/v1/admin/platform/policies/1/disable"),
+        (client.post, "/api/v1/admin/platform/policies/1/dry-run", {"json": {}}),
+        (client.delete, "/api/v1/admin/platform/policies/1"),
     ]
 
     for entry in endpoints:
