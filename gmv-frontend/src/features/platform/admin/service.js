@@ -25,40 +25,33 @@ export async function updatePlatformAdminDisplayName(userId, display_name) {
 }
 
 export async function listPolicyProviders() {
-  const res = await http.get('/api/admin/platform/policies/providers', { baseURL: '' })
-  return res?.data ?? res
+  return []
 }
 
 export async function listPolicies(params = {}) {
   const query = { ...params }
-  const res = await http.get('/api/admin/platform/policies', {
-    baseURL: '',
-    params: query,
-  })
+  const res = await http.get('/admin/platform/policies', { params: query })
   return res?.data ?? res
 }
 
 export async function createPolicy(payload) {
-  const res = await http.post('/api/admin/platform/policies', payload, { baseURL: '' })
+  const res = await http.post('/admin/platform/policies', payload)
   return res?.data ?? res
 }
 
 export async function updatePolicy(id, payload) {
-  const res = await http.patch(`/api/admin/platform/policies/${id}`, payload, { baseURL: '' })
+  const res = await http.put(`/admin/platform/policies/${id}`, payload)
   return res?.data ?? res
 }
 
 export async function togglePolicy(id, is_enabled) {
-  const res = await http.post(
-    `/api/admin/platform/policies/${id}/toggle`,
-    { is_enabled },
-    { baseURL: '' }
-  )
+  const action = is_enabled ? 'enable' : 'disable'
+  const res = await http.post(`/admin/platform/policies/${id}/${action}`)
   return res?.data ?? res
 }
 
 export async function deletePolicy(id) {
-  const res = await http.delete(`/api/admin/platform/policies/${id}`, { baseURL: '' })
+  const res = await http.delete(`/admin/platform/policies/${id}`)
   return res?.data ?? res
 }
 

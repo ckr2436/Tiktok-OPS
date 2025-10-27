@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -39,7 +40,8 @@ class PolicyMode(str, Enum):
 
 class PolicyEnforcementMode(str, Enum):
     ENFORCE = "ENFORCE"
-    OBSERVE = "OBSERVE"
+    DRYRUN = "DRYRUN"
+    OFF = "OFF"
 
 
 class PolicyDomain(str, Enum):
@@ -88,9 +90,8 @@ class PlatformPolicy(Base):
         ),
         UniqueConstraint(
             "provider_key",
-            "mode",
-            "domain",
-            name="uq_platform_policy_provider_mode_domain",
+            "name_normalized",
+            name="uq_platform_policy_provider_name",
         ),
         {"sqlite_autoincrement": True},
     )
@@ -115,7 +116,10 @@ class PlatformPolicy(Base):
         nullable=False,
         server_default=PolicyMode.WHITELIST.value,
     )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(128), nullable=False)
     domain: Mapped[str | None] = mapped_column(String(255), default=None)
+    domains_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     description: Mapped[str | None] = mapped_column(Text, default=None)
     scope_bc_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -123,6 +127,7 @@ class PlatformPolicy(Base):
     scope_shop_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     scope_region_codes_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     scope_product_id_patterns_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    business_scopes_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     rate_limit_rps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_burst: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
