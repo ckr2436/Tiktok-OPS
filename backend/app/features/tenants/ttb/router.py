@@ -69,6 +69,20 @@ class PagedResult(BaseModel):
     total: int
 
 
+class ProviderAccount(BaseModel):
+    provider: str
+    auth_id: int
+    label: str
+    status: Literal["active", "invalid"]
+
+
+class ProviderAccountsResponse(BaseModel):
+    items: list[ProviderAccount]
+    page: int
+    page_size: int
+    total: int
+
+
 def _normalize_provider(provider: str) -> str:
     key = (provider or "").strip().lower()
     if key not in SUPPORTED_PROVIDERS:
@@ -83,6 +97,40 @@ def _ensure_account(db: Session, workspace_id: int, auth_id: int) -> OAuthAccoun
     if acc.status not in {"active", "invalid"}:
         raise HTTPException(status_code=400, detail=f"binding status {acc.status} cannot be synced")
     return acc
+
+
+@router.get(
+    "/{workspace_id}/providers",
+    response_model=ProviderAccountsResponse,
+)
+def list_provider_accounts(
+    workspace_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    query = (
+        db.query(OAuthAccountTTB)
+        .filter(OAuthAccountTTB.workspace_id == int(workspace_id))
+    )
+    total = int(query.with_entities(func.count()).scalar() or 0)
+    rows = (
+        query.order_by(OAuthAccountTTB.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [
+        ProviderAccount(
+            provider="tiktok-business",
+            auth_id=int(row.id),
+            label=row.alias or row.created_at.isoformat(),
+            status="active" if row.status == "active" else "invalid",
+        )
+        for row in rows
+    ]
+    return ProviderAccountsResponse(items=items, page=page, page_size=page_size, total=total)
 
 
 @router.post(
@@ -107,18 +155,21 @@ def trigger_sync(
         "shop_id": body.shop_id,
         "since": body.since.isoformat() if body.since else None,
     }
-    result: DispatchResult = dispatch_sync(
-        db,
-        workspace_id=int(workspace_id),
-        provider=normalized_provider,
-        auth_id=int(body.auth_id),
-        scope=body.scope,
-        params=params,
-        actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=request.client.host if request.client else None,
-        idempotency_key=body.idempotency_key,
-    )
+    try:
+        result: DispatchResult = dispatch_sync(
+            db,
+            workspace_id=int(workspace_id),
+            provider=normalized_provider,
+            auth_id=int(body.auth_id),
+            scope=body.scope,
+            params=params,
+            actor_user_id=int(me.id),
+            actor_workspace_id=int(me.workspace_id),
+            actor_ip=request.client.host if request.client else None,
+            idempotency_key=body.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SyncResponse(
         run_id=int(result.run.id),
         schedule_id=int(result.run.schedule_id),
