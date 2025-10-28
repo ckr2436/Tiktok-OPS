@@ -1,9 +1,9 @@
+# backend/app/services/provider_registry.py
 from __future__ import annotations
 
 """Provider registry utilities used for sync orchestration."""
 
-from collections.abc import Callable, Iterable
-from typing import Dict, Protocol
+from typing import Dict, Iterable, Protocol
 
 
 class ProviderHandler(Protocol):
@@ -25,15 +25,14 @@ class ProviderRegistry:
         self._handlers: Dict[str, ProviderHandler] = {}
 
     def register(self, provider_id: str, handler: ProviderHandler) -> None:
-        key = provider_id.strip().lower()
+        key = (provider_id or "").strip().lower()
         if not key:
             raise ValueError("provider_id is required")
-        if key in self._handlers:
-            raise ValueError(f"provider handler already registered for {provider_id}")
+        # 允许幂等注册：后注册覆盖同 key（避免重复导入报错）
         self._handlers[key] = handler
 
     def get(self, provider_id: str) -> ProviderHandler:
-        key = provider_id.strip().lower()
+        key = (provider_id or "").strip().lower()
         if key not in self._handlers:
             raise KeyError(provider_id)
         return self._handlers[key]
@@ -46,10 +45,13 @@ provider_registry = ProviderRegistry()
 
 
 def load_builtin_providers() -> None:
-    """Ensure bundled providers are registered."""
+    """
+    Ensure bundled providers are registered.
 
-    # Local import to avoid circular dependencies during module import.
-    from app.services.providers import builtin_providers
+    通过 app.services.providers.builtin_providers(registry) 完成注册，
+    避免在此直接引用具体 Provider 实现引发循环导入。
+    """
+    from app.services.providers import builtin_providers  # local import to avoid cycles
 
     builtin_providers(provider_registry)
 
@@ -60,3 +62,4 @@ __all__ = [
     "provider_registry",
     "load_builtin_providers",
 ]
+
