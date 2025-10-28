@@ -1,28 +1,23 @@
-"""Provider plugin loading utilities."""
-
 from __future__ import annotations
 
-import importlib
-import pkgutil
-from types import ModuleType
-from typing import Iterable
+from typing import Callable
+
+from app.services.provider_registry import ProviderRegistry
 
 
-def load_builtin_providers(package: str = "app.providers") -> list[ModuleType]:
-    """Import all provider submodules so they can register themselves."""
+def builtin_providers(registry: ProviderRegistry) -> None:
+    """Register built-in providers with the shared registry."""
 
-    modules: list[ModuleType] = []
-    pkg = importlib.import_module(package)
-    package_path = getattr(pkg, "__path__", None)
-    if not package_path:
-        return modules
+    # Import inside the function to avoid eager side effects during tests.
+    from .tiktok_business import TiktokBusinessProvider
 
-    for module_info in pkgutil.iter_modules(package_path):
-        if module_info.name.startswith("_"):
-            continue
-        modules.append(importlib.import_module(f"{package}.{module_info.name}"))
-
-    return modules
+    provider = TiktokBusinessProvider()
+    try:
+        registry.register(provider.provider_id, provider)
+    except ValueError:
+        # Registry may already contain the provider when multiple callers
+        # attempt to load builtins concurrently. Silently ignore duplicates.
+        pass
 
 
-__all__: Iterable[str] = ("load_builtin_providers",)
+__all__ = ["builtin_providers"]

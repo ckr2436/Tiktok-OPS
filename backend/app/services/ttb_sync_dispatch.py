@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery_app
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.services.audit import log_event
+from app.services.provider_registry import load_builtin_providers, provider_registry
+
+load_builtin_providers()
 
 SYNC_TASKS: Dict[str, str] = {
     "bc": "ttb.sync.bc",
@@ -38,6 +41,7 @@ def _create_schedule_and_run(
     workspace_id: int,
     task_name: str,
     params_json: Dict[str, Any],
+    requested_stats: Dict[str, Any],
     actor_user_id: int,
     idempotency_key: Optional[str],
 ) -> ScheduleRun:
@@ -62,7 +66,7 @@ def _create_schedule_and_run(
         enqueued_at=_now(),
         status="enqueued",
         idempotency_key=idempotency_key or uuid4().hex,
-        stats_json={"requested": params_json},
+        stats_json={"requested": requested_stats, "errors": []},
     )
     db.add(run)
     db.flush()
@@ -109,7 +113,10 @@ def dispatch_sync(
         raise ValueError(f"unsupported scope: {scope}")
 
     task_name = SYNC_TASKS[scope]
-    filtered_params = {k: v for k, v in params.items() if v is not None}
+
+    handler = provider_registry.get(provider)
+    normalized_options = handler.validate_options(scope=scope, options=params)
+    filtered_params = {k: v for k, v in normalized_options.items() if v is not None}
 
     if idempotency_key:
         existing = _find_existing_run(
@@ -144,28 +151,58 @@ def dispatch_sync(
                 idempotent=True,
             )
 
-    params_json = {**filtered_params, "scope": scope}
+    params_json = {"provider": provider, "scope": scope, "options": filtered_params}
+    actor_workspace_val = int(actor_workspace_id) if actor_workspace_id is not None else None
+
+    requested_stats = {
+        "provider": provider,
+        "scope": scope,
+        "options": filtered_params,
+        "actor": {
+            "user_id": int(actor_user_id),
+            "workspace_id": actor_workspace_val,
+            "ip": actor_ip,
+        },
+    }
     run = _create_schedule_and_run(
         db,
         workspace_id=workspace_id,
         task_name=task_name,
         params_json=params_json,
+        requested_stats=requested_stats,
         actor_user_id=actor_user_id,
         idempotency_key=idempotency_key,
     )
+
+    requested_stats["idempotency_key"] = run.idempotency_key
+    run.stats_json = {**(run.stats_json or {}), "requested": requested_stats, "errors": []}
+    db.add(run)
 
     run_id = int(run.id)
     schedule_id = int(run.schedule_id)
     db.commit()
 
+    envelope = {
+        "envelope_version": 1,
+        "provider": provider,
+        "scope": scope,
+        "workspace_id": int(workspace_id),
+        "auth_id": int(auth_id),
+        "options": filtered_params,
+        "meta": {
+            "run_id": run_id,
+            "schedule_id": schedule_id,
+            "idempotency_key": run.idempotency_key,
+        },
+    }
+
     payload = {
         "workspace_id": int(workspace_id),
         "auth_id": int(auth_id),
-        "schedule_id": schedule_id,
-        "schedule_run_id": run_id,
+        "scope": scope,
+        "params": {"envelope": envelope},
+        "run_id": run_id,
         "idempotency_key": run.idempotency_key,
-        "provider": provider,
-        "params": filtered_params,
     }
     task = celery_app.send_task(task_name, kwargs=payload, queue="gmv.tasks.events")
 
@@ -179,7 +216,7 @@ def dispatch_sync(
         resource_type="ttb_sync",
         resource_id=run_id,
         actor_user_id=actor_user_id,
-        actor_workspace_id=actor_workspace_id,
+        actor_workspace_id=actor_workspace_val,
         workspace_id=int(workspace_id),
         actor_ip=actor_ip,
         details={
@@ -190,6 +227,7 @@ def dispatch_sync(
             "task_id": str(task.id),
             "params": filtered_params,
             "idempotency_key": run.idempotency_key,
+            "provider": provider,
         },
     )
     db.commit()

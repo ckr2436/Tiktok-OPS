@@ -205,12 +205,29 @@ def test_manual_sync_creates_schedule_run(monkeypatch, tenant_app):
     assert data["status"] == "enqueued"
     assert data["idempotent"] is False
     assert calls and calls[0]["name"] == "ttb.sync.bc"
+    payload = calls[0]["kwargs"]
+    assert payload["workspace_id"] == ws.id
+    assert payload["auth_id"] == account.id
+    assert payload["scope"] == "bc"
+    assert payload["run_id"] == data["run_id"]
+    assert payload["idempotency_key"]
+    envelope = payload["params"]["envelope"]
+    assert envelope["provider"] == "tiktok-business"
+    assert envelope["scope"] == "bc"
+    assert envelope["options"]["limit"] == 5
+    assert envelope["options"]["mode"] == "incremental"
+    assert envelope["meta"]["run_id"] == data["run_id"]
 
     run = db_session.get(ScheduleRun, int(data["run_id"]))
     assert run is not None
     assert run.status == "enqueued"
-    assert run.stats_json["requested"]["scope"] == "bc"
-    assert run.stats_json["requested"]["mode"] == "incremental"
+    requested = run.stats_json["requested"]
+    assert requested["scope"] == "bc"
+    assert requested["provider"] == "tiktok-business"
+    assert requested["options"]["mode"] == "incremental"
+    assert requested["options"]["limit"] == 5
+    assert requested["actor"]["user_id"] == 1
+    assert run.stats_json.get("errors") == []
     assert run.idempotency_key
 
     audit_count = db_session.query(AuditLog).count()
@@ -272,8 +289,23 @@ def test_binding_sync_defaults_scope_all(monkeypatch, tenant_app):
     )
     assert resp.status_code == 202
     payload = dispatched[0]
-    assert payload["params"]["mode"] == "full"
+    envelope = payload["params"]["envelope"]
+    assert envelope["scope"] == "all"
+    assert envelope["options"]["mode"] == "full"
     assert resp.json()["task_name"] == "ttb.sync.all"
+
+
+def test_list_provider_accounts(tenant_app):
+    client, db_session = tenant_app
+    ws, account = _seed_workspace_and_binding(db_session)
+
+    resp = client.get(f"/api/v1/tenants/{ws.id}/providers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["provider"] == "tiktok-business"
+    assert body["items"][0]["auth_id"] == account.id
+    assert body["items"][0]["status"] == "active"
 
 
 def test_read_business_centers_endpoint(tenant_app):
