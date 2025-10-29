@@ -81,7 +81,7 @@ def app_client() -> Generator[tuple[FastAPI, TestClient], None, None]:
 
     from app.core.errors import install_exception_handlers
     from app.features.platform.router_platform_policies import router as policies_router
-    from app.providers import load_builtin_providers
+    from app.services.provider_registry import load_builtin_providers
 
     app = FastAPI()
     install_exception_handlers(app)

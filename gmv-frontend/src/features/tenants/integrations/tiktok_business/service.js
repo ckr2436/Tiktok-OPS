@@ -3,8 +3,11 @@
 const prefix = (wid) =>
   `/api/v1/tenants/${encodeURIComponent(wid)}/oauth/tiktok-business`;
 
-const syncPrefix = (wid) =>
-  `/api/v1/tenants/${encodeURIComponent(wid)}/providers/tiktok-business`;
+const providerPrefix = (wid, provider = 'tiktok-business') =>
+  `/api/v1/tenants/${encodeURIComponent(wid)}/providers/${encodeURIComponent(provider)}`;
+
+const accountsPrefix = (wid, provider = 'tiktok-business') =>
+  `${providerPrefix(wid, provider)}/accounts`;
 
 /* ---------- 公司信息 ---------- */
 export async function getTenantMeta(wid) {
@@ -116,8 +119,12 @@ export async function updateAlias(wid, auth_id, alias) {
 
 /* ---------- 新业务 / 同步域 ---------- */
 
-export async function triggerSync(wid, payload) {
-  const r = await fetch(`${syncPrefix(wid)}/sync`, {
+export async function getProviderAccounts(wid, provider = 'tiktok-business', params = {}) {
+  return pagedFetch(accountsPrefix(wid, provider), params);
+}
+
+export async function postSync(wid, provider, authId, payload) {
+  const r = await fetch(`${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -127,10 +134,11 @@ export async function triggerSync(wid, payload) {
   return r.json();
 }
 
-export async function getSyncRun(wid, run_id) {
-  const r = await fetch(`${syncPrefix(wid)}/sync-runs/${encodeURIComponent(run_id)}`, {
-    credentials: 'include',
-  });
+export async function getSyncRun(wid, provider, authId, runId) {
+  const r = await fetch(
+    `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync-runs/${encodeURIComponent(runId)}`,
+    { credentials: 'include' }
+  );
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -145,19 +153,19 @@ async function pagedFetch(url, params = {}) {
   return r.json();
 }
 
-export function listBusinessCenters(wid, params = {}) {
-  return pagedFetch(`${syncPrefix(wid)}/business-centers`, params);
+export function listBusinessCenters(wid, provider = 'tiktok-business', params = {}) {
+  return pagedFetch(`${providerPrefix(wid, provider)}/business-centers`, params);
 }
 
-export function listAdvertisers(wid, params = {}) {
-  return pagedFetch(`${syncPrefix(wid)}/advertisers`, params);
+export function listAdvertisers(wid, provider = 'tiktok-business', params = {}) {
+  return pagedFetch(`${providerPrefix(wid, provider)}/advertisers`, params);
 }
 
-export function listShops(wid, params = {}) {
-  return pagedFetch(`${syncPrefix(wid)}/shops`, params);
+export function listShops(wid, provider = 'tiktok-business', params = {}) {
+  return pagedFetch(`${providerPrefix(wid, provider)}/shops`, params);
 }
 
-export function listProducts(wid, params = {}) {
-  return pagedFetch(`${syncPrefix(wid)}/products`, params);
+export function listProducts(wid, provider = 'tiktok-business', params = {}) {
+  return pagedFetch(`${providerPrefix(wid, provider)}/products`, params);
 }
 

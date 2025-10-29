@@ -21,3 +21,24 @@ COOKIE_MAX_AGE=604800
 COOKIE_SECURE=True
 COOKIE_SAMESITE=lax
 ```
+
+## Tenant TikTok Business API quick reference
+
+```bash
+# list bindings inside workspace 42
+curl -H 'Authorization: Bearer <token>' \
+  https://gmv.local/api/v1/tenants/42/providers
+
+# list TikTok Business accounts for workspace 42
+curl -H 'Authorization: Bearer <token>' \
+  'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts?page=1&page_size=20'
+
+# trigger incremental sync for auth_id=7
+curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync \
+  -d '{"scope":"all","mode":"incremental","idempotency_key":"demo-42"}'
+
+# inspect run 123 for auth_id=7
+curl -H 'Authorization: Bearer <token>' \
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync-runs/123
+```

@@ -36,7 +36,7 @@ from app.features.tenants.oauth_ttb.router_cursors import router as cursors_rout
 from app.features.tenants.oauth_ttb.router_jobs import router as jobs_router
 from app.features.tenants.ttb.router import router as tenant_ttb_router
 
-from app.providers import load_builtin_providers
+from app.services.provider_registry import load_builtin_providers
 
 
 def create_app() -> FastAPI:

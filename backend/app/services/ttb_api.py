@@ -6,7 +6,7 @@ import json
 import math
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple
+from typing import Any, AsyncIterator, ClassVar, Dict, Iterable, Optional, Tuple
 
 import httpx
 from tenacity import (
@@ -49,17 +49,24 @@ class TTBHttpError(Exception):
 # --------------------------- 端点路径 ---------------------------
 @dataclass(frozen=True, slots=True)
 class TTBPaths:
-    """
-    端点路径集中管理。若 settings 存在同名（大写）覆盖值，则优先生效。
-    """
-    bc_get: str = "/open_api/v1.3/bc/get/"
-    advertiser_get: str = "/open_api/v1.3/oauth2/advertiser/get/"
-    shop_get: str = "/open_api/v1.3/store/list/"
-    product_get: str = "/open_api/v1.3/store/product/get/"
+    """Container for TikTok Business endpoint paths (all plain strings)."""
+
+    DEFAULTS: ClassVar[Dict[str, str]] = {
+        "bc_get": "/open_api/v1.3/bc/get/",
+        "advertiser_get": "/open_api/v1.3/oauth2/advertiser/get/",
+        "shop_get": "/open_api/v1.3/store/list/",
+        "product_get": "/open_api/v1.3/store/product/get/",
+    }
+
+    bc_get: str
+    advertiser_get: str
+    shop_get: str
+    product_get: str
 
     @classmethod
     def from_settings(cls) -> "TTBPaths":
-        def _g(attr: str, default: str) -> str:
+        def _get(attr: str) -> str:
+            default = cls.DEFAULTS[attr]
             for name in (attr.upper(), f"TT_{attr.upper()}", f"TTB_{attr.upper()}"):
                 val = getattr(settings, name, None)
                 if val:
@@ -67,10 +74,10 @@ class TTBPaths:
             return default
 
         return cls(
-            bc_get=_g("bc_get", cls.bc_get),
-            advertiser_get=_g("advertiser_get", cls.advertiser_get),
-            shop_get=_g("shop_get", cls.shop_get),
-            product_get=_g("product_get", cls.product_get),
+            bc_get=_get("bc_get"),
+            advertiser_get=_get("advertiser_get"),
+            shop_get=_get("shop_get"),
+            product_get=_get("product_get"),
         )
 
 

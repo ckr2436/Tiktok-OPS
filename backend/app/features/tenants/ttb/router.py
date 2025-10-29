@@ -30,7 +30,6 @@ SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
 class SyncRequest(BaseModel):
-    auth_id: int = Field(gt=0)
     scope: Literal["bc", "advertisers", "shops", "products", "all"] = "all"
     mode: Literal["incremental", "full"] = "incremental"
     limit: Optional[int] = Field(default=None, ge=1, le=2000)
@@ -83,6 +82,19 @@ class ProviderAccountsResponse(BaseModel):
     total: int
 
 
+class AccountSummary(BaseModel):
+    auth_id: int
+    label: str
+    status: Literal["active", "invalid"]
+
+
+class ProviderAccountListResponse(BaseModel):
+    items: list[AccountSummary]
+    page: int
+    page_size: int
+    total: int
+
+
 def _normalize_provider(provider: str) -> str:
     key = (provider or "").strip().lower()
     if key not in SUPPORTED_PROVIDERS:
@@ -99,11 +111,25 @@ def _ensure_account(db: Session, workspace_id: int, auth_id: int) -> OAuthAccoun
     return acc
 
 
+def _serialize_binding(row: OAuthAccountTTB) -> ProviderAccount:
+    return ProviderAccount(
+        provider="tiktok-business",
+        auth_id=int(row.id),
+        label=row.alias or row.created_at.isoformat(),
+        status="active" if row.status == "active" else "invalid",
+    )
+
+
+def _serialize_account_summary(row: OAuthAccountTTB) -> AccountSummary:
+    binding = _serialize_binding(row)
+    return AccountSummary(auth_id=binding.auth_id, label=binding.label, status=binding.status)
+
+
 @router.get(
     "/{workspace_id}/providers",
     response_model=ProviderAccountsResponse,
 )
-def list_provider_accounts(
+def list_providers(
     workspace_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -121,33 +147,54 @@ def list_provider_accounts(
         .limit(page_size)
         .all()
     )
-    items = [
-        ProviderAccount(
-            provider="tiktok-business",
-            auth_id=int(row.id),
-            label=row.alias or row.created_at.isoformat(),
-            status="active" if row.status == "active" else "invalid",
-        )
-        for row in rows
-    ]
+    items = [_serialize_binding(row) for row in rows]
     return ProviderAccountsResponse(items=items, page=page, page_size=page_size, total=total)
 
 
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts",
+    response_model=ProviderAccountListResponse,
+)
+def list_provider_accounts(
+    workspace_id: int,
+    provider: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    query = (
+        db.query(OAuthAccountTTB)
+        .filter(OAuthAccountTTB.workspace_id == int(workspace_id))
+    )
+    total = int(query.with_entities(func.count()).scalar() or 0)
+    rows = (
+        query.order_by(OAuthAccountTTB.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [_serialize_account_summary(row) for row in rows]
+    return ProviderAccountListResponse(items=items, page=page, page_size=page_size, total=total)
+
+
 @router.post(
-    "/{workspace_id}/providers/{provider}/sync",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/sync",
     response_model=SyncResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def trigger_sync(
     workspace_id: int,
     provider: str,
+    auth_id: int,
     request: Request,
     body: SyncRequest,
     me: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
 ):
     normalized_provider = _normalize_provider(provider)
-    _ensure_account(db, workspace_id, body.auth_id)
+    _ensure_account(db, workspace_id, auth_id)
     params = {
         "mode": body.mode,
         "limit": body.limit,
@@ -160,7 +207,7 @@ def trigger_sync(
             db,
             workspace_id=int(workspace_id),
             provider=normalized_provider,
-            auth_id=int(body.auth_id),
+            auth_id=int(auth_id),
             scope=body.scope,
             params=params,
             actor_user_id=int(me.id),
@@ -180,20 +227,34 @@ def trigger_sync(
     )
 
 
+def _run_matches_account(run: ScheduleRun, provider: str, auth_id: int) -> bool:
+    stats = run.stats_json or {}
+    requested = stats.get("requested") or {}
+    if int(requested.get("auth_id") or 0) != int(auth_id):
+        return False
+    if (requested.get("provider") or "").strip() != provider:
+        return False
+    return True
+
+
 @router.get(
-    "/{workspace_id}/providers/{provider}/sync-runs/{run_id}",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/sync-runs/{run_id}",
     response_model=SyncRunResponse,
 )
 def get_sync_run(
     workspace_id: int,
     provider: str,
+    auth_id: int,
     run_id: int,
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    _normalize_provider(provider)
+    normalized_provider = _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
     run = db.get(ScheduleRun, int(run_id))
     if not run or run.workspace_id != int(workspace_id):
+        raise HTTPException(status_code=404, detail="sync run not found")
+    if not _run_matches_account(run, normalized_provider, auth_id):
         raise HTTPException(status_code=404, detail="sync run not found")
     schedule = db.get(Schedule, int(run.schedule_id)) if run.schedule_id else None
     return SyncRunResponse(

@@ -151,11 +151,17 @@ def dispatch_sync(
                 idempotent=True,
             )
 
-    params_json = {"provider": provider, "scope": scope, "options": filtered_params}
+    params_json = {
+        "provider": provider,
+        "auth_id": int(auth_id),
+        "scope": scope,
+        "options": filtered_params,
+    }
     actor_workspace_val = int(actor_workspace_id) if actor_workspace_id is not None else None
 
     requested_stats = {
         "provider": provider,
+        "auth_id": int(auth_id),
         "scope": scope,
         "options": filtered_params,
         "actor": {
@@ -228,6 +234,7 @@ def dispatch_sync(
             "params": filtered_params,
             "idempotency_key": run.idempotency_key,
             "provider": provider,
+            "run_id": run_id,
         },
     )
     db.commit()

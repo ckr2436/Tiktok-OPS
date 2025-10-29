@@ -156,6 +156,9 @@ a:hover{ opacity:.95; }
   width:100%; padding:.6rem .7rem; border-radius:.5rem;
   border:1px solid var(--border); background:var(--panel-2); color:inherit;
 }
+.form-label{ display:block; font-size:.85rem; margin-bottom:4px; color:var(--muted); }
+.form-input{ width:100%; padding:.6rem .7rem; border-radius:.6rem; border:1px solid var(--border); background:var(--panel-2); color:inherit; }
+.form-input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
 
 /* ====== 输入框带图标按钮（修复小眼睛位置） ====== */
 .input-wrap{ position:relative; display:flex; align-items:center; }
