@@ -68,3 +68,5 @@ gmv-frontend/.vite/
 
 # 你的要求：但忽略 gmv-frontend 的 pnpm-lock.yaml（覆盖上面的放行）
 /gmv-frontend/pnpm-lock.yaml
+
+apps/
