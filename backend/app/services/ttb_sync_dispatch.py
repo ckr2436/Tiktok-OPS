@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
+from app.core.config import settings
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.services.audit import log_event
 from app.services.provider_registry import load_builtin_providers, provider_registry
@@ -162,6 +163,8 @@ def dispatch_sync(
     requested_stats = {
         "provider": provider,
         "auth_id": int(auth_id),
+        "workspace_id": int(workspace_id),
+        "lock_env": settings.LOCK_ENV,
         "scope": scope,
         "options": filtered_params,
         "actor": {
@@ -180,11 +183,17 @@ def dispatch_sync(
         idempotency_key=idempotency_key,
     )
 
-    requested_stats["idempotency_key"] = run.idempotency_key
-    run.stats_json = {**(run.stats_json or {}), "requested": requested_stats, "errors": []}
+    run_id = int(run.id)
+    stats_payload = dict(run.stats_json or {})
+    requested_block = dict(stats_payload.get("requested") or {})
+    requested_block.update(requested_stats)
+    requested_block["idempotency_key"] = run.idempotency_key
+    requested_block["run_id"] = run_id
+    stats_payload["requested"] = requested_block
+    stats_payload.setdefault("errors", [])
+    run.stats_json = stats_payload
     db.add(run)
 
-    run_id = int(run.id)
     schedule_id = int(run.schedule_id)
     db.commit()
 

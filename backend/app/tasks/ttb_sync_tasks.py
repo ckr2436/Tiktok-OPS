@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from uuid import uuid4
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -13,11 +14,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
+from app.core.config import settings
 from app.data.db import get_db
 from app.data.models.oauth_ttb import OAuthAccountTTB
 from app.data.models.scheduling import ScheduleRun
 from app.services.audit import log_event
 from app.services.db_locks import binding_action_lock_key, mysql_advisory_lock
+from app.services.redis_locks import RedisDistributedLock
 from app.services.provider_registry import load_builtin_providers, provider_registry
 from app.services.providers.tiktok_business import ProviderExecutionError
 
@@ -391,42 +394,65 @@ def _execute_task(
             details={"schedule_id": envelope.meta.schedule_id},
         )
 
-        lock_key = binding_action_lock_key(envelope.workspace_id, envelope.auth_id, expected_scope)
-        with mysql_advisory_lock(db, lock_key, wait_seconds=5) as got:
-            if not got:
-                msg = "another sync job running for this binding"
-                context_logger.warning(
-                    "ttb sync skipped due to concurrent job",
-                    extra={"reason": msg},
-                )
-                duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
-                _finish_run(
-                    run,
-                    status="failed",
-                    duration_ms=duration_ms,
-                    retries=self.request.retries,
-                    processed={
-                        "counts": {},
-                        "summary": {"skipped": True},
-                        "cursors": {},
-                        "timings": {"total_ms": duration_ms, "phases": {}},
-                    },
-                    errors=[{"stage": expected_scope, "code": "lock_not_acquired", "message": msg}],
-                    error_code="lock_not_acquired",
-                    error_message=msg,
-                )
-                if run:
-                    db.add(run)
-                _audit_event(
-                    db,
-                    envelope=envelope,
-                    event=f"ttb.sync.{expected_scope}.failed",
-                    schedule_run_id=run.id if run else envelope.meta.run_id,
-                    details={"reason": msg},
-                )
-                db.commit()
-                return {"error": msg}
+        requested_snapshot = {
+            "provider": envelope.provider,
+            "auth_id": int(envelope.auth_id),
+            "workspace_id": int(envelope.workspace_id),
+            "lock_env": settings.LOCK_ENV,
+            "run_id": envelope.meta.run_id,
+            "idempotency_key": envelope.meta.idempotency_key,
+        }
+        if run:
+            _merge_stats(run, {"requested": {k: v for k, v in requested_snapshot.items() if v is not None}})
+            db.add(run)
 
+        def _handle_lock_not_acquired(lock_key: str, owner_token: str) -> Dict[str, Any]:
+            msg = "another sync job running for this binding"
+            context_logger.warning(
+                "ttb sync skipped due to concurrent job",
+                extra={
+                    "reason": msg,
+                    "lock_key": lock_key,
+                    "lock_owner": owner_token,
+                },
+            )
+            duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
+            _finish_run(
+                run,
+                status="failed",
+                duration_ms=duration_ms,
+                retries=self.request.retries,
+                processed={
+                    "counts": {},
+                    "summary": {"skipped": True},
+                    "cursors": {},
+                    "timings": {"total_ms": duration_ms, "phases": {}},
+                },
+                errors=[
+                    {
+                        "stage": expected_scope,
+                        "code": "lock_not_acquired",
+                        "message": msg,
+                        "lock_key": lock_key,
+                    }
+                ],
+                error_code="lock_not_acquired",
+                error_message=msg,
+            )
+            if run:
+                db.add(run)
+            _audit_event(
+                db,
+                envelope=envelope,
+                event=f"ttb.sync.{expected_scope}.failed",
+                schedule_run_id=run.id if run else envelope.meta.run_id,
+                details={"reason": msg},
+            )
+            db.commit()
+            return {"error": msg}
+
+        def _run_provider_scope() -> None:
+            nonlocal processed, errors
             handler = provider_registry.get(envelope.provider)
             try:
                 result = asyncio.run(
@@ -455,6 +481,50 @@ def _execute_task(
                 if _should_mark_invalid(exc):
                     _mark_account_invalid(db, envelope, reason=str(exc))
                 raise
+
+        if settings.TTB_SYNC_USE_DB_LOCKS:
+            lock_key = binding_action_lock_key(envelope.workspace_id, envelope.auth_id, expected_scope)
+            with mysql_advisory_lock(db, lock_key, wait_seconds=5) as got:
+                if not got:
+                    return _handle_lock_not_acquired(lock_key, "mysql-advisory")
+                _run_provider_scope()
+        else:
+            lock_key = (
+                f"{settings.TTB_SYNC_LOCK_PREFIX}{settings.LOCK_ENV}:sync:"
+                f"{envelope.provider}:{envelope.workspace_id}:{envelope.auth_id}"
+            )
+            owner_parts = [
+                str(envelope.meta.run_id) if envelope.meta.run_id is not None else None,
+                str(self.request.id),
+                uuid4().hex,
+            ]
+            owner_token = ":".join(part for part in owner_parts if part)
+            redis_lock = RedisDistributedLock(
+                key=lock_key,
+                owner_token=owner_token,
+                ttl_seconds=settings.TTB_SYNC_LOCK_TTL_SECONDS,
+                heartbeat_interval=settings.TTB_SYNC_LOCK_HEARTBEAT_SECONDS,
+            )
+            got = redis_lock.acquire()
+            if not got:
+                return _handle_lock_not_acquired(lock_key, owner_token)
+            try:
+                _run_provider_scope()
+            finally:
+                try:
+                    redis_lock.release()
+                except Exception:  # noqa: BLE001
+                    context_logger.error(
+                        "failed to release redis lock",
+                        extra={
+                            "key": lock_key,
+                            "lock_owner": owner_token,
+                        },
+                    )
+                    logger.exception(
+                        "redis lock release failed",
+                        extra={"key": lock_key, "lock_owner": owner_token},
+                    )
 
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
         status = "success"

@@ -129,6 +129,15 @@ class Settings(BaseSettings):
     REDIS_SSL: bool = False
 
     # =========================
+    # Redis Locks / TTB Sync
+    # =========================
+    LOCK_ENV: str = "local"
+    TTB_SYNC_USE_DB_LOCKS: bool = False
+    TTB_SYNC_LOCK_PREFIX: str = "gmv:locks:"
+    TTB_SYNC_LOCK_TTL_SECONDS: int = 15 * 60
+    TTB_SYNC_LOCK_HEARTBEAT_SECONDS: int = 60
+
+    # =========================
     # RabbitMQ (AMQP)
     # =========================
     RABBITMQ_AMQP_URL: str = "amqp://guest:guest@127.0.0.1:5672/%2F"
@@ -190,6 +199,20 @@ class Settings(BaseSettings):
     @classmethod
     def _coerce_list_like(cls, v: Any) -> List[str]:
         return _as_list(v)
+
+    @field_validator("LOCK_ENV", mode="before")
+    @classmethod
+    def _derive_lock_env(cls, value: Any) -> str:
+        candidate = str(value).strip() if value is not None else ""
+        if candidate:
+            return candidate
+        import os
+
+        for env_name in ("APP_ENV", "ENV", "DEPLOY_ENV"):
+            env_value = os.getenv(env_name)
+            if env_value and str(env_value).strip():
+                return str(env_value).strip()
+        return "local"
 
 
 @lru_cache
