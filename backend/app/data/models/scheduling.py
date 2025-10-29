@@ -155,9 +155,9 @@ class ScheduleRun(Base):
     broker_msg_id: Mapped[str | None] = mapped_column(String(64), default=None)
 
     status: Mapped[str] = mapped_column(
-        Enum("scheduled", "enqueued", "consumed", "success", "failed", "skipped", name="schedule_run_status"),
+        Enum("enqueued", "running", "success", "failed", "partial", name="schedule_run_status"),
         nullable=False,
-        server_default=text("'scheduled'"),
+        server_default=text("'enqueued'"),
     )
 
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)

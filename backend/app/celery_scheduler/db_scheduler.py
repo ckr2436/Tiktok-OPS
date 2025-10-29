@@ -179,7 +179,7 @@ class DBScheduler(Scheduler):
             # 超过容忍窗口，跳过这个触发窗口，推进 next
             next_fire = _calc_next_fire(row, fire_at)
             db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
-            self._append_run(db, row, fire_at, status="skipped", reason="misfire_exceeded")
+            self._append_run(db, row, fire_at, status="failed", reason="misfire_exceeded")
             return
 
         if fire_at > now_utc:
