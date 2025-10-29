@@ -65,12 +65,12 @@ sequenceDiagram
     participant Provider as Provider Handler
     participant DB as Database
 
-    API->>Dispatch: POST /providers/{provider}/sync
+    API->>Dispatch: POST /providers/{provider}/accounts/{auth_id}/sync
     Dispatch->>Provider: validate_options(scope, params)
     Dispatch->>DB: create schedule + run
     Dispatch->>Celery: send_task(ttb.sync.*, workspace_id, auth_id, scope, params={envelope}, run_id, idempotency_key)
     Celery-->>Task: Invoke worker
-    Task->>DB: mark run consumed, acquire lock
+    Task->>DB: mark run running, acquire lock
     Task->>Provider: run_scope(db, envelope, scope)
     Provider->>DB: fetch credentials, persist entities
     Provider-->>Task: phases/errors
@@ -86,6 +86,7 @@ Each `schedule_runs.stats_json` entry now follows:
 {
   "requested": {
     "provider": "tiktok-business",
+    "auth_id": 7,
     "scope": "all",
     "options": {"mode": "incremental", "limit": 200},
     "actor": {"user_id": 1, "workspace_id": 42, "ip": "203.0.113.10"},
@@ -93,7 +94,7 @@ Each `schedule_runs.stats_json` entry now follows:
   },
   "processed": {
     "counts": {"bc": {"fetched": 10, "upserts": 9, "skipped": 1}},
-    "summary": {"bc_count": 9},
+    "summary": {"bc_count": 9, "partial": false},
     "cursors": {"bc": {"last_rev": "123"}},
     "timings": {"total_ms": 8500, "phases": {"bc": {"duration_ms": 1200}}}
   },
@@ -107,7 +108,7 @@ Tasks always populate `processed` (possibly empty), and append detailed errors w
 | Error | Cause | Mitigation |
 |-------|-------|------------|
 | `lock_not_acquired` | Binding already has a running sync. | Retry after existing job finishes. |
-| `ProviderExecutionError` | Handler reported partial failure; run marked as `partial`. | Inspect `errors` array in `stats_json` for stage + message. |
+| `ProviderExecutionError` | Handler reported partial failure; run marked as success with `processed.summary.partial=true`. | Inspect `errors` array in `stats_json` for stage + message. |
 | `policy denied` | Platform policy engine returned `allowed=False` with enforce mode. | Update policy configuration or retry once limits are relaxed. |
 | `missing params.envelope` | Legacy payload detected. | Ensure dispatch layer upgraded to Envelope v1 before invoking tasks. |
 

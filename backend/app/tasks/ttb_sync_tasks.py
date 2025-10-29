@@ -155,7 +155,7 @@ def _merge_stats(run: ScheduleRun, extra: Dict[str, Any]) -> None:
     run.stats_json = current
 
 
-def _mark_run_consumed(
+def _mark_run_running(
     db: Session,
     *,
     run_id: Optional[int],
@@ -164,7 +164,7 @@ def _mark_run_consumed(
 ) -> Optional[ScheduleRun]:
     run = _get_run(db, run_id=run_id, idempotency_key=idempotency_key)
     if run:
-        run.status = "consumed"
+        run.status = "running"
         run.broker_msg_id = broker_id
         if not run.enqueued_at:
             run.enqueued_at = datetime.now(timezone.utc)
@@ -191,7 +191,14 @@ def _finish_run(
     run.error_message = error_message[:512] if error_message else None
     payload: Dict[str, Any] = {"retries": retries}
     if processed is not None:
-        payload["processed"] = processed
+        processed_payload = dict(processed)
+        summary = dict(processed_payload.get("summary") or {})
+        if errors:
+            summary["partial"] = True
+        else:
+            summary.setdefault("partial", False)
+        processed_payload["summary"] = summary
+        payload["processed"] = processed_payload
     if errors is not None:
         payload["errors"] = errors
     _merge_stats(run, payload)
@@ -263,6 +270,7 @@ def _build_processed_stats(phases: list[Dict[str, Any]]) -> Dict[str, Any]:
         summary[f"{scope}_count"] = counts[scope]["upserts"]
         if stats.get("cursor") is not None:
             cursors[scope] = stats["cursor"]
+    summary.setdefault("partial", False)
     return {
         "counts": counts,
         "summary": summary,
@@ -369,7 +377,7 @@ def _execute_task(
     errors: list[Dict[str, Any]] = []
 
     try:
-        run = _mark_run_consumed(
+        run = _mark_run_running(
             db,
             run_id=envelope.meta.run_id,
             idempotency_key=envelope.meta.idempotency_key,
@@ -394,10 +402,15 @@ def _execute_task(
                 duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
                 _finish_run(
                     run,
-                    status="skipped",
+                    status="failed",
                     duration_ms=duration_ms,
                     retries=self.request.retries,
-                    processed={"counts": {}, "summary": {}, "cursors": {}, "timings": {"total_ms": duration_ms, "phases": {}}},
+                    processed={
+                        "counts": {},
+                        "summary": {"skipped": True},
+                        "cursors": {},
+                        "timings": {"total_ms": duration_ms, "phases": {}},
+                    },
                     errors=[{"stage": expected_scope, "code": "lock_not_acquired", "message": msg}],
                     error_code="lock_not_acquired",
                     error_message=msg,
@@ -407,7 +420,7 @@ def _execute_task(
                 _audit_event(
                     db,
                     envelope=envelope,
-                    event=f"ttb.sync.{expected_scope}.skipped",
+                    event=f"ttb.sync.{expected_scope}.failed",
                     schedule_run_id=run.id if run else envelope.meta.run_id,
                     details={"reason": msg},
                 )
@@ -444,7 +457,7 @@ def _execute_task(
                 raise
 
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
-        status = "success" if not errors else "partial"
+        status = "success"
         _finish_run(
             run,
             status=status,
@@ -504,9 +517,10 @@ def task_sync_bc(
     workspace_id: int,
     auth_id: int,
     scope: str,
-    params: Optional[Dict[str, Any]],
-    run_id: Optional[int],
-    idempotency_key: Optional[str],
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     return _execute_task(
         self,
@@ -526,9 +540,10 @@ def task_sync_advertisers(
     workspace_id: int,
     auth_id: int,
     scope: str,
-    params: Optional[Dict[str, Any]],
-    run_id: Optional[int],
-    idempotency_key: Optional[str],
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     return _execute_task(
         self,
@@ -548,9 +563,10 @@ def task_sync_shops(
     workspace_id: int,
     auth_id: int,
     scope: str,
-    params: Optional[Dict[str, Any]],
-    run_id: Optional[int],
-    idempotency_key: Optional[str],
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     return _execute_task(
         self,
@@ -570,9 +586,10 @@ def task_sync_products(
     workspace_id: int,
     auth_id: int,
     scope: str,
-    params: Optional[Dict[str, Any]],
-    run_id: Optional[int],
-    idempotency_key: Optional[str],
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     return _execute_task(
         self,
@@ -592,9 +609,10 @@ def task_sync_all(
     workspace_id: int,
     auth_id: int,
     scope: str,
-    params: Optional[Dict[str, Any]],
-    run_id: Optional[int],
-    idempotency_key: Optional[str],
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     return _execute_task(
         self,

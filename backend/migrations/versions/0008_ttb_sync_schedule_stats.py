@@ -8,6 +8,8 @@ Create Date: 2025-10-23 00:00:00
 
 from __future__ import annotations
 
+import json
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql as mysql_dialect
@@ -76,21 +78,27 @@ def upgrade() -> None:
         exists = bind.execute(exists_q).first()
 
         if exists:
+            update_payload = {
+                "impl_version": row["impl_version"],
+                "input_schema_json": row["input_schema_json"],
+                "default_queue": row["default_queue"],
+                "visibility": row["visibility"],
+                "is_enabled": row["is_enabled"],
+            }
+            if dialect == "sqlite":
+                update_payload["input_schema_json"] = json.dumps(update_payload["input_schema_json"])
             upd = (
                 task_catalog.update()
                 .where(task_catalog.c.task_name == row["task_name"])
-                .values(
-                    impl_version=row["impl_version"],
-                    input_schema_json=row["input_schema_json"],
-                    default_queue=row["default_queue"],
-                    visibility=row["visibility"],
-                    is_enabled=row["is_enabled"],
-                )
+                .values(**update_payload)
             )
             bind.execute(upd)
         else:
-            ins = task_catalog.insert().values(**row)
-            bind.execute(ins)
+            ins = task_catalog.insert()
+            payload = dict(row)
+            if dialect == "sqlite":
+                payload["input_schema_json"] = json.dumps(payload["input_schema_json"])
+            bind.execute(ins, payload)
 
 
 def downgrade() -> None:

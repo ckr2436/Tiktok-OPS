@@ -38,6 +38,9 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 // 公司域：TikTok Business 授权
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
+import ProviderAccountsPage from '../features/tenants/integrations/tiktok_business/pages/ProviderAccountsPage.jsx';
+import SyncRunDetailPage from '../features/tenants/integrations/tiktok_business/pages/SyncRunDetailPage.jsx';
+import AccountDataListPage from '../features/tenants/integrations/tiktok_business/pages/AccountDataListPage.jsx';
 
 const router = createBrowserRouter([
   // 登录页
@@ -77,6 +80,12 @@ const router = createBrowserRouter([
           // 公司域 - TikTok Business 授权
           { path: 'tenants/:wid/tiktok_business', element: <TbAuthList /> },
           { path: 'tenants/:wid/tiktok_business/:auth_id', element: <TbAuthDetail /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts', element: <ProviderAccountsPage /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/runs/:runId', element: <SyncRunDetailPage /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/business-centers', element: <AccountDataListPage entity="business-centers" /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/advertisers', element: <AccountDataListPage entity="advertisers" /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/shops', element: <AccountDataListPage entity="shops" /> },
+          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/products', element: <AccountDataListPage entity="products" /> },
 
         ],
       },

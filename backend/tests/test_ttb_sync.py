@@ -191,9 +191,8 @@ def test_manual_sync_creates_schedule_run(monkeypatch, tenant_app):
     monkeypatch.setattr("app.services.ttb_sync_dispatch.celery_app.send_task", fake_send_task)
 
     resp = client.post(
-        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/sync",
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync",
         json={
-            "auth_id": account.id,
             "scope": "bc",
             "mode": "incremental",
             "limit": 5,
@@ -224,14 +223,69 @@ def test_manual_sync_creates_schedule_run(monkeypatch, tenant_app):
     requested = run.stats_json["requested"]
     assert requested["scope"] == "bc"
     assert requested["provider"] == "tiktok-business"
+    assert requested["auth_id"] == int(account.id)
     assert requested["options"]["mode"] == "incremental"
     assert requested["options"]["limit"] == 5
     assert requested["actor"]["user_id"] == 1
     assert run.stats_json.get("errors") == []
     assert run.idempotency_key
 
+    run_detail = client.get(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync-runs/{data['run_id']}"
+    )
+    assert run_detail.status_code == 200
+    run_payload = run_detail.json()
+    assert run_payload["status"] in {"enqueued", "running", "success", "failed"}
+    assert run_payload["stats"]["requested"]["auth_id"] == int(account.id)
+    assert run_payload["stats"]["requested"]["provider"] == "tiktok-business"
+
     audit_count = db_session.query(AuditLog).count()
     assert audit_count == 1
+
+
+def test_sync_run_lookup_requires_matching_auth(monkeypatch, tenant_app):
+    client, db_session = tenant_app
+    ws, account = _seed_workspace_and_binding(db_session)
+
+    other = OAuthAccountTTB(
+        id=account.id + 1,
+        workspace_id=int(ws.id),
+        provider_app_id=account.provider_app_id,
+        alias="other",
+        access_token_cipher=b"token2",
+        key_version=1,
+        token_fingerprint=b"g" * 32,
+        scope_json=None,
+        status="active",
+    )
+    db_session.add(other)
+    db_session.commit()
+
+    class DummyResult:
+        def __init__(self, task_id: str) -> None:
+            self.id = task_id
+
+    def fake_send_task(name: str, kwargs: dict, queue: str):  # noqa: ANN001
+        return DummyResult("task-lookup")
+
+    monkeypatch.setattr("app.services.ttb_sync_dispatch.celery_app.send_task", fake_send_task)
+
+    trigger = client.post(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync",
+        json={"scope": "bc", "mode": "incremental"},
+    )
+    assert trigger.status_code == 202
+    run_id = trigger.json()["run_id"]
+
+    ok = client.get(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync-runs/{run_id}"
+    )
+    assert ok.status_code == 200
+
+    mismatch = client.get(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{other.id}/sync-runs/{run_id}"
+    )
+    assert mismatch.status_code == 404
 
 
 def test_manual_sync_idempotent_reuses_run(monkeypatch, tenant_app):
@@ -251,14 +305,19 @@ def test_manual_sync_idempotent_reuses_run(monkeypatch, tenant_app):
     monkeypatch.setattr("app.services.ttb_sync_dispatch.celery_app.send_task", fake_send_task)
 
     body = {
-        "auth_id": account.id,
         "scope": "advertisers",
         "mode": "incremental",
         "idempotency_key": "same-key",
     }
-    first = client.post(f"/api/v1/tenants/{ws.id}/providers/tiktok-business/sync", json=body)
+    first = client.post(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync",
+        json=body,
+    )
     assert first.status_code == 202
-    second = client.post(f"/api/v1/tenants/{ws.id}/providers/tiktok-business/sync", json=body)
+    second = client.post(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts/{account.id}/sync",
+        json=body,
+    )
     assert second.status_code == 202
 
     assert len(calls) == 1
@@ -306,6 +365,14 @@ def test_list_provider_accounts(tenant_app):
     assert body["items"][0]["provider"] == "tiktok-business"
     assert body["items"][0]["auth_id"] == account.id
     assert body["items"][0]["status"] == "active"
+
+    accounts = client.get(
+        f"/api/v1/tenants/{ws.id}/providers/tiktok-business/accounts"
+    )
+    assert accounts.status_code == 200
+    acc_body = accounts.json()
+    assert acc_body["total"] == 1
+    assert acc_body["items"][0]["auth_id"] == account.id
 
 
 def test_read_business_centers_endpoint(tenant_app):

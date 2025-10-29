@@ -34,13 +34,45 @@ paths:
                 $ref: '#/components/schemas/SyncResponse'
         '400': {description: Invalid scope or binding status}
         '404': {description: Binding not found}
-  /tenants/{workspace_id}/providers/{provider}/sync:
-    post:
+  /tenants/{workspace_id}/providers:
+    get:
       tags: [Tenant / TikTok Business]
-      summary: Dispatch a TikTok Business sync run
+      summary: List provider bindings within a workspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Provider bindings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedProviderBindings'
+  /tenants/{workspace_id}/providers/{provider}/accounts:
+    get:
+      tags: [Tenant / TikTok Business]
+      summary: List accounts for a provider
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Provider account list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedProviderAccounts'
+  /tenants/{workspace_id}/providers/{provider}/accounts/{auth_id}/sync:
+    post:
+      tags: [Tenant / TikTok Business]
+      summary: Dispatch a TikTok Business sync run for a specific account
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/AuthId'
       requestBody:
         required: true
         content:
@@ -50,7 +82,6 @@ paths:
             examples:
               incremental-products:
                 value:
-                  auth_id: 123
                   scope: products
                   mode: incremental
                   product_limit: 500
@@ -65,13 +96,14 @@ paths:
                 $ref: '#/components/schemas/SyncResponse'
         '400': {description: Validation error}
         '404': {description: Binding not found or provider unsupported}
-  /tenants/{workspace_id}/providers/{provider}/sync-runs/{run_id}:
+  /tenants/{workspace_id}/providers/{provider}/accounts/{auth_id}/sync-runs/{run_id}:
     get:
       tags: [Tenant / TikTok Business]
-      summary: Inspect a sync run
+      summary: Inspect a sync run for a binding
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ProviderParam'
+        - $ref: '#/components/parameters/AuthId'
         - $ref: '#/components/parameters/RunId'
       responses:
         '200':
@@ -80,6 +112,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncRun'
+              example:
+                id: 42
+                schedule_id: 401
+                task_name: ttb.sync.all
+                status: success
+                scheduled_for: '2025-01-01T00:00:00Z'
+                enqueued_at: '2025-01-01T00:00:01Z'
+                duration_ms: 1234
+                stats:
+                  requested:
+                    provider: tiktok-business
+                    auth_id: 1
+                    scope: all
+                    options:
+                      mode: incremental
+                    actor:
+                      user_id: 7
+                      workspace_id: 2
+                      ip: 203.0.113.10
+                    idempotency_key: demo-42
+                  processed:
+                    summary:
+                      partial: false
+                  errors: []
         '404': {description: Run not found}
   /tenants/{workspace_id}/providers/{provider}/business-centers:
     get:
@@ -186,6 +242,14 @@ components:
         type: string
         enum: [tiktok-business]
       description: Marketing provider identifier
+    AuthId:
+      in: path
+      name: auth_id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: OAuth binding id
     RunId:
       in: path
       name: run_id
@@ -211,11 +275,7 @@ components:
   schemas:
     SyncRequest:
       type: object
-      required: [auth_id]
       properties:
-        auth_id:
-          type: integer
-          minimum: 1
         scope:
           type: string
           enum: [bc, advertisers, shops, products, all]
@@ -243,6 +303,43 @@ components:
           type: string
           maxLength: 128
           description: Reuse the same key to avoid duplicate dispatch within 24h
+    ProviderBinding:
+      type: object
+      required: [provider, auth_id, label, status]
+      properties:
+        provider: {type: string, example: tiktok-business}
+        auth_id: {type: integer}
+        label: {type: string}
+        status:
+          type: string
+          enum: [active, invalid]
+    ProviderAccountSummary:
+      type: object
+      required: [auth_id, label, status]
+      properties:
+        auth_id: {type: integer}
+        label: {type: string}
+        status:
+          type: string
+          enum: [active, invalid]
+    PagedProviderBindings:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProviderBinding'
+    PagedProviderAccounts:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProviderAccountSummary'
     BindingSyncRequest:
       type: object
       required: [auth_id]
