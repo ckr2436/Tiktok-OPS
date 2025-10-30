@@ -1,29 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
-import {
-  listAdvertisers,
-  listBusinessCenters,
-  listProducts,
-  listShops,
-} from '../service.js';
+import { listEntities, normProvider } from '../service.js';
 
 const ENTITY_CONFIG = {
   'business-centers': {
     title: 'Business Centers',
-    fetcher: listBusinessCenters,
+    entity: 'business-centers',
     columns: [
       { key: 'bc_id', label: 'BC ID' },
       { key: 'name', label: '名称' },
       { key: 'status', label: '状态' },
       { key: 'timezone', label: '时区' },
     ],
-    baseParams: (authId) => ({ auth_id: authId }),
     filters: [],
   },
   advertisers: {
     title: 'Advertisers',
-    fetcher: listAdvertisers,
+    entity: 'advertisers',
     columns: [
       { key: 'advertiser_id', label: 'Advertiser ID' },
       { key: 'name', label: '名称' },
@@ -34,7 +28,7 @@ const ENTITY_CONFIG = {
   },
   shops: {
     title: 'Shops',
-    fetcher: listShops,
+    entity: 'shops',
     columns: [
       { key: 'shop_id', label: 'Shop ID' },
       { key: 'name', label: '名称' },
@@ -45,7 +39,7 @@ const ENTITY_CONFIG = {
   },
   products: {
     title: 'Products',
-    fetcher: listProducts,
+    entity: 'products',
     columns: [
       { key: 'product_id', label: 'Product ID' },
       { key: 'title', label: '标题' },
@@ -67,8 +61,8 @@ function cleanParams(obj) {
 }
 
 export default function AccountDataListPage({ entity }) {
-  const { wid, provider, authId } = useParams();
-  const normalizedProvider = useMemo(() => provider || 'tiktok-business', [provider]);
+  const { wid, authId } = useParams();
+  const normalizedProvider = useMemo(() => normProvider(), []);
   const config = ENTITY_CONFIG[entity];
 
   const [page, setPage] = useState(1);
@@ -101,14 +95,12 @@ export default function AccountDataListPage({ entity }) {
       setLoading(true);
       setError('');
       try {
-        const baseParams = typeof config.baseParams === 'function' ? config.baseParams(authId) : {};
         const params = {
           page,
           page_size: pageSize,
-          ...baseParams,
           ...cleanParams(appliedFilters),
         };
-        const data = await config.fetcher(wid, normalizedProvider, params);
+        const data = await listEntities(wid, normalizedProvider, authId, config.entity, params);
         if (!ignore) {
           setItems(Array.isArray(data?.items) ? data.items : []);
           setTotal(Number(data?.total || 0));

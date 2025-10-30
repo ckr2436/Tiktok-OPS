@@ -9,6 +9,7 @@ import AdminLayout from '../components/layout/AdminLayout.jsx'; // 目前没直�
 // 守卫
 import ProtectedRoute from '../core/ProtectedRoute.jsx';
 import AdminOnly from '../core/AdminOnly.jsx';
+import TenantGuard from '../core/TenantGuard.jsx';
 
 // 通用页面
 import Dashboard from '../pages/Dashboard.jsx';
@@ -73,19 +74,19 @@ const router = createBrowserRouter([
           },
 
           // 公司域 - 成员
-          { path: 'tenants/:wid/users', element: <UserList /> },
-          { path: 'tenants/:wid/users/create', element: <UserCreate /> },
-          { path: 'tenants/:wid/users/:uid', element: <UserEdit /> },
+          { path: 'tenants/:wid/users', element: <TenantGuard><UserList /></TenantGuard> },
+          { path: 'tenants/:wid/users/create', element: <TenantGuard><UserCreate /></TenantGuard> },
+          { path: 'tenants/:wid/users/:uid', element: <TenantGuard><UserEdit /></TenantGuard> },
 
           // 公司域 - TikTok Business 授权
-          { path: 'tenants/:wid/tiktok_business', element: <TbAuthList /> },
-          { path: 'tenants/:wid/tiktok_business/:auth_id', element: <TbAuthDetail /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts', element: <ProviderAccountsPage /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/runs/:runId', element: <SyncRunDetailPage /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/business-centers', element: <AccountDataListPage entity="business-centers" /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/advertisers', element: <AccountDataListPage entity="advertisers" /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/shops', element: <AccountDataListPage entity="shops" /> },
-          { path: 'tenants/:wid/integrations/:provider/accounts/:authId/products', element: <AccountDataListPage entity="products" /> },
+          { path: 'tenants/:wid/tiktok-business', element: <TenantGuard><TbAuthList /></TenantGuard> },
+          { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><ProviderAccountsPage /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/runs/:runId', element: <TenantGuard><SyncRunDetailPage /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/business-centers', element: <TenantGuard><AccountDataListPage entity="business-centers" /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/advertisers', element: <TenantGuard><AccountDataListPage entity="advertisers" /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/shops', element: <TenantGuard><AccountDataListPage entity="shops" /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/products', element: <TenantGuard><AccountDataListPage entity="products" /></TenantGuard> },
 
         ],
       },

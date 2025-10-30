@@ -1,6 +1,6 @@
-// src/features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx
+// TikTok Business authorization list page
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   getTenantMeta,
   listBindings,
@@ -125,7 +125,7 @@ export default function TbAuthList() {
   async function handleCreateSubmit() {
     const pid = Number(newPid || (providers[0]?.id ?? 0));
     if (!pid) return;
-    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok_business`;
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
     const { auth_url } = await createAuthz(wid, {
       provider_app_id: pid,
       return_to,
@@ -162,6 +162,12 @@ export default function TbAuthList() {
             </div>
           </div>
           <div className="flex items-center" style={{ columnGap: 14 }}>
+            <Link
+              className="btn ghost"
+              to={`/tenants/${encodeURIComponent(wid)}/integrations/tiktok-business/accounts`}
+            >
+              查看数据
+            </Link>
             <button className="btn ghost" onClick={refresh}>刷新</button>
             <button className="btn" onClick={() => openNewAuthDialog()}>
               新建授权

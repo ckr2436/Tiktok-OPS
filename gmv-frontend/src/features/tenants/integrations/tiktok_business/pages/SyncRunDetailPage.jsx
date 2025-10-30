@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { getSyncRun } from '../service.js';
+import { getSyncRun, normProvider } from '../service.js';
 
 const TERMINAL = new Set(['success', 'failed']);
 const POLL_INTERVAL = 5000;
@@ -66,8 +66,8 @@ function ErrorList({ errors }) {
 }
 
 export default function SyncRunDetailPage() {
-  const { wid, provider, authId, runId } = useParams();
-  const normalizedProvider = useMemo(() => provider || 'tiktok-business', [provider]);
+  const { wid, authId, runId } = useParams();
+  const normalizedProvider = useMemo(() => normProvider(), []);
 
   const [run, setRun] = useState(null);
   const [loading, setLoading] = useState(true);

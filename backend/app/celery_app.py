@@ -4,11 +4,22 @@ from __future__ import annotations
 import json
 import os
 from typing import Sequence
+from urllib.parse import urlparse
 
 from celery import Celery
 from kombu import Queue, Exchange
 
 from app.core.config import settings
+
+
+def _use_ssl(url: str | None) -> bool:
+    if not url:
+        return False
+    try:
+        return urlparse(url).scheme.lower() == "amqps"
+    except Exception:
+        return False
+
 
 # 兼容两种环境变量命名
 BROKER_URL = (
@@ -24,7 +35,14 @@ BACKEND_URL = (
 )
 
 # Celery 实例
-celery_app = Celery("gmv", broker=BROKER_URL, backend=BACKEND_URL)
+celery_app = Celery("gmv")
+celery_app.conf.broker_url = BROKER_URL
+celery_app.conf.result_backend = BACKEND_URL
+
+if _use_ssl(celery_app.conf.broker_url):
+    celery_app.conf.broker_use_ssl = True
+else:
+    celery_app.conf.pop("broker_use_ssl", None)
 
 # 读取队列配置（来自 .env）
 def _load_queues() -> tuple[str, Sequence[Queue]]:
