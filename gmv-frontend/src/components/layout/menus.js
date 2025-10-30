@@ -49,7 +49,8 @@ export function buildMenus(session) {
       {
         title: '整合与授权',
         items: [
-          { to: `/tenants/${wsId}/tiktok_business`, label: 'TikTok Business 授权' },
+          { to: `/tenants/${wsId}/tiktok-business`, label: 'TikTok Business 授权' },
+          { to: `/tenants/${wsId}/integrations/tiktok-business/accounts`, label: 'TikTok Business 数据' },
         ],
       },
     ];

@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
-  getProviderAccounts,
+  listProviderAccounts,
   getTenantMeta,
-  postSync,
+  triggerSync,
+  normProvider,
 } from '../service.js';
 
 const DEFAULT_FORM = {
@@ -171,10 +172,10 @@ function SyncDialog({ account, onClose, onSubmit, loading }) {
 }
 
 export default function ProviderAccountsPage() {
-  const { wid, provider } = useParams();
+  const { wid } = useParams();
   const navigate = useNavigate();
 
-  const normalizedProvider = useMemo(() => provider || 'tiktok-business', [provider]);
+  const normalizedProvider = useMemo(() => normProvider(), []);
   const [workspaceName, setWorkspaceName] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -198,7 +199,7 @@ export default function ProviderAccountsPage() {
       setLoading(true);
       setError('');
       try {
-        const data = await getProviderAccounts(wid, normalizedProvider, {
+        const data = await listProviderAccounts(wid, normalizedProvider, {
           page,
           page_size: pageSize,
         });
@@ -222,7 +223,8 @@ export default function ProviderAccountsPage() {
     if (!dialogAccount) return;
     setSubmitting(true);
     try {
-      const result = await postSync(wid, normalizedProvider, dialogAccount.auth_id, payload);
+      const { scope = 'all', ...rest } = payload || {};
+      const result = await triggerSync(wid, normalizedProvider, dialogAccount.auth_id, scope, rest);
       const runId = result?.run_id;
       if (runId) {
         navigate(`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${dialogAccount.auth_id}/runs/${runId}`);

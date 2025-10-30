@@ -16,7 +16,7 @@ export async function listProviderApps() {
   // 统一整理字段，确保前端渲染不因后端微调而崩
   return (raw || []).map(it => ({
     id: Number(it?.id),
-    provider: String(it?.provider ?? 'tiktok_business'),
+    provider: String(it?.provider ?? 'tiktok-business'),
     name: String(it?.name ?? ''),
     client_id: String(it?.client_id ?? ''), // ★ 新字段名
     redirect_uri: String(it?.redirect_uri ?? ''),
@@ -30,7 +30,7 @@ export async function listProviderApps() {
 // 后端同一路由 upsert（创建时必须带 client_secret；更新允许 client_secret 为空/null）
 export async function upsertProviderApp(payload) {
   const body = {
-    provider: 'tiktok_business',
+    provider: 'tiktok-business',
     name: String(payload.name || '').trim(),
     client_id: String(payload.client_id || '').trim(),
     client_secret: payload.client_secret !== undefined

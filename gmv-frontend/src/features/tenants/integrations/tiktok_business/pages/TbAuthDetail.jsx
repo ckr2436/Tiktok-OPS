@@ -1,4 +1,4 @@
-// src/features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx
+// TikTok Business authorization detail page
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -90,7 +90,7 @@ export default function TbAuthDetail() {
       await loadAll();
     } else {
       // 激活 = 重新授权
-      const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok_business`;
+      const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
       await createAuthz(wid, {
         provider_app_id: binding.provider_app_id,
         alias: binding.alias || null,
@@ -101,7 +101,7 @@ export default function TbAuthDetail() {
     }
   }
   async function onReauth() {
-    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok_business`;
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
     const { auth_url } = await createAuthz(wid, {
       provider_app_id: binding.provider_app_id,
       alias: binding.alias || null,
@@ -112,7 +112,7 @@ export default function TbAuthDetail() {
   async function onRemove() {
     if (!confirm('确定要移除该授权记录吗？此操作会直接删除本地记录。')) return;
     await hardDeleteBinding(wid, binding.auth_id);
-    nav(`/tenants/${wid}/tiktok_business`);
+    nav(`/tenants/${encodeURIComponent(wid)}/tiktok-business`);
   }
 
   return (
@@ -122,7 +122,7 @@ export default function TbAuthDetail() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="small-muted">
-              <Link to={`/tenants/${wid}/tiktok_business`} className="hover:underline">← 返回列表</Link>
+              <Link to={`/tenants/${encodeURIComponent(wid)}/tiktok-business`} className="hover:underline">← 返回列表</Link>
             </div>
             <div className="text-xl font-semibold mt-1">TikTok Business 授权 · 详情</div>
             <div className="small-muted mt-1">
@@ -130,6 +130,12 @@ export default function TbAuthDetail() {
             </div>
           </div>
           <div className="flex items-center gap-8">
+            <Link
+              className="btn ghost"
+              to={`/tenants/${encodeURIComponent(wid)}/integrations/tiktok-business/accounts`}
+            >
+              查看数据
+            </Link>
             <button className="btn ghost" onClick={loadAll}>刷新</button>
           </div>
         </div>
