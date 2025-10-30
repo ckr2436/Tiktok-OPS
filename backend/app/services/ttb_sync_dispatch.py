@@ -31,6 +31,40 @@ class DispatchResult:
     status: str
     idempotent: bool
 
+_LIMIT_MIN, _LIMIT_MAX = 1, 2000
+
+def _sanitize_dispatch_options(scope: str, opts: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    - limit -> page_size（不覆盖已有 page_size），然后移除 limit
+    - 可选：将 product_limit / products_limit 映射到 product_page_size（用于 products/all）
+    """
+    o = dict(opts or {})
+
+    # limit -> page_size
+    if "limit" in o:
+        try:
+            lim = int(o["limit"])
+            lim = max(_LIMIT_MIN, min(_LIMIT_MAX, lim))
+            o.setdefault("page_size", lim)
+        except Exception:
+            pass
+        finally:
+            o.pop("limit", None)
+
+    # 针对产品阶段的常见别名（可有可无，不影响你现有 UI）
+    if scope in ("products", "all"):
+        for k in ("product_limit", "products_limit"):
+            if k in o and "product_page_size" not in o:
+                try:
+                    v = int(o[k])
+                    v = max(_LIMIT_MIN, min(_LIMIT_MAX, v))
+                    o["product_page_size"] = v
+                except Exception:
+                    pass
+                finally:
+                    o.pop(k, None)
+
+    return o
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -117,7 +151,8 @@ def dispatch_sync(
 
     handler = provider_registry.get(provider)
     normalized_options = handler.validate_options(scope=scope, options=params)
-    filtered_params = {k: v for k, v in normalized_options.items() if v is not None}
+    sanitized_options = _sanitize_dispatch_options(scope, normalized_options)
+    filtered_params = {k: v for k, v in sanitized_options.items() if v is not None}
 
     if idempotency_key:
         existing = _find_existing_run(

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Literal
 import logging
 import contextlib
 
@@ -79,7 +79,7 @@ def _get_or_create_cursor(
     return row
 
 
-# --------------------------- UPSERTs ---------------------------
+# --------------------------- UPSERT helpers ---------------------------
 def _dialect(db: Session) -> str:
     bind = getattr(db, "bind", None)
     if not bind or not getattr(bind, "dialect", None):
@@ -127,21 +127,22 @@ def _upsert(
 
 
 def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
-    bc_id = str(_pick(item, "bc_id", "business_center_id", "id", "bcId"))
+    # 严格按官方字段（不做历史兼容）：bc_id, bc_name, status, timezone, country_code, owner_user_id, create_time, update_time, version
+    bc_id = str(_pick(item, "bc_id"))
     if not bc_id:
         return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
         bc_id=bc_id,
-        name=_pick(item, "bc_name", "name"),
+        name=_pick(item, "bc_name"),
         status=_pick(item, "status"),
-        timezone=_pick(item, "timezone", "time_zone"),
-        country_code=_pick(item, "country_code", "country"),
-        owner_user_id=_pick(item, "owner_user_id", "owner_id"),
-        ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
-        ext_updated_time=_parse_dt(_pick(item, "update_time", "updated_time", "last_modified_time")),
-        sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
+        timezone=_pick(item, "timezone"),
+        country_code=_pick(item, "country_code"),
+        owner_user_id=_pick(item, "owner_user_id"),
+        ext_created_time=_parse_dt(_pick(item, "create_time")),
+        ext_updated_time=_parse_dt(_pick(item, "update_time")),
+        sync_rev=str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -165,24 +166,25 @@ def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> b
 
 
 def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
-    advertiser_id = str(_pick(item, "advertiser_id", "id"))
+    # 严格字段：advertiser_id, bc_id, name, display_name, status, industry, currency, timezone, country_code, create_time, update_time, version
+    advertiser_id = str(_pick(item, "advertiser_id"))
     if not advertiser_id:
         return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
-        bc_id=_pick(item, "bc_id", "business_center_id"),
-        name=_pick(item, "name", "advertiser_name"),
+        bc_id=_pick(item, "bc_id"),
+        name=_pick(item, "name"),
         display_name=_pick(item, "display_name"),
         status=_pick(item, "status"),
         industry=_pick(item, "industry"),
         currency=_pick(item, "currency"),
-        timezone=_pick(item, "timezone", "time_zone"),
-        country_code=_pick(item, "country_code", "country"),
-        ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
-        ext_updated_time=_parse_dt(_pick(item, "update_time", "updated_time", "last_modified_time")),
-        sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
+        timezone=_pick(item, "timezone"),
+        country_code=_pick(item, "country_code"),
+        ext_created_time=_parse_dt(_pick(item, "create_time")),
+        ext_updated_time=_parse_dt(_pick(item, "update_time")),
+        sync_rev=str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -209,21 +211,22 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
 
 
 def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
-    shop_id = str(_pick(item, "shop_id", "store_id", "id"))
-    if not shop_id:
+    # 严格字段：store_id/shop_id 统一使用 store_id；返回字段以官方 /store/list/ 为准：store_id, advertiser_id, bc_id, store_name, status, region_code, create_time, update_time, version
+    store_id = _pick(item, "store_id")
+    if store_id is None:
         return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
-        shop_id=shop_id,
+        shop_id=str(store_id),
         advertiser_id=_pick(item, "advertiser_id"),
-        bc_id=_pick(item, "bc_id", "business_center_id"),
-        name=_pick(item, "name", "shop_name", "store_name"),
+        bc_id=_pick(item, "bc_id"),
+        name=_pick(item, "store_name"),
         status=_pick(item, "status"),
-        region_code=_pick(item, "region_code", "region", "country", "market"),
-        ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
-        ext_updated_time=_parse_dt(_pick(item, "update_time", "updated_time", "last_modified_time")),
-        sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
+        region_code=_pick(item, "region_code"),
+        ext_created_time=_parse_dt(_pick(item, "create_time")),
+        ext_updated_time=_parse_dt(_pick(item, "update_time")),
+        sync_rev=str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -247,22 +250,23 @@ def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) ->
 
 
 def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
-    product_id = str(_pick(item, "product_id", "id"))
-    if not product_id:
+    # 严格字段：product_id, store_id, title, status, currency, price/stock, create_time, update_time, version
+    product_id = _pick(item, "product_id")
+    if product_id is None:
         return False
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
-        product_id=product_id,
-        shop_id=_pick(item, "shop_id", "store_id"),
-        title=_pick(item, "title", "name"),
+        product_id=str(product_id),
+        shop_id=str(_pick(item, "store_id")) if _pick(item, "store_id") is not None else None,
+        title=_pick(item, "title"),
         status=_pick(item, "status"),
         currency=_pick(item, "currency"),
-        price=_pick(item, "price", "sale_price", "min_price"),
-        stock=_pick(item, "stock", "inventory"),
-        ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
-        ext_updated_time=_parse_dt(_pick(item, "update_time", "updated_time", "last_modified_time")),
-        sync_rev=str(_pick(item, "sync_rev", "rev", "version", default="")),
+        price=_pick(item, "price"),
+        stock=_pick(item, "stock"),
+        ext_created_time=_parse_dt(_pick(item, "create_time")),
+        ext_updated_time=_parse_dt(_pick(item, "update_time")),
+        sync_rev=str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -287,11 +291,21 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
 
 
 # --------------------------- 同步服务 ---------------------------
+def _eligibility_to_api(value: Optional[Literal["gmv_max", "ads", "all"]]) -> Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]]:
+    if not value or value == "all":
+        return None
+    if value == "gmv_max":
+        return "GMV_MAX"
+    if value == "ads":
+        return "CUSTOM_SHOP_ADS"
+    return None
+
+
 class TTBSyncService:
     """
     原子同步服务（幂等）：
-    - sync_bc / sync_advertisers / sync_shops / sync_products
-    - 每步分页遍历 → UPSERT → 推进 cursor.last_rev
+    - sync_bc / sync_advertisers / sync_shops / sync_products / sync_all
+    - 只使用官方字段，不做历史兼容。
     """
 
     def __init__(self, db: Session, client: TTBApiClient, *, workspace_id: int, auth_id: int):
@@ -305,18 +319,18 @@ class TTBSyncService:
         cursor.since_time = datetime.now(timezone.utc)
         self.db.add(cursor)
 
-    async def sync_bc(self, *, limit: int = 200) -> dict:
+    async def sync_bc(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="bc"
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
-        async for item in self.client.iter_business_centers(limit=limit):
+        async for item in self.client.iter_business_centers(page_size=page_size):
             stats["fetched"] += 1
             ok = _upsert_bc(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
             if ok:
                 stats["upserts"] += 1
-                rev = _pick(item, "sync_rev", "rev", "version")
+                rev = _pick(item, "version")
                 if rev:
                     latest_rev = str(rev)
             else:
@@ -324,20 +338,18 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "bc", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def sync_advertisers(
-        self, *, limit: int = 200, app_id: Optional[str] = None, secret: Optional[str] = None
-    ) -> dict:
+    async def sync_advertisers(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="advertiser"
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
-        async for item in self.client.iter_advertisers(limit=limit, app_id=app_id, secret=secret):
+        async for item in self.client.iter_advertisers(page_size=page_size):
             stats["fetched"] += 1
             ok = _upsert_adv(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
             if ok:
                 stats["upserts"] += 1
-                rev = _pick(item, "sync_rev", "rev", "version")
+                rev = _pick(item, "version")
                 if rev:
                     latest_rev = str(rev)
             else:
@@ -345,11 +357,12 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "advertisers", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def sync_shops(self, *, limit: int = 200) -> dict:
+    async def sync_shops(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="shop"
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
+
         latest_rev: str | None = cursor.last_rev
         advs: List[TTBAdvertiser] = (
             self.db.query(TTBAdvertiser)
@@ -364,13 +377,14 @@ class TTBSyncService:
             if not adv or not adv.advertiser_id:
                 continue
             async for item in self.client.iter_shops(
-                advertiser_id=str(adv.advertiser_id), page_size=min(limit, 1000)
+                advertiser_id=str(adv.advertiser_id),
+                page_size=page_size,
             ):
                 stats["fetched"] += 1
                 ok = _upsert_shop(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
                 if ok:
                     stats["upserts"] += 1
-                    rev = _pick(item, "sync_rev", "rev", "version")
+                    rev = _pick(item, "version")
                     if rev:
                         latest_rev = str(rev)
                 else:
@@ -379,12 +393,19 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "shops", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def sync_products(self, *, limit: int = 200, shop_id: str | None = None) -> dict:
+    async def sync_products(
+        self,
+        *,
+        page_size: int = 50,
+        shop_id: str | None = None,
+        product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = "gmv_max",
+    ) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="product"
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
+
         shops: List[TTBShop]
         if shop_id:
             row = (
@@ -407,6 +428,8 @@ class TTBSyncService:
                 .all()
             )
 
+        eligibility_api = _eligibility_to_api(product_eligibility)
+
         for s in shops:
             if not s or not s.shop_id or not s.bc_id:
                 continue
@@ -414,13 +437,14 @@ class TTBSyncService:
                 bc_id=str(s.bc_id),
                 store_id=str(s.shop_id),
                 advertiser_id=str(s.advertiser_id) if s.advertiser_id else None,
-                page_size=min(limit, 1000),
+                page_size=page_size,
+                eligibility=eligibility_api,
             ):
                 stats["fetched"] += 1
                 ok = _upsert_product(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
                 if ok:
                     stats["upserts"] += 1
-                    rev = _pick(item, "sync_rev", "rev", "version")
+                    rev = _pick(item, "version")
                     if rev:
                         latest_rev = str(rev)
                 else:
@@ -432,38 +456,43 @@ class TTBSyncService:
     async def sync_all(
         self,
         *,
-        limit: int = 200,
-        app_id: Optional[str] = None,
-        secret: Optional[str] = None,
-        product_limit: Optional[int] = None,
+        page_size: int = 50,
+        product_page_size: Optional[int] = None,
+        product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = "gmv_max",
     ) -> Dict[str, Dict[str, Any]]:
         phases: list[Tuple[str, dict]] = []
         logger.info(
-            "ttb_sync.start", extra={"workspace_id": self.workspace_id, "auth_id": self.auth_id, "scope": "all"}
+            "ttb_sync.start",
+            extra={"workspace_id": self.workspace_id, "auth_id": self.auth_id, "scope": "all"},
         )
-        phases.append(("bc", await self.sync_bc(limit=limit)))
+        phases.append(("bc", await self.sync_bc(page_size=page_size)))
+        phases.append(("advertisers", await self.sync_advertisers(page_size=page_size)))
+        phases.append(("shops", await self.sync_shops(page_size=page_size)))
         phases.append(
             (
-                "advertisers",
-                await self.sync_advertisers(limit=limit, app_id=app_id, secret=secret),
+                "products",
+                await self.sync_products(
+                    page_size=product_page_size or page_size,
+                    product_eligibility=product_eligibility,
+                ),
             )
         )
-        phases.append(("shops", await self.sync_shops(limit=limit)))
-        phases.append(("products", await self.sync_products(limit=product_limit or limit)))
-
         return {name: stats for name, stats in phases}
 
 
 async def run_sync_all(
     service: TTBSyncService,
     *,
-    limit: int = 200,
-    app_id: Optional[str] = None,
-    secret: Optional[str] = None,
-    product_limit: Optional[int] = None,
+    page_size: int = 50,
+    product_page_size: Optional[int] = None,
+    product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = "gmv_max",
 ) -> Dict[str, Dict[str, Any]]:
     try:
-        return await service.sync_all(limit=limit, app_id=app_id, secret=secret, product_limit=product_limit)
+        return await service.sync_all(
+            page_size=page_size,
+            product_page_size=product_page_size,
+            product_eligibility=product_eligibility,
+        )
     finally:
         with contextlib.suppress(Exception):
             await service.client.aclose()

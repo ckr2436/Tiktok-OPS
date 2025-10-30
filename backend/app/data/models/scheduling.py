@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import BigInteger as _BigInteger
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
-from sqlalchemy.dialects.mysql import ENUM as MySQL_ENUM
+from sqlalchemy.dialects.mysql import ENUM as MySQL_ENUM  # noqa: F401  # 保留以兼容历史
 
 from app.data.db import Base
 
@@ -29,7 +29,6 @@ UBigInt = (
     .with_variant(MySQL_BIGINT(unsigned=True), "mysql")
     .with_variant(Integer, "sqlite")
 )
-
 
 # ========================= 任务目录 =========================
 class TaskCatalog(Base):
@@ -127,7 +126,9 @@ class Schedule(Base):
         server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
-    catalog: Mapped[TaskCatalog] = relationship("TaskCatalog", primaryjoin="Schedule.task_name==TaskCatalog.task_name", lazy="joined")
+    catalog: Mapped["TaskCatalog"] = relationship(
+        "TaskCatalog", primaryjoin="Schedule.task_name==TaskCatalog.task_name", lazy="joined"
+    )
 
 
 # ========================= 触发/执行轨迹 =========================
@@ -137,6 +138,8 @@ class ScheduleRun(Base):
         Index("idx_runs_sched_time", "schedule_id", "scheduled_for"),
         Index("idx_runs_ws_time", "workspace_id", "scheduled_for"),
         Index("idx_runs_status", "status"),
+        Index("idx_runs_broker_msg_id", "broker_msg_id"),
+        UniqueConstraint("schedule_id", "idempotency_key", name="uq_runs_sched_idem"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)

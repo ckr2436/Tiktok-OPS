@@ -39,10 +39,18 @@ celery_app = Celery("gmv")
 celery_app.conf.broker_url = BROKER_URL
 celery_app.conf.result_backend = BACKEND_URL
 
+# 安全处理 SSL 选项（避免 pop 触发 KeyError）
 if _use_ssl(celery_app.conf.broker_url):
     celery_app.conf.broker_use_ssl = True
 else:
-    celery_app.conf.pop("broker_use_ssl", None)
+    # 只在存在时再删除，避免 alembic 日志里看到的 KeyError
+    try:
+        if "broker_use_ssl" in celery_app.conf:  # type: ignore[operator]
+            del celery_app.conf["broker_use_ssl"]  # type: ignore[index]
+    except Exception:
+        # 某些 Celery/Kombu 版本的配置映射行为特殊，删除失败就忽略
+        pass
+
 
 # 读取队列配置（来自 .env）
 def _load_queues() -> tuple[str, Sequence[Queue]]:
@@ -73,6 +81,7 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
     qs = [Queue(n, exchange=exch, routing_key=n, durable=True) for n in names]
     return default_q, qs
 
+
 default_queue_name, queue_objs = _load_queues()
 
 celery_app.conf.update(
@@ -82,10 +91,15 @@ celery_app.conf.update(
     timezone=getattr(settings, "CELERY_TIMEZONE", "UTC"),
     enable_utc=True,
 
-    # 可靠性
+    # 可靠性（生产默认；均可用环境变量覆盖）
     task_acks_late=bool(getattr(settings, "CELERY_TASK_ACKS_LATE", True)),
     task_reject_on_worker_lost=bool(getattr(settings, "CELERY_TASK_REJECT_ON_WORKER_LOST", True)),
     worker_concurrency=int(getattr(settings, "CELERY_WORKER_CONCURRENCY", 4)),
+    worker_prefetch_multiplier=int(getattr(settings, "CELERY_WORKER_PREFETCH", 1)),
+    task_track_started=bool(getattr(settings, "CELERY_TASK_TRACK_STARTED", True)),
+    task_time_limit=int(getattr(settings, "CELERY_TASK_HARD_TIME_LIMIT", 60 * 30)),   # 30 min
+    task_soft_time_limit=int(getattr(settings, "CELERY_TASK_SOFT_TIME_LIMIT", 60 * 25)),  # 25 min
+    result_expires=int(getattr(settings, "CELERY_RESULT_EXPIRES", 60 * 60 * 24 * 3)),  # 3 days
 
     # 队列
     task_default_queue=default_queue_name,
@@ -95,5 +109,6 @@ celery_app.conf.update(
 )
 
 # ★ 导入任务，确保 worker 启动即注册
-import app.tasks.oauth_tasks  # noqa: F401
+import app.tasks.oauth_tasks   # noqa: F401
+import app.tasks.ttb_sync_tasks  # noqa: F401  # ← 注册 ttb 同步任务
 

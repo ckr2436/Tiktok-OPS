@@ -1,12 +1,23 @@
 # app/services/ttb_api.py
 from __future__ import annotations
 
+"""
+TikTok Business API 客户端（严格版）：
+- 只暴露 4 个读取器（异步）：
+    * iter_business_centers()  -> /bc/get/      （data.list + 可能的 page_info.cursor 或 page/page_size）
+    * iter_advertisers()       -> /oauth2/advertiser/get/（data.list；不分页；必须传 app_id/secret）
+    * iter_shops()             -> /store/list/  （data.stores，页码分页）
+    * iter_products()          -> /store/product/get/（data.store_products，页码分页）
+- URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
+- 令牌桶限速（默认 10 QPS），429/5xx 指数退避，page_size 强制上限 50（支持分页的接口才生效）。
+"""
+
 import asyncio
 import json
 import math
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, ClassVar, Dict, Iterable, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple, Literal
 
 import httpx
 from tenacity import (
@@ -17,11 +28,12 @@ from tenacity import (
 )
 
 from app.core.config import settings
+from app.services.ttb_http import build_url
 
 
-# --------------------------- 错误 ---------------------------
+# --------------------------- 错误类型 ---------------------------
 class TTBApiError(Exception):
-    """业务级错误（HTTP 2xx 但返回 code 非 0 / 非 OK）"""
+    """业务层错误（HTTP 2xx 但 code 非 0）"""
 
     def __init__(
         self,
@@ -38,7 +50,7 @@ class TTBApiError(Exception):
 
 
 class TTBHttpError(Exception):
-    """HTTP 层错误（非 2xx；或 429/5xx 触发重试）"""
+    """HTTP 层错误（4xx/5xx/429 触发重试或失败）"""
 
     def __init__(self, status: int, message: str, *, payload: Any = None):
         super().__init__(f"HTTP {status}: {message}")
@@ -46,43 +58,20 @@ class TTBHttpError(Exception):
         self.payload = payload
 
 
-# --------------------------- 端点路径 ---------------------------
-@dataclass(frozen=True, slots=True)
-class TTBPaths:
-    """Container for TikTok Business endpoint paths (all plain strings)."""
+# --------------------------- 常量/限流 ---------------------------
+_MAX_PAGE_SIZE = 50  # 官方上限
 
-    DEFAULTS: ClassVar[Dict[str, str]] = {
-        "bc_get": "/open_api/v1.3/bc/get/",
-        "advertiser_get": "/open_api/v1.3/oauth2/advertiser/get/",
-        "shop_get": "/open_api/v1.3/store/list/",
-        "product_get": "/open_api/v1.3/store/product/get/",
-    }
-
-    bc_get: str
-    advertiser_get: str
-    shop_get: str
-    product_get: str
-
-    @classmethod
-    def from_settings(cls) -> "TTBPaths":
-        def _get(attr: str) -> str:
-            default = cls.DEFAULTS[attr]
-            for name in (attr.upper(), f"TT_{attr.upper()}", f"TTB_{attr.upper()}"):
-                val = getattr(settings, name, None)
-                if val:
-                    return str(val)
-            return default
-
-        return cls(
-            bc_get=_get("bc_get"),
-            advertiser_get=_get("advertiser_get"),
-            shop_get=_get("shop_get"),
-            product_get=_get("product_get"),
-        )
+def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
+    try:
+        n = int(x)
+    except Exception:
+        n = default
+    return n if n <= _MAX_PAGE_SIZE else _MAX_PAGE_SIZE
 
 
-# --------------------------- 令牌桶限速（默认 10 QPS） ---------------------------
 class TokenBucket:
+    """简单令牌桶，确保 QPS 上限"""
+
     def __init__(self, rate_per_sec: float = 10.0, capacity: int | None = None):
         self.rate = float(rate_per_sec)
         self.capacity = capacity or max(1, int(math.ceil(rate_per_sec)))
@@ -105,49 +94,75 @@ class TokenBucket:
                 self.tokens -= 1
 
 
-# --------------------------- 客户端 ---------------------------
+# --------------------------- 端点路径（来自 settings，可覆盖） ---------------------------
+@dataclass(frozen=True, slots=True)
+class TTBPaths:
+    """
+    仅支持以下固定 settings 覆盖项（可写相对/绝对路径）：
+      - TTB_BC_GET            (默认 "bc/get/")
+      - TTB_ADVERTISERS_GET   (默认 "oauth2/advertiser/get/")
+      - TTB_SHOPS_LIST        (默认 "store/list/")
+      - TTB_PRODUCTS_LIST     (默认 "store/product/get/")
+    """
+
+    bc_get: str
+    advertisers_get: str
+    shops_list: str
+    products_list: str
+
+    @classmethod
+    def from_settings(cls) -> "TTBPaths":
+        def g(name: str, default_rel: str) -> str:
+            val = getattr(settings, name, None)
+            return str(val).strip() if val else default_rel
+
+        return cls(
+            bc_get=g("TTB_BC_GET", "bc/get/"),
+            advertisers_get=g("TTB_ADVERTISERS_GET", "oauth2/advertiser/get/"),
+            shops_list=g("TTB_SHOPS_LIST", "store/list/"),
+            products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
+        )
+
+
+# --------------------------- 客户端主体 ---------------------------
 class TTBApiClient:
     """
-    TikTok Business API 客户端（异步）：
-    - base_url：settings.TT_BIZ_TOKEN_URL 或默认 https://business-api.tiktok.com/open_api/v1.3
-    - Bearer token 鉴权
-    - 10 QPS 限速
-    - 429/5xx 指数退避（抖动）
-    - 分页抽象（兼容 cursor 与 page 模型）
+    读取器：
+      - iter_business_centers()
+      - iter_advertisers()
+      - iter_shops()
+      - iter_products()
     """
 
     def __init__(
         self,
         *,
         access_token: str,
-        base_url: Optional[str] = None,
-        timeout: float | None = None,
         qps: float = 10.0,
+        timeout: float | None = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> None:
-        self.base_url = (
-            (base_url or settings.TT_BIZ_TOKEN_URL or "https://business-api.tiktok.com/open_api/v1.3")
-            .rstrip("/")
-        )
-        self._timeout = timeout or float(getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0))
-        self._token = access_token
-        self._bucket = TokenBucket(rate_per_sec=qps)
+        if not access_token:
+            raise TTBApiError("missing access token")
         self._paths = TTBPaths.from_settings()
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self._timeout,
-            headers={
-                "Authorization": f"Bearer {self._token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                **(headers or {}),
-            },
-        )
+        self._bucket = TokenBucket(rate_per_sec=qps)
+        self._timeout = timeout or float(getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0))
+
+        # Access-Token 头是必须的
+        default_headers = {
+            "Access-Token": access_token,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if headers:
+            default_headers.update(headers)
+
+        self._client = httpx.AsyncClient(timeout=self._timeout, headers=default_headers)
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    # ---- 底层请求 ----
+    # ---------- 请求基元 ----------
     @retry(
         retry=retry_if_exception_type((TTBHttpError, httpx.TransportError)),
         wait=wait_exponential_jitter(initial=0.5, max=8.0),
@@ -157,20 +172,24 @@ class TTBApiClient:
     async def _request_json(
         self,
         method: str,
-        url: str,
+        path: str,
         *,
         params: Dict[str, Any] | None = None,
-        json_body: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         await self._bucket.acquire()
-        resp = await self._client.request(method, url, params=params, json=json_body)
 
-        if resp.status_code >= 500:
-            raise TTBHttpError(resp.status_code, "server error", payload=resp.text)
-        if resp.status_code == 429:
-            raise TTBHttpError(resp.status_code, "rate limited", payload=resp.text)
+        # 只有支持分页的接口才会校正 page_size
+        if params and "page_size" in params:
+            params = dict(params)
+            params["page_size"] = _clamp_page_size(params["page_size"])
+
+        url = build_url(path)
+        resp = await self._client.request(method, url, params=params)
+
+        if resp.status_code in (429, 500, 502, 503, 504):
+            raise TTBHttpError(resp.status_code, "retryable")
         if resp.status_code >= 400:
-            raise TTBHttpError(resp.status_code, "client error", payload=resp.text)
+            raise TTBHttpError(resp.status_code, "client/server error", payload=resp.text)
 
         try:
             data = resp.json()
@@ -178,146 +197,154 @@ class TTBApiClient:
             raise TTBApiError("invalid json response", payload=resp.text, status=resp.status_code)
 
         code = data.get("code")
-        if code not in (0, "0", "OK", "ok", None):
+        if code not in (0, "0", None):
             raise TTBApiError(data.get("message") or "api error", code=code, payload=data, status=resp.status_code)
-
         return data
 
-    # ---- 提取器（cursor 风格）----
+    # ---------- 提取器 ----------
     @staticmethod
-    def _extract_list_and_cursor(payload: Dict[str, Any]) -> Tuple[Iterable[dict], Optional[str]]:
-        root = payload.get("data") if isinstance(payload.get("data"), (dict, list)) else payload
-        items: Iterable[dict] = []
-        next_cursor: Optional[str] = None
+    def _extract_list_page(payload: Dict[str, Any]) -> Tuple[Iterable[dict], Optional[str]]:
+        """
+        用于 data.list + 可能的 page_info.cursor 的接口。
+        """
+        data = payload.get("data") or {}
+        items = data.get("list") or []
+        if not isinstance(items, list):
+            items = []
+        page_info = data.get("page_info") or {}
+        cursor = page_info.get("cursor") if isinstance(page_info, dict) else None
+        return items, cursor
 
-        if isinstance(root, dict):
-            if isinstance(root.get("list"), list):
-                items = root["list"]
-                pi = root.get("page_info") or {}
-                if isinstance(pi, dict):
-                    next_cursor = pi.get("cursor") or pi.get("next_cursor")
-                next_cursor = next_cursor or root.get("next_cursor")
-            elif isinstance(root.get("items"), list):
-                items = root["items"]
-                next_cursor = root.get("next_cursor")
-            elif isinstance(root.get("data"), list):
-                items = root["data"]
-            elif isinstance(root.get("data"), dict) and isinstance(root["data"].get("list"), list):
-                items = root["data"]["list"]
-                pi = root["data"].get("page_info") or {}
-                if isinstance(pi, dict):
-                    next_cursor = pi.get("cursor") or pi.get("next_cursor")
-        elif isinstance(root, list):
-            items = root
+    @staticmethod
+    def _extract_shops(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
+        data = (payload.get("data") or {})
+        items = data.get("stores") or []
+        if not isinstance(items, list):
+            items = []
+        return items, bool(items)
 
-        if not next_cursor and isinstance(payload.get("page_info"), dict):
-            next_cursor = payload["page_info"].get("cursor") or payload["page_info"].get("next_cursor")
+    @staticmethod
+    def _extract_products(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
+        data = (payload.get("data") or {})
+        items = data.get("store_products") or []
+        if not isinstance(items, list):
+            items = []
+        return items, bool(items)
 
-        return items, next_cursor
-
-    async def _paged_get(
+    # ---------- 分页 ----------
+    async def _paged_cursor(
         self,
-        path: str,
         *,
-        method: str = "GET",
-        query: Dict[str, Any] | None = None,
-        body: Dict[str, Any] | None = None,
-        cursor_param: str = "cursor",
-        limit_param: str = "page_size",
-        limit: int | None = None,
+        method: str,
+        path: str,
+        base_params: Dict[str, Any] | None = None,
+        page_size: int = _MAX_PAGE_SIZE,
     ) -> AsyncIterator[dict]:
-        q = dict(query or {})
-        b = dict(body or {})
-        if limit:
-            if method.upper() == "GET":
-                q.setdefault(limit_param, limit)
-            else:
-                b.setdefault(limit_param, limit)
-
-        cursor: Optional[str] = q.get(cursor_param) or b.get(cursor_param)
+        params = dict(base_params or {})
+        params["page_size"] = _clamp_page_size(page_size)
+        cursor: Optional[str] = None
 
         while True:
             if cursor:
-                if method.upper() == "GET":
-                    q[cursor_param] = cursor
-                else:
-                    b[cursor_param] = cursor
-
-            data = await self._request_json(
-                method,
-                path,
-                params=q if method.upper() == "GET" else None,
-                json_body=None if method.upper() == "GET" else b,
-            )
-            items, next_cursor = self._extract_list_and_cursor(data)
-            for it in items or []:
+                params["cursor"] = cursor
+            payload = await self._request_json(method, path, params=params)
+            items, next_cursor = self._extract_list_page(payload)
+            for it in items:
                 if isinstance(it, dict):
                     yield it
-
             if not next_cursor:
                 break
             cursor = next_cursor
 
-    # ---- 按页分页（page/page_size）----
     async def _paged_by_page(
         self,
-        path: str,
         *,
-        base_query: Dict[str, Any],
+        method: str,
+        path: str,
+        base_params: Dict[str, Any] | None = None,
         page_param: str = "page",
-        page_size_param: str = "page_size",
-        page_size: int = 100,
+        page_size: int = _MAX_PAGE_SIZE,
+        extractor: Literal["shops", "products"],
     ) -> AsyncIterator[dict]:
-        page = int(base_query.get(page_param, 1))
+        page = 1
+        size = _clamp_page_size(page_size)
+
         while True:
-            q = dict(base_query)
-            q[page_param] = page
-            q[page_size_param] = page_size
-            data = await self._request_json("GET", path, params=q, json_body=None)
+            params = dict(base_params or {})
+            params[page_param] = page
+            params["page_size"] = size
 
-            root = data.get("data") if isinstance(data.get("data"), (dict, list)) else data
-            items = []
-            has_more = None
-            if isinstance(root, dict):
-                items = root.get("list") or root.get("items") or root.get("data") or []
-                pi = root.get("page_info") or {}
-                if isinstance(pi, dict) and "has_more" in pi:
-                    has_more = bool(pi.get("has_more"))
+            payload = await self._request_json(method, path, params=params)
+            if extractor == "shops":
+                items, _ = self._extract_shops(payload)
+            elif extractor == "products":
+                items, _ = self._extract_products(payload)
+            else:
+                raise RuntimeError("unknown extractor")
 
-            for it in items or []:
+            count = 0
+            for it in items:
+                count += 1
                 if isinstance(it, dict):
                     yield it
 
-            if has_more is None:
-                has_more = bool(items) and len(items) >= page_size
-
-            if not has_more:
+            if count < size:
                 break
             page += 1
 
-    # ---- 业务 API ----
-    def paths(self) -> TTBPaths:
-        return self._paths
-
-    async def iter_business_centers(self, *, limit: int = 200) -> AsyncIterator[dict]:
-        async for it in self._paged_get(self._paths.bc_get, method="GET", limit_param="page_size", limit=limit):
+    # ---------- 公共读取器 ----------
+    async def iter_business_centers(self, *, page_size: int = _MAX_PAGE_SIZE) -> AsyncIterator[dict]:
+        async for it in self._paged_cursor(
+            method="GET",
+            path=self._paths.bc_get,
+            base_params={},
+            page_size=page_size,
+        ):
             yield it
 
     async def iter_advertisers(
-        self, *, limit: int = 200, app_id: Optional[str] = None, secret: Optional[str] = None
+        self,
+        *,
+        app_id: str,
+        secret: str,
+        page_size: int = _MAX_PAGE_SIZE,  # 保留形参以兼容调用方，但此接口不分页
     ) -> AsyncIterator[dict]:
-        # 官方文档：需要 app_id/secret（或等价字段）+ Access-Token
-        q: Dict[str, Any] = {}
-        if app_id and secret:
-            # 兼容参数名（不同文档版本有 app_id/secret 或 client_id/client_secret）
-            q["app_id"] = app_id
-            q["secret"] = secret
-        async for it in self._paged_get(self._paths.advertiser_get, method="GET", query=q, limit_param="page_size", limit=limit):
-            yield it
+        """
+        /oauth2/advertiser/get/ 返回 data.list；无分页参数。
+        需要 query: app_id, secret
+        """
+        payload = await self._request_json(
+            "GET",
+            self._paths.advertisers_get,
+            params={"app_id": str(app_id), "secret": str(secret)},
+        )
+        data = payload.get("data") or {}
+        items = data.get("list") or []
+        if isinstance(items, list):
+            for it in items:
+                if isinstance(it, dict):
+                    yield it
 
-    async def iter_shops(self, *, advertiser_id: str, page_size: int = 100) -> AsyncIterator[dict]:
-        base_q = {"advertiser_id": advertiser_id}
-        async for it in self._paged_by_page(self._paths.shop_get, base_query=base_q, page_size=page_size):
+    async def iter_shops(
+        self,
+        *,
+        advertiser_id: Optional[str] = None,
+        bc_id: Optional[str] = None,
+        page_size: int = _MAX_PAGE_SIZE,
+    ) -> AsyncIterator[dict]:
+        params: Dict[str, Any] = {}
+        if advertiser_id:
+            params["advertiser_id"] = str(advertiser_id)
+        if bc_id:
+            params["bc_id"] = str(bc_id)
+        async for it in self._paged_by_page(
+            method="GET",
+            path=self._paths.shops_list,
+            base_params=params,
+            page_param="page",
+            page_size=page_size,
+            extractor="shops",
+        ):
             yield it
 
     async def iter_products(
@@ -326,11 +353,36 @@ class TTBApiClient:
         bc_id: str,
         store_id: str,
         advertiser_id: Optional[str] = None,
-        page_size: int = 100,
+        page_size: int = _MAX_PAGE_SIZE,
+        eligibility: Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]] = None,
+        product_name: Optional[str] = None,
+        item_group_ids: Optional[list[str]] = None,
     ) -> AsyncIterator[dict]:
-        base_q: Dict[str, Any] = {"bc_id": bc_id, "store_id": store_id}
-        if advertiser_id:
-            base_q["advertiser_id"] = advertiser_id
-        async for it in self._paged_by_page(self._paths.product_get, base_query=base_q, page_size=page_size):
+        params: Dict[str, Any] = {
+            "bc_id": str(bc_id),
+            "store_id": str(store_id),
+        }
+        if product_name:
+            params["product_name"] = product_name
+        if item_group_ids:
+            params["item_group_ids"] = item_group_ids[:10]
+        if eligibility:
+            if not advertiser_id:
+                raise TTBApiError("advertiser_id is required when filtering by eligibility", code="MISSING_ADVERTISER")
+            params["advertiser_id"] = str(advertiser_id)
+            params["filtering"] = json.dumps({"ad_creation_eligible": eligibility})
+            params["ad_creation_eligible"] = eligibility
+
+        async for it in self._paged_by_page(
+            method="GET",
+            path=self._paths.products_list,
+            base_params=params,
+            page_param="page",
+            page_size=page_size,
+            extractor="products",
+        ):
             yield it
+
+
+__all__ = ["TTBApiClient", "TTBApiError", "TTBHttpError", "TTBPaths"]
 

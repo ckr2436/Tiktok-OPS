@@ -1,4 +1,4 @@
-# app/celery_scheduler/db_scheduler.py
+# backend/app/celery_scheduler/db_scheduler.py
 from __future__ import annotations
 
 import hashlib
@@ -14,8 +14,9 @@ from celery.beat import Scheduler, ScheduleEntry
 from celery.schedules import schedule as CelerySchedule
 from celery import uuid as celery_uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, and_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.data.db import SessionLocal
 from app.data.models.scheduling import Schedule, TaskCatalog, ScheduleRun
@@ -55,7 +56,7 @@ def _calc_next_fire(row: Schedule, start: datetime) -> datetime | None:
         return nxt.astimezone(timezone.utc)
 
     if row.schedule_type == "oneoff":
-        return None  # oneoff 触发后不再计算，这里返回 None
+        return None  # oneoff 触发后不再计算
 
     return None
 
@@ -146,6 +147,28 @@ class DBScheduler(Scheduler):
 
             db.commit()
 
+    def _already_enqueued(self, db: Session, row: Schedule, idem: str) -> bool:
+        """
+        幂等去重：同一 schedule + idempotency_key 若已存在有效 run，则避免重复入队。
+        将以下状态视为“已消耗/在途”：enqueued / running / success / partial
+        """
+        stmt = (
+            select(ScheduleRun.id, ScheduleRun.status)
+            .where(
+                and_(
+                    ScheduleRun.schedule_id == int(row.id),
+                    ScheduleRun.idempotency_key == idem,
+                )
+            )
+            .order_by(ScheduleRun.id.desc())
+            .limit(1)
+        )
+        rec = db.execute(stmt).first()
+        if not rec:
+            return False
+        status = rec[1]
+        return status in ("enqueued", "running", "success", "partial")
+
     def _handle_row(self, db: Session, row: Schedule, now_utc: datetime) -> None:
         tz = ZoneInfo(row.timezone or "UTC")
         mis_grace = int(row.misfire_grace_s or 0)
@@ -196,6 +219,14 @@ class DBScheduler(Scheduler):
         # 幂等键
         idem = _idempotency_key(row.task_name, int(row.workspace_id), fire_at, row.params_json)
 
+        # 幂等去重：避免重复入队
+        if self._already_enqueued(db, row, idem):
+            # 若 next_fire_at 还是过去时间，推进一下避免卡住
+            if row.schedule_type != "oneoff":
+                next_fire = _calc_next_fire(row, fire_at)
+                db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+            return
+
         # 入队 Celery
         payload = {
             "workspace_id": int(row.workspace_id),
@@ -204,6 +235,7 @@ class DBScheduler(Scheduler):
             "params": row.params_json or {},
         }
         task_name = row.task_name  # 目录中的标准任务名
+
         # 选择队列：目录默认队列 > 全局默认
         queue = (row.catalog.default_queue if getattr(row, "catalog", None) else None) or settings.CELERY_TASK_DEFAULT_QUEUE
 
@@ -214,11 +246,22 @@ class DBScheduler(Scheduler):
             kwargs=payload,
             queue=queue,
             task_id=task_id,
-            countdown=max(0, (fire_effective - now_utc).total_seconds()),
+            countdown=max(0, int((fire_effective - now_utc).total_seconds())),
         )
 
-        # 记录 run
-        self._append_run(db, row, fire_at, status="enqueued", broker_msg_id=str(r.id), idem=idem)
+        # 记录 run（并发下可能撞唯一约束，需兜底处理）
+        try:
+            self._append_run(db, row, fire_at, status="enqueued", broker_msg_id=str(r.id), idem=idem)
+        except IntegrityError:
+            db.rollback()
+            # 已有同 (schedule_id, idempotency_key) 的 run 被并发创建；推进 next 即可
+            if row.schedule_type != "oneoff":
+                next_fire = _calc_next_fire(row, fire_at)
+                db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+            logger.info(
+                "duplicate schedule_run ignored (unique hit)",
+                extra={"schedule_id": int(row.id), "idempotency_key": idem},
+            )
 
         # 推进 next_fire_at（interval/crontab）；oneoff 则清空并禁用
         if row.schedule_type == "oneoff":
@@ -255,4 +298,5 @@ class DBScheduler(Scheduler):
             or _idempotency_key(row.task_name, int(row.workspace_id), scheduled_for, row.params_json),
         )
         db.add(run)
+        # 让调用者决定何时 commit（上层有批量 commit）
 

@@ -1,3 +1,4 @@
+# app/features/tenants/ttb/router.py
 from __future__ import annotations
 
 from datetime import datetime
@@ -29,6 +30,7 @@ router = APIRouter(
 SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
+# -------------------------- 请求/响应模型 --------------------------
 class SyncRequest(BaseModel):
     scope: Literal["bc", "advertisers", "shops", "products", "all"] = "all"
     mode: Literal["incremental", "full"] = "incremental"
@@ -37,6 +39,11 @@ class SyncRequest(BaseModel):
     shop_id: Optional[str] = Field(default=None, max_length=128)
     since: Optional[datetime] = Field(default=None)
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
+    # NEW: 可投放类型（默认后台自动同步 GMV Max；ADS 保留给手动触发）
+    # - gmv_max  => filtering.ad_creation_eligible = GMV_MAX
+    # - ads      => filtering.ad_creation_eligible = CUSTOM_SHOP_ADS
+    # - all      => 不加筛选
+    product_eligibility: Literal["gmv_max", "ads", "all"] = "gmv_max"
 
 
 class SyncResponse(BaseModel):
@@ -95,6 +102,7 @@ class ProviderAccountListResponse(BaseModel):
     total: int
 
 
+# -------------------------- 工具函数 --------------------------
 def _normalize_provider(provider: str) -> str:
     key = (provider or "").strip().lower()
     if key not in SUPPORTED_PROVIDERS:
@@ -125,6 +133,7 @@ def _serialize_account_summary(row: OAuthAccountTTB) -> AccountSummary:
     return AccountSummary(auth_id=binding.auth_id, label=binding.label, status=binding.status)
 
 
+# -------------------------- 账号列表 --------------------------
 @router.get(
     "/{workspace_id}/providers",
     response_model=ProviderAccountsResponse,
@@ -136,10 +145,7 @@ def list_providers(
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    query = (
-        db.query(OAuthAccountTTB)
-        .filter(OAuthAccountTTB.workspace_id == int(workspace_id))
-    )
+    query = db.query(OAuthAccountTTB).filter(OAuthAccountTTB.workspace_id == int(workspace_id))
     total = int(query.with_entities(func.count()).scalar() or 0)
     rows = (
         query.order_by(OAuthAccountTTB.id.asc())
@@ -164,10 +170,7 @@ def list_provider_accounts(
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
-    query = (
-        db.query(OAuthAccountTTB)
-        .filter(OAuthAccountTTB.workspace_id == int(workspace_id))
-    )
+    query = db.query(OAuthAccountTTB).filter(OAuthAccountTTB.workspace_id == int(workspace_id))
     total = int(query.with_entities(func.count()).scalar() or 0)
     rows = (
         query.order_by(OAuthAccountTTB.id.asc())
@@ -179,6 +182,7 @@ def list_provider_accounts(
     return ProviderAccountListResponse(items=items, page=page, page_size=page_size, total=total)
 
 
+# -------------------------- 触发同步 --------------------------
 @router.post(
     "/{workspace_id}/providers/{provider}/accounts/{auth_id}/sync",
     response_model=SyncResponse,
@@ -195,13 +199,17 @@ def trigger_sync(
 ):
     normalized_provider = _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
+
     params = {
         "mode": body.mode,
         "limit": body.limit,
         "product_limit": body.product_limit,
         "shop_id": body.shop_id,
         "since": body.since.isoformat() if body.since else None,
+        # NEW: 将可投放类型传给调度层（由调度层决定是否仅后台自动跑 GMV Max）
+        "product_eligibility": body.product_eligibility,
     }
+
     try:
         result: DispatchResult = dispatch_sync(
             db,
@@ -217,6 +225,7 @@ def trigger_sync(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return SyncResponse(
         run_id=int(result.run.id),
         schedule_id=int(result.run.schedule_id),
@@ -227,6 +236,7 @@ def trigger_sync(
     )
 
 
+# -------------------------- 运行查询 --------------------------
 def _run_matches_account(run: ScheduleRun, provider: str, auth_id: int) -> bool:
     stats = run.stats_json or {}
     requested = stats.get("requested") or {}
@@ -271,6 +281,7 @@ def get_sync_run(
     )
 
 
+# -------------------------- 基础分页 & 序列化 --------------------------
 def _pagination(query, model, page: int, page_size: int):
     total = query.with_entities(func.count()).scalar() or 0
     rows = (
@@ -351,6 +362,23 @@ def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
     }
 
 
+def _apply_product_eligibility_filter(query, eligibility: Optional[str]):
+    """
+    用 JSON 字段做过滤，不改表结构。
+    - gmv_max => raw_json contains {"ad_creation_eligible": "GMV_MAX"}
+    - ads     => raw_json contains {"ad_creation_eligible": "CUSTOM_SHOP_ADS"}
+    - None/all => 不加过滤
+    """
+    if not eligibility or eligibility == "all":
+        return query
+    if eligibility == "gmv_max":
+        return query.filter(TTBProduct.raw_json.contains({"ad_creation_eligible": "GMV_MAX"}))
+    if eligibility == "ads":
+        return query.filter(TTBProduct.raw_json.contains({"ad_creation_eligible": "CUSTOM_SHOP_ADS"}))
+    return query
+
+
+# -------------------------- 不带 auth_id 的列表（兼容旧前端） --------------------------
 @router.get(
     "/{workspace_id}/providers/{provider}/business-centers",
     response_model=PagedResult,
@@ -422,6 +450,8 @@ def list_products(
     workspace_id: int,
     provider: str,
     shop_id: Optional[str] = Query(default=None, max_length=64),
+    # NEW: 基于 JSON 的过滤
+    eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
@@ -431,15 +461,124 @@ def list_products(
     query = db.query(TTBProduct).filter(TTBProduct.workspace_id == int(workspace_id))
     if shop_id:
         query = query.filter(TTBProduct.shop_id == shop_id)
+    query = _apply_product_eligibility_filter(query, eligibility)
     total, rows = _pagination(query, TTBProduct, page, page_size)
     return PagedResult(items=[_serialize_product(r) for r in rows], page=page, page_size=page_size, total=total)
 
 
+# -------------------------- 新增：account-scoped 别名路由（修复前端 404） --------------------------
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/business-centers",
+    response_model=PagedResult,
+)
+def list_account_business_centers(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    page: int = Query(1, ge=1, le=1000),
+    page_size: int = Query(50, ge=1, le=200),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    query = (
+        db.query(TTBBusinessCenter)
+        .filter(TTBBusinessCenter.workspace_id == int(workspace_id))
+        .filter(TTBBusinessCenter.auth_id == int(auth_id))
+    )
+    total, rows = _pagination(query, TTBBusinessCenter, page, page_size)
+    return PagedResult(items=[_serialize_bc(r) for r in rows], page=page, page_size=page_size, total=total)
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/advertisers",
+    response_model=PagedResult,
+)
+def list_account_advertisers(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    bc_id: Optional[str] = Query(default=None, max_length=64),
+    page: int = Query(1, ge=1, le=1000),
+    page_size: int = Query(50, ge=1, le=200),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    query = (
+        db.query(TTBAdvertiser)
+        .filter(TTBAdvertiser.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiser.auth_id == int(auth_id))
+    )
+    if bc_id:
+        query = query.filter(TTBAdvertiser.bc_id == bc_id)
+    total, rows = _pagination(query, TTBAdvertiser, page, page_size)
+    return PagedResult(items=[_serialize_adv(r) for r in rows], page=page, page_size=page_size, total=total)
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/shops",
+    response_model=PagedResult,
+)
+def list_account_shops(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: Optional[str] = Query(default=None, max_length=64),
+    page: int = Query(1, ge=1, le=1000),
+    page_size: int = Query(50, ge=1, le=200),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    query = (
+        db.query(TTBShop)
+        .filter(TTBShop.workspace_id == int(workspace_id))
+        .filter(TTBShop.auth_id == int(auth_id))
+    )
+    if advertiser_id:
+        query = query.filter(TTBShop.advertiser_id == advertiser_id)
+    total, rows = _pagination(query, TTBShop, page, page_size)
+    return PagedResult(items=[_serialize_shop(r) for r in rows], page=page, page_size=page_size, total=total)
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/products",
+    response_model=PagedResult,
+)
+def list_account_products(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    shop_id: Optional[str] = Query(default=None, max_length=64),
+    eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
+    page: int = Query(1, ge=1, le=1000),
+    page_size: int = Query(50, ge=1, le=200),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    query = (
+        db.query(TTBProduct)
+        .filter(TTBProduct.workspace_id == int(workspace_id))
+        .filter(TTBProduct.auth_id == int(auth_id))
+    )
+    if shop_id:
+        query = query.filter(TTBProduct.shop_id == shop_id)
+    query = _apply_product_eligibility_filter(query, eligibility)
+    total, rows = _pagination(query, TTBProduct, page, page_size)
+    return PagedResult(items=[_serialize_product(r) for r in rows], page=page, page_size=page_size, total=total)
+
+
+# -------------------------- 旧路由废弃 --------------------------
 _DEPRECATION_DETAIL = (
     "This endpoint was replaced by /api/v1/tenants/providers/tiktok-business/*. "
     "Legacy tenants/ttb routes will be removed after 2024-12-31."
 )
-
 
 @router.api_route(
     "/{workspace_id}/ttb/{path:path}",
@@ -448,3 +587,4 @@ _DEPRECATION_DETAIL = (
 )
 def deprecated_ttb_routes(**_: dict) -> None:
     raise HTTPException(status_code=status.HTTP_410_GONE, detail=_DEPRECATION_DETAIL)
+

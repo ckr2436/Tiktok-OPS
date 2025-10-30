@@ -87,7 +87,6 @@ const router = createBrowserRouter([
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/advertisers', element: <TenantGuard><AccountDataListPage entity="advertisers" /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/shops', element: <TenantGuard><AccountDataListPage entity="shops" /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/products', element: <TenantGuard><AccountDataListPage entity="products" /></TenantGuard> },
-
         ],
       },
     ],

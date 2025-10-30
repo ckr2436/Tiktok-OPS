@@ -1,38 +1,72 @@
-# app/services/redis_client.py
+# backend/app/services/redis_client.py
 from __future__ import annotations
 
 import asyncio
-from functools import lru_cache
-from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
+import redis                # redis-py v5.x 同步客户端
 import redis.asyncio as aioredis
-from redis.asyncio.client import Redis
 
 from app.core.config import settings
 
-_redis: Optional[Redis] = None
-_lock = asyncio.Lock()
-
-
-@lru_cache
-def _is_rediss(url: str) -> bool:
-    try:
-        return urlparse(url).scheme.lower() == "rediss"
-    except Exception:
+# ---- 工具 ----
+def _truthy(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    if v is None:
         return False
+    return str(v).strip().lower() in {"1", "true", "yes", "on"}
 
+def _normalize_redis_url(raw_url: str | None, force_tls: bool) -> str:
+    """
+    redis-py v5 用 scheme 决定 TLS：
+      - TLS 用 rediss://
+      - 非 TLS 用 redis://
+    不能再传 ssl=*** 参数。
+    """
+    url = (raw_url or "redis://127.0.0.1:6379/0").strip()
+    p = urlparse(url)
+    scheme = p.scheme or "redis"
+    if force_tls:
+        scheme = "rediss"
+    elif scheme not in {"redis", "rediss"}:
+        scheme = "redis"
+    p = p._replace(scheme=scheme)
+    return urlunparse(p)
 
-async def get_redis() -> Redis:
-    """获取全局异步 Redis 客户端（懒初始化，跨请求复用连接池）。"""
+# ---- 同步客户端（Celery prefork/线程内使用）----
+_sync_client: redis.Redis | None = None
 
-    global _redis
-    if _redis is None:
-        async with _lock:
-            if _redis is None:
-                url = settings.REDIS_URL
-                # redis.from_url 会根据 rediss:// 自动启用 TLS；不要显式传入 ssl 参数以避免兼容性问题
-                kwargs = dict(
+def get_redis_sync() -> redis.Redis:
+    global _sync_client
+    if _sync_client is None:
+        raw_url = getattr(settings, "REDIS_URL", "redis://127.0.0.1:6379/0")
+        force_tls = _truthy(getattr(settings, "REDIS_SSL", False))
+        url = _normalize_redis_url(raw_url, force_tls)
+        _sync_client = redis.Redis.from_url(
+            url,
+            decode_responses=False,     # 用字节串，Lua 脚本直接比对
+            health_check_interval=30,
+            socket_keepalive=True,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+        )
+    return _sync_client
+
+# ---- 异步客户端（HTTP 处理、异步任务等可用）----
+_async_client: aioredis.Redis | None = None
+_async_lock = asyncio.Lock()
+
+async def get_redis() -> aioredis.Redis:
+    global _async_client
+    if _async_client is None:
+        async with _async_lock:
+            if _async_client is None:
+                raw_url = getattr(settings, "REDIS_URL", "redis://127.0.0.1:6379/0")
+                force_tls = _truthy(getattr(settings, "REDIS_SSL", False))
+                url = _normalize_redis_url(raw_url, force_tls)
+                _async_client = aioredis.from_url(
+                    url,
                     decode_responses=False,
                     socket_connect_timeout=3.0,
                     socket_timeout=5.0,
@@ -40,15 +74,11 @@ async def get_redis() -> Redis:
                     retry_on_timeout=True,
                     max_connections=100,
                 )
-                if _is_rediss(url):
-                    # rediss:// 走 TLS，无需额外参数；占位逻辑保留扩展点
-                    pass
-                _redis = aioredis.from_url(url, **kwargs)
-    return _redis
+    return _async_client
 
 async def close_redis() -> None:
-    global _redis
-    if _redis is not None:
-        await _redis.close()
-        _redis = None
+    global _async_client
+    if _async_client is not None:
+        await _async_client.close()
+        _async_client = None
 

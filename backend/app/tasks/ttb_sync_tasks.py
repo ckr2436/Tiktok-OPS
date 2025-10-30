@@ -1,3 +1,4 @@
+# backend/app/tasks/ttb_sync_tasks.py
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +7,7 @@ import time
 from uuid import uuid4
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from celery import Task
 from celery.utils.log import get_task_logger
@@ -24,11 +25,15 @@ from app.services.redis_locks import RedisDistributedLock
 from app.services.provider_registry import load_builtin_providers, provider_registry
 from app.services.providers.tiktok_business import ProviderExecutionError
 
+# 确保 provider 在 worker 启动时完成注册
 load_builtin_providers()
 
 logger = get_task_logger(__name__)
 
 
+# -----------------------------
+# 数据结构
+# -----------------------------
 @dataclass(slots=True)
 class EnvelopeMeta:
     run_id: Optional[int]
@@ -47,7 +52,12 @@ class ProviderEnvelope:
     meta: EnvelopeMeta
 
 
+# -----------------------------
+# 工具：上下文日志
+# -----------------------------
 class _ContextLogger:
+    """携带 envelope 关键信息的结构化日志器。"""
+
     def __init__(self, envelope: ProviderEnvelope):
         self._envelope = envelope
 
@@ -76,6 +86,9 @@ def _log_payload(envelope: ProviderEnvelope, extra: Dict[str, Any]) -> Dict[str,
     return payload
 
 
+# -----------------------------
+# DB 会话管理（与 get_db() 兼容）
+# -----------------------------
 def _db_session() -> Session:
     gen = get_db()
     db = next(gen)
@@ -92,6 +105,9 @@ def _db_close(db: Session) -> None:
         db.close()
 
 
+# -----------------------------
+# 最近任务列表（便于 UI 追踪）
+# -----------------------------
 def _push_recent_job(envelope: ProviderEnvelope, task_id: str, max_len: int = 200) -> None:
     backend = getattr(celery_app, "backend", None)
     client = getattr(backend, "client", None)
@@ -102,10 +118,17 @@ def _push_recent_job(envelope: ProviderEnvelope, task_id: str, max_len: int = 20
         client.lpush(key, task_id)
         client.ltrim(key, 0, max_len - 1)
     except Exception:  # noqa: BLE001
+        # 后端不可用时静默忽略
         pass
 
 
+# -----------------------------
+# Envelope & Run 工具
+# -----------------------------
 def _extract_envelope(params: Optional[Dict[str, Any]]) -> ProviderEnvelope:
+    """
+    严格从 params['envelope'] 提取，未提供则抛错（避免歧义）。
+    """
     if not params or "envelope" not in params:
         raise ValueError("missing params.envelope")
     envelope = params.get("envelope") or {}
@@ -182,7 +205,7 @@ def _finish_run(
     duration_ms: int,
     retries: int,
     processed: Optional[Dict[str, Any]] = None,
-    errors: Optional[list] = None,
+    errors: Optional[List[Dict[str, Any]]] = None,
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
 ) -> None:
@@ -192,6 +215,7 @@ def _finish_run(
     run.duration_ms = duration_ms
     run.error_code = error_code
     run.error_message = error_message[:512] if error_message else None
+
     payload: Dict[str, Any] = {"retries": retries}
     if processed is not None:
         processed_payload = dict(processed)
@@ -204,6 +228,7 @@ def _finish_run(
         payload["processed"] = processed_payload
     if errors is not None:
         payload["errors"] = errors
+
     _merge_stats(run, payload)
 
 
@@ -253,7 +278,7 @@ def _mark_account_invalid(db: Session, envelope: ProviderEnvelope, reason: Optio
     db.add(acc)
 
 
-def _build_processed_stats(phases: list[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_processed_stats(phases: List[Dict[str, Any]]) -> Dict[str, Any]:
     counts: Dict[str, Dict[str, int]] = {}
     cursors: Dict[str, Any] = {}
     timings: Dict[str, Dict[str, int]] = {}
@@ -309,8 +334,47 @@ def _envelope_to_dict(envelope: ProviderEnvelope) -> Dict[str, Any]:
     }
 
 
+# -----------------------------
+# options 规范化（关键修复点）
+# -----------------------------
+_ALLOWED_MODES = {"full", "incremental"}
+_LIMIT_MIN, _LIMIT_MAX = 1, 2000
+
+def _normalize_mode(value: Any) -> str:
+    s = str(value or "").strip().lower()
+    return s if s in _ALLOWED_MODES else "incremental"
+
+def _normalize_and_sanitize_options(options: Dict[str, Any], expected_scope: str) -> Dict[str, Any]:
+    """
+    统一规范：
+    - mode 归一；
+    - 将 limit 映射为 page_size（全局生效，且不覆盖已有 page_size），随后无条件移除 limit，
+      这样无论 provider 如何透传 **options，都不会把 limit 传进 sync_* 导致 TypeError。
+    """
+    out: Dict[str, Any] = dict(options or {})
+
+    # mode
+    out["mode"] = _normalize_mode(out.get("mode"))
+
+    # limit -> page_size（适用于所有 scope）
+    if "limit" in out:
+        try:
+            lim = int(out["limit"])
+            lim = max(_LIMIT_MIN, min(_LIMIT_MAX, lim))
+            out.setdefault("page_size", lim)  # 已有 page_size 时不覆盖
+        except Exception:
+            pass
+        finally:
+            out.pop("limit", None)
+
+    return out
+
+# -----------------------------
+# Celery Task 基类
+# -----------------------------
 class TTBSyncTask(Task):
     abstract = True
+    # 避免瞬时抖动导致丢失：默认对所有异常自动重试
     autoretry_for = (Exception,)
     retry_backoff = True
     retry_backoff_max = 60
@@ -355,6 +419,9 @@ class TTBSyncTask(Task):
         super().on_retry(exc, task_id, args, kwargs, einfo)
 
 
+# -----------------------------
+# 执行器
+# -----------------------------
 def _execute_task(
     self: TTBSyncTask,
     *,
@@ -370,6 +437,9 @@ def _execute_task(
     if envelope.scope != expected_scope:
         raise ValueError(f"envelope scope {envelope.scope} mismatch for task {expected_scope}")
 
+    # —— 核心修复：规范化 + 针对 bc 的不兼容参数剔除（如 limit）
+    envelope.options = _normalize_and_sanitize_options(envelope.options, expected_scope)
+
     context_logger = _ContextLogger(envelope)
     _push_recent_job(envelope, self.request.id)
 
@@ -377,7 +447,7 @@ def _execute_task(
     run: Optional[ScheduleRun] = None
     started_ns = time.perf_counter_ns()
     processed: Dict[str, Any] | None = None
-    errors: list[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
 
     try:
         run = _mark_run_running(
@@ -401,6 +471,8 @@ def _execute_task(
             "lock_env": settings.LOCK_ENV,
             "run_id": envelope.meta.run_id,
             "idempotency_key": envelope.meta.idempotency_key,
+            # 记录规范化后的 options 便于追踪
+            "options": envelope.options,
         }
         if run:
             _merge_stats(run, {"requested": {k: v for k, v in requested_snapshot.items() if v is not None}})
@@ -455,10 +527,11 @@ def _execute_task(
             nonlocal processed, errors
             handler = provider_registry.get(envelope.provider)
             try:
+                # provider handler 负责在必要时拆多阶段并产出 phases
                 result = asyncio.run(
                     handler.run_scope(
                         db=db,
-                        envelope=_envelope_to_dict(envelope),
+                        envelope=_envelope_to_dict(envelope),  # 已带入“净化后的” options
                         scope=expected_scope,
                         logger=context_logger,
                     )
@@ -482,6 +555,7 @@ def _execute_task(
                     _mark_account_invalid(db, envelope, reason=str(exc))
                 raise
 
+        # --- 并发保护：优先 DB advisory，其次 Redis 分布式锁 ---
         if settings.TTB_SYNC_USE_DB_LOCKS:
             lock_key = binding_action_lock_key(envelope.workspace_id, envelope.auth_id, expected_scope)
             with mysql_advisory_lock(db, lock_key, wait_seconds=5) as got:
@@ -511,6 +585,7 @@ def _execute_task(
             try:
                 _run_provider_scope()
             finally:
+                # 失败安全释放
                 try:
                     redis_lock.release()
                 except Exception:  # noqa: BLE001
@@ -526,6 +601,7 @@ def _execute_task(
                         extra={"key": lock_key, "lock_owner": owner_token},
                     )
 
+        # --- 完成与审计 ---
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
         status = "success"
         _finish_run(
@@ -581,6 +657,9 @@ def _execute_task(
         _db_close(db)
 
 
+# -----------------------------
+# 具体任务（保持你原有 task 名称 / 队列）
+# -----------------------------
 @celery_app.task(name="ttb.sync.bc", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
 def task_sync_bc(
     self,
@@ -694,3 +773,4 @@ def task_sync_all(
         run_id=run_id,
         idempotency_key=idempotency_key,
     )
+

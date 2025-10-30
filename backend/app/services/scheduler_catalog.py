@@ -1,4 +1,4 @@
-# app/services/scheduler_catalog.py
+# backend/app/services/scheduler_catalog.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,9 +10,12 @@ from app.core.errors import APIError
 
 @dataclass(frozen=True)
 class PeriodicTaskSpec:
+    """
+    计划任务的目录项定义。仅作为“推荐默认”，实际启停由 ops 控制。
+    """
     name: str
     task: str
-    crontab: Optional[str] = None   # e.g. "*/15 * * * *"
+    crontab: Optional[str] = None  # e.g. "*/15 * * * *"
     interval_seconds: Optional[int] = None
     args: List = None
     kwargs: Dict = None
@@ -64,7 +67,6 @@ CATALOG: List[PeriodicTaskSpec] = [
 # -----------------------------
 # JSON-Schema(精简版) 参数校验
 # -----------------------------
-
 _JSON_TYPE_MAP = {
     "string": str,
     "integer": int,
@@ -75,8 +77,11 @@ _JSON_TYPE_MAP = {
     "null": type(None),
 }
 
+
 def _type_matches(pyval: Any, schema_type: Any) -> bool:
-    """支持 type 为字符串或字符串数组；number 不把 bool 当作 number；integer 不把 bool 当作 int。"""
+    """
+    支持 type 为字符串或字符串数组；number 不把 bool 当作 number；integer 不把 bool 当作 int。
+    """
     def _single(tname: str) -> bool:
         pytype = _JSON_TYPE_MAP.get(tname)
         if pytype is None:
@@ -85,11 +90,13 @@ def _type_matches(pyval: Any, schema_type: Any) -> bool:
         if tname in ("integer", "number") and isinstance(pyval, bool):
             return False
         return isinstance(pyval, pytype)
+
     if isinstance(schema_type, list):
         return any(_single(t) for t in schema_type)
     if isinstance(schema_type, str):
         return _single(schema_type)
     return True
+
 
 def _validate_number_constraints(val: float, schema: dict, path: str, errors: List[str]):
     if "minimum" in schema and val < schema["minimum"]:
@@ -100,6 +107,7 @@ def _validate_number_constraints(val: float, schema: dict, path: str, errors: Li
         errors.append(f"{path}: must be > {schema['exclusiveMinimum']}")
     if "exclusiveMaximum" in schema and val >= schema["exclusiveMaximum"]:
         errors.append(f"{path}: must be < {schema['exclusiveMaximum']}")
+
 
 def _validate_string_constraints(val: str, schema: dict, path: str, errors: List[str]):
     if "minLength" in schema and len(val) < schema["minLength"]:
@@ -114,6 +122,7 @@ def _validate_string_constraints(val: str, schema: dict, path: str, errors: List
             # 正则有误时，忽略 pattern
             pass
 
+
 def _validate_array(val: list, schema: dict, path: str, errors: List[str]):
     if "minItems" in schema and len(val) < schema["minItems"]:
         errors.append(f"{path}: items < {schema['minItems']}")
@@ -123,6 +132,7 @@ def _validate_array(val: list, schema: dict, path: str, errors: List[str]):
     if isinstance(items_schema, dict):
         for i, it in enumerate(val):
             _validate(items_schema, it, f"{path}[{i}]", errors)
+
 
 def _validate_object(val: dict, schema: dict, path: str, errors: List[str]):
     props = schema.get("properties") or {}
@@ -141,6 +151,7 @@ def _validate_object(val: dict, schema: dict, path: str, errors: List[str]):
         else:
             if addl is False:
                 errors.append(f"{path}.{k}: additional property not allowed")
+
 
 def _validate(schema: dict, value: Any, path: str, errors: List[str]):
     if not isinstance(schema, dict) or not schema:
