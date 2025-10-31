@@ -301,6 +301,8 @@ def _eligibility_to_api(value: Optional[Literal["gmv_max", "ads", "all"]]) -> Op
     return None
 
 
+from app.services.oauth_ttb import get_credentials_for_auth_id
+
 class TTBSyncService:
     """
     原子同步服务（幂等）：
@@ -344,7 +346,8 @@ class TTBSyncService:
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
-        async for item in self.client.iter_advertisers(page_size=page_size):
+        app_id, app_secret, _ = get_credentials_for_auth_id(self.db, auth_id=self.auth_id)
+        async for item in self.client.iter_advertisers(app_id=app_id, secret=app_secret, page_size=page_size):
             stats["fetched"] += 1
             ok = _upsert_adv(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
             if ok:
@@ -496,4 +499,5 @@ async def run_sync_all(
     finally:
         with contextlib.suppress(Exception):
             await service.client.aclose()
+
 
