@@ -297,27 +297,9 @@ export default function ProviderAccountsPage() {
                     </button>
                     <Link
                       className="btn ghost"
-                      to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${acc.auth_id}/business-centers`}
+                      to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${acc.auth_id}/overview`}
                     >
-                      Business Centers
-                    </Link>
-                    <Link
-                      className="btn ghost"
-                      to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${acc.auth_id}/advertisers`}
-                    >
-                      Advertisers
-                    </Link>
-                    <Link
-                      className="btn ghost"
-                      to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${acc.auth_id}/shops`}
-                    >
-                      Shops
-                    </Link>
-                    <Link
-                      className="btn ghost"
-                      to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${acc.auth_id}/products`}
-                    >
-                      Products
+                      查看 Overview
                     </Link>
                   </div>
                 </div>
