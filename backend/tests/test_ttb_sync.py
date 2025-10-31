@@ -531,6 +531,44 @@ def test_read_business_centers_endpoint(tenant_app):
     assert body["items"][0]["bc_id"] == "BC1"
 
 
+def test_serialize_bc_normalizes_none_and_backfills():
+    from types import SimpleNamespace
+
+    from app.features.tenants.ttb.router import _serialize_bc
+
+    raw_payload = {
+        "bc_info": {
+            "bc_id": "7508663838649384976",
+            "name": "Test BC",
+            "timezone": "Asia/Shanghai",
+            "registered_area": "CN",
+            "status": "ACTIVE",
+        }
+    }
+
+    row = SimpleNamespace(
+        bc_id="None",
+        name=" ",
+        status="none",
+        timezone=None,
+        country_code="",
+        owner_user_id=None,
+        ext_created_time=None,
+        ext_updated_time=None,
+        first_seen_at=None,
+        last_seen_at=None,
+        raw_json=raw_payload,
+    )
+
+    serialized = _serialize_bc(row)
+
+    assert serialized["bc_id"] == "7508663838649384976"
+    assert serialized["name"] == "Test BC"
+    assert serialized["status"] == "ACTIVE"
+    assert serialized["timezone"] == "Asia/Shanghai"
+    assert serialized["country_code"] == "CN"
+
+
 def test_deprecated_routes_return_410(tenant_app):
     client, db_session = tenant_app
     ws, account = _seed_workspace_and_binding(db_session)
