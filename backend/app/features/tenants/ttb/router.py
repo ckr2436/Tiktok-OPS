@@ -293,13 +293,42 @@ def _pagination(query, model, page: int, page_size: int):
     return int(total), rows
 
 
+def _normalize_nullable_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if trimmed.lower() == "none":
+            return None
+        return trimmed
+    # For numeric IDs or other primitives, coerce to string then normalize once.
+    return _normalize_nullable_str(str(value))
+
+
 def _serialize_bc(row: TTBBusinessCenter) -> Dict[str, Any]:
+    raw = row.raw_json or {}
+    bc_info = raw.get("bc_info") or {}
+
+    bc_id = _normalize_nullable_str(row.bc_id) or _normalize_nullable_str(
+        bc_info.get("bc_id") or raw.get("business_center_id")
+    )
+    name = _normalize_nullable_str(row.name) or _normalize_nullable_str(
+        bc_info.get("name") or bc_info.get("display_name")
+    )
+    status = _normalize_nullable_str(row.status) or _normalize_nullable_str(bc_info.get("status"))
+    timezone = _normalize_nullable_str(row.timezone) or _normalize_nullable_str(bc_info.get("timezone"))
+    country_code = _normalize_nullable_str(row.country_code) or _normalize_nullable_str(
+        bc_info.get("registered_area") or bc_info.get("country_code")
+    )
+
     return {
-        "bc_id": row.bc_id,
-        "name": row.name,
-        "status": row.status,
-        "timezone": row.timezone,
-        "country_code": row.country_code,
+        "bc_id": bc_id,
+        "name": name,
+        "status": status,
+        "timezone": timezone,
+        "country_code": country_code,
         "owner_user_id": row.owner_user_id,
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,

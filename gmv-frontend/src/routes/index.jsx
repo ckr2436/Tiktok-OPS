@@ -1,5 +1,5 @@
 // src/routes/index.jsx
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 // 布局
 import AppLayout from '../components/layout/AppLayout.jsx';
@@ -41,7 +41,7 @@ import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/T
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
 import ProviderAccountsPage from '../features/tenants/integrations/tiktok_business/pages/ProviderAccountsPage.jsx';
 import SyncRunDetailPage from '../features/tenants/integrations/tiktok_business/pages/SyncRunDetailPage.jsx';
-import AccountDataListPage from '../features/tenants/integrations/tiktok_business/pages/AccountDataListPage.jsx';
+import AccountOverviewPage from '../features/tenants/integrations/tiktok_business/pages/AccountOverviewPage.jsx';
 
 const router = createBrowserRouter([
   // 登录页
@@ -83,10 +83,11 @@ const router = createBrowserRouter([
           { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><ProviderAccountsPage /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/runs/:runId', element: <TenantGuard><SyncRunDetailPage /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/business-centers', element: <TenantGuard><AccountDataListPage entity="business-centers" /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/advertisers', element: <TenantGuard><AccountDataListPage entity="advertisers" /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/shops', element: <TenantGuard><AccountDataListPage entity="shops" /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/products', element: <TenantGuard><AccountDataListPage entity="products" /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/overview', element: <TenantGuard><AccountOverviewPage /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/business-centers', element: <Navigate to='../overview' replace /> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/advertisers', element: <Navigate to='../overview' replace /> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/shops', element: <Navigate to='../overview' replace /> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/products', element: <Navigate to='../overview' replace /> },
         ],
       },
     ],

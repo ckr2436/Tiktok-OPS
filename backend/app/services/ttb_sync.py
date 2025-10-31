@@ -30,6 +30,13 @@ def _pick(d: dict, *keys: str, default: Any = None) -> Any:
     return default
 
 
+def _normalize_identifier(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
 def _parse_dt(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -210,42 +217,66 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
     return True
 
 
-def _upsert_shop(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
+def _upsert_shop(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    item: dict,
+    bc_id: Optional[str] = None,
+) -> bool:
     # 严格字段：store_id/shop_id 统一使用 store_id；返回字段以官方 /store/list/ 为准：store_id, advertiser_id, bc_id, store_name, status, region_code, create_time, update_time, version
     store_id = _pick(item, "store_id")
     if store_id is None:
         return False
-    values = dict(
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        shop_id=str(store_id),
-        advertiser_id=_pick(item, "advertiser_id"),
-        bc_id=_pick(item, "bc_id"),
-        name=_pick(item, "store_name"),
-        status=_pick(item, "status"),
-        region_code=_pick(item, "region_code"),
-        ext_created_time=_parse_dt(_pick(item, "create_time")),
-        ext_updated_time=_parse_dt(_pick(item, "update_time")),
-        sync_rev=str(_pick(item, "version", default="")),
-        raw_json=item,
+    normalized_bc_id = _normalize_identifier(bc_id or _pick(item, "bc_id"))
+    advertiser_id = _normalize_identifier(_pick(item, "advertiser_id"))
+    ext_created_time = _parse_dt(_pick(item, "create_time"))
+    ext_updated_time = _parse_dt(_pick(item, "update_time"))
+    version = _pick(item, "version")
+    sync_rev = str(version) if version is not None else ""
+
+    existing = (
+        db.query(TTBShop)
+        .filter(
+            TTBShop.workspace_id == workspace_id,
+            TTBShop.auth_id == auth_id,
+            TTBShop.shop_id == str(store_id),
+        )
+        .one_or_none()
     )
-    _upsert(
-        db,
-        TTBShop,
-        values=values,
-        conflict_columns=("workspace_id", "auth_id", "shop_id"),
-        update_columns=(
-            "advertiser_id",
-            "bc_id",
-            "name",
-            "status",
-            "region_code",
-            "ext_created_time",
-            "ext_updated_time",
-            "sync_rev",
-            "raw_json",
-        ),
-    )
+
+    if existing is None:
+        row = TTBShop(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            shop_id=str(store_id),
+            advertiser_id=advertiser_id,
+            bc_id=normalized_bc_id,
+            name=_pick(item, "store_name"),
+            status=_pick(item, "status"),
+            region_code=_pick(item, "region_code"),
+            ext_created_time=ext_created_time,
+            ext_updated_time=ext_updated_time,
+            sync_rev=sync_rev,
+            raw_json=item,
+        )
+        if hasattr(row, "last_seen_at"):
+            row.last_seen_at = _now()
+        db.add(row)
+    else:
+        existing.advertiser_id = advertiser_id
+        existing.name = _pick(item, "store_name")
+        existing.status = _pick(item, "status")
+        existing.region_code = _pick(item, "region_code")
+        existing.ext_created_time = ext_created_time
+        existing.ext_updated_time = ext_updated_time
+        existing.sync_rev = sync_rev
+        existing.raw_json = item
+        if normalized_bc_id and normalized_bc_id != existing.bc_id:
+            existing.bc_id = normalized_bc_id
+        existing.last_seen_at = _now()
+        db.add(existing)
     return True
 
 
@@ -384,7 +415,18 @@ class TTBSyncService:
                 page_size=page_size,
             ):
                 stats["fetched"] += 1
-                ok = _upsert_shop(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
+                bc_hint = (
+                    item.get("store_authorized_bc_id")
+                    or item.get("authorized_bc_id")
+                    or item.get("bc_id")
+                )
+                ok = _upsert_shop(
+                    self.db,
+                    workspace_id=self.workspace_id,
+                    auth_id=self.auth_id,
+                    item=item,
+                    bc_id=bc_hint,
+                )
                 if ok:
                     stats["upserts"] += 1
                     rev = _pick(item, "version")
@@ -434,10 +476,36 @@ class TTBSyncService:
         eligibility_api = _eligibility_to_api(product_eligibility)
 
         for s in shops:
-            if not s or not s.shop_id or not s.bc_id:
+            if not s or not s.shop_id:
                 continue
+
+            bc_id = _normalize_identifier(s.bc_id)
+            if not bc_id:
+                raw_data = getattr(s, "raw_json", None)
+                raw = raw_data if isinstance(raw_data, dict) else {}
+                bc_from_raw = (
+                    raw.get("store_authorized_bc_id")
+                    or raw.get("authorized_bc_id")
+                    or raw.get("bc_id")
+                )
+                bc_id = _normalize_identifier(bc_from_raw)
+                if bc_id:
+                    s.bc_id = bc_id
+                    s.last_seen_at = _now()
+                    self.db.add(s)
+                    self.db.flush()
+                else:
+                    logger.warning(
+                        "ttb_sync.shop_missing_bc_id",
+                        extra={
+                            "workspace_id": self.workspace_id,
+                            "auth_id": self.auth_id,
+                            "shop_id": s.shop_id,
+                        },
+                    )
+                    continue
             async for item in self.client.iter_products(
-                bc_id=str(s.bc_id),
+                bc_id=str(bc_id),
                 store_id=str(s.shop_id),
                 advertiser_id=str(s.advertiser_id) if s.advertiser_id else None,
                 page_size=page_size,

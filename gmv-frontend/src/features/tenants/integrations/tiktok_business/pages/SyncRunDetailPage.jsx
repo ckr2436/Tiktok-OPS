@@ -132,27 +132,9 @@ export default function SyncRunDetailPage() {
         <div className="flex flex-wrap gap-2 pt-2">
           <Link
             className="btn ghost"
-            to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${authId}/business-centers`}
+            to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${authId}/overview`}
           >
-            查看 Business Centers
-          </Link>
-          <Link
-            className="btn ghost"
-            to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${authId}/advertisers`}
-          >
-            查看 Advertisers
-          </Link>
-          <Link
-            className="btn ghost"
-            to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${authId}/shops`}
-          >
-            查看 Shops
-          </Link>
-          <Link
-            className="btn ghost"
-            to={`/tenants/${encodeURIComponent(wid)}/integrations/${encodeURIComponent(normalizedProvider)}/accounts/${authId}/products`}
-          >
-            查看 Products
+            查看 Overview
           </Link>
         </div>
       </div>
