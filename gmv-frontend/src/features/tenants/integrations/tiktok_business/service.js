@@ -21,8 +21,8 @@ function appendQuery(url, params = {}) {
   return qs ? `${url}?${qs}` : url;
 }
 
-async function apiGet(url) {
-  const r = await fetch(url, { credentials: 'include' });
+async function apiGet(url, { signal } = {}) {
+  const r = await fetch(url, { credentials: 'include', signal });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -124,8 +124,8 @@ export async function updateAlias(wid, auth_id, alias) {
 }
 
 /* ---------- 新业务 / 同步域 ---------- */
-export async function listProviderAccounts(wid, provider, params = {}) {
-  return apiGet(appendQuery(accountsPrefix(wid, provider), params));
+export async function listProviderAccounts(wid, provider, params = {}, options = {}) {
+  return apiGet(appendQuery(accountsPrefix(wid, provider), params), options);
 }
 
 export async function triggerSync(wid, provider, authId, scope = 'all', payload = {}) {
@@ -135,14 +135,15 @@ export async function triggerSync(wid, provider, authId, scope = 'all', payload 
   });
 }
 
-export async function getSyncRun(wid, provider, authId, runId) {
+export async function getSyncRun(wid, provider, authId, runId, options = {}) {
   return apiGet(
-    `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync-runs/${encodeURIComponent(runId)}`
+    `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync-runs/${encodeURIComponent(runId)}`,
+    options
   );
 }
 
-export async function listEntities(wid, provider, authId, entity, params = {}) {
+export async function listEntities(wid, provider, authId, entity, params = {}, options = {}) {
   const base = `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/${encodeURIComponent(entity)}`;
-  return apiGet(appendQuery(base, params));
+  return apiGet(appendQuery(base, params), options);
 }
 
