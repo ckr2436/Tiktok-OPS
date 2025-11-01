@@ -1,5 +1,5 @@
 // src/routes/index.jsx
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useParams } from 'react-router-dom';
 
 // 布局
 import AppLayout from '../components/layout/AppLayout.jsx';
@@ -39,9 +39,15 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 // 公司域：TikTok Business 授权
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
-import ProviderAccountsPage from '../features/tenants/integrations/tiktok_business/pages/ProviderAccountsPage.jsx';
-import SyncRunDetailPage from '../features/tenants/integrations/tiktok_business/pages/SyncRunDetailPage.jsx';
-import AccountOverviewPage from '../features/tenants/integrations/tiktok_business/pages/AccountOverviewPage.jsx';
+import GmvMaxManagementPage from '../features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx';
+
+function LegacyGmvRedirect() {
+  const { wid } = useParams();
+  if (!wid) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Navigate to={`/tenants/${wid}/gmv-max`} replace />;
+}
 
 const router = createBrowserRouter([
   // 登录页
@@ -81,13 +87,9 @@ const router = createBrowserRouter([
           // 公司域 - TikTok Business 授权
           { path: 'tenants/:wid/tiktok-business', element: <TenantGuard><TbAuthList /></TenantGuard> },
           { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><ProviderAccountsPage /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/runs/:runId', element: <TenantGuard><SyncRunDetailPage /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/overview', element: <TenantGuard><AccountOverviewPage /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/business-centers', element: <Navigate to='../overview' replace /> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/advertisers', element: <Navigate to='../overview' replace /> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/shops', element: <Navigate to='../overview' replace /> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/products', element: <Navigate to='../overview' replace /> },
+          { path: 'tenants/:wid/gmv-max', element: <TenantGuard><GmvMaxManagementPage /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
+          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
         ],
       },
     ],

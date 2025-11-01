@@ -50,7 +50,7 @@ export function buildMenus(session) {
         title: '整合与授权',
         items: [
           { to: `/tenants/${wsId}/tiktok-business`, label: 'TikTok Business 授权' },
-          { to: `/tenants/${wsId}/integrations/tiktok-business/accounts`, label: 'TikTok Business 数据' },
+          { to: `/tenants/${wsId}/gmv-max`, label: 'GMV Max 管理' },
         ],
       },
     ];
@@ -63,6 +63,7 @@ export function buildMenus(session) {
       items: [
         { to: '/dashboard',             label: '仪表盘', exact: true },
         { to: `/tenants/${wsId}/users`, label: '成员' },
+        { to: `/tenants/${wsId}/gmv-max`, label: 'GMV Max 管理' },
       ],
     },
   ];
