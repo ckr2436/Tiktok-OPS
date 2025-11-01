@@ -18,12 +18,13 @@ from app.celery_app import celery_app
 from app.core.config import settings
 from app.data.db import get_db
 from app.data.models.oauth_ttb import OAuthAccountTTB
-from app.data.models.scheduling import ScheduleRun
+from app.data.models.scheduling import ScheduleRun, Schedule
 from app.services.audit import log_event
 from app.services.db_locks import binding_action_lock_key, mysql_advisory_lock
 from app.services.redis_locks import RedisDistributedLock
 from app.services.provider_registry import load_builtin_providers, provider_registry
 from app.services.providers.tiktok_business import ProviderExecutionError
+from app.services.ttb_binding_config import record_products_sync_result
 
 # 确保 provider 在 worker 启动时完成注册
 load_builtin_providers()
@@ -179,6 +180,40 @@ def _merge_stats(run: ScheduleRun, extra: Dict[str, Any]) -> None:
         else:
             current[key] = value
     run.stats_json = current
+
+
+def _record_products_summary(
+    db: Session,
+    *,
+    envelope: ProviderEnvelope,
+    processed: Dict[str, Any],
+    run: Optional[ScheduleRun],
+) -> None:
+    summary = processed.get("summary") if isinstance(processed, dict) else None
+    if not isinstance(summary, dict):
+        return
+
+    options = envelope.options or {}
+    advertiser_id = options.get("advertiser_id")
+    store_id = options.get("store_id")
+    if not advertiser_id or not store_id:
+        return
+
+    triggered_by_auto = False
+    if run and run.schedule_id:
+        schedule = db.get(Schedule, int(run.schedule_id))
+        if schedule and schedule.schedule_type != "oneoff":
+            triggered_by_auto = True
+
+    record_products_sync_result(
+        db,
+        workspace_id=envelope.workspace_id,
+        auth_id=envelope.auth_id,
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id),
+        summary=summary,
+        triggered_by_auto=triggered_by_auto,
+    )
 
 
 def _mark_run_running(
@@ -538,6 +573,11 @@ def _execute_task(
                 )
                 phases = result.get("phases") or []
                 processed = _build_processed_stats(phases)
+                meta_summary = result.get("summary") if isinstance(result, dict) else None
+                if meta_summary:
+                    summary_block = dict(processed.get("summary") or {})
+                    summary_block["meta"] = meta_summary
+                    processed["summary"] = summary_block
                 errors.extend(result.get("errors") or [])
             except ProviderExecutionError as exc:
                 phases = [
@@ -604,14 +644,22 @@ def _execute_task(
         # --- 完成与审计 ---
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
         status = "success"
+        processed_payload = processed or _build_processed_stats([])
         _finish_run(
             run,
             status=status,
             duration_ms=duration_ms,
             retries=self.request.retries,
-            processed=processed or _build_processed_stats([]),
+            processed=processed_payload,
             errors=errors,
         )
+        if expected_scope == "products":
+            _record_products_summary(
+                db,
+                envelope=envelope,
+                processed=processed_payload,
+                run=run,
+            )
         if run:
             db.add(run)
         _audit_event(
@@ -660,6 +708,29 @@ def _execute_task(
 # -----------------------------
 # 具体任务（保持你原有 task 名称 / 队列）
 # -----------------------------
+@celery_app.task(name="ttb.sync.meta", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_meta(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="meta",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
 @celery_app.task(name="ttb.sync.bc", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
 def task_sync_bc(
     self,
@@ -706,8 +777,8 @@ def task_sync_advertisers(
     )
 
 
-@celery_app.task(name="ttb.sync.shops", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
-def task_sync_shops(
+@celery_app.task(name="ttb.sync.stores", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_stores(
     self,
     workspace_id: int,
     auth_id: int,
@@ -719,7 +790,7 @@ def task_sync_shops(
 ) -> Dict[str, Any]:
     return _execute_task(
         self,
-        expected_scope="shops",
+        expected_scope="stores",
         workspace_id=workspace_id,
         auth_id=auth_id,
         scope=scope,

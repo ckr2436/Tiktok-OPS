@@ -29,6 +29,10 @@ def _is_mysql(bind) -> bool:
     return bind.dialect.name == "mysql"
 
 
+def _is_sqlite(bind) -> bool:
+    return bind.dialect.name == "sqlite"
+
+
 def _has_index(table: str, name: str) -> bool:
     insp = inspect(op.get_bind())
     return any(ix.get("name") == name for ix in insp.get_indexes(table))
@@ -123,11 +127,17 @@ def upgrade() -> None:
     # 3) Add UNIQUE(schedule_id, idempotency_key) if missing
     uq_name = "uq_runs_schedule_id_idempotency_key"
     if not _has_unique("schedule_runs", uq_name):
-        op.create_unique_constraint(
-            uq_name,
-            "schedule_runs",
-            ["schedule_id", "idempotency_key"],
-        )
+        if _is_sqlite(bind):
+            with op.batch_alter_table("schedule_runs") as batch_op:
+                batch_op.create_unique_constraint(
+                    uq_name, ["schedule_id", "idempotency_key"]
+                )
+        else:
+            op.create_unique_constraint(
+                uq_name,
+                "schedule_runs",
+                ["schedule_id", "idempotency_key"],
+            )
 
     # 4) Hot composite indexes (idempotent existence checks)
     #    Existing single/other indexes in your model:
@@ -158,9 +168,14 @@ def downgrade() -> None:
         op.drop_index(ix1, table_name="schedule_runs")
 
     # Drop UNIQUE(schedule_id, idempotency_key) if present
+    bind = op.get_bind()
     uq_name = "uq_runs_schedule_id_idempotency_key"
     if _has_unique("schedule_runs", uq_name):
-        op.drop_constraint(uq_name, "schedule_runs", type_="unique")
+        if _is_sqlite(bind):
+            with op.batch_alter_table("schedule_runs") as batch_op:
+                batch_op.drop_constraint(uq_name, type_="unique")
+        else:
+            op.drop_constraint(uq_name, "schedule_runs", type_="unique")
 
     # DO NOT shrink alembic_version.version_num back; it’s harmless to stay at 64 and safer for future.
 

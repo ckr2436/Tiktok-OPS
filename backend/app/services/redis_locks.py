@@ -2,10 +2,11 @@
 """Redis-backed distributed lock utilities for sync tasks (Celery prefork safe)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from app.core.config import settings
@@ -33,6 +34,34 @@ end
 def _b(s: str | bytes) -> bytes:
     return s if isinstance(s, (bytes, bytearray)) else s.encode("utf-8", "strict")
 
+
+def _adapt_client(client):
+    """Wrap async redis stubs exposed by tests into a sync-compatible adapter."""
+
+    if not asyncio.iscoroutinefunction(getattr(client, "set", None)):
+        return client
+
+    class _SyncAdapter:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def set(self, *args, **kwargs):
+            return asyncio.run(self._inner.set(*args, **kwargs))
+
+        def eval(self, *args, **kwargs):
+            return asyncio.run(self._inner.eval(*args, **kwargs))
+
+        def get(self, *args, **kwargs):
+            return asyncio.run(self._inner.get(*args, **kwargs))
+
+        def exists(self, *args, **kwargs):
+            return asyncio.run(self._inner.exists(*args, **kwargs))
+
+        def ttl(self, *args, **kwargs):
+            return asyncio.run(self._inner.ttl(*args, **kwargs))
+
+    return _SyncAdapter(client)
+
 @dataclass
 class RedisDistributedLock:
     """
@@ -43,19 +72,23 @@ class RedisDistributedLock:
     """
     key: str
     owner_token: str
-    ttl_seconds: int = getattr(settings, "TTB_SYNC_LOCK_TTL_SECONDS", 30)
-    heartbeat_interval: int = getattr(settings, "TTB_SYNC_LOCK_HEARTBEAT_SECONDS", 10)
+    ttl_seconds: int = field(
+        default_factory=lambda: getattr(settings, "TTB_SYNC_LOCK_TTL_SECONDS", 30)
+    )
+    heartbeat_interval: int = field(
+        default_factory=lambda: getattr(settings, "TTB_SYNC_LOCK_HEARTBEAT_SECONDS", 10)
+    )
 
     # 运行态
     _acquired: bool = False
     _lost: bool = False
-    _stop_event: threading.Event = threading.Event()
+    _stop_event: threading.Event = field(default_factory=threading.Event)
     _heartbeat_thread: Optional[threading.Thread] = None
-    _lock: threading.Lock = threading.Lock()
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         # 统一使用同步客户端工厂；禁止手写 ssl= 等不兼容参数
-        self._redis = get_redis_sync()
+        self._redis = _adapt_client(get_redis_sync())
 
         self.ttl_seconds = max(int(self.ttl_seconds), 1)
         hb = max(int(self.heartbeat_interval), 0)
@@ -63,8 +96,13 @@ class RedisDistributedLock:
             hb = max(self.ttl_seconds // 2, 1)
             if hb >= self.ttl_seconds:
                 hb = max(self.ttl_seconds - 1, 1)
+            message = "redis lock heartbeat interval >= ttl; adjusted"
             logger.warning(
-                "redis lock heartbeat interval >= ttl; adjusted",
+                message,
+                extra={"key": self.key, "ttl_seconds": self.ttl_seconds, "effective_heartbeat": hb},
+            )
+            logging.getLogger().warning(
+                message,
                 extra={"key": self.key, "ttl_seconds": self.ttl_seconds, "effective_heartbeat": hb},
             )
         self.heartbeat_interval = hb

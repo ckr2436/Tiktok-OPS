@@ -111,12 +111,12 @@ def test_policy_v1_crud_flow(app_client, db_session) -> None:
         "domains": ["blocked.example.com"],
         "business_scopes": {
             "include": {
-                "shop_ids": ["S1"],
+                "store_ids": ["S1"],
                 "product_ids": ["SKU-1"],
             },
             "exclude": {},
         },
-        "description": "Block specific shop",
+        "description": "Block specific store",
         "is_enabled": True,
         "rate_limit_rps": 5,
         "rate_burst": 10,
@@ -136,7 +136,7 @@ def test_policy_v1_crud_flow(app_client, db_session) -> None:
     assert updated["mode"] == PolicyMode.BLACKLIST.value
     assert updated["enforcement_mode"] == PolicyEnforcementMode.DRYRUN.value
     assert updated["status"] == "ENABLED"
-    assert updated["business_scopes"]["include"]["shop_ids"] == ["S1"]
+    assert updated["business_scopes"]["include"]["store_ids"] == ["S1"]
     assert updated["limits"]["rate_limit_rps"] == 5
 
     # disable is idempotent
@@ -355,7 +355,7 @@ def test_policy_dry_run_endpoint(app_client, db_session) -> None:
             "resource_type": "admin.platform.policy.test",
             "candidates": [
                 {"domain": "blocked.example.com"},
-                {"domain": "other.example.com", "shop_id": "s1"},
+                {"domain": "other.example.com", "store_id": "s1"},
             ],
         },
     )

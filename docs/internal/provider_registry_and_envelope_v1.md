@@ -10,7 +10,7 @@ The envelope is stored under `params.envelope` for every `ttb.sync.*` Celery tas
 {
   "envelope_version": 1,
   "provider": "tiktok-business",
-  "scope": "all | bc | advertisers | shops | products",
+  "scope": "all | bc | advertisers | stores | products",
   "workspace_id": 42,
   "auth_id": 7,
   "options": {
@@ -18,7 +18,7 @@ The envelope is stored under `params.envelope` for every `ttb.sync.*` Celery tas
     "limit": 200,
     "product_limit": 2000,
     "since": "ISO8601",
-    "shop_id": "optional"
+    "store_id": "optional"
   },
   "meta": {
     "run_id": 1234,

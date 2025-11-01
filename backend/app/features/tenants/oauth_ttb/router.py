@@ -187,7 +187,7 @@ def update_alias(
 # ----------- 绑定后触发同步（仅租户管理员）-----------
 class BindingSyncReq(BaseModel):
     auth_id: int = Field(gt=0)
-    scope: str | None = Field(default=None, description="bc|advertisers|shops|products|all")
+    scope: str | None = Field(default=None, description="bc|advertisers|stores|products|all")
     mode: str | None = Field(default=None, description="incremental|full")
     idempotency_key: str | None = Field(default=None, max_length=128)
 

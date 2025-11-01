@@ -47,7 +47,7 @@ class PolicyEnforcementMode(str, Enum):
 class PolicyDomain(str, Enum):
     BUSINESS_CENTER = "bc"
     ADVERTISER = "advertiser"
-    SHOP = "shop"
+    STORE = "store"
     PRODUCT = "product"
 
 
@@ -124,7 +124,7 @@ class PlatformPolicy(Base):
     description: Mapped[str | None] = mapped_column(Text, default=None)
     scope_bc_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     scope_advertiser_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    scope_shop_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    scope_store_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     scope_region_codes_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     scope_product_id_patterns_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     business_scopes_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
