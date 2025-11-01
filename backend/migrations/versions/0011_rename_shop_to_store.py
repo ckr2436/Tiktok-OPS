@@ -254,7 +254,8 @@ def _update_policy_domain_enum() -> None:
     op.execute(
         sa.text(
             "UPDATE ttb_policy_items SET domain = :new WHERE domain = :old"
-        ).bindparams(new="store", old="shop")
+        ),
+        {"new": "store", "old": "shop"},
     )
     if dialect == "postgresql":
         op.execute("ALTER TYPE ttb_policy_domain RENAME TO ttb_policy_domain_old")
@@ -335,7 +336,8 @@ def upgrade() -> None:
         op.execute(
             sa.text(
                 "UPDATE ttb_sync_cursors SET resource_type = :new WHERE resource_type = :old"
-            ).bindparams(new="store", old="shop")
+            ),
+            {"new": "store", "old": "shop"},
         )
 
     _update_policy_domain_enum()
@@ -432,7 +434,8 @@ def downgrade() -> None:
         op.execute(
             sa.text(
                 "UPDATE ttb_policy_items SET domain = :old WHERE domain = :new"
-            ).bindparams(new="store", old="shop")
+            ),
+            {"new": "store", "old": "shop"},
         )
         dialect = bind.dialect.name
         if dialect == "postgresql":
