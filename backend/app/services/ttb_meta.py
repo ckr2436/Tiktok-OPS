@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 from typing import Dict, Iterable, Mapping, MutableMapping, Optional
 
 from sqlalchemy.orm import Session
-
-from app.celery_app import celery_app
 from app.core.config import settings
 from app.data.models.ttb_entities import (
     TTBBusinessCenter,
@@ -271,7 +269,7 @@ def enqueue_meta_sync(
 ) -> MetaSyncEnqueueResult:
     """Enqueue a background meta sync task with an idempotent key."""
 
-    moment = now or datetime.utcnow()
+    moment = now or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     else:
@@ -304,6 +302,8 @@ def enqueue_meta_sync(
     queue_name = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
     primary_task = "ttb.sync.all"
     task_name = primary_task
+    from app.celery_app import celery_app  # noqa: WPS433 (lazy import to avoid cycles)
+
     try:
         celery_app.send_task(primary_task, kwargs=payload, queue=queue_name)
     except Exception:  # noqa: BLE001

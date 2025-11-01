@@ -259,7 +259,7 @@ def test_enqueue_meta_sync_builds_payload(monkeypatch):
         recorded["kwargs"] = kwargs
         recorded["queue"] = queue
 
-    monkeypatch.setattr("app.services.ttb_meta.celery_app.send_task", _fake_send_task)
+    monkeypatch.setattr("app.celery_app.celery_app.send_task", _fake_send_task)
 
     ts = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
     result = enqueue_meta_sync(workspace_id=2, auth_id=3, now=ts)
@@ -272,7 +272,10 @@ def test_enqueue_meta_sync_builds_payload(monkeypatch):
     assert payload["scope"] == "meta"
     envelope = payload["params"]["envelope"]
     assert envelope["meta"]["idempotency_key"] == result.idempotency_key
-    assert recorded["queue"] == "gmv.tasks.events"
+    from app.core.config import settings
+
+    expected_queue = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
+    assert recorded["queue"] == expected_queue
 
 
 def test_enqueue_meta_sync_falls_back_when_primary_task_fails(monkeypatch):
@@ -284,7 +287,7 @@ def test_enqueue_meta_sync_falls_back_when_primary_task_fails(monkeypatch):
             raise RuntimeError("queue missing")
         return None
 
-    monkeypatch.setattr("app.services.ttb_meta.celery_app.send_task", _fake_send_task)
+    monkeypatch.setattr("app.celery_app.celery_app.send_task", _fake_send_task)
 
     result = enqueue_meta_sync(workspace_id=5, auth_id=6)
 

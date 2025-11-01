@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional, Literal
 from sqlalchemy.orm import Session
 
 from app.data.models.oauth_ttb import OAuthAccountTTB
-from app.services.oauth_ttb import get_access_token_for_auth_id
+from app.services.oauth_ttb import get_access_token_plain
 from app.services.policy_engine import PolicyEngine, PolicyLimits
 from app.services.ttb_api import TTBApiClient
 from app.services.ttb_sync import TTBSyncService
@@ -188,7 +188,7 @@ class TiktokBusinessProvider:
         return decision.limits
 
     def _build_client(self, db: Session, *, auth_id: int, limits: PolicyLimits) -> TTBApiClient:
-        token = get_access_token_for_auth_id(db, auth_id)
+        token, _ = get_access_token_plain(db, int(auth_id))
         qps = float(limits.rate_limit_rps or 10.0)
         return TTBApiClient(access_token=token, qps=qps)
 
