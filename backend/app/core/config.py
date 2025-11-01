@@ -163,10 +163,17 @@ class Settings(BaseSettings):
     CELERY_TASK_REJECT_ON_WORKER_LOST: bool = True
     CELERY_WORKER_CONCURRENCY: int = 4
     CELERY_BEAT_ENABLE: bool = True
+    CELERY_DEFAULT_QUEUE: Optional[str] = None
 
     # DB 调度器的刷新周期 & 业务侧可用的最小粒度（供调度路由/校验使用）
     CELERY_BEAT_DB_REFRESH_SECS: int = 15
     SCHEDULE_MIN_INTERVAL_SECONDS: int = 60
+
+    # =========================
+    # GMV Max Options
+    # =========================
+    GMV_MAX_OPTIONS_POLL_TIMEOUT_SECONDS: float = 3.0
+    GMV_MAX_OPTIONS_POLL_INTERVAL_SECONDS: float = 0.3
 
     model_config = SettingsConfigDict(
         env_file=".env",

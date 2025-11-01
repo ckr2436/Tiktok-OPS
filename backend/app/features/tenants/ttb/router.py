@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -32,6 +33,13 @@ from app.services.ttb_binding_config import (
     get_binding_config,
     upsert_binding_config,
 )
+from app.services.ttb_meta import (
+    MetaCursorState,
+    build_gmvmax_options,
+    compute_meta_etag,
+    enqueue_meta_sync,
+    get_meta_cursor_state,
+)
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants",
@@ -41,6 +49,9 @@ router = APIRouter(
 load_builtin_providers()
 
 SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
+
+
+logger = logging.getLogger("gmv.ttb.meta")
 
 
 # -------------------------- 请求/响应模型 --------------------------
@@ -258,6 +269,44 @@ def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConf
         last_auto_synced_at=_iso(row.last_auto_synced_at),
         last_auto_sync_summary=row.last_auto_sync_summary_json or None,
     )
+
+
+def _normalize_if_none_match(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    token = value.split(",", 1)[0].strip()
+    if token.startswith("W/"):
+        token = token[2:].strip()
+    if token.startswith("\"") and token.endswith("\"") and len(token) >= 2:
+        token = token[1:-1]
+    return token or None
+
+
+async def _poll_for_meta_refresh(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    initial_state: MetaCursorState,
+    initial_etag: str,
+    timeout_seconds: float = settings.GMV_MAX_OPTIONS_POLL_TIMEOUT_SECONDS,
+    interval_seconds: float = settings.GMV_MAX_OPTIONS_POLL_INTERVAL_SECONDS,
+):
+    deadline = time.monotonic() + timeout_seconds
+    state = initial_state
+    changed = False
+    while time.monotonic() < deadline:
+        await asyncio.sleep(interval_seconds)
+        db.expire_all()
+        state = get_meta_cursor_state(db, workspace_id=workspace_id, auth_id=auth_id)
+        current_etag = compute_meta_etag(state.revisions)
+        if current_etag != initial_etag:
+            changed = True
+            break
+    if not changed:
+        db.expire_all()
+        state = get_meta_cursor_state(db, workspace_id=workspace_id, auth_id=auth_id)
+    return state, changed
 
 
 def _legacy_disabled() -> None:
@@ -899,6 +948,104 @@ def list_account_products(
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
     _legacy_disabled()
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/options",
+)
+async def get_gmv_max_options(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    request: Request,
+    refresh: int = Query(default=0, ge=0, le=1),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    """Return GMV Max binding options with optional refresh and ETag support."""
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+
+    refresh_requested = bool(refresh)
+
+    cursor_state = get_meta_cursor_state(db, workspace_id=workspace_id, auth_id=auth_id)
+    etag = compute_meta_etag(cursor_state.revisions)
+    request_etag = _normalize_if_none_match(request.headers.get("if-none-match"))
+
+    if not refresh_requested and request_etag and request_etag == etag:
+        response = Response(status_code=status.HTTP_304_NOT_MODIFIED)
+        response.headers["ETag"] = f'"{etag}"'
+        return response
+
+    refresh_status: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    task_name: Optional[str] = None
+    if refresh_requested:
+        try:
+            result = enqueue_meta_sync(workspace_id=int(workspace_id), auth_id=int(auth_id))
+            idempotency_key = result.idempotency_key
+            task_name = result.task_name
+            logger.info(
+                "gmv max options refresh enqueued",
+                extra={
+                    "provider": "tiktok-business",
+                    "workspace_id": int(workspace_id),
+                    "auth_id": int(auth_id),
+                    "idempotency_key": idempotency_key,
+                    "task_name": task_name,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "failed to enqueue meta refresh",
+                extra={
+                    "provider": "tiktok-business",
+                    "workspace_id": int(workspace_id),
+                    "auth_id": int(auth_id),
+                    "idempotency_key": idempotency_key,
+                    "task_name": task_name,
+                },
+            )
+
+        cursor_state, changed = await _poll_for_meta_refresh(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            initial_state=cursor_state,
+            initial_etag=etag,
+        )
+        new_etag = compute_meta_etag(cursor_state.revisions)
+        if new_etag != etag:
+            etag = new_etag
+        if not changed:
+            refresh_status = "timeout"
+        logger.info(
+            "gmv max options refresh polled",
+            extra={
+                "provider": "tiktok-business",
+                "workspace_id": int(workspace_id),
+                "auth_id": int(auth_id),
+                "idempotency_key": idempotency_key,
+                "task_name": task_name,
+                "refresh_changed": changed,
+            },
+        )
+
+    db.expire_all()
+    payload = build_gmvmax_options(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        fallback_synced_at=cursor_state.updated_at,
+    )
+    if refresh_status:
+        payload["refresh"] = refresh_status
+        if refresh_status == "timeout" and idempotency_key:
+            payload["idempotency_key"] = idempotency_key
+
+    response = JSONResponse(payload)
+    response.headers["ETag"] = f'"{etag}"'
+    return response
 
 
 @router.get(
