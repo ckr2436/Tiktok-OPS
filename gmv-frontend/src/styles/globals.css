@@ -84,6 +84,21 @@ a:hover{ opacity:.95; }
 .logo{ display:inline-grid; place-items:center; width:28px; height:28px; background:#1b2330; border:1px solid var(--border); border-radius:8px; color:#9cc0ff; font-weight:700; }
 .brand-name{ font-weight:600; color:var(--txt); }
 .top-actions{ display:flex; align-items:center; gap:10px; }
+.api-health{ display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; border:1px solid var(--border); background:var(--panel); font-size:12px; font-weight:500; color:var(--muted); line-height:1; min-height:26px; }
+.api-health__dot{ width:8px; height:8px; border-radius:50%; background:var(--muted); box-shadow:0 0 0 2px rgba(148,163,184,.25); }
+.api-health__text{ display:inline-block; }
+.api-health--online{ border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.12); color:#15803d; }
+.api-health--online .api-health__dot{ background:#16a34a; box-shadow:0 0 0 2px rgba(74,222,128,.32); }
+.api-health--offline{ border-color:rgba(248,113,113,.35); background:rgba(248,113,113,.12); color:#b91c1c; }
+.api-health--offline .api-health__dot{ background:#ef4444; box-shadow:0 0 0 2px rgba(252,165,165,.32); }
+.api-health--loading{ border-style:dashed; opacity:.85; }
+.api-health--loading .api-health__dot{ animation:api-health-pulse 1.4s ease-in-out infinite; }
+
+@keyframes api-health-pulse{
+  0%{ opacity:.4; }
+  50%{ opacity:1; }
+  100%{ opacity:.4; }
+}
 
 /* 主体：默认预留侧边栏宽度（桌面端） */
 .layout{

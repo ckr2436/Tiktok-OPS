@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ThemeToggle from '../ui/ThemeToggle.jsx';
+import ApiHealthBadge from '../ui/ApiHealthBadge.jsx';
 import { useAppSelector } from '../../app/hooks.js';
 import auth from '../../features/platform/auth/service.js';
 
@@ -86,6 +87,7 @@ export default function Header() {
       </Link>
 
       <div className="top-actions">
+        <ApiHealthBadge />
         <ThemeToggle />
         <UserMenu />
       </div>
