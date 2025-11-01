@@ -25,6 +25,7 @@ from app.services.crypto import (
     decrypt_blob_to_text,
     sha256_fingerprint,
 )
+from app.services.ttb_meta import enqueue_meta_sync
 
 # ---------- logging ----------
 import logging
@@ -359,6 +360,31 @@ async def handle_callback_and_bind_token(
     sess.consumed_at = datetime.utcnow()
     db.add(sess)
     db.flush()
+
+    try:
+        result = enqueue_meta_sync(workspace_id=int(sess.workspace_id), auth_id=int(account.id))
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "failed to enqueue initial meta sync",
+            extra={
+                "provider": "tiktok-business",
+                "workspace_id": int(sess.workspace_id),
+                "auth_id": int(account.id),
+                "idempotency_key": None,
+                "task_name": None,
+            },
+        )
+    else:
+        logger.info(
+            "enqueued initial meta sync",
+            extra={
+                "provider": "tiktok-business",
+                "workspace_id": int(sess.workspace_id),
+                "auth_id": int(account.id),
+                "idempotency_key": result.idempotency_key,
+                "task_name": result.task_name,
+            },
+        )
 
     return account, sess
 
