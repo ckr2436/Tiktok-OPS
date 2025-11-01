@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -198,7 +198,7 @@ def create_authz_session(
     # 生成 state & 过期时间
     state = str(uuid.uuid4())
     ttl = int(getattr(settings, "OAUTH_SESSION_TTL_SECONDS", 3600))
-    expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
     sess = OAuthAuthzSession(
         state=state,
@@ -288,10 +288,18 @@ async def handle_callback_and_bind_token(
         raise APIError("INVALID_STATE", "Invalid or consumed state.", 400)
 
     # 过期检查（统一 UTC 无时区）
-    if getattr(sess, "expires_at", None) and datetime.utcnow() > sess.expires_at:  # type: ignore[operator]
-        sess.status = "expired"
-        db.add(sess)
-        raise APIError("SESSION_EXPIRED", "Auth session expired.", 400)
+    now_utc = datetime.now(timezone.utc)
+    expires_at_raw = getattr(sess, "expires_at", None)
+    if isinstance(expires_at_raw, datetime):
+        expires_at = (
+            expires_at_raw.replace(tzinfo=timezone.utc)
+            if expires_at_raw.tzinfo is None
+            else expires_at_raw.astimezone(timezone.utc)
+        )
+        if now_utc > expires_at:
+            sess.status = "expired"
+            db.add(sess)
+            raise APIError("SESSION_EXPIRED", "Auth session expired.", 400)
 
     app = db.get(OAuthProviderApp, int(sess.provider_app_id))
     if not app or not app.is_enabled:
@@ -357,7 +365,7 @@ async def handle_callback_and_bind_token(
 
     # 标记会话 consumed（UTC）
     sess.status = "consumed"
-    sess.consumed_at = datetime.utcnow()
+    sess.consumed_at = now_utc
     db.add(sess)
     db.flush()
 
@@ -486,7 +494,7 @@ def _mark_local_revoked(db: Session, *, workspace_id: int, auth_id: int) -> None
         )
         .values(
             status="revoked",
-            revoked_at=datetime.utcnow(),
+            revoked_at=datetime.now(timezone.utc),
             alias=None,  # 清空名称，避免展示冲突
         )
     )
@@ -512,66 +520,6 @@ async def revoke_oauth_account(
         )
     _mark_local_revoked(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
     return {"removed_advertisers": 0}
-
-
-# =========================
-#  统一的 Access-Token 解析入口（唯一对外）
-# =========================
-
-def _pick_token_blob_from_account(acc: OAuthAccountTTB) -> bytes | None:
-    """
-    从常见密文字段中择优返回密文（bytes）。如不存在则返回 None。
-    """
-    for fname in (
-        "access_token_cipher",
-        "token_cipher",
-        "access_token_encrypted",
-        "access_token_blob",
-    ):
-        if hasattr(acc, fname):
-            val = getattr(acc, fname)
-            if isinstance(val, (bytes, memoryview)) and val:
-                return bytes(val)
-    return None
-
-
-def _try_decrypt_with_app(blob: bytes, app: OAuthProviderApp) -> str:
-    """
-    使用 provider app 的 AAD 解密 token 密文。
-    """
-    aad = f"{app.provider}|{app.client_id}|{app.redirect_uri}"
-    return decrypt_blob_to_text(blob, aad_text=aad)
-
-
-def get_access_token_for_auth_id(db: Session, auth_id: int) -> str:
-    """
-    统一权威入口：根据绑定 ID 解析出 Access-Token（优先密文解密，兜底明文）。
-    - 使用 ProviderApp 的 (provider|client_id|redirect_uri) 作为 AAD 解密；
-    - 兼容多字段名；
-    - 若均不可用，抛 APIError 500。
-    """
-    acc = db.get(OAuthAccountTTB, int(auth_id))
-    if not acc:
-        raise APIError("NOT_FOUND", "oauth account not found", 404)
-
-    app = db.get(OAuthProviderApp, int(acc.provider_app_id))
-    if not app:
-        raise APIError("NOT_FOUND", "provider app not found", 404)
-
-    blob = _pick_token_blob_from_account(acc)
-    if blob:
-        try:
-            return _try_decrypt_with_app(blob, app)
-        except Exception as e:
-            logger.debug("decrypt token blob failed for auth_id=%s: %s", auth_id, e)
-
-    for fname in ("access_token_plain", "access_token_decrypted", "access_token"):
-        if hasattr(acc, fname):
-            val = getattr(acc, fname)
-            if isinstance(val, str) and val:
-                return val
-
-    raise APIError("TOKEN_NOT_FOUND", "cannot resolve access_token for this binding", 500)
 
 
 # ---------- extra: 别名更新 ----------

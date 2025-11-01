@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.celery_app import celery_app
 from app.core.config import settings
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.services.audit import log_event
@@ -252,7 +251,10 @@ def dispatch_sync(
         "run_id": run_id,
         "idempotency_key": run.idempotency_key,
     }
-    task = celery_app.send_task(task_name, kwargs=payload, queue="gmv.tasks.events")
+    from app.celery_app import celery_app  # noqa: WPS433 (lazy import to avoid cycles)
+
+    queue_name = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
+    task = celery_app.send_task(task_name, kwargs=payload, queue=queue_name)
 
     persisted_run = db.get(ScheduleRun, run_id)
     if persisted_run:
