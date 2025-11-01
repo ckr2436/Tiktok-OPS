@@ -204,6 +204,7 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         industry=_pick(item, "industry"),
         currency=_pick(item, "currency"),
         timezone=_pick(item, "timezone"),
+        display_timezone=_pick(item, "display_timezone"),
         country_code=_pick(item, "country_code"),
         ext_created_time=_parse_dt(_pick(item, "create_time")),
         ext_updated_time=_parse_dt(_pick(item, "update_time")),
