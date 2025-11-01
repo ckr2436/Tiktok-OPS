@@ -38,6 +38,19 @@ _JSON_STRING_REPLACEMENTS = (
     ("shops_count", "stores_count"),
 )
 
+_UPDATE_CURSOR_RESOURCE_TO_STORE = (
+    "UPDATE ttb_sync_cursors SET resource_type = 'store' WHERE resource_type = 'shop'"
+)
+_UPDATE_CURSOR_RESOURCE_TO_SHOP = (
+    "UPDATE ttb_sync_cursors SET resource_type = 'shop' WHERE resource_type = 'store'"
+)
+_UPDATE_POLICY_DOMAIN_TO_STORE = (
+    "UPDATE ttb_policy_items SET domain = 'store' WHERE domain = 'shop'"
+)
+_UPDATE_POLICY_DOMAIN_TO_SHOP = (
+    "UPDATE ttb_policy_items SET domain = 'shop' WHERE domain = 'store'"
+)
+
 _JSON_KEY_MAP_DOWN = {v: k for k, v in _JSON_KEY_MAP.items()}
 _JSON_VALUE_MAP_DOWN = {v: k for k, v in _JSON_VALUE_MAP.items()}
 _JSON_STRING_REPLACEMENTS_DOWN = tuple(
@@ -251,12 +264,7 @@ def _update_policy_domain_enum() -> None:
     if not _has_table("ttb_policy_items"):
         return
     dialect = bind.dialect.name
-    op.execute(
-        sa.text(
-            "UPDATE ttb_policy_items SET domain = :new WHERE domain = :old"
-        ),
-        {"new": "store", "old": "shop"},
-    )
+    op.execute(_UPDATE_POLICY_DOMAIN_TO_STORE)
     if dialect == "postgresql":
         op.execute("ALTER TYPE ttb_policy_domain RENAME TO ttb_policy_domain_old")
         sa.Enum(*_NEW_ENUM_VALUES, name="ttb_policy_domain").create(bind, checkfirst=False)
@@ -333,12 +341,7 @@ def upgrade() -> None:
         )
 
     if _has_table("ttb_sync_cursors"):
-        op.execute(
-            sa.text(
-                "UPDATE ttb_sync_cursors SET resource_type = :new WHERE resource_type = :old"
-            ),
-            {"new": "store", "old": "shop"},
-        )
+        op.execute(_UPDATE_CURSOR_RESOURCE_TO_STORE)
 
     _update_policy_domain_enum()
 
@@ -382,12 +385,7 @@ def downgrade() -> None:
     bind = _bind()
 
     if _has_table("ttb_sync_cursors"):
-        op.execute(
-            sa.text(
-                "UPDATE ttb_sync_cursors SET resource_type = :old WHERE resource_type = :new"
-            ),
-            {"new": "store", "old": "shop"},
-        )
+        op.execute(_UPDATE_CURSOR_RESOURCE_TO_SHOP)
         _update_json_column(
             "ttb_sync_cursors",
             "extra_json",
@@ -431,12 +429,7 @@ def downgrade() -> None:
         )
 
     if _has_table("ttb_policy_items"):
-        op.execute(
-            sa.text(
-                "UPDATE ttb_policy_items SET domain = :old WHERE domain = :new"
-            ),
-            {"new": "store", "old": "shop"},
-        )
+        op.execute(_UPDATE_POLICY_DOMAIN_TO_SHOP)
         dialect = bind.dialect.name
         if dialect == "postgresql":
             op.execute("ALTER TYPE ttb_policy_domain RENAME TO ttb_policy_domain_new")

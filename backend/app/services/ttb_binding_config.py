@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.data.models.scheduling import Schedule
 from app.data.models.ttb_entities import TTBBindingConfig
+
+
+log = logging.getLogger(__name__)
 
 _AUTO_SCOPE = "products"
 _AUTO_TASK_NAME = "ttb.sync.products"
@@ -34,15 +39,46 @@ def _auto_sync_interval() -> int:
     return max(_MIN_INTERVAL_SECONDS, candidate, schedule_min)
 
 
+class BindingConfigStorageNotReady(RuntimeError):
+    """Raised when the GMV Max binding configuration storage is unavailable."""
+
+
+def _is_missing_table_error(exc: Exception) -> bool:
+    if isinstance(exc, (ProgrammingError, OperationalError)):
+        orig = getattr(exc, "orig", None)
+        if orig is not None:
+            # MySQL reports error code 1146, SQLite raises "no such table" messages.
+            args = getattr(orig, "args", ())
+            if args:
+                code = args[0]
+                if code == 1146:
+                    return True
+            message = str(orig).lower()
+            if "no such table" in message:
+                return True
+    return False
+
+
+def _handle_missing_table(exc: Exception) -> None:
+    if _is_missing_table_error(exc):
+        log.warning("GMV Max binding configuration table missing; migrations not applied", exc_info=exc)
+        raise BindingConfigStorageNotReady("GMV Max binding configuration storage is unavailable") from exc
+    raise exc
+
+
 def get_binding_config(db: Session, *, workspace_id: int, auth_id: int) -> Optional[TTBBindingConfig]:
-    return (
-        db.query(TTBBindingConfig)
-        .filter(
-            TTBBindingConfig.workspace_id == int(workspace_id),
-            TTBBindingConfig.auth_id == int(auth_id),
+    try:
+        return (
+            db.query(TTBBindingConfig)
+            .filter(
+                TTBBindingConfig.workspace_id == int(workspace_id),
+                TTBBindingConfig.auth_id == int(auth_id),
+            )
+            .one_or_none()
         )
-        .one_or_none()
-    )
+    except (ProgrammingError, OperationalError) as exc:  # pragma: no cover - defensive branch
+        _handle_missing_table(exc)
+        raise  # pragma: no cover - _handle_missing_table always raises
 
 
 def _build_auto_options(
@@ -144,7 +180,13 @@ def upsert_binding_config(
     normalized_adv = _normalize_identifier(advertiser_id)
     normalized_store = _normalize_identifier(store_id)
 
-    row = get_binding_config(db, workspace_id=workspace_id, auth_id=auth_id)
+    try:
+        row = get_binding_config(db, workspace_id=workspace_id, auth_id=auth_id)
+    except BindingConfigStorageNotReady:
+        raise
+    except (ProgrammingError, OperationalError) as exc:  # pragma: no cover - defensive branch
+        _handle_missing_table(exc)
+        raise
     if row is None:
         row = TTBBindingConfig(
             workspace_id=int(workspace_id),
@@ -160,19 +202,27 @@ def upsert_binding_config(
         row.store_id = normalized_store
         row.auto_sync_products = bool(auto_sync_products)
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except (ProgrammingError, OperationalError) as exc:  # pragma: no cover - defensive branch
+        _handle_missing_table(exc)
+        raise
 
-    _ensure_auto_schedule(
-        db,
-        config=row,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        bc_id=normalized_bc,
-        advertiser_id=normalized_adv,
-        store_id=normalized_store,
-        actor_user_id=actor_user_id,
-    )
-    db.add(row)
+    try:
+        _ensure_auto_schedule(
+            db,
+            config=row,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            bc_id=normalized_bc,
+            advertiser_id=normalized_adv,
+            store_id=normalized_store,
+            actor_user_id=actor_user_id,
+        )
+        db.add(row)
+    except (ProgrammingError, OperationalError) as exc:  # pragma: no cover - defensive branch
+        _handle_missing_table(exc)
+        raise
     return row
 
 
@@ -188,7 +238,13 @@ def record_products_sync_result(
 ) -> None:
     if not advertiser_id or not store_id:
         return
-    row = get_binding_config(db, workspace_id=workspace_id, auth_id=auth_id)
+    try:
+        row = get_binding_config(db, workspace_id=workspace_id, auth_id=auth_id)
+    except BindingConfigStorageNotReady:
+        return
+    except (ProgrammingError, OperationalError) as exc:  # pragma: no cover - defensive branch
+        _handle_missing_table(exc)
+        return
     if not row:
         return
     if _normalize_identifier(advertiser_id) != _normalize_identifier(row.advertiser_id):

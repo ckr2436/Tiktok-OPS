@@ -28,6 +28,7 @@ from app.data.models.ttb_entities import (
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
 from app.services.ttb_binding_config import (
+    BindingConfigStorageNotReady,
     get_binding_config,
     upsert_binding_config,
 )
@@ -913,7 +914,13 @@ def get_gmv_max_config(
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    row = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+    try:
+        row = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+    except BindingConfigStorageNotReady as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GMV Max binding configuration storage is not initialized; please run database migrations.",
+        ) from exc
     return _serialize_binding_config(row)
 
 
@@ -949,6 +956,12 @@ def update_gmv_max_config(
             actor_user_id=int(me.id),
         )
         db.commit()
+    except BindingConfigStorageNotReady as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GMV Max binding configuration storage is not initialized; please run database migrations.",
+        ) from exc
     except Exception:
         db.rollback()
         raise
