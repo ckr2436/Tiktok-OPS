@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List, Tuple, Literal, Set
+from typing import Any, Dict, Optional, List, Tuple, Literal, Set, Iterable
 import logging
 import contextlib
 
@@ -53,6 +53,20 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         except Exception:
             continue
     return None
+
+
+_ADVERTISER_INFO_BATCH_SIZE = 50
+
+
+def _chunked(values: Iterable[str], size: int) -> Iterable[list[str]]:
+    bucket: list[str] = []
+    for value in values:
+        bucket.append(value)
+        if len(bucket) >= size:
+            yield bucket
+            bucket = []
+    if bucket:
+        yield bucket
 
 
 # --------------------------- 游标获取/创建 ---------------------------
@@ -188,6 +202,7 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         industry=_pick(item, "industry"),
         currency=_pick(item, "currency"),
         timezone=_pick(item, "timezone"),
+        display_timezone=_pick(item, "display_timezone"),
         country_code=_pick(item, "country_code"),
         ext_created_time=_parse_dt(_pick(item, "create_time")),
         ext_updated_time=_parse_dt(_pick(item, "update_time")),
@@ -207,6 +222,7 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
             "industry",
             "currency",
             "timezone",
+            "display_timezone",
             "country_code",
             "ext_created_time",
             "ext_updated_time",
@@ -215,6 +231,46 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         ),
     )
     return True
+
+
+def _apply_advertiser_info(row: TTBAdvertiser, info: dict) -> bool:
+    changed = False
+
+    def _set(attr: str, value: Any) -> None:
+        nonlocal changed
+        if value is None:
+            return
+        if isinstance(value, str):
+            value = value.strip()
+        if value == "":
+            return
+        if getattr(row, attr) != value:
+            setattr(row, attr, value)
+            changed = True
+
+    preferred_name = _pick(info, "name", "advertiser_name")
+    display = _pick(info, "display_name", "advertiser_name", "name")
+    _set("name", preferred_name)
+    _set("display_name", display)
+    _set("status", _pick(info, "status"))
+    _set("industry", _pick(info, "industry"))
+    _set("currency", _pick(info, "currency"))
+    _set("timezone", _pick(info, "timezone"))
+    _set("display_timezone", _pick(info, "display_timezone"))
+
+    country = _pick(info, "country_code", "country", "region_code")
+    _set("country_code", country)
+
+    owner_bc = _normalize_identifier(_pick(info, "owner_bc_id", "bc_id"))
+    if owner_bc:
+        _set("bc_id", owner_bc)
+
+    if info:
+        row.raw_json = info
+        changed = True
+
+    row.last_seen_at = _now()
+    return changed
 
 
 def _upsert_store(
@@ -416,6 +472,58 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "bc", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
+    async def _hydrate_advertisers(self) -> dict:
+        rows: List[TTBAdvertiser] = (
+            self.db.query(TTBAdvertiser)
+            .filter(TTBAdvertiser.workspace_id == self.workspace_id)
+            .filter(TTBAdvertiser.auth_id == self.auth_id)
+            .all()
+        )
+        mapping = {
+            str(row.advertiser_id): row
+            for row in rows
+            if row and row.advertiser_id is not None
+        }
+        ids = [key for key in mapping.keys() if key]
+        if not ids:
+            return {"batches": 0, "updates": 0}
+
+        batches = 0
+        updates = 0
+        for chunk in _chunked(ids, _ADVERTISER_INFO_BATCH_SIZE):
+            try:
+                info_items = await self.client.fetch_advertiser_info(advertiser_ids=chunk)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "failed to fetch advertiser info",  # pragma: no cover - logging path
+                    extra={
+                        "provider": "tiktok-business",
+                        "workspace_id": int(self.workspace_id),
+                        "auth_id": int(self.auth_id),
+                        "advertiser_ids": chunk,
+                    },
+                )
+                continue
+
+            batches += 1
+            if not info_items:
+                continue
+            for info in info_items:
+                advertiser_id = _normalize_identifier(_pick(info, "advertiser_id", "advertiserId"))
+                if not advertiser_id:
+                    continue
+                row = mapping.get(advertiser_id)
+                if not row:
+                    continue
+                if _apply_advertiser_info(row, info):
+                    updates += 1
+                    self.db.add(row)
+
+        if updates:
+            self.db.flush()
+
+        return {"batches": batches, "updates": updates}
+
     async def sync_advertisers(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
             self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="advertiser"
@@ -434,6 +542,13 @@ class TTBSyncService:
             else:
                 stats["skipped"] += 1
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
+        info_stats = await self._hydrate_advertisers()
+        stats.update(
+            {
+                "info_batches": info_stats.get("batches", 0),
+                "info_updates": info_stats.get("updates", 0),
+            }
+        )
         return {"resource": "advertisers", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
     async def sync_stores(self, *, page_size: int = 50) -> dict:

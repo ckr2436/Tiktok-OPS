@@ -144,6 +144,7 @@ class TTBAdvertiser(Base):
     industry: Mapped[str | None] = mapped_column(String(64), default=None)
     currency: Mapped[str | None] = mapped_column(String(8), default=None)
     timezone: Mapped[str | None] = mapped_column(String(64), default=None)
+    display_timezone: Mapped[str | None] = mapped_column(String(64), default=None)
     country_code: Mapped[str | None] = mapped_column(String(8), default=None)
 
     ext_created_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)

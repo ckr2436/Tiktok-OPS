@@ -27,6 +27,7 @@ COOKIE_SAMESITE=lax
 - 2025-11-01: Renamed all TikTok Business shop entities and APIs to store/store_id. Existing migrations upgrade database schema and task catalog entries automatically; downstream integrations must update to the new naming.
 - 2025-11-12: Replaced legacy TikTok Business data browsing endpoints with a GMV Max management workflow. Only metadata dropdown sources, the GMV Max binding configuration, and product sync remain available; legacy list/chart APIs now return `TTB_LEGACY_DISABLED` (HTTP 410).
 - 2025-11-12: Added the `ttb.sync.meta` periodic task recommendation and GMV Max auto-sync scheduler wiring; refresh jobs now run through the new binding configuration service.
+- 2025-11-15: GMV Max advertiser hydration now calls `/advertiser/info/` in batches after each sync to populate currency, timezone、display_timezone、country、industry、status 以及 owner_bc_id；选项接口 `/gmv-max/options` 提供链路缓存与手动刷新，前端基于返回的 `links` 在本地联动过滤下拉列表，并使用 `refresh=timeout` 反馈提示。
 
 ## Tenant TikTok Business API quick reference
 
@@ -39,15 +40,18 @@ curl -H 'Authorization: Bearer <token>' \
 curl -H 'Authorization: Bearer <token>' \
   'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts?page=1&page_size=20'
 
-# refresh metadata (returns add/remove/unchanged summary)
-curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync \
-  -d '{"scope":"meta"}'
+# fetch cached GMV Max options (ETag aware)
+curl -H 'Authorization: Bearer <token>' \
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/options
+
+# trigger background refresh (returns immediately with {"refresh":"timeout","idempotency_key":...} when no change within 3s)
+curl -H 'Authorization: Bearer <token>' \
+  'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/options?refresh=1'
 
 # trigger GMV Max product sync for an advertiser/store pair
 curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync \
-  -d '{"scope":"products","mode":"full","advertiser_id":"ADV123","store_id":"STORE456"}'
+  -d '{"scope":"products","mode":"full","options":{"advertiser_id":"ADV123","store_id":"STORE456","eligibility":"gmv_max"}}'
 
 # fetch GMV Max binding configuration
 curl -H 'Authorization: Bearer <token>' \

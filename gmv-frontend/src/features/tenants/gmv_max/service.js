@@ -1,7 +1,4 @@
-import {
-  listBindings,
-  normProvider,
-} from '../integrations/tiktok_business/service.js';
+import { listBindings, normProvider } from '../integrations/tiktok_business/service.js';
 
 const tenantPrefix = (wid) => `/api/v1/tenants/${encodeURIComponent(wid)}`;
 const providerPrefix = (wid, provider) => `${tenantPrefix(wid)}/providers/${encodeURIComponent(normProvider(provider))}`;
@@ -18,8 +15,8 @@ function appendQuery(url, params = {}) {
   return qs ? `${url}?${qs}` : url;
 }
 
-async function apiGet(url, { signal } = {}) {
-  const response = await fetch(url, { credentials: 'include', signal });
+async function apiGet(url, { signal, headers } = {}) {
+  const response = await fetch(url, { credentials: 'include', signal, headers });
   if (!response.ok) {
     const message = await response.text();
     const error = new Error(message || 'Request failed');
@@ -61,24 +58,6 @@ async function apiPost(url, body) {
   return text ? JSON.parse(text) : null;
 }
 
-export async function fetchBusinessCenters(wid, provider, authId, options = {}) {
-  const url = `${accountPrefix(wid, provider, authId)}/business-centers`;
-  const data = await apiGet(url, options);
-  return Array.isArray(data?.items) ? data.items : [];
-}
-
-export async function fetchAdvertisers(wid, provider, authId, params = {}, options = {}) {
-  const base = `${accountPrefix(wid, provider, authId)}/advertisers`;
-  const data = await apiGet(appendQuery(base, params), options);
-  return Array.isArray(data?.items) ? data.items : [];
-}
-
-export async function fetchStores(wid, provider, authId, params = {}, options = {}) {
-  const base = `${accountPrefix(wid, provider, authId)}/stores`;
-  const data = await apiGet(appendQuery(base, params), options);
-  return Array.isArray(data?.items) ? data.items : [];
-}
-
 export async function fetchBindingConfig(wid, provider, authId, options = {}) {
   const url = `${accountPrefix(wid, provider, authId)}/gmv-max/config`;
   return apiGet(url, options);
@@ -89,14 +68,56 @@ export async function saveBindingConfig(wid, provider, authId, payload) {
   return apiPut(url, payload);
 }
 
-export async function triggerMetaSync(wid, provider, authId) {
-  const url = `${accountPrefix(wid, provider, authId)}/sync`;
-  return apiPost(url, { scope: 'meta', mode: 'full', product_eligibility: 'gmv_max' });
+export async function fetchGmvOptions(
+  wid,
+  provider,
+  authId,
+  { refresh = false, etag, signal } = {},
+) {
+  const base = `${accountPrefix(wid, provider, authId)}/gmv-max/options`;
+  const url = refresh ? appendQuery(base, { refresh: 1 }) : base;
+  const headers = {};
+  if (etag) {
+    headers['If-None-Match'] = etag;
+  }
+  const response = await fetch(url, { credentials: 'include', signal, headers });
+  const nextEtag = response.headers.get('ETag');
+  if (response.status === 304) {
+    return { status: 304, data: null, etag: nextEtag || etag || null };
+  }
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(text || 'Request failed');
+    error.status = response.status;
+    throw error;
+  }
+  const payload = text ? JSON.parse(text) : null;
+  return { status: response.status, data: payload, etag: nextEtag || null };
 }
 
 export async function triggerProductSync(wid, provider, authId, payload) {
   const url = `${accountPrefix(wid, provider, authId)}/sync`;
-  return apiPost(url, payload);
+  const body = {
+    scope: 'products',
+    mode: payload?.mode || 'full',
+    idempotency_key: payload?.idempotency_key,
+    options: {
+      advertiser_id: payload?.advertiserId || payload?.advertiser_id,
+      store_id: payload?.storeId || payload?.store_id,
+      eligibility: payload?.eligibility || payload?.product_eligibility || 'gmv_max',
+      bc_id: payload?.bcId || payload?.bc_id || undefined,
+    },
+  };
+  if (!body.options.advertiser_id || !body.options.store_id) {
+    throw new Error('advertiser_id and store_id are required');
+  }
+  if (!body.idempotency_key) {
+    delete body.idempotency_key;
+  }
+  if (!body.options.bc_id) {
+    delete body.options.bc_id;
+  }
+  return apiPost(url, body);
 }
 
 export async function fetchSyncRun(wid, provider, authId, runId, options = {}) {
