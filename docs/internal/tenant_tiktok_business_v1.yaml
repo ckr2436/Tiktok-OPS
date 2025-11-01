@@ -85,7 +85,7 @@ paths:
                   scope: products
                   mode: incremental
                   product_limit: 500
-                  shop_id: "12345"
+                  store_id: "12345"
                   idempotency_key: sync-123
       responses:
         '202':
@@ -181,10 +181,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PagedAdvertisers'
-  /tenants/{workspace_id}/providers/{provider}/shops:
+  /tenants/{workspace_id}/providers/{provider}/stores:
     get:
       tags: [Tenant / TikTok Business]
-      summary: List TikTok shops
+      summary: List TikTok stores
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ProviderParam'
@@ -195,10 +195,10 @@ paths:
           schema:
             type: string
             maxLength: 64
-          description: Filter shops by advertiser id
+          description: Filter stores by advertiser id
       responses:
         '200':
-          description: Paged shops
+          description: Paged stores
           content:
             application/json:
               schema:
@@ -213,11 +213,11 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - in: query
-          name: shop_id
+          name: store_id
           schema:
             type: string
             maxLength: 64
-          description: Filter products by shop id
+          description: Filter products by store id
       responses:
         '200':
           description: Paged products
@@ -278,7 +278,7 @@ components:
       properties:
         scope:
           type: string
-          enum: [bc, advertisers, shops, products, all]
+          enum: [bc, advertisers, stores, products, all]
           default: all
         mode:
           type: string
@@ -292,7 +292,7 @@ components:
           type: integer
           minimum: 1
           maximum: 2000
-        shop_id:
+        store_id:
           type: string
           maxLength: 128
         since:
@@ -349,7 +349,7 @@ components:
           minimum: 1
         scope:
           type: string
-          enum: [bc, advertisers, shops, products, all]
+          enum: [bc, advertisers, stores, products, all]
         mode:
           type: string
           enum: [incremental, full]
@@ -453,7 +453,7 @@ components:
               items:
                 type: object
                 properties:
-                  shop_id: {type: string}
+                  store_id: {type: string}
                   advertiser_id: {type: string}
                   bc_id: {type: string}
                   name: {type: string}
@@ -470,7 +470,7 @@ components:
                 type: object
                 properties:
                   product_id: {type: string}
-                  shop_id: {type: string}
+                  store_id: {type: string}
                   title: {type: string}
                   status: {type: string}
                   currency: {type: string}

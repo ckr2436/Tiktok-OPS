@@ -50,7 +50,7 @@ class TiktokBusinessProvider:
         统一选项键名：
           - 用户可传 {limit|page_size}，provider 统一导出为 page_size
           - 用户可传 {product_limit|product_page_size}，统一为 product_page_size
-          - 允许传 shop_id（仅 products/all 有效）
+          - 允许传 store_id（仅 products/all 有效）
           - 允许传 since（datetime/ISO 字符串）
           - 可选 product_eligibility: {'gmv_max','ads','all'}
         """
@@ -64,17 +64,22 @@ class TiktokBusinessProvider:
 
         # page_size（接受 limit/page_size，统一成 page_size）
         page_size = options.get("page_size", options.get("limit", None))
-        normalized["page_size"] = self._clamp_int(page_size, default=50, lo=1, hi=2000) if page_size is not None else 50
+        if page_size is not None:
+            clamped = self._clamp_int(page_size, default=50, lo=1, hi=2000)
+        else:
+            clamped = 50
+        normalized["page_size"] = clamped
+        normalized["limit"] = clamped
 
         # product_page_size（接受 product_limit/product_page_size，统一成 product_page_size）
         product_ps = options.get("product_page_size", options.get("product_limit", None))
         if product_ps is not None:
             normalized["product_page_size"] = self._clamp_int(product_ps, default=50, lo=1, hi=2000)
 
-        # shop_id 仅在 products/all 有效
-        shop_id = options.get("shop_id")
-        if shop_id:
-            normalized["shop_id"] = str(shop_id)
+        # store_id 仅在 products/all 有效
+        store_id = options.get("store_id")
+        if store_id:
+            normalized["store_id"] = str(store_id)
 
         # since 透传为 ISO 字符串（若为 datetime）
         since = options.get("since")
@@ -95,7 +100,7 @@ class TiktokBusinessProvider:
         # 清理与 scope 无关字段
         if scope not in {"products", "all"}:
             normalized.pop("product_page_size", None)
-            normalized.pop("shop_id", None)
+            normalized.pop("store_id", None)
             normalized.pop("product_eligibility", None)
 
         return normalized
@@ -115,9 +120,10 @@ class TiktokBusinessProvider:
         service = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
 
         phases: List[PhaseResult] = []
+        meta_summary: Dict[str, Dict[str, int]] | None = None
         try:
             if scope == "all":
-                for stage in ("bc", "advertisers", "shops", "products"):
+                for stage in ("bc", "advertisers", "stores", "products"):
                     try:
                         phases.append(
                             await self._run_single(
@@ -131,6 +137,14 @@ class TiktokBusinessProvider:
                         )
                     except Exception as exc:  # noqa: BLE001
                         raise ProviderExecutionError(stage=stage, original=exc, phases=phases) from exc
+            elif scope == "meta":
+                page_size = int(options.get("page_size", 50))
+                meta_phases, summary = await service.sync_meta(page_size=page_size)
+                for phase_scope, stats, duration_ms in meta_phases:
+                    phases.append(
+                        PhaseResult(scope=phase_scope, stats=stats, duration_ms=duration_ms)
+                    )
+                meta_summary = summary
             else:
                 try:
                     phases.append(
@@ -148,13 +162,16 @@ class TiktokBusinessProvider:
         finally:
             await service.client.aclose()
 
-        return {
+        payload = {
             "phases": [
                 {"scope": phase.scope, "stats": phase.stats, "duration_ms": phase.duration_ms}
                 for phase in phases
             ],
             "errors": [],
         }
+        if meta_summary is not None:
+            payload["summary"] = meta_summary
+        return payload
 
     # ---------- 内部工具 ----------
     def _policy_limits(self, db: Session, *, workspace_id: int, auth_id: int) -> PolicyLimits:
@@ -202,8 +219,8 @@ class TiktokBusinessProvider:
         elif scope == "advertisers":
             stats = await service.sync_advertisers(page_size=base_page_size)
 
-        elif scope == "shops":
-            stats = await service.sync_shops(page_size=base_page_size)
+        elif scope == "stores":
+            stats = await service.sync_stores(page_size=base_page_size)
 
         elif scope == "products":
             product_page_size = int(options.get("product_page_size", base_page_size))
@@ -212,7 +229,7 @@ class TiktokBusinessProvider:
 
             stats = await service.sync_products(
                 page_size=product_page_size,
-                shop_id=options.get("shop_id"),
+                store_id=options.get("store_id"),
                 product_eligibility=options.get("product_eligibility"),  # 'gmv_max' | 'ads' | 'all' | None
             )
         else:

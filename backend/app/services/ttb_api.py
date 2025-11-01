@@ -6,7 +6,7 @@ TikTok Business API 客户端（严格版）：
 - 只暴露 4 个读取器（异步）：
     * iter_business_centers()  -> /bc/get/      （data.list + 可能的 page_info.cursor 或 page/page_size）
     * iter_advertisers()       -> /oauth2/advertiser/get/（data.list；不分页；必须传 app_id/secret）
-    * iter_shops()             -> /store/list/  （data.stores，页码分页）
+    * iter_stores()             -> /store/list/  （data.stores，页码分页）
     * iter_products()          -> /store/product/get/（data.store_products，页码分页）
 - URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
 - 令牌桶限速（默认 10 QPS），429/5xx 指数退避，page_size 强制上限 50（支持分页的接口才生效）。
@@ -101,13 +101,13 @@ class TTBPaths:
     仅支持以下固定 settings 覆盖项（可写相对/绝对路径）：
       - TTB_BC_GET            (默认 "bc/get/")
       - TTB_ADVERTISERS_GET   (默认 "oauth2/advertiser/get/")
-      - TTB_SHOPS_LIST        (默认 "store/list/")
+      - TTB_STORES_LIST        (默认 "store/list/")
       - TTB_PRODUCTS_LIST     (默认 "store/product/get/")
     """
 
     bc_get: str
     advertisers_get: str
-    shops_list: str
+    stores_list: str
     products_list: str
 
     @classmethod
@@ -119,7 +119,7 @@ class TTBPaths:
         return cls(
             bc_get=g("TTB_BC_GET", "bc/get/"),
             advertisers_get=g("TTB_ADVERTISERS_GET", "oauth2/advertiser/get/"),
-            shops_list=g("TTB_SHOPS_LIST", "store/list/"),
+            stores_list=g("TTB_STORES_LIST", "store/list/"),
             products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
         )
 
@@ -130,7 +130,7 @@ class TTBApiClient:
     读取器：
       - iter_business_centers()
       - iter_advertisers()
-      - iter_shops()
+      - iter_stores()
       - iter_products()
     """
 
@@ -216,7 +216,7 @@ class TTBApiClient:
         return items, cursor
 
     @staticmethod
-    def _extract_shops(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
+    def _extract_stores(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
         data = (payload.get("data") or {})
         items = data.get("stores") or []
         if not isinstance(items, list):
@@ -264,7 +264,7 @@ class TTBApiClient:
         base_params: Dict[str, Any] | None = None,
         page_param: str = "page",
         page_size: int = _MAX_PAGE_SIZE,
-        extractor: Literal["shops", "products"],
+        extractor: Literal["stores", "products"],
     ) -> AsyncIterator[dict]:
         page = 1
         size = _clamp_page_size(page_size)
@@ -275,8 +275,8 @@ class TTBApiClient:
             params["page_size"] = size
 
             payload = await self._request_json(method, path, params=params)
-            if extractor == "shops":
-                items, _ = self._extract_shops(payload)
+            if extractor == "stores":
+                items, _ = self._extract_stores(payload)
             elif extractor == "products":
                 items, _ = self._extract_products(payload)
             else:
@@ -325,7 +325,7 @@ class TTBApiClient:
                 if isinstance(it, dict):
                     yield it
 
-    async def iter_shops(
+    async def iter_stores(
         self,
         *,
         advertiser_id: Optional[str] = None,
@@ -339,11 +339,11 @@ class TTBApiClient:
             params["bc_id"] = str(bc_id)
         async for it in self._paged_by_page(
             method="GET",
-            path=self._paths.shops_list,
+            path=self._paths.stores_list,
             base_params=params,
             page_param="page",
             page_size=page_size,
-            extractor="shops",
+            extractor="stores",
         ):
             yield it
 
@@ -354,7 +354,7 @@ class TTBApiClient:
         store_id: str,
         advertiser_id: Optional[str] = None,
         page_size: int = _MAX_PAGE_SIZE,
-        eligibility: Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]] = None,
+        eligibility: Optional[Literal["GMV_MAX", "CUSTOM_STORE_ADS"]] = None,
         product_name: Optional[str] = None,
         item_group_ids: Optional[list[str]] = None,
     ) -> AsyncIterator[dict]:

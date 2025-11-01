@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List, Tuple, Literal
+from typing import Any, Dict, Optional, List, Tuple, Literal, Set
 import logging
 import contextlib
 
@@ -16,7 +16,7 @@ from app.data.models.ttb_entities import (
     TTBSyncCursor,
     TTBBusinessCenter,
     TTBAdvertiser,
-    TTBShop,
+    TTBStore,
     TTBProduct,
 )
 from app.services.ttb_api import TTBApiClient
@@ -217,7 +217,7 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
     return True
 
 
-def _upsert_shop(
+def _upsert_store(
     db: Session,
     *,
     workspace_id: int,
@@ -225,7 +225,7 @@ def _upsert_shop(
     item: dict,
     bc_id: Optional[str] = None,
 ) -> bool:
-    # 严格字段：store_id/shop_id 统一使用 store_id；返回字段以官方 /store/list/ 为准：store_id, advertiser_id, bc_id, store_name, status, region_code, create_time, update_time, version
+    # 严格字段：官方 /store/list/ 字段：store_id, advertiser_id, bc_id, store_name, status, region_code, create_time, update_time, version
     store_id = _pick(item, "store_id")
     if store_id is None:
         return False
@@ -237,20 +237,20 @@ def _upsert_shop(
     sync_rev = str(version) if version is not None else ""
 
     existing = (
-        db.query(TTBShop)
+        db.query(TTBStore)
         .filter(
-            TTBShop.workspace_id == workspace_id,
-            TTBShop.auth_id == auth_id,
-            TTBShop.shop_id == str(store_id),
+            TTBStore.workspace_id == workspace_id,
+            TTBStore.auth_id == auth_id,
+            TTBStore.store_id == str(store_id),
         )
         .one_or_none()
     )
 
     if existing is None:
-        row = TTBShop(
+        row = TTBStore(
             workspace_id=workspace_id,
             auth_id=auth_id,
-            shop_id=str(store_id),
+            store_id=str(store_id),
             advertiser_id=advertiser_id,
             bc_id=normalized_bc_id,
             name=_pick(item, "store_name"),
@@ -289,7 +289,7 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
         workspace_id=workspace_id,
         auth_id=auth_id,
         product_id=str(product_id),
-        shop_id=str(_pick(item, "store_id")) if _pick(item, "store_id") is not None else None,
+        store_id=str(_pick(item, "store_id")) if _pick(item, "store_id") is not None else None,
         title=_pick(item, "title"),
         status=_pick(item, "status"),
         currency=_pick(item, "currency"),
@@ -306,7 +306,7 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
         values=values,
         conflict_columns=("workspace_id", "auth_id", "product_id"),
         update_columns=(
-            "shop_id",
+            "store_id",
             "title",
             "status",
             "currency",
@@ -322,13 +322,13 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
 
 
 # --------------------------- 同步服务 ---------------------------
-def _eligibility_to_api(value: Optional[Literal["gmv_max", "ads", "all"]]) -> Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]]:
+def _eligibility_to_api(value: Optional[Literal["gmv_max", "ads", "all"]]) -> Optional[Literal["GMV_MAX", "CUSTOM_STORE_ADS"]]:
     if not value or value == "all":
         return None
     if value == "gmv_max":
         return "GMV_MAX"
     if value == "ads":
-        return "CUSTOM_SHOP_ADS"
+        return "CUSTOM_STORE_ADS"
     return None
 
 
@@ -337,7 +337,7 @@ from app.services.oauth_ttb import get_credentials_for_auth_id
 class TTBSyncService:
     """
     原子同步服务（幂等）：
-    - sync_bc / sync_advertisers / sync_shops / sync_products / sync_all
+    - sync_bc / sync_advertisers / sync_stores / sync_products / sync_all
     - 只使用官方字段，不做历史兼容。
     """
 
@@ -351,6 +351,51 @@ class TTBSyncService:
         cursor.last_rev = last_rev or str(int(datetime.now(timezone.utc).timestamp()))
         cursor.since_time = datetime.now(timezone.utc)
         self.db.add(cursor)
+
+    def _collect_ids(self, model, column) -> Set[str]:
+        rows = (
+            self.db.query(column)
+            .filter(
+                model.workspace_id == self.workspace_id,
+                model.auth_id == self.auth_id,
+            )
+            .all()
+        )
+        result: Set[str] = set()
+        for value, in rows:
+            if value is None:
+                continue
+            result.add(str(value))
+        return result
+
+    @staticmethod
+    def _diff_sets(before: Set[str], after: Set[str]) -> Dict[str, int]:
+        added = len(after - before)
+        removed = len(before - after)
+        unchanged = len(before & after)
+        return {"added": added, "removed": removed, "unchanged": unchanged}
+
+    async def sync_meta(self, *, page_size: int = 50) -> tuple[list[tuple[str, dict, int]], Dict[str, Dict[str, int]]]:
+        phases: list[tuple[str, dict, int]] = []
+        summary: Dict[str, Dict[str, int]] = {}
+
+        resources = [
+            ("bc", TTBBusinessCenter, TTBBusinessCenter.bc_id, self.sync_bc),
+            ("advertisers", TTBAdvertiser, TTBAdvertiser.advertiser_id, self.sync_advertisers),
+            ("stores", TTBStore, TTBStore.store_id, self.sync_stores),
+        ]
+
+        for scope, model, column, runner in resources:
+            before = self._collect_ids(model, column)
+            started = datetime.now(timezone.utc)
+            stats = await runner(page_size=page_size)
+            duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            after = self._collect_ids(model, column)
+            summary_key = "bc" if scope == "bc" else scope
+            summary[summary_key] = self._diff_sets(before, after)
+            phases.append((scope, stats, duration_ms))
+
+        return phases, summary
 
     async def sync_bc(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
@@ -391,9 +436,9 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "advertisers", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def sync_shops(self, *, page_size: int = 50) -> dict:
+    async def sync_stores(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(
-            self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="shop"
+            self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, resource_type="store"
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
 
@@ -410,7 +455,7 @@ class TTBSyncService:
         for adv in advs:
             if not adv or not adv.advertiser_id:
                 continue
-            async for item in self.client.iter_shops(
+            async for item in self.client.iter_stores(
                 advertiser_id=str(adv.advertiser_id),
                 page_size=page_size,
             ):
@@ -420,7 +465,7 @@ class TTBSyncService:
                     or item.get("authorized_bc_id")
                     or item.get("bc_id")
                 )
-                ok = _upsert_shop(
+                ok = _upsert_store(
                     self.db,
                     workspace_id=self.workspace_id,
                     auth_id=self.auth_id,
@@ -436,13 +481,13 @@ class TTBSyncService:
                     stats["skipped"] += 1
 
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
-        return {"resource": "shops", **stats, "cursor": {"last_rev": cursor.last_rev}}
+        return {"resource": "stores", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
     async def sync_products(
         self,
         *,
         page_size: int = 50,
-        shop_id: str | None = None,
+        store_id: str | None = None,
         product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = "gmv_max",
     ) -> dict:
         cursor = _get_or_create_cursor(
@@ -451,32 +496,32 @@ class TTBSyncService:
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
 
-        shops: List[TTBShop]
-        if shop_id:
+        stores: List[TTBStore]
+        if store_id:
             row = (
-                self.db.query(TTBShop)
+                self.db.query(TTBStore)
                 .filter(
-                    TTBShop.workspace_id == self.workspace_id,
-                    TTBShop.auth_id == self.auth_id,
-                    TTBShop.shop_id == str(shop_id),
+                    TTBStore.workspace_id == self.workspace_id,
+                    TTBStore.auth_id == self.auth_id,
+                    TTBStore.store_id == str(store_id),
                 )
                 .one_or_none()
             )
-            shops = [row] if row else []
+            stores = [row] if row else []
         else:
-            shops = (
-                self.db.query(TTBShop)
+            stores = (
+                self.db.query(TTBStore)
                 .filter(
-                    TTBShop.workspace_id == self.workspace_id,
-                    TTBShop.auth_id == self.auth_id,
+                    TTBStore.workspace_id == self.workspace_id,
+                    TTBStore.auth_id == self.auth_id,
                 )
                 .all()
             )
 
         eligibility_api = _eligibility_to_api(product_eligibility)
 
-        for s in shops:
-            if not s or not s.shop_id:
+        for s in stores:
+            if not s or not s.store_id:
                 continue
 
             bc_id = _normalize_identifier(s.bc_id)
@@ -496,17 +541,17 @@ class TTBSyncService:
                     self.db.flush()
                 else:
                     logger.warning(
-                        "ttb_sync.shop_missing_bc_id",
+                        "ttb_sync.store_missing_bc_id",
                         extra={
                             "workspace_id": self.workspace_id,
                             "auth_id": self.auth_id,
-                            "shop_id": s.shop_id,
+                            "store_id": s.store_id,
                         },
                     )
                     continue
             async for item in self.client.iter_products(
                 bc_id=str(bc_id),
-                store_id=str(s.shop_id),
+                store_id=str(s.store_id),
                 advertiser_id=str(s.advertiser_id) if s.advertiser_id else None,
                 page_size=page_size,
                 eligibility=eligibility_api,
@@ -538,7 +583,7 @@ class TTBSyncService:
         )
         phases.append(("bc", await self.sync_bc(page_size=page_size)))
         phases.append(("advertisers", await self.sync_advertisers(page_size=page_size)))
-        phases.append(("shops", await self.sync_shops(page_size=page_size)))
+        phases.append(("stores", await self.sync_stores(page_size=page_size)))
         phases.append(
             (
                 "products",
