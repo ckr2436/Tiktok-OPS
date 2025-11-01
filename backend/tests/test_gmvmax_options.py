@@ -169,6 +169,22 @@ def test_options_returns_payload_and_etag(gmv_app):
     assert data["synced_at"] == "2025-11-01T00:31:54.941650+00:00"
 
 
+def test_options_handles_missing_display_timezone(monkeypatch, gmv_app):
+    client, _ = gmv_app
+
+    monkeypatch.setattr(
+        "app.services.ttb_meta.advertiser_display_timezone_supported", lambda db: False
+    )
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["advertisers"][0]["display_timezone"] is None
+
+
 def test_options_returns_304_when_etag_matches(gmv_app):
     client, _ = gmv_app
 

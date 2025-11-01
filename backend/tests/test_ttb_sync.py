@@ -26,6 +26,7 @@ from app.data.models.ttb_entities import (
     TTBBindingConfig,
 )
 from app.features.tenants.ttb.router import router as ttb_router
+from app.services import ttb_sync
 from app.services.ttb_sync import TTBSyncService
 from app.services import oauth_ttb as oauth_ttb_service
 
@@ -382,3 +383,37 @@ def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
     assert advertiser.display_timezone == "UTC+08:00"
     assert advertiser.currency == "USD"
     assert advertiser.raw_json["advertiser_name"] == "Hydrated"
+
+
+def test_upsert_adv_without_display_timezone_support(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_upsert(db, model, values, conflict_columns, update_columns):  # noqa: ANN001
+        captured["values"] = values
+        captured["update_columns"] = update_columns
+        return True
+
+    monkeypatch.setattr(ttb_sync, "_upsert", fake_upsert)
+    monkeypatch.setattr(ttb_sync, "advertiser_display_timezone_supported", lambda db: False)
+
+    assert ttb_sync._upsert_adv(object(), workspace_id=1, auth_id=2, item={"advertiser_id": "ADV-1"})
+    assert "display_timezone" not in captured["values"]
+    assert "display_timezone" not in captured["update_columns"]
+
+
+def test_apply_advertiser_info_skips_display_timezone_when_unsupported():
+    row = TTBAdvertiser(workspace_id=1, auth_id=1, advertiser_id="ADV-1")
+
+    changed = ttb_sync._apply_advertiser_info(
+        row,
+        {
+            "advertiser_id": "ADV-1",
+            "display_timezone": "UTC+08:00",
+            "name": "Example",
+        },
+        allow_display_timezone=False,
+    )
+
+    assert changed is True
+    assert row.name == "Example"
+    assert row.display_timezone is None

@@ -20,6 +20,7 @@ from app.data.models.ttb_entities import (
     TTBProduct,
 )
 from app.services.ttb_api import TTBApiClient
+from app.services.ttb_schema import advertiser_display_timezone_supported
 
 
 # --------------------------- 工具：字段提取与时间解析 ---------------------------
@@ -191,6 +192,7 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
     advertiser_id = str(_pick(item, "advertiser_id"))
     if not advertiser_id:
         return False
+    supports_display_timezone = advertiser_display_timezone_supported(db)
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
@@ -209,31 +211,39 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         sync_rev=str(_pick(item, "version", default="")),
         raw_json=item,
     )
+    if supports_display_timezone:
+        values["display_timezone"] = _pick(item, "display_timezone")
     _upsert(
         db,
         TTBAdvertiser,
         values=values,
         conflict_columns=("workspace_id", "auth_id", "advertiser_id"),
-        update_columns=(
-            "bc_id",
-            "name",
-            "display_name",
-            "status",
-            "industry",
-            "currency",
-            "timezone",
-            "display_timezone",
-            "country_code",
-            "ext_created_time",
-            "ext_updated_time",
-            "sync_rev",
-            "raw_json",
+        update_columns=tuple(
+            column
+            for column in (
+                "bc_id",
+                "name",
+                "display_name",
+                "status",
+                "industry",
+                "currency",
+                "timezone",
+                "display_timezone",
+                "country_code",
+                "ext_created_time",
+                "ext_updated_time",
+                "sync_rev",
+                "raw_json",
+            )
+            if supports_display_timezone or column != "display_timezone"
         ),
     )
     return True
 
 
-def _apply_advertiser_info(row: TTBAdvertiser, info: dict) -> bool:
+def _apply_advertiser_info(
+    row: TTBAdvertiser, info: dict, *, allow_display_timezone: bool
+) -> bool:
     changed = False
 
     def _set(attr: str, value: Any) -> None:
@@ -243,6 +253,8 @@ def _apply_advertiser_info(row: TTBAdvertiser, info: dict) -> bool:
         if isinstance(value, str):
             value = value.strip()
         if value == "":
+            return
+        if attr == "display_timezone" and not allow_display_timezone:
             return
         if getattr(row, attr) != value:
             setattr(row, attr, value)
@@ -490,6 +502,7 @@ class TTBSyncService:
 
         batches = 0
         updates = 0
+        allow_display_timezone = advertiser_display_timezone_supported(self.db)
         for chunk in _chunked(ids, _ADVERTISER_INFO_BATCH_SIZE):
             try:
                 info_items = await self.client.fetch_advertiser_info(advertiser_ids=chunk)
@@ -515,7 +528,11 @@ class TTBSyncService:
                 row = mapping.get(advertiser_id)
                 if not row:
                     continue
-                if _apply_advertiser_info(row, info):
+                if _apply_advertiser_info(
+                    row,
+                    info,
+                    allow_display_timezone=allow_display_timezone,
+                ):
                     updates += 1
                     self.db.add(row)
 
