@@ -17,7 +17,7 @@ import {
 const DOMAIN_PATTERN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 const MODE_VALUES = ['WHITELIST', 'BLACKLIST']
 const ENFORCEMENT_VALUES = ['ENFORCE', 'DRYRUN', 'OFF']
-const ALLOWED_SCOPE_KEYS = ['bc_ids', 'advertiser_ids', 'shop_ids', 'product_ids']
+const ALLOWED_SCOPE_KEYS = ['bc_ids', 'advertiser_ids', 'store_ids', 'product_ids']
 
 const MODE_OPTIONS = [
   { value: '', label: '全部模式' },
@@ -451,7 +451,7 @@ function DryRunModal({ open, onClose, onSubmit, policy }) {
         </FormField>
         <FormField
           label="候选 JSON"
-          description={'可选，数组形式，例如：[{"shop_id":"s1"}]'}
+          description={'可选，数组形式，例如：[{"store_id":"s1"}]'}
         >
           <textarea className="input" rows={4} value={payload} onChange={(e) => setPayload(e.target.value)} />
         </FormField>

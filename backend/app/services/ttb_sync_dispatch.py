@@ -18,9 +18,10 @@ load_builtin_providers()
 SYNC_TASKS: Dict[str, str] = {
     "bc": "ttb.sync.bc",
     "advertisers": "ttb.sync.advertisers",
-    "shops": "ttb.sync.shops",
+    "stores": "ttb.sync.stores",
     "products": "ttb.sync.products",
     "all": "ttb.sync.all",
+    "meta": "ttb.sync.meta",
 }
 
 
@@ -45,11 +46,10 @@ def _sanitize_dispatch_options(scope: str, opts: Dict[str, Any]) -> Dict[str, An
         try:
             lim = int(o["limit"])
             lim = max(_LIMIT_MIN, min(_LIMIT_MAX, lim))
+            o["limit"] = lim
             o.setdefault("page_size", lim)
         except Exception:
             pass
-        finally:
-            o.pop("limit", None)
 
     # 针对产品阶段的常见别名（可有可无，不影响你现有 UI）
     if scope in ("products", "all"):
@@ -61,8 +61,6 @@ def _sanitize_dispatch_options(scope: str, opts: Dict[str, Any]) -> Dict[str, An
                     o["product_page_size"] = v
                 except Exception:
                     pass
-                finally:
-                    o.pop(k, None)
 
     return o
 

@@ -35,13 +35,22 @@ CATALOG: List[PeriodicTaskSpec] = [
         description="Incremental products sync per binding",
     ),
     PeriodicTaskSpec(
-        name="ttb:shops:incremental",
-        task="ttb.sync.shops",
+        name="ttb:meta:refresh",
+        task="ttb.sync.meta",
+        crontab="*/30 * * * *",  # 每 30 分钟
+        args=[],
+        kwargs={"scope": "meta"},
+        queue="gmv.tasks.events",
+        description="Refresh TikTok Business metadata summaries per binding",
+    ),
+    PeriodicTaskSpec(
+        name="ttb:stores:incremental",
+        task="ttb.sync.stores",
         crontab="0 * * * *",  # 每小时
         args=[],
         kwargs={"mode": "incremental", "limit": 200},
         queue="gmv.tasks.events",
-        description="Incremental shops sync per binding",
+        description="Incremental stores sync per binding",
     ),
     PeriodicTaskSpec(
         name="ttb:advertisers:incremental",

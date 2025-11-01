@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Mapping
@@ -38,6 +39,12 @@ def iter_registry_definitions() -> Iterable[ProviderDefinition]:
         )
 
 
+def _ensure_builtin_providers_loaded() -> None:
+    """Import bundled provider modules so registry definitions are available."""
+
+    importlib.import_module("app.providers.tiktok_business.service")
+
+
 def sync_registry_with_session(db: Session) -> list[PlatformProvider]:
     """Ensure all registry providers have corresponding DB records.
 
@@ -45,6 +52,8 @@ def sync_registry_with_session(db: Session) -> list[PlatformProvider]:
     """
 
     changed: list[PlatformProvider] = []
+
+    _ensure_builtin_providers_loaded()
 
     existing = {
         row.key: row
