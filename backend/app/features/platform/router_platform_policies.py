@@ -38,12 +38,12 @@ router = APIRouter(
 _DOMAIN_PATTERN = re.compile(
     r"^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
 )
-_ALLOWED_SCOPE_KEYS = {"bc_ids", "advertiser_ids", "shop_ids", "product_ids"}
+_ALLOWED_SCOPE_KEYS = {"bc_ids", "advertiser_ids", "store_ids", "product_ids"}
 _ALLOWED_TOP_SCOPE_KEYS = {"include", "exclude"}
 _SCOPE_TO_FIELD = {
     "bc_ids": "bc_id",
     "advertiser_ids": "advertiser_id",
-    "shop_ids": "shop_id",
+    "store_ids": "store_id",
     "product_ids": "product_id",
 }
 _SORT_FIELDS = {
@@ -106,7 +106,7 @@ class PolicyDryRunCandidate(BaseModel):
     domain: str | None = Field(default=None, description="Host-only value")
     bc_id: str | None = None
     advertiser_id: str | None = None
-    shop_id: str | None = None
+    store_id: str | None = None
     product_id: str | None = None
 
 
