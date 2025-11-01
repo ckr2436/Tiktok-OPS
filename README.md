@@ -22,6 +22,12 @@ COOKIE_SECURE=True
 COOKIE_SAMESITE=lax
 ```
 
+## Breaking changes
+
+- 2025-11-01: Renamed all TikTok Business shop entities and APIs to store/store_id. Existing migrations upgrade database schema and task catalog entries automatically; downstream integrations must update to the new naming.
+- 2025-11-12: Replaced legacy TikTok Business data browsing endpoints with a GMV Max management workflow. Only metadata dropdown sources, the GMV Max binding configuration, and product sync remain available; legacy list/chart APIs now return `TTB_LEGACY_DISABLED` (HTTP 410).
+- 2025-11-12: Added the `ttb.sync.meta` periodic task recommendation and GMV Max auto-sync scheduler wiring; refresh jobs now run through the new binding configuration service.
+
 ## Tenant TikTok Business API quick reference
 
 ```bash
@@ -33,10 +39,19 @@ curl -H 'Authorization: Bearer <token>' \
 curl -H 'Authorization: Bearer <token>' \
   'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts?page=1&page_size=20'
 
-# trigger incremental sync for auth_id=7
+# refresh metadata (returns add/remove/unchanged summary)
 curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync \
-  -d '{"scope":"all","mode":"incremental","idempotency_key":"demo-42"}'
+  -d '{"scope":"meta"}'
+
+# trigger GMV Max product sync for an advertiser/store pair
+curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync \
+  -d '{"scope":"products","mode":"full","advertiser_id":"ADV123","store_id":"STORE456"}'
+
+# fetch GMV Max binding configuration
+curl -H 'Authorization: Bearer <token>' \
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/config
 
 # inspect run 123 for auth_id=7
 curl -H 'Authorization: Bearer <token>' \

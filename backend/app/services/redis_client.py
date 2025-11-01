@@ -36,21 +36,29 @@ def _normalize_redis_url(raw_url: str | None, force_tls: bool) -> str:
 
 # ---- 同步客户端（Celery prefork/线程内使用）----
 _sync_client: redis.Redis | None = None
+# Backwards compatibility shim for tests that patch `_redis`
+_redis: redis.Redis | None = None
 
 def get_redis_sync() -> redis.Redis:
-    global _sync_client
+    global _sync_client, _redis
+    if _redis is not None and _sync_client is not _redis:
+        _sync_client = _redis
     if _sync_client is None:
-        raw_url = getattr(settings, "REDIS_URL", "redis://127.0.0.1:6379/0")
-        force_tls = _truthy(getattr(settings, "REDIS_SSL", False))
-        url = _normalize_redis_url(raw_url, force_tls)
-        _sync_client = redis.Redis.from_url(
-            url,
-            decode_responses=False,     # 用字节串，Lua 脚本直接比对
-            health_check_interval=30,
-            socket_keepalive=True,
-            socket_timeout=5,
-            socket_connect_timeout=5,
-        )
+        if _redis is not None:
+            _sync_client = _redis
+        else:
+            raw_url = getattr(settings, "REDIS_URL", "redis://127.0.0.1:6379/0")
+            force_tls = _truthy(getattr(settings, "REDIS_SSL", False))
+            url = _normalize_redis_url(raw_url, force_tls)
+            _sync_client = redis.Redis.from_url(
+                url,
+                decode_responses=False,     # 用字节串，Lua 脚本直接比对
+                health_check_interval=30,
+                socket_keepalive=True,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
+    _redis = _sync_client
     return _sync_client
 
 # ---- 异步客户端（HTTP 处理、异步任务等可用）----

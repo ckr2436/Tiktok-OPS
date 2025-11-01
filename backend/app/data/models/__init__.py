@@ -19,6 +19,14 @@ from .providers import (
     PolicyEnforcementMode,
     PolicyDomain,
 )
+from .ttb_entities import (
+    TTBSyncCursor,
+    TTBBusinessCenter,
+    TTBAdvertiser,
+    TTBStore,
+    TTBProduct,
+    TTBBindingConfig,
+)
 
 __all__ = [
     "Base",
@@ -39,4 +47,10 @@ __all__ = [
     "PolicyMode",
     "PolicyEnforcementMode",
     "PolicyDomain",
+    "TTBSyncCursor",
+    "TTBBusinessCenter",
+    "TTBAdvertiser",
+    "TTBStore",
+    "TTBProduct",
+    "TTBBindingConfig",
 ]

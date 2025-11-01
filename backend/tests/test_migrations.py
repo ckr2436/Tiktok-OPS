@@ -115,7 +115,7 @@ def test_migration_0008_creates_stats_column(
     assert "stats_json" in column_names
 
     seeded = _fetch_task_names(db_path)
-    assert {"ttb.sync.bc", "ttb.sync.advertisers", "ttb.sync.shops", "ttb.sync.products", "ttb.sync.all"}.issubset(seeded)
+    assert {"ttb.sync.bc", "ttb.sync.advertisers", "ttb.sync.stores", "ttb.sync.products", "ttb.sync.all"}.issubset(seeded)
 
 
 def test_migration_0008_skips_existing_column(

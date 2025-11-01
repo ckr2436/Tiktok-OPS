@@ -5,7 +5,15 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    String, Integer, JSON, UniqueConstraint, Index, text, ForeignKey, Numeric
+    String,
+    Integer,
+    JSON,
+    UniqueConstraint,
+    Index,
+    text,
+    ForeignKey,
+    Numeric,
+    Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import BigInteger as _BigInteger
@@ -44,7 +52,7 @@ class TTBSyncCursor(Base):
         UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
     )
 
-    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "bc" | "advertiser" | "shop" | "product"
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "bc" | "advertiser" | "store" | "product"
 
     cursor_token: Mapped[str | None] = mapped_column(String(256), default=None)
     since_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
@@ -156,14 +164,14 @@ class TTBAdvertiser(Base):
 
 
 # --------------------------- 店铺 ---------------------------
-class TTBShop(Base):
-    __tablename__ = "ttb_shops"
+class TTBStore(Base):
+    __tablename__ = "ttb_stores"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "auth_id", "shop_id", name="uk_ttb_shop_scope"),
-        Index("idx_ttb_shop_scope", "workspace_id", "auth_id", "shop_id"),
-        Index("idx_ttb_shop_adv", "advertiser_id"),
-        Index("idx_ttb_shop_updated", "ext_updated_time"),
-        Index("idx_ttb_shop_status", "status"),
+        UniqueConstraint("workspace_id", "auth_id", "store_id", name="uk_ttb_store_scope"),
+        Index("idx_ttb_store_scope", "workspace_id", "auth_id", "store_id"),
+        Index("idx_ttb_store_adv", "advertiser_id"),
+        Index("idx_ttb_store_updated", "ext_updated_time"),
+        Index("idx_ttb_store_status", "status"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -175,7 +183,7 @@ class TTBShop(Base):
         UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
     )
 
-    shop_id: Mapped[str] = mapped_column(String(64), nullable=False)  # store_id / shop_id
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)  # 官方字段：store_id
     advertiser_id: Mapped[str | None] = mapped_column(String(64), default=None)
     bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
 
@@ -206,7 +214,7 @@ class TTBProduct(Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "auth_id", "product_id", name="uk_ttb_product_scope"),
         Index("idx_ttb_product_scope", "workspace_id", "auth_id", "product_id"),
-        Index("idx_ttb_product_shop", "shop_id"),
+        Index("idx_ttb_product_store", "store_id"),
         Index("idx_ttb_product_updated", "ext_updated_time"),
         Index("idx_ttb_product_status", "status"),
     )
@@ -221,7 +229,7 @@ class TTBProduct(Base):
     )
 
     product_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    shop_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    store_id: Mapped[str | None] = mapped_column(String(64), default=None)
 
     title: Mapped[str | None] = mapped_column(String(512), default=None)
     status: Mapped[str | None] = mapped_column(String(32), default=None)
@@ -240,6 +248,49 @@ class TTBProduct(Base):
         MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+# --------------------------- 绑定配置 ---------------------------
+class TTBBindingConfig(Base):
+    __tablename__ = "ttb_binding_configs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "auth_id", name="uk_ttb_binding_scope"),
+        Index("idx_ttb_binding_scope", "workspace_id", "auth_id"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+
+    bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    advertiser_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    store_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    auto_sync_products: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
+    auto_sync_schedule_id: Mapped[int | None] = mapped_column(
+        UBigInt, ForeignKey("schedules.id", onupdate="RESTRICT", ondelete="SET NULL"), default=None
+    )
+
+    last_manual_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_manual_sync_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    last_auto_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_auto_sync_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP(6)"),
