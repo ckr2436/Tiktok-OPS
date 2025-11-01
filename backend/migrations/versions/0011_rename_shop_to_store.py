@@ -252,7 +252,10 @@ def _update_policy_domain_enum() -> None:
         return
     dialect = bind.dialect.name
     op.execute(
-        "UPDATE ttb_policy_items SET domain = 'store' WHERE domain = 'shop'"
+        sa.text(
+            "UPDATE ttb_policy_items SET domain = :new WHERE domain = :old"
+        ),
+        {"new": "store", "old": "shop"},
     )
     if dialect == "postgresql":
         op.execute("ALTER TYPE ttb_policy_domain RENAME TO ttb_policy_domain_old")
@@ -331,7 +334,10 @@ def upgrade() -> None:
 
     if _has_table("ttb_sync_cursors"):
         op.execute(
-            "UPDATE ttb_sync_cursors SET resource_type = 'store' WHERE resource_type = 'shop'"
+            sa.text(
+                "UPDATE ttb_sync_cursors SET resource_type = :new WHERE resource_type = :old"
+            ),
+            {"new": "store", "old": "shop"},
         )
 
     _update_policy_domain_enum()
@@ -377,7 +383,10 @@ def downgrade() -> None:
 
     if _has_table("ttb_sync_cursors"):
         op.execute(
-            "UPDATE ttb_sync_cursors SET resource_type = 'shop' WHERE resource_type = 'store'"
+            sa.text(
+                "UPDATE ttb_sync_cursors SET resource_type = :old WHERE resource_type = :new"
+            ),
+            {"new": "store", "old": "shop"},
         )
         _update_json_column(
             "ttb_sync_cursors",
@@ -423,7 +432,10 @@ def downgrade() -> None:
 
     if _has_table("ttb_policy_items"):
         op.execute(
-            "UPDATE ttb_policy_items SET domain = 'shop' WHERE domain = 'store'"
+            sa.text(
+                "UPDATE ttb_policy_items SET domain = :old WHERE domain = :new"
+            ),
+            {"new": "store", "old": "shop"},
         )
         dialect = bind.dialect.name
         if dialect == "postgresql":
