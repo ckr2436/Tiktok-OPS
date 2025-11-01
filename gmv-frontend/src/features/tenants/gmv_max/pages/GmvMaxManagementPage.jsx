@@ -3,17 +3,19 @@ import { useParams } from 'react-router-dom';
 
 import FormField from '../../../../components/ui/FormField.jsx';
 import {
-  fetchAdvertisers,
   fetchBindingConfig,
-  fetchBusinessCenters,
+  fetchGmvOptions,
   fetchSyncRun,
-  fetchStores,
   listBindings,
   normProvider,
   saveBindingConfig,
-  triggerMetaSync,
   triggerProductSync,
 } from '../service.js';
+import {
+  buildAdvertiserOptions,
+  buildBusinessCenterOptions,
+  buildStoreOptions,
+} from '../utils/options.js';
 
 const DEFAULT_FORM = {
   bcId: '',
@@ -76,6 +78,15 @@ function formatSyncSummaryText(summary) {
     .filter(Boolean);
 
   return parts.join('；');
+}
+
+function formatOptionLabel(name, id) {
+  const label = typeof name === 'string' ? name.trim() : '';
+  const identifier = id ? String(id) : '';
+  if (label && identifier) return `${label}（${identifier}）`;
+  if (label) return label;
+  if (identifier) return identifier;
+  return '未命名';
 }
 
 function describeRunStatus(run) {
@@ -152,19 +163,15 @@ export default function GmvMaxManagementPage() {
   const [bindings, setBindings] = useState([]);
   const [bindingsLoading, setBindingsLoading] = useState(false);
   const [selectedAuthId, setSelectedAuthId] = useState('');
-  const [optionsVersion, setOptionsVersion] = useState(0);
   const [configVersion, setConfigVersion] = useState(0);
 
   const [form, setForm] = useState(DEFAULT_FORM);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [bindingConfig, setBindingConfig] = useState(null);
 
-  const [bcOptions, setBcOptions] = useState([]);
-  const [advertiserOptions, setAdvertiserOptions] = useState([]);
-  const [storeOptions, setStoreOptions] = useState([]);
-
-  const [loadingAdvertisers, setLoadingAdvertisers] = useState(false);
-  const [loadingStores, setLoadingStores] = useState(false);
+  const [optionsPayload, setOptionsPayload] = useState(null);
+  const [optionsEtag, setOptionsEtag] = useState(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
 
   const [refreshingOptions, setRefreshingOptions] = useState(false);
   const [triggeringSync, setTriggeringSync] = useState(false);
@@ -172,6 +179,21 @@ export default function GmvMaxManagementPage() {
   const [feedback, setFeedback] = useState(null);
   const [metaSummary, setMetaSummary] = useState(null);
   const [syncRunStatus, setSyncRunStatus] = useState(null);
+
+  const bcOptions = useMemo(
+    () => buildBusinessCenterOptions(optionsPayload, form.bcId),
+    [optionsPayload, form.bcId],
+  );
+
+  const advertiserOptions = useMemo(
+    () => buildAdvertiserOptions(optionsPayload, form.bcId, form.advertiserId),
+    [optionsPayload, form.bcId, form.advertiserId],
+  );
+
+  const storeOptions = useMemo(
+    () => buildStoreOptions(optionsPayload, form.advertiserId, form.storeId),
+    [optionsPayload, form.advertiserId, form.storeId],
+  );
 
   useEffect(() => {
     if (!wid) {
@@ -205,10 +227,8 @@ export default function GmvMaxManagementPage() {
       setSelectedAuthId('');
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
-      setBcOptions([]);
-      setAdvertiserOptions([]);
-      setStoreOptions([]);
-      setOptionsVersion(0);
+      setOptionsPayload(null);
+      setOptionsEtag(null);
       return;
     }
     setSelectedAuthId((prev) => {
@@ -224,12 +244,48 @@ export default function GmvMaxManagementPage() {
     setMetaSummary(null);
     setForm(DEFAULT_FORM);
     setBindingConfig(null);
-    setBcOptions([]);
-    setAdvertiserOptions([]);
-    setStoreOptions([]);
-    setOptionsVersion(0);
+    setOptionsPayload(null);
+    setOptionsEtag(null);
     setSyncRunStatus(null);
   }, [selectedAuthId]);
+
+  useEffect(() => {
+    if (!wid || !selectedAuthId) {
+      setOptionsPayload(null);
+      setOptionsEtag(null);
+      setOptionsLoading(false);
+      return;
+    }
+    let ignore = false;
+    const controller = new AbortController();
+    setOptionsLoading(true);
+    fetchGmvOptions(wid, provider, selectedAuthId, { signal: controller.signal })
+      .then(({ status, data, etag }) => {
+        if (ignore) return;
+        if (status === 200 && data) {
+          const { refresh: refreshStatus, idempotency_key: refreshKey, ...rest } = data || {};
+          setOptionsPayload(rest);
+          setOptionsEtag(etag || null);
+          if (refreshStatus === 'timeout' && refreshKey) {
+            setFeedback({ type: 'info', text: `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` });
+          }
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setOptionsPayload(null);
+          setOptionsEtag(null);
+          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 选项') });
+        }
+      })
+      .finally(() => {
+        if (!ignore) setOptionsLoading(false);
+      });
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [wid, provider, selectedAuthId]);
 
   useEffect(() => {
     if (!wid || !selectedAuthId) {
@@ -240,14 +296,10 @@ export default function GmvMaxManagementPage() {
     setLoadingConfig(true);
     async function load() {
       try {
-        const [config, centers] = await Promise.all([
-          fetchBindingConfig(wid, provider, selectedAuthId),
-          fetchBusinessCenters(wid, provider, selectedAuthId),
-        ]);
+        const config = await fetchBindingConfig(wid, provider, selectedAuthId);
         if (ignore) return;
         const resolvedConfig = config || null;
         setBindingConfig(resolvedConfig);
-        setBcOptions(Array.isArray(centers) ? centers : []);
         setForm({
           bcId: resolvedConfig?.bc_id ?? '',
           advertiserId: resolvedConfig?.advertiser_id ?? '',
@@ -257,7 +309,6 @@ export default function GmvMaxManagementPage() {
       } catch (error) {
         if (!ignore) {
           setBindingConfig(null);
-          setBcOptions([]);
           setForm(DEFAULT_FORM);
           setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 配置') });
         }
@@ -271,59 +322,7 @@ export default function GmvMaxManagementPage() {
     return () => {
       ignore = true;
     };
-  }, [wid, provider, selectedAuthId, optionsVersion, configVersion]);
-
-  useEffect(() => {
-    if (!wid || !selectedAuthId || !form.bcId) {
-      setAdvertiserOptions([]);
-      setLoadingAdvertisers(false);
-      return;
-    }
-    let ignore = false;
-    setLoadingAdvertisers(true);
-    fetchAdvertisers(wid, provider, selectedAuthId, { bc_id: form.bcId })
-      .then((items) => {
-        if (!ignore) setAdvertiserOptions(Array.isArray(items) ? items : []);
-      })
-      .catch((error) => {
-        if (!ignore) {
-          setAdvertiserOptions([]);
-          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Advertiser 列表') });
-        }
-      })
-      .finally(() => {
-        if (!ignore) setLoadingAdvertisers(false);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [wid, provider, selectedAuthId, form.bcId, optionsVersion]);
-
-  useEffect(() => {
-    if (!wid || !selectedAuthId || !form.advertiserId) {
-      setStoreOptions([]);
-      setLoadingStores(false);
-      return;
-    }
-    let ignore = false;
-    setLoadingStores(true);
-    fetchStores(wid, provider, selectedAuthId, { advertiser_id: form.advertiserId })
-      .then((items) => {
-        if (!ignore) setStoreOptions(Array.isArray(items) ? items : []);
-      })
-      .catch((error) => {
-        if (!ignore) {
-          setStoreOptions([]);
-          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Store 列表') });
-        }
-      })
-      .finally(() => {
-        if (!ignore) setLoadingStores(false);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [wid, provider, selectedAuthId, form.advertiserId, optionsVersion]);
+  }, [wid, provider, selectedAuthId, configVersion]);
 
   function handleBindingChange(evt) {
     setSelectedAuthId(evt.target.value || '');
@@ -337,8 +336,6 @@ export default function GmvMaxManagementPage() {
       advertiserId: '',
       storeId: '',
     }));
-    setAdvertiserOptions([]);
-    setStoreOptions([]);
   }
 
   function handleAdvertiserChange(evt) {
@@ -348,7 +345,6 @@ export default function GmvMaxManagementPage() {
       advertiserId: value,
       storeId: '',
     }));
-    setStoreOptions([]);
   }
 
   function handleStoreChange(evt) {
@@ -371,10 +367,28 @@ export default function GmvMaxManagementPage() {
     if (!wid || !selectedAuthId) return;
     setRefreshingOptions(true);
     try {
-      const result = await triggerMetaSync(wid, provider, selectedAuthId);
-      setMetaSummary(result?.summary || null);
-      setFeedback({ type: 'success', text: '已刷新可选项，请查看摘要结果。' });
-      setOptionsVersion((prev) => prev + 1);
+      const { status, data, etag } = await fetchGmvOptions(wid, provider, selectedAuthId, {
+        refresh: true,
+        etag: optionsEtag,
+      });
+      if (status === 304) {
+        setFeedback({ type: 'info', text: '元数据未发生变化。' });
+        return;
+      }
+      if (data) {
+        const { refresh: refreshStatus, idempotency_key: refreshKey, ...rest } = data || {};
+        setOptionsPayload(rest);
+        if (etag) setOptionsEtag(etag);
+        setMetaSummary(null);
+        if (refreshStatus === 'timeout') {
+          const timeoutText = refreshKey
+            ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。`
+            : '已触发刷新，稍后再试。';
+          setFeedback({ type: 'info', text: timeoutText });
+        } else {
+          setFeedback({ type: 'success', text: '已刷新最新可选项。' });
+        }
+      }
     } catch (error) {
       setFeedback({ type: 'error', text: extractErrorMessage(error, '刷新失败，请稍后重试') });
     } finally {
@@ -417,17 +431,19 @@ export default function GmvMaxManagementPage() {
     setSyncRunStatus({ state: 'triggering', message: '正在触发 GMV Max 商品同步…' });
 
     try {
+      const idempotencyKey = `sync-gmvmax-${Date.now()}`;
       const payload = {
-        scope: 'products',
+        advertiserId: form.advertiserId,
+        storeId: form.storeId,
+        bcId: form.bcId,
+        eligibility: 'gmv_max',
         mode: 'full',
-        product_eligibility: 'gmv_max',
-        advertiser_id: form.advertiserId,
-        store_id: form.storeId,
-        idempotency_key: `sync-gmvmax-${Date.now()}`,
+        idempotency_key: idempotencyKey,
       };
 
       const response = await triggerProductSync(wid, provider, selectedAuthId, payload);
       const runId = response?.run_id;
+      const responseIdem = response?.idempotency_key || idempotencyKey;
 
       if (runId) {
         setSyncRunStatus({
@@ -439,7 +455,10 @@ export default function GmvMaxManagementPage() {
         setSyncRunStatus({ state: 'triggered', message: '同步任务已提交。' });
       }
 
-      setFeedback({ type: 'success', text: '已触发 GMV Max 商品同步。' });
+      setFeedback({
+        type: 'success',
+        text: responseIdem ? `已触发 GMV Max 商品同步（幂等键 ${responseIdem}）。` : '已触发 GMV Max 商品同步。',
+      });
 
       if (runId) {
         await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -484,10 +503,11 @@ export default function GmvMaxManagementPage() {
     }
   }
 
-  const disableRefresh = !selectedAuthId || refreshingOptions;
-  const disableSave = !selectedAuthId || saving || !form.bcId || !form.advertiserId || !form.storeId;
+  const disableRefresh = !selectedAuthId || refreshingOptions || optionsLoading;
+  const disableSave =
+    !selectedAuthId || saving || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
   const disableManualSync =
-    !selectedAuthId || triggeringSync || !form.bcId || !form.advertiserId || !form.storeId;
+    !selectedAuthId || triggeringSync || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
 
   const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
   const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
@@ -537,13 +557,12 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.bcId}
               onChange={handleBcChange}
-              disabled={!selectedAuthId || loadingConfig}
+              disabled={!selectedAuthId || loadingConfig || optionsLoading}
             >
               <option value="">请选择 Business Center</option>
               {bcOptions.map((item, idx) => {
                 const value = item?.bc_id ? String(item.bc_id) : '';
-                const name = item?.name || item?.raw?.name;
-                const label = value ? `${value}${name ? ` · ${name}` : ''}` : '(缺少 bc_id)';
+                const label = formatOptionLabel(item?.name || item?.raw?.name, value);
                 return (
                   <option key={value || `missing-bc-${idx}`} value={value}>
                     {label}
@@ -551,7 +570,7 @@ export default function GmvMaxManagementPage() {
                 );
               })}
             </select>
-            {loadingConfig && <div className="small-muted">加载 Business Center...</div>}
+            {(loadingConfig || optionsLoading) && <div className="small-muted">加载 Business Center...</div>}
           </FormField>
 
           <FormField label="Advertiser">
@@ -559,13 +578,12 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.advertiserId}
               onChange={handleAdvertiserChange}
-              disabled={!selectedAuthId || !form.bcId || loadingAdvertisers}
+              disabled={!selectedAuthId || !form.bcId || optionsLoading}
             >
               <option value="">请选择 Advertiser</option>
               {advertiserOptions.map((item, idx) => {
                 const value = item?.advertiser_id ? String(item.advertiser_id) : '';
-                const labelBase = item?.display_name || item?.name;
-                const label = value ? `${value}${labelBase ? ` · ${labelBase}` : ''}` : '(缺少 advertiser_id)';
+                const label = formatOptionLabel(item?.display_name || item?.name, value);
                 return (
                   <option key={value || `missing-adv-${idx}`} value={value}>
                     {label}
@@ -573,7 +591,7 @@ export default function GmvMaxManagementPage() {
                 );
               })}
             </select>
-            {loadingAdvertisers && <div className="small-muted">加载 Advertiser...</div>}
+            {optionsLoading && <div className="small-muted">加载 Advertiser...</div>}
           </FormField>
 
           <FormField label="Store">
@@ -581,13 +599,12 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.storeId}
               onChange={handleStoreChange}
-              disabled={!selectedAuthId || !form.advertiserId || loadingStores}
+              disabled={!selectedAuthId || !form.advertiserId || optionsLoading}
             >
               <option value="">请选择 Store</option>
               {storeOptions.map((item, idx) => {
                 const value = item?.store_id ? String(item.store_id) : '';
-                const name = item?.name;
-                const label = value ? `${value}${name ? ` · ${name}` : ''}` : '(缺少 store_id)';
+                const label = formatOptionLabel(item?.name, value);
                 return (
                   <option key={value || `missing-store-${idx}`} value={value}>
                     {label}
@@ -595,7 +612,7 @@ export default function GmvMaxManagementPage() {
                 );
               })}
             </select>
-            {loadingStores && <div className="small-muted">加载 Store...</div>}
+            {optionsLoading && <div className="small-muted">加载 Store...</div>}
           </FormField>
         </div>
 

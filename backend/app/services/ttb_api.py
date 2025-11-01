@@ -6,6 +6,7 @@ TikTok Business API 客户端（严格版）：
 - 只暴露 4 个读取器（异步）：
     * iter_business_centers()  -> /bc/get/      （data.list + 可能的 page_info.cursor 或 page/page_size）
     * iter_advertisers()       -> /oauth2/advertiser/get/（data.list；不分页；必须传 app_id/secret）
+    * fetch_advertiser_info()  -> /advertiser/info/（data.list；批量 50 个 advertiser_id）
     * iter_stores()             -> /store/list/  （data.stores，页码分页）
     * iter_products()          -> /store/product/get/（data.store_products，页码分页）
 - URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
@@ -107,6 +108,7 @@ class TTBPaths:
 
     bc_get: str
     advertisers_get: str
+    advertiser_info: str
     stores_list: str
     products_list: str
 
@@ -119,6 +121,7 @@ class TTBPaths:
         return cls(
             bc_get=g("TTB_BC_GET", "bc/get/"),
             advertisers_get=g("TTB_ADVERTISERS_GET", "oauth2/advertiser/get/"),
+            advertiser_info=g("TTB_ADVERTISER_INFO", "advertiser/info/"),
             stores_list=g("TTB_STORES_LIST", "store/list/"),
             products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
         )
@@ -324,6 +327,34 @@ class TTBApiClient:
             for it in items:
                 if isinstance(it, dict):
                     yield it
+
+    async def fetch_advertiser_info(self, *, advertiser_ids: Iterable[str]) -> list[dict]:
+        ids = []
+        for value in advertiser_ids:
+            if value is None:
+                continue
+            s = str(value).strip()
+            if not s:
+                continue
+            ids.append(s)
+        if not ids:
+            return []
+
+        payload = await self._request_json(
+            "GET",
+            self._paths.advertiser_info,
+            params={"advertiser_ids": ",".join(ids)},
+        )
+        data = payload.get("data") or {}
+        candidates = []
+        for key in ("list", "advertiser_list", "advertiser_infos", "advertisers"):
+            value = data.get(key)
+            if isinstance(value, list):
+                candidates = value
+                break
+        if not isinstance(candidates, list):
+            return []
+        return [item for item in candidates if isinstance(item, dict)]
 
     async def iter_stores(
         self,

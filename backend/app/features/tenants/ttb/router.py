@@ -40,6 +40,7 @@ from app.services.ttb_meta import (
     enqueue_meta_sync,
     get_meta_cursor_state,
 )
+from app.services.ttb_sync import _normalize_identifier
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants",
@@ -57,11 +58,12 @@ logger = logging.getLogger("gmv.ttb.meta")
 # -------------------------- 请求/响应模型 --------------------------
 class SyncRequest(BaseModel):
     scope: Literal["meta", "products"] = "meta"
-    mode: Literal["incremental", "full"] = "full"
+    mode: Optional[Literal["incremental", "full"]] = "full"
     advertiser_id: Optional[str] = Field(default=None, max_length=128)
     store_id: Optional[str] = Field(default=None, max_length=128)
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
-    product_eligibility: Literal["gmv_max"] = "gmv_max"
+    product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = None
+    options: Optional[Dict[str, Any]] = None
 
 
 class MetaSummaryItem(BaseModel):
@@ -83,6 +85,7 @@ class SyncResponse(BaseModel):
     task_id: Optional[str] = None
     status: str
     idempotent: bool = False
+    idempotency_key: Optional[str] = None
     summary: Optional[MetaSummary] = None
 
 
@@ -160,6 +163,7 @@ class AdvertiserItem(BaseModel):
     industry: Optional[str]
     currency: Optional[str]
     timezone: Optional[str]
+    display_timezone: Optional[str]
     country_code: Optional[str]
     ext_created_time: Optional[str]
     ext_updated_time: Optional[str]
@@ -384,6 +388,15 @@ def trigger_sync(
     normalized_provider = _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
 
+    options_payload = dict(body.options or {})
+    payload_idempotency = options_payload.pop("idempotency_key", None)
+    requested_idempotency = body.idempotency_key or payload_idempotency
+
+    raw_mode = options_payload.pop("mode", None) or body.mode or "full"
+    normalized_mode = str(raw_mode).strip().lower() if raw_mode else "full"
+    if normalized_mode not in {"incremental", "full"}:
+        raise APIError("INVALID_MODE", "mode must be incremental or full.", status.HTTP_400_BAD_REQUEST)
+
     if body.scope == "meta":
         try:
             summary_payload = _perform_meta_sync(db, workspace_id=workspace_id, auth_id=auth_id)
@@ -397,13 +410,16 @@ def trigger_sync(
     if body.scope != "products":
         raise APIError("UNSUPPORTED_SCOPE", f"Scope {body.scope} is not supported.", status.HTTP_400_BAD_REQUEST)
 
-    if not body.advertiser_id:
+    advertiser_id = options_payload.get("advertiser_id") or body.advertiser_id
+    store_id = options_payload.get("store_id") or body.store_id
+
+    if not advertiser_id:
         raise APIError(
             "ADVERTISER_REQUIRED_FOR_GMV_MAX",
             "advertiser_id is required for GMV Max product sync.",
             status.HTTP_400_BAD_REQUEST,
         )
-    if not body.store_id:
+    if not store_id:
         raise APIError(
             "STORE_ID_REQUIRED_FOR_GMV_MAX",
             "store_id is required for GMV Max product sync.",
@@ -414,31 +430,46 @@ def trigger_sync(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
-        advertiser_id=str(body.advertiser_id),
+        advertiser_id=str(advertiser_id),
     )
     store = _get_store(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
-        store_id=str(body.store_id),
+        store_id=str(store_id),
     )
 
-    bc_id = store.bc_id or advertiser.bc_id
+    bc_hint = options_payload.get("bc_id")
+    bc_id = _normalize_identifier(bc_hint) or store.bc_id or advertiser.bc_id
     _validate_bc_alignment(expected_bc_id=bc_id, advertiser=advertiser, store=store)
 
     _enforce_products_limits(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
-        advertiser_id=str(body.advertiser_id),
-        store_id=str(body.store_id),
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id),
     )
 
+    raw_eligibility = (
+        options_payload.pop("product_eligibility", None)
+        or options_payload.pop("eligibility", None)
+        or body.product_eligibility
+        or "gmv_max"
+    )
+    product_eligibility = str(raw_eligibility).strip().lower()
+    if product_eligibility not in {"gmv_max", "ads", "all"}:
+        raise APIError(
+            "INVALID_PRODUCT_ELIGIBILITY",
+            "product_eligibility must be one of gmv_max, ads, all.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     params = {
-        "mode": body.mode,
-        "advertiser_id": str(body.advertiser_id),
-        "store_id": str(body.store_id),
-        "product_eligibility": body.product_eligibility,
+        "mode": normalized_mode,
+        "advertiser_id": str(advertiser_id),
+        "store_id": str(store_id),
+        "product_eligibility": product_eligibility,
         "bc_id": bc_id,
     }
 
@@ -453,7 +484,7 @@ def trigger_sync(
             actor_user_id=int(me.id),
             actor_workspace_id=int(me.workspace_id),
             actor_ip=request.client.host if request.client else None,
-            idempotency_key=body.idempotency_key,
+            idempotency_key=requested_idempotency,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -465,6 +496,7 @@ def trigger_sync(
         task_id=result.task_id,
         status=result.status,
         idempotent=result.idempotent,
+        idempotency_key=result.run.idempotency_key,
     )
 
 
@@ -569,6 +601,7 @@ def _serialize_adv(row: TTBAdvertiser) -> Dict[str, Any]:
         "industry": row.industry,
         "currency": row.currency,
         "timezone": row.timezone,
+        "display_timezone": row.display_timezone,
         "country_code": row.country_code,
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,

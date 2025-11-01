@@ -230,6 +230,13 @@ def build_gmvmax_options(
             {
                 "advertiser_id": adv.advertiser_id,
                 "name": adv.name,
+                "display_name": adv.display_name,
+                "status": adv.status,
+                "industry": adv.industry,
+                "currency": adv.currency,
+                "timezone": adv.timezone,
+                "display_timezone": adv.display_timezone,
+                "country_code": adv.country_code,
                 "bc_id": resolved_bc_id,
             }
         )
