@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from datetime import datetime, timedelta, timezone
 from typing import Dict
@@ -25,6 +26,9 @@ from app.data.models.ttb_entities import (
     TTBBindingConfig,
 )
 from app.features.tenants.ttb.router import router as ttb_router
+from app.services import ttb_sync
+from app.services.ttb_sync import TTBSyncService
+from app.services import oauth_ttb as oauth_ttb_service
 
 ttb_router_module = importlib.import_module("app.features.tenants.ttb.router")
 from app.services.crypto import encrypt_text_to_blob
@@ -221,7 +225,7 @@ def test_product_sync_missing_advertiser(tenant_app):
     client, _ = tenant_app
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
-        json={"scope": "products", "store_id": "STORE1"},
+        json={"scope": "products", "options": {"store_id": "STORE1"}},
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "ADVERTISER_REQUIRED_FOR_GMV_MAX"
@@ -238,8 +242,7 @@ def test_product_sync_bc_mismatch(tenant_app):
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
         json={
             "scope": "products",
-            "advertiser_id": "ADV1",
-            "store_id": "STORE1",
+            "options": {"advertiser_id": "ADV1", "store_id": "STORE1"},
         },
     )
     assert resp.status_code == 422
@@ -284,11 +287,7 @@ def test_product_sync_rate_limited(monkeypatch, tenant_app):
 
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
-        json={
-            "scope": "products",
-            "advertiser_id": "ADV1",
-            "store_id": "STORE1",
-        },
+        json={"scope": "products", "options": {"advertiser_id": "ADV1", "store_id": "STORE1"}},
     )
     assert resp.status_code == 429
     assert resp.json()["error"]["code"] == "SYNC_RATE_LIMITED"
@@ -301,9 +300,12 @@ def test_product_sync_dispatch(monkeypatch, tenant_app):
 
     def fake_dispatch(db, **kwargs):  # noqa: ANN001
         dispatched.update(kwargs)
+
         class _Run:
             id = 123
             schedule_id = 456
+            idempotency_key = "fake-key"
+
         return DispatchResult(run=_Run(), task_id="task", status="enqueued", idempotent=False)
 
     monkeypatch.setattr(ttb_router_module, "dispatch_sync", fake_dispatch)
@@ -312,11 +314,106 @@ def test_product_sync_dispatch(monkeypatch, tenant_app):
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
         json={
             "scope": "products",
-            "advertiser_id": "ADV1",
-            "store_id": "STORE1",
             "mode": "full",
+            "options": {
+                "advertiser_id": "ADV1",
+                "store_id": "STORE1",
+                "eligibility": "gmv_max",
+            },
         },
     )
     assert resp.status_code == 202
     assert dispatched["params"]["advertiser_id"] == "ADV1"
     assert dispatched["params"]["bc_id"] == "BC1"
+    assert dispatched["params"]["product_eligibility"] == "gmv_max"
+    assert dispatched["params"]["mode"] == "full"
+    body = resp.json()
+    assert body["idempotency_key"] == "fake-key"
+
+
+def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
+    _, db_session = tenant_app
+
+    class DummyClient:
+        async def iter_advertisers(self, *, app_id, secret, page_size):  # noqa: ANN001
+            yield {"advertiser_id": "ADV1", "version": 1}
+
+        async def fetch_advertiser_info(self, advertiser_ids):  # noqa: ANN001
+            assert advertiser_ids == ["ADV1"]
+            return [
+                {
+                    "advertiser_id": "ADV1",
+                    "advertiser_name": "Hydrated",
+                    "display_name": "Hydrated Display",
+                    "status": "ENABLE",
+                    "industry": "ECOM",
+                    "currency": "USD",
+                    "timezone": "Asia/Shanghai",
+                    "display_timezone": "UTC+08:00",
+                    "country_code": "CN",
+                    "owner_bc_id": "BC-HYDRATED",
+                }
+            ]
+
+    monkeypatch.setattr(
+        oauth_ttb_service,
+        "get_credentials_for_auth_id",
+        lambda db, auth_id: ("app", "secret", "https://example.com/callback"),
+    )
+    monkeypatch.setattr(
+        "app.services.ttb_sync.get_credentials_for_auth_id",
+        lambda db, auth_id: ("app", "secret", "https://example.com/callback"),
+    )
+
+    service = TTBSyncService(db_session, DummyClient(), workspace_id=1, auth_id=1)
+
+    async def _run() -> None:
+        stats = await service.sync_advertisers(page_size=10)
+        assert stats["info_batches"] == 1
+        assert stats["info_updates"] == 1
+
+    asyncio.run(_run())
+
+    advertiser = (
+        db_session.query(TTBAdvertiser)
+        .filter(TTBAdvertiser.workspace_id == 1, TTBAdvertiser.auth_id == 1, TTBAdvertiser.advertiser_id == "ADV1")
+        .one()
+    )
+    assert advertiser.bc_id == "BC-HYDRATED"
+    assert advertiser.display_timezone == "UTC+08:00"
+    assert advertiser.currency == "USD"
+    assert advertiser.raw_json["advertiser_name"] == "Hydrated"
+
+
+def test_upsert_adv_without_display_timezone_support(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_upsert(db, model, values, conflict_columns, update_columns):  # noqa: ANN001
+        captured["values"] = values
+        captured["update_columns"] = update_columns
+        return True
+
+    monkeypatch.setattr(ttb_sync, "_upsert", fake_upsert)
+    monkeypatch.setattr(ttb_sync, "advertiser_display_timezone_supported", lambda db: False)
+
+    assert ttb_sync._upsert_adv(object(), workspace_id=1, auth_id=2, item={"advertiser_id": "ADV-1"})
+    assert "display_timezone" not in captured["values"]
+    assert "display_timezone" not in captured["update_columns"]
+
+
+def test_apply_advertiser_info_skips_display_timezone_when_unsupported():
+    row = TTBAdvertiser(workspace_id=1, auth_id=1, advertiser_id="ADV-1")
+
+    changed = ttb_sync._apply_advertiser_info(
+        row,
+        {
+            "advertiser_id": "ADV-1",
+            "display_timezone": "UTC+08:00",
+            "name": "Example",
+        },
+        allow_display_timezone=False,
+    )
+
+    assert changed is True
+    assert row.name == "Example"
+    assert row.display_timezone is None

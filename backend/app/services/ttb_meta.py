@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Iterable, Mapping, MutableMapping, Optional
 
+from sqlalchemy import literal
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.data.models.ttb_entities import (
@@ -17,6 +18,7 @@ from app.data.models.ttb_entities import (
     TTBStore,
     TTBSyncCursor,
 )
+from app.services.ttb_schema import advertiser_display_timezone_supported
 
 _PROVIDER = "tiktok-business"
 _LOGGER = logging.getLogger("gmv.ttb.meta")
@@ -139,8 +141,27 @@ def build_gmvmax_options(
         .order_by(TTBBusinessCenter.bc_id.asc())
         .all()
     )
+    supports_display_timezone = advertiser_display_timezone_supported(db)
+    display_timezone_column = (
+        TTBAdvertiser.display_timezone
+        if supports_display_timezone
+        else literal(None).label("display_timezone")
+    )
+
     advertiser_rows = (
-        db.query(TTBAdvertiser)
+        db.query(
+            TTBAdvertiser.advertiser_id,
+            TTBAdvertiser.name,
+            TTBAdvertiser.display_name,
+            TTBAdvertiser.status,
+            TTBAdvertiser.industry,
+            TTBAdvertiser.currency,
+            TTBAdvertiser.timezone,
+            display_timezone_column,
+            TTBAdvertiser.country_code,
+            TTBAdvertiser.bc_id,
+            TTBAdvertiser.last_seen_at,
+        )
         .filter(
             TTBAdvertiser.workspace_id == int(workspace_id),
             TTBAdvertiser.auth_id == int(auth_id),
@@ -230,6 +251,13 @@ def build_gmvmax_options(
             {
                 "advertiser_id": adv.advertiser_id,
                 "name": adv.name,
+                "display_name": adv.display_name,
+                "status": adv.status,
+                "industry": adv.industry,
+                "currency": adv.currency,
+                "timezone": adv.timezone,
+                "display_timezone": adv.display_timezone,
+                "country_code": adv.country_code,
                 "bc_id": resolved_bc_id,
             }
         )
