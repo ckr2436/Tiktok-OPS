@@ -49,7 +49,7 @@ CandidateMapping = Mapping[str, str | None]
 _SCOPE_FIELD_MAP = {
     "bc_ids": "bc_id",
     "advertiser_ids": "advertiser_id",
-    "shop_ids": "shop_id",
+    "store_ids": "store_id",
     "product_ids": "product_id",
 }
 
@@ -139,7 +139,7 @@ def _matches_scope(policy: PlatformPolicy, candidate: CandidateMapping) -> bool:
         return False
     if not _contains(policy.scope_advertiser_ids_json, "advertiser_id"):
         return False
-    if not _contains(policy.scope_shop_ids_json, "shop_id"):
+    if not _contains(policy.scope_store_ids_json, "store_id"):
         return False
     if not _contains(policy.scope_region_codes_json, "region_code", ignore_case=True):
         return False

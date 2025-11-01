@@ -1,58 +1,77 @@
 # app/features/tenants/ttb/router.py
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
+from app.core.errors import APIError
 from app.data.db import get_db
 from app.data.models.oauth_ttb import OAuthAccountTTB
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.data.models.ttb_entities import (
     TTBBusinessCenter,
     TTBAdvertiser,
-    TTBShop,
-    TTBProduct,
+    TTBStore,
+    TTBBindingConfig,
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
+from app.services.provider_registry import provider_registry, load_builtin_providers
+from app.services.ttb_binding_config import (
+    get_binding_config,
+    upsert_binding_config,
+)
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants",
     tags=["Tenant / TikTok Business"],
 )
 
+load_builtin_providers()
+
 SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
 # -------------------------- 请求/响应模型 --------------------------
 class SyncRequest(BaseModel):
-    scope: Literal["bc", "advertisers", "shops", "products", "all"] = "all"
-    mode: Literal["incremental", "full"] = "incremental"
-    limit: Optional[int] = Field(default=None, ge=1, le=2000)
-    product_limit: Optional[int] = Field(default=None, ge=1, le=2000)
-    shop_id: Optional[str] = Field(default=None, max_length=128)
-    since: Optional[datetime] = Field(default=None)
+    scope: Literal["meta", "products"] = "meta"
+    mode: Literal["incremental", "full"] = "full"
+    advertiser_id: Optional[str] = Field(default=None, max_length=128)
+    store_id: Optional[str] = Field(default=None, max_length=128)
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
-    # NEW: 可投放类型（默认后台自动同步 GMV Max；ADS 保留给手动触发）
-    # - gmv_max  => filtering.ad_creation_eligible = GMV_MAX
-    # - ads      => filtering.ad_creation_eligible = CUSTOM_SHOP_ADS
-    # - all      => 不加筛选
-    product_eligibility: Literal["gmv_max", "ads", "all"] = "gmv_max"
+    product_eligibility: Literal["gmv_max"] = "gmv_max"
+
+
+class MetaSummaryItem(BaseModel):
+    added: int
+    removed: int
+    unchanged: int
+
+
+class MetaSummary(BaseModel):
+    bc: MetaSummaryItem
+    advertisers: MetaSummaryItem
+    stores: MetaSummaryItem
 
 
 class SyncResponse(BaseModel):
-    run_id: int
-    schedule_id: int
-    task_name: str
-    task_id: Optional[str]
+    run_id: Optional[int] = None
+    schedule_id: Optional[int] = None
+    task_name: Optional[str] = None
+    task_id: Optional[str] = None
     status: str
     idempotent: bool = False
+    summary: Optional[MetaSummary] = None
 
 
 class SyncRunResponse(BaseModel):
@@ -66,13 +85,6 @@ class SyncRunResponse(BaseModel):
     error_code: Optional[str]
     error_message: Optional[str]
     stats: Optional[Dict[str, Any]]
-
-
-class PagedResult(BaseModel):
-    items: list[Dict[str, Any]]
-    page: int
-    page_size: int
-    total: int
 
 
 class ProviderAccount(BaseModel):
@@ -100,6 +112,88 @@ class ProviderAccountListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class PagedResult(BaseModel):
+    items: list[Any]
+    page: int
+    page_size: int
+    total: int
+
+
+class BusinessCenterItem(BaseModel):
+    bc_id: str
+    name: Optional[str]
+    status: Optional[str]
+    timezone: Optional[str]
+    country_code: Optional[str]
+    owner_user_id: Optional[str]
+    ext_created_time: Optional[str]
+    ext_updated_time: Optional[str]
+    first_seen_at: Optional[str]
+    last_seen_at: Optional[str]
+    raw: Optional[Dict[str, Any]]
+
+
+class BusinessCenterList(BaseModel):
+    items: list[BusinessCenterItem]
+
+
+class AdvertiserItem(BaseModel):
+    advertiser_id: str
+    bc_id: Optional[str]
+    name: Optional[str]
+    display_name: Optional[str]
+    status: Optional[str]
+    industry: Optional[str]
+    currency: Optional[str]
+    timezone: Optional[str]
+    country_code: Optional[str]
+    ext_created_time: Optional[str]
+    ext_updated_time: Optional[str]
+    first_seen_at: Optional[str]
+    last_seen_at: Optional[str]
+    raw: Optional[Dict[str, Any]]
+
+
+class AdvertiserList(BaseModel):
+    items: list[AdvertiserItem]
+
+
+class StoreItem(BaseModel):
+    store_id: str
+    advertiser_id: Optional[str]
+    bc_id: Optional[str]
+    name: Optional[str]
+    status: Optional[str]
+    region_code: Optional[str]
+    ext_created_time: Optional[str]
+    ext_updated_time: Optional[str]
+    first_seen_at: Optional[str]
+    last_seen_at: Optional[str]
+    raw: Optional[Dict[str, Any]]
+
+
+class StoreList(BaseModel):
+    items: list[StoreItem]
+
+
+class GMVMaxBindingConfig(BaseModel):
+    bc_id: Optional[str]
+    advertiser_id: Optional[str]
+    store_id: Optional[str]
+    auto_sync_products: bool
+    last_manual_synced_at: Optional[str]
+    last_manual_sync_summary: Optional[Dict[str, Any]]
+    last_auto_synced_at: Optional[str]
+    last_auto_sync_summary: Optional[Dict[str, Any]]
+
+
+class GMVMaxBindingUpdateRequest(BaseModel):
+    bc_id: str = Field(max_length=64)
+    advertiser_id: str = Field(max_length=64)
+    store_id: str = Field(max_length=64)
+    auto_sync_products: bool = False
 
 
 # -------------------------- 工具函数 --------------------------
@@ -131,6 +225,46 @@ def _serialize_binding(row: OAuthAccountTTB) -> ProviderAccount:
 def _serialize_account_summary(row: OAuthAccountTTB) -> AccountSummary:
     binding = _serialize_binding(row)
     return AccountSummary(auth_id=binding.auth_id, label=binding.label, status=binding.status)
+
+
+def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConfig:
+    if not row:
+        return GMVMaxBindingConfig(
+            bc_id=None,
+            advertiser_id=None,
+            store_id=None,
+            auto_sync_products=False,
+            last_manual_synced_at=None,
+            last_manual_sync_summary=None,
+            last_auto_synced_at=None,
+            last_auto_sync_summary=None,
+        )
+
+    def _iso(dt: Optional[datetime]) -> Optional[str]:
+        if not dt:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
+
+    return GMVMaxBindingConfig(
+        bc_id=row.bc_id,
+        advertiser_id=row.advertiser_id,
+        store_id=row.store_id,
+        auto_sync_products=bool(row.auto_sync_products),
+        last_manual_synced_at=_iso(row.last_manual_synced_at),
+        last_manual_sync_summary=row.last_manual_sync_summary_json or None,
+        last_auto_synced_at=_iso(row.last_auto_synced_at),
+        last_auto_sync_summary=row.last_auto_sync_summary_json or None,
+    )
+
+
+def _legacy_disabled() -> None:
+    raise APIError(
+        "TTB_LEGACY_DISABLED",
+        "TikTok Business legacy data endpoints have been disabled.",
+        status.HTTP_410_GONE,
+    )
 
 
 # -------------------------- 账号列表 --------------------------
@@ -200,14 +334,62 @@ def trigger_sync(
     normalized_provider = _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
 
+    if body.scope == "meta":
+        try:
+            summary_payload = _perform_meta_sync(db, workspace_id=workspace_id, auth_id=auth_id)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        response_payload = SyncResponse(status="success", summary=_meta_summary_from_dict(summary_payload))
+        return JSONResponse(status_code=status.HTTP_200_OK, content=jsonable_encoder(response_payload))
+
+    if body.scope != "products":
+        raise APIError("UNSUPPORTED_SCOPE", f"Scope {body.scope} is not supported.", status.HTTP_400_BAD_REQUEST)
+
+    if not body.advertiser_id:
+        raise APIError(
+            "ADVERTISER_REQUIRED_FOR_GMV_MAX",
+            "advertiser_id is required for GMV Max product sync.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if not body.store_id:
+        raise APIError(
+            "STORE_ID_REQUIRED_FOR_GMV_MAX",
+            "store_id is required for GMV Max product sync.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    advertiser = _get_advertiser(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(body.advertiser_id),
+    )
+    store = _get_store(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        store_id=str(body.store_id),
+    )
+
+    bc_id = store.bc_id or advertiser.bc_id
+    _validate_bc_alignment(expected_bc_id=bc_id, advertiser=advertiser, store=store)
+
+    _enforce_products_limits(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(body.advertiser_id),
+        store_id=str(body.store_id),
+    )
+
     params = {
         "mode": body.mode,
-        "limit": body.limit,
-        "product_limit": body.product_limit,
-        "shop_id": body.shop_id,
-        "since": body.since.isoformat() if body.since else None,
-        # NEW: 将可投放类型传给调度层（由调度层决定是否仅后台自动跑 GMV Max）
+        "advertiser_id": str(body.advertiser_id),
+        "store_id": str(body.store_id),
         "product_eligibility": body.product_eligibility,
+        "bc_id": bc_id,
     }
 
     try:
@@ -216,7 +398,7 @@ def trigger_sync(
             workspace_id=int(workspace_id),
             provider=normalized_provider,
             auth_id=int(auth_id),
-            scope=body.scope,
+            scope="products",
             params=params,
             actor_user_id=int(me.id),
             actor_workspace_id=int(me.workspace_id),
@@ -229,7 +411,7 @@ def trigger_sync(
     return SyncResponse(
         run_id=int(result.run.id),
         schedule_id=int(result.run.schedule_id),
-        task_name=SYNC_TASKS[body.scope],
+        task_name=SYNC_TASKS["products"],
         task_id=result.task_id,
         status=result.status,
         idempotent=result.idempotent,
@@ -282,17 +464,6 @@ def get_sync_run(
 
 
 # -------------------------- 基础分页 & 序列化 --------------------------
-def _pagination(query, model, page: int, page_size: int):
-    total = query.with_entities(func.count()).scalar() or 0
-    rows = (
-        query.order_by(model.id.asc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-    return int(total), rows
-
-
 def _normalize_nullable_str(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -357,9 +528,9 @@ def _serialize_adv(row: TTBAdvertiser) -> Dict[str, Any]:
     }
 
 
-def _serialize_shop(row: TTBShop) -> Dict[str, Any]:
+def _serialize_store(row: TTBStore) -> Dict[str, Any]:
     return {
-        "shop_id": row.shop_id,
+        "store_id": row.store_id,
         "advertiser_id": row.advertiser_id,
         "bc_id": row.bc_id,
         "name": row.name,
@@ -373,38 +544,196 @@ def _serialize_shop(row: TTBShop) -> Dict[str, Any]:
     }
 
 
-def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
-    price = float(row.price) if row.price is not None else None
-    return {
-        "product_id": row.product_id,
-        "shop_id": row.shop_id,
-        "title": row.title,
-        "status": row.status,
-        "currency": row.currency,
-        "price": price,
-        "stock": row.stock,
-        "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
-        "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
-        "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
-        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
-        "raw": row.raw_json,
+def _coerce_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _options_match(params: Dict[str, Any], *, auth_id: int, advertiser_id: str, store_id: str) -> bool:
+    raw_auth = params.get("auth_id") or params.get("authId")
+    if raw_auth is None or int(raw_auth) != int(auth_id):
+        return False
+    options = params.get("options") or {}
+    eligibility = str(options.get("product_eligibility") or "").strip().lower()
+    if eligibility not in ("", "gmv_max"):
+        return False
+    if str(options.get("advertiser_id")) != str(advertiser_id):
+        return False
+    if str(options.get("store_id")) != str(store_id):
+        return False
+    return True
+
+
+def _enforce_products_limits(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+) -> None:
+    now = datetime.now(timezone.utc)
+    lookback = now - timedelta(days=1)
+    rows = (
+        db.query(ScheduleRun, Schedule)
+        .join(Schedule, Schedule.id == ScheduleRun.schedule_id)
+        .filter(
+            ScheduleRun.workspace_id == int(workspace_id),
+            Schedule.task_name == SYNC_TASKS["products"],
+            ScheduleRun.created_at >= lookback,
+        )
+        .order_by(ScheduleRun.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    for run, schedule in rows:
+        params = schedule.params_json or {}
+        if not _options_match(params, auth_id=auth_id, advertiser_id=advertiser_id, store_id=store_id):
+            continue
+        if run.status in {"enqueued", "running"}:
+            raise APIError(
+                "SYNC_IN_PROGRESS",
+                "A GMV Max product sync is already running for this combination.",
+                status.HTTP_409_CONFLICT,
+            )
+
+        ts = _coerce_utc(run.enqueued_at or run.scheduled_for or run.created_at)
+        if ts and (now - ts) < timedelta(minutes=15):
+            raise APIError(
+                "SYNC_RATE_LIMITED",
+                "GMV Max product sync was triggered too recently.",
+                status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        break
+
+
+def _get_business_center(
+    db: Session, *, workspace_id: int, auth_id: int, bc_id: str
+) -> TTBBusinessCenter:
+    row = (
+        db.query(TTBBusinessCenter)
+        .filter(
+            TTBBusinessCenter.workspace_id == int(workspace_id),
+            TTBBusinessCenter.auth_id == int(auth_id),
+            TTBBusinessCenter.bc_id == bc_id,
+        )
+        .one_or_none()
+    )
+    if not row:
+        raise APIError("BUSINESS_CENTER_NOT_FOUND", "Business center not found.", status.HTTP_404_NOT_FOUND)
+    return row
+
+
+def _get_advertiser(
+    db: Session, *, workspace_id: int, auth_id: int, advertiser_id: str
+) -> TTBAdvertiser:
+    row = (
+        db.query(TTBAdvertiser)
+        .filter(
+            TTBAdvertiser.workspace_id == int(workspace_id),
+            TTBAdvertiser.auth_id == int(auth_id),
+            TTBAdvertiser.advertiser_id == advertiser_id,
+        )
+        .one_or_none()
+    )
+    if not row:
+        raise APIError("ADVERTISER_NOT_FOUND", "Advertiser not found.", status.HTTP_404_NOT_FOUND)
+    return row
+
+
+def _get_store(
+    db: Session, *, workspace_id: int, auth_id: int, store_id: str
+) -> TTBStore:
+    row = (
+        db.query(TTBStore)
+        .filter(
+            TTBStore.workspace_id == int(workspace_id),
+            TTBStore.auth_id == int(auth_id),
+            TTBStore.store_id == store_id,
+        )
+        .one_or_none()
+    )
+    if not row:
+        raise APIError("STORE_NOT_FOUND", "Store not found.", status.HTTP_404_NOT_FOUND)
+    return row
+
+
+def _validate_bc_alignment(
+    *,
+    expected_bc_id: Optional[str],
+    advertiser: TTBAdvertiser,
+    store: TTBStore,
+) -> None:
+    normalized_expected = _normalize_nullable_str(expected_bc_id)
+    advertiser_bc = _normalize_nullable_str(advertiser.bc_id)
+    store_bc = _normalize_nullable_str(store.bc_id)
+
+    if normalized_expected and advertiser_bc and normalized_expected != advertiser_bc:
+        raise APIError(
+            "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+            "Advertiser belongs to a different business center.",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+    if normalized_expected and store_bc and normalized_expected != store_bc:
+        raise APIError(
+            "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+            "Store belongs to a different business center.",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+    if advertiser_bc and store_bc and advertiser_bc != store_bc:
+        raise APIError(
+            "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+            "Advertiser and store are not linked to the same business center.",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+
+def _meta_summary_from_dict(payload: Dict[str, Dict[str, int]]) -> MetaSummary:
+    def _section(key: str) -> MetaSummaryItem:
+        data = payload.get(key) or {}
+        return MetaSummaryItem(
+            added=int(data.get("added") or 0),
+            removed=int(data.get("removed") or 0),
+            unchanged=int(data.get("unchanged") or 0),
+        )
+
+    return MetaSummary(
+        bc=_section("bc"),
+        advertisers=_section("advertisers"),
+        stores=_section("stores"),
+    )
+
+
+def _perform_meta_sync(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    page_size: int = 200,
+) -> Dict[str, Dict[str, int]]:
+    handler = provider_registry.get("tiktok-business")
+    envelope = {
+        "envelope_version": 1,
+        "provider": "tiktok-business",
+        "scope": "meta",
+        "workspace_id": int(workspace_id),
+        "auth_id": int(auth_id),
+        "options": {"page_size": page_size},
     }
-
-
-def _apply_product_eligibility_filter(query, eligibility: Optional[str]):
-    """
-    用 JSON 字段做过滤，不改表结构。
-    - gmv_max => raw_json contains {"ad_creation_eligible": "GMV_MAX"}
-    - ads     => raw_json contains {"ad_creation_eligible": "CUSTOM_SHOP_ADS"}
-    - None/all => 不加过滤
-    """
-    if not eligibility or eligibility == "all":
-        return query
-    if eligibility == "gmv_max":
-        return query.filter(TTBProduct.raw_json.contains({"ad_creation_eligible": "GMV_MAX"}))
-    if eligibility == "ads":
-        return query.filter(TTBProduct.raw_json.contains({"ad_creation_eligible": "CUSTOM_SHOP_ADS"}))
-    return query
+    logger_adapter = logging.getLogger("gmv.ttb.meta")
+    result = asyncio.run(
+        handler.run_scope(
+            db=db,
+            envelope=envelope,
+            scope="meta",
+            logger=logger_adapter,
+        )
+    )
+    return result.get("summary") or {}
 
 
 # -------------------------- 不带 auth_id 的列表（兼容旧前端） --------------------------
@@ -422,11 +751,7 @@ def list_business_centers(
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
-    query = db.query(TTBBusinessCenter).filter(TTBBusinessCenter.workspace_id == int(workspace_id))
-    if auth_id:
-        query = query.filter(TTBBusinessCenter.auth_id == int(auth_id))
-    total, rows = _pagination(query, TTBBusinessCenter, page, page_size)
-    return PagedResult(items=[_serialize_bc(r) for r in rows], page=page, page_size=page_size, total=total)
+    _legacy_disabled()
 
 
 @router.get(
@@ -443,18 +768,14 @@ def list_advertisers(
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
-    query = db.query(TTBAdvertiser).filter(TTBAdvertiser.workspace_id == int(workspace_id))
-    if bc_id:
-        query = query.filter(TTBAdvertiser.bc_id == bc_id)
-    total, rows = _pagination(query, TTBAdvertiser, page, page_size)
-    return PagedResult(items=[_serialize_adv(r) for r in rows], page=page, page_size=page_size, total=total)
+    _legacy_disabled()
 
 
 @router.get(
-    "/{workspace_id}/providers/{provider}/shops",
+    "/{workspace_id}/providers/{provider}/stores",
     response_model=PagedResult,
 )
-def list_shops(
+def list_stores(
     workspace_id: int,
     provider: str,
     advertiser_id: Optional[str] = Query(default=None, max_length=64),
@@ -464,11 +785,7 @@ def list_shops(
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
-    query = db.query(TTBShop).filter(TTBShop.workspace_id == int(workspace_id))
-    if advertiser_id:
-        query = query.filter(TTBShop.advertiser_id == advertiser_id)
-    total, rows = _pagination(query, TTBShop, page, page_size)
-    return PagedResult(items=[_serialize_shop(r) for r in rows], page=page, page_size=page_size, total=total)
+    _legacy_disabled()
 
 
 @router.get(
@@ -478,7 +795,7 @@ def list_shops(
 def list_products(
     workspace_id: int,
     provider: str,
-    shop_id: Optional[str] = Query(default=None, max_length=64),
+    store_id: Optional[str] = Query(default=None, max_length=64),
     # NEW: 基于 JSON 的过滤
     eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
     page: int = Query(1, ge=1, le=1000),
@@ -487,50 +804,42 @@ def list_products(
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
-    query = db.query(TTBProduct).filter(TTBProduct.workspace_id == int(workspace_id))
-    if shop_id:
-        query = query.filter(TTBProduct.shop_id == shop_id)
-    query = _apply_product_eligibility_filter(query, eligibility)
-    total, rows = _pagination(query, TTBProduct, page, page_size)
-    return PagedResult(items=[_serialize_product(r) for r in rows], page=page, page_size=page_size, total=total)
+    _legacy_disabled()
 
 
 # -------------------------- 新增：account-scoped 别名路由（修复前端 404） --------------------------
 @router.get(
     "/{workspace_id}/providers/{provider}/accounts/{auth_id}/business-centers",
-    response_model=PagedResult,
+    response_model=BusinessCenterList,
 )
 def list_account_business_centers(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    query = (
+    rows = (
         db.query(TTBBusinessCenter)
         .filter(TTBBusinessCenter.workspace_id == int(workspace_id))
         .filter(TTBBusinessCenter.auth_id == int(auth_id))
+        .order_by(TTBBusinessCenter.name.asc(), TTBBusinessCenter.bc_id.asc())
+        .all()
     )
-    total, rows = _pagination(query, TTBBusinessCenter, page, page_size)
-    return PagedResult(items=[_serialize_bc(r) for r in rows], page=page, page_size=page_size, total=total)
+    return BusinessCenterList(items=[BusinessCenterItem(**_serialize_bc(r)) for r in rows])
 
 
 @router.get(
     "/{workspace_id}/providers/{provider}/accounts/{auth_id}/advertisers",
-    response_model=PagedResult,
+    response_model=AdvertiserList,
 )
 def list_account_advertisers(
     workspace_id: int,
     provider: str,
     auth_id: int,
     bc_id: Optional[str] = Query(default=None, max_length=64),
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
@@ -543,46 +852,43 @@ def list_account_advertisers(
     )
     if bc_id:
         query = query.filter(TTBAdvertiser.bc_id == bc_id)
-    total, rows = _pagination(query, TTBAdvertiser, page, page_size)
-    return PagedResult(items=[_serialize_adv(r) for r in rows], page=page, page_size=page_size, total=total)
+    rows = query.order_by(TTBAdvertiser.display_name.asc(), TTBAdvertiser.advertiser_id.asc()).all()
+    return AdvertiserList(items=[AdvertiserItem(**_serialize_adv(r)) for r in rows])
 
 
 @router.get(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/shops",
-    response_model=PagedResult,
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/stores",
+    response_model=StoreList,
 )
-def list_account_shops(
+def list_account_stores(
     workspace_id: int,
     provider: str,
     auth_id: int,
     advertiser_id: Optional[str] = Query(default=None, max_length=64),
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
     query = (
-        db.query(TTBShop)
-        .filter(TTBShop.workspace_id == int(workspace_id))
-        .filter(TTBShop.auth_id == int(auth_id))
+        db.query(TTBStore)
+        .filter(TTBStore.workspace_id == int(workspace_id))
+        .filter(TTBStore.auth_id == int(auth_id))
     )
     if advertiser_id:
-        query = query.filter(TTBShop.advertiser_id == advertiser_id)
-    total, rows = _pagination(query, TTBShop, page, page_size)
-    return PagedResult(items=[_serialize_shop(r) for r in rows], page=page, page_size=page_size, total=total)
+        query = query.filter(TTBStore.advertiser_id == advertiser_id)
+    rows = query.order_by(TTBStore.name.asc(), TTBStore.store_id.asc()).all()
+    return StoreList(items=[StoreItem(**_serialize_store(r)) for r in rows])
 
 
 @router.get(
     "/{workspace_id}/providers/{provider}/accounts/{auth_id}/products",
-    response_model=PagedResult,
 )
 def list_account_products(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    shop_id: Optional[str] = Query(default=None, max_length=64),
+    store_id: Optional[str] = Query(default=None, max_length=64),
     eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(50, ge=1, le=200),
@@ -591,16 +897,63 @@ def list_account_products(
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    query = (
-        db.query(TTBProduct)
-        .filter(TTBProduct.workspace_id == int(workspace_id))
-        .filter(TTBProduct.auth_id == int(auth_id))
-    )
-    if shop_id:
-        query = query.filter(TTBProduct.shop_id == shop_id)
-    query = _apply_product_eligibility_filter(query, eligibility)
-    total, rows = _pagination(query, TTBProduct, page, page_size)
-    return PagedResult(items=[_serialize_product(r) for r in rows], page=page, page_size=page_size, total=total)
+    _legacy_disabled()
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/config",
+    response_model=GMVMaxBindingConfig,
+)
+def get_gmv_max_config(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    row = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+    return _serialize_binding_config(row)
+
+
+@router.put(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/config",
+    response_model=GMVMaxBindingConfig,
+)
+def update_gmv_max_config(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    payload: GMVMaxBindingUpdateRequest,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+
+    bc = _get_business_center(db, workspace_id=workspace_id, auth_id=auth_id, bc_id=payload.bc_id)
+    advertiser = _get_advertiser(db, workspace_id=workspace_id, auth_id=auth_id, advertiser_id=payload.advertiser_id)
+    store = _get_store(db, workspace_id=workspace_id, auth_id=auth_id, store_id=payload.store_id)
+    _validate_bc_alignment(expected_bc_id=bc.bc_id, advertiser=advertiser, store=store)
+
+    try:
+        row = upsert_binding_config(
+            db,
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            bc_id=payload.bc_id,
+            advertiser_id=payload.advertiser_id,
+            store_id=payload.store_id,
+            auto_sync_products=payload.auto_sync_products,
+            actor_user_id=int(me.id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return _serialize_binding_config(row)
 
 
 # -------------------------- 旧路由废弃 --------------------------
