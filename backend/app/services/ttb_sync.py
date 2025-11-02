@@ -38,6 +38,14 @@ def _normalize_identifier(value: Any) -> Optional[str]:
     return s or None
 
 
+def _clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value)
+
+
 def _parse_dt(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -57,6 +65,22 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 
 _ADVERTISER_INFO_BATCH_SIZE = 50
+_ADVERTISER_INFO_FIELDS: tuple[str, ...] = (
+    "advertiser_id",
+    "name",
+    "display_name",
+    "status",
+    "industry",
+    "currency",
+    "timezone",
+    "display_timezone",
+    "country",
+    "country_code",
+    "owner_bc_id",
+    "bc_id",
+    "create_time",
+    "update_time",
+)
 
 
 def _chunked(values: Iterable[str], size: int) -> Iterable[list[str]]:
@@ -157,14 +181,14 @@ def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> b
         workspace_id=workspace_id,
         auth_id=auth_id,
         bc_id=bc_id,
-        name=_pick(item, "bc_name"),
-        status=_pick(item, "status"),
-        timezone=_pick(item, "timezone"),
-        country_code=_pick(item, "country_code"),
-        owner_user_id=_pick(item, "owner_user_id"),
+        name=_clean_str(_pick(item, "bc_name", "name")),
+        status=_clean_str(_pick(item, "status")),
+        timezone=_clean_str(_pick(item, "timezone")),
+        country_code=_clean_str(_pick(item, "country_code")),
+        owner_user_id=_clean_str(_pick(item, "owner_user_id")),
         ext_created_time=_parse_dt(_pick(item, "create_time")),
         ext_updated_time=_parse_dt(_pick(item, "update_time")),
-        sync_rev=str(_pick(item, "version", default="")),
+        sync_rev=_clean_str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -197,20 +221,22 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
-        bc_id=_pick(item, "bc_id"),
-        name=_pick(item, "name"),
-        display_name=_pick(item, "display_name"),
-        status=_pick(item, "status"),
-        industry=_pick(item, "industry"),
-        currency=_pick(item, "currency"),
-        timezone=_pick(item, "timezone"),
-        display_timezone=_pick(item, "display_timezone"),
-        country_code=_pick(item, "country_code"),
+        bc_id=_normalize_identifier(_pick(item, "bc_id", "owner_bc_id")) or "",
+        name=_clean_str(_pick(item, "name", "advertiser_name")),
+        display_name=_clean_str(_pick(item, "display_name", "advertiser_name", "name")),
+        status=_clean_str(_pick(item, "status")),
+        industry=_clean_str(_pick(item, "industry")),
+        currency=_clean_str(_pick(item, "currency")),
+        timezone=_clean_str(_pick(item, "timezone")),
+        display_timezone=_clean_str(_pick(item, "display_timezone")),
+        country_code=_clean_str(_pick(item, "country_code")),
         ext_created_time=_parse_dt(_pick(item, "create_time")),
         ext_updated_time=_parse_dt(_pick(item, "update_time")),
-        sync_rev=str(_pick(item, "version", default="")),
+        sync_rev=_clean_str(_pick(item, "version", default="")),
         raw_json=item,
     )
+    if not supports_display_timezone:
+        values.pop("display_timezone", None)
     if supports_display_timezone:
         values["display_timezone"] = _pick(item, "display_timezone")
     _upsert(
@@ -297,8 +323,18 @@ def _upsert_store(
     store_id = _pick(item, "store_id")
     if store_id is None:
         return False
+
     normalized_bc_id = _normalize_identifier(bc_id or _pick(item, "bc_id"))
     advertiser_id = _normalize_identifier(_pick(item, "advertiser_id"))
+    store_type_raw = _pick(item, "store_type", "type")
+    store_code_raw = _pick(item, "store_code", "code")
+    authorized_bc = _normalize_identifier(
+        _pick(item, "store_authorized_bc_id", "authorized_bc_id", "bc_id")
+    )
+    name = _clean_str(_pick(item, "store_name", "name"))
+    status = _clean_str(_pick(item, "status"))
+    region_code = _clean_str(_pick(item, "region_code", "country_code"))
+
     ext_created_time = _parse_dt(_pick(item, "create_time"))
     ext_updated_time = _parse_dt(_pick(item, "update_time"))
     version = _pick(item, "version")
@@ -314,6 +350,10 @@ def _upsert_store(
         .one_or_none()
     )
 
+    store_type_clean = _clean_str(store_type_raw) or "TIKTOK_SHOP"
+    store_code_clean = _clean_str(store_code_raw)
+    authorized_bc_clean = authorized_bc or ""
+
     if existing is None:
         row = TTBStore(
             workspace_id=workspace_id,
@@ -321,9 +361,12 @@ def _upsert_store(
             store_id=str(store_id),
             advertiser_id=advertiser_id,
             bc_id=normalized_bc_id,
-            name=_pick(item, "store_name"),
-            status=_pick(item, "status"),
-            region_code=_pick(item, "region_code"),
+            name=name,
+            status=status,
+            region_code=region_code,
+            store_type=store_type_clean,
+            store_code=store_code_clean,
+            store_authorized_bc_id=authorized_bc_clean,
             ext_created_time=ext_created_time,
             ext_updated_time=ext_updated_time,
             sync_rev=sync_rev,
@@ -334,9 +377,12 @@ def _upsert_store(
         db.add(row)
     else:
         existing.advertiser_id = advertiser_id
-        existing.name = _pick(item, "store_name")
-        existing.status = _pick(item, "status")
-        existing.region_code = _pick(item, "region_code")
+        existing.name = name
+        existing.status = status
+        existing.region_code = region_code
+        existing.store_type = store_type_clean or existing.store_type or "TIKTOK_SHOP"
+        existing.store_code = store_code_clean
+        existing.store_authorized_bc_id = authorized_bc_clean or existing.store_authorized_bc_id or ""
         existing.ext_created_time = ext_created_time
         existing.ext_updated_time = ext_updated_time
         existing.sync_rev = sync_rev
@@ -358,14 +404,14 @@ def _upsert_product(db: Session, *, workspace_id: int, auth_id: int, item: dict)
         auth_id=auth_id,
         product_id=str(product_id),
         store_id=str(_pick(item, "store_id")) if _pick(item, "store_id") is not None else None,
-        title=_pick(item, "title"),
-        status=_pick(item, "status"),
-        currency=_pick(item, "currency"),
+        title=_clean_str(_pick(item, "title")),
+        status=_clean_str(_pick(item, "status")),
+        currency=_clean_str(_pick(item, "currency")),
         price=_pick(item, "price"),
         stock=_pick(item, "stock"),
         ext_created_time=_parse_dt(_pick(item, "create_time")),
         ext_updated_time=_parse_dt(_pick(item, "update_time")),
-        sync_rev=str(_pick(item, "version", default="")),
+        sync_rev=_clean_str(_pick(item, "version", default="")),
         raw_json=item,
     )
     _upsert(
@@ -505,7 +551,10 @@ class TTBSyncService:
         allow_display_timezone = advertiser_display_timezone_supported(self.db)
         for chunk in _chunked(ids, _ADVERTISER_INFO_BATCH_SIZE):
             try:
-                info_items = await self.client.fetch_advertiser_info(advertiser_ids=chunk)
+                info_items = await self.client.fetch_advertiser_info(
+                    advertiser_ids=chunk,
+                    fields=_ADVERTISER_INFO_FIELDS,
+                )
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "failed to fetch advertiser info",  # pragma: no cover - logging path
@@ -680,10 +729,9 @@ class TTBSyncService:
                             "store_id": s.store_id,
                         },
                     )
-                    continue
             async for item in self.client.iter_products(
-                bc_id=str(bc_id),
                 store_id=str(s.store_id),
+                bc_id=str(bc_id) if bc_id else None,
                 advertiser_id=str(s.advertiser_id) if s.advertiser_id else None,
                 page_size=page_size,
                 eligibility=eligibility_api,

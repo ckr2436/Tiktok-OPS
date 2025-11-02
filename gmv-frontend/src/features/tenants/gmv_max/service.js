@@ -68,6 +68,28 @@ export async function saveBindingConfig(wid, provider, authId, payload) {
   return apiPut(url, payload);
 }
 
+export async function fetchBusinessCenters(wid, provider, authId, options = {}) {
+  const url = `${accountPrefix(wid, provider, authId)}/business-centers`;
+  return apiGet(url, options);
+}
+
+export async function fetchAdvertisers(wid, provider, authId, params = {}, options = {}) {
+  const base = `${accountPrefix(wid, provider, authId)}/advertisers`;
+  return apiGet(appendQuery(base, params), options);
+}
+
+export async function fetchStores(wid, provider, authId, advertiserId, options = {}) {
+  const base = `${accountPrefix(wid, provider, authId)}/stores`;
+  const url = appendQuery(base, { advertiser_id: advertiserId });
+  return apiGet(url, options);
+}
+
+export async function fetchProducts(wid, provider, authId, storeId, params = {}, options = {}) {
+  const base = `${accountPrefix(wid, provider, authId)}/products`;
+  const url = appendQuery(base, { store_id: storeId, ...params });
+  return apiGet(url, options);
+}
+
 export async function fetchGmvOptions(
   wid,
   provider,

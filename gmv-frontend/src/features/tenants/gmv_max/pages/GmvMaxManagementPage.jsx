@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import FormField from '../../../../components/ui/FormField.jsx';
@@ -6,6 +6,10 @@ import {
   fetchBindingConfig,
   fetchGmvOptions,
   fetchSyncRun,
+  fetchBusinessCenters,
+  fetchAdvertisers,
+  fetchStores,
+  fetchProducts,
   listBindings,
   normProvider,
   saveBindingConfig,
@@ -89,6 +93,22 @@ function formatOptionLabel(name, id) {
   return '未命名';
 }
 
+function formatMoney(currency, price) {
+  if (price === null || price === undefined || price === '') return '-';
+  const numeric = Number(price);
+  if (Number.isNaN(numeric)) {
+    return [currency || '', price].filter(Boolean).join(' ').trim() || '-';
+  }
+  if (currency) {
+    try {
+      return new Intl.NumberFormat('zh-CN', { style: 'currency', currency }).format(numeric);
+    } catch (error) {
+      return `${currency} ${numeric.toFixed(2)}`;
+    }
+  }
+  return numeric.toFixed(2);
+}
+
 function describeRunStatus(run) {
   if (!run) {
     return { state: 'unknown', message: '同步任务已提交，正在等待状态更新。' };
@@ -169,7 +189,12 @@ export default function GmvMaxManagementPage() {
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [bindingConfig, setBindingConfig] = useState(null);
 
-  const [optionsPayload, setOptionsPayload] = useState(null);
+  const [businessCenters, setBusinessCenters] = useState([]);
+  const [advertisers, setAdvertisers] = useState([]);
+  const [storesByAdvertiser, setStoresByAdvertiser] = useState({});
+  const [loadingStores, setLoadingStores] = useState(false);
+  const [productsState, setProductsState] = useState({ items: [], total: 0 });
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [optionsEtag, setOptionsEtag] = useState(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
 
@@ -180,19 +205,98 @@ export default function GmvMaxManagementPage() {
   const [metaSummary, setMetaSummary] = useState(null);
   const [syncRunStatus, setSyncRunStatus] = useState(null);
 
+  const fetchMetadataPayload = useCallback(async () => {
+    if (!wid || !selectedAuthId) {
+      return { bcs: [], advertisers: [] };
+    }
+    const [bcResponse, advertiserResponse] = await Promise.all([
+      fetchBusinessCenters(wid, provider, selectedAuthId),
+      fetchAdvertisers(wid, provider, selectedAuthId),
+    ]);
+    return {
+      bcs: Array.isArray(bcResponse?.items) ? bcResponse.items : [],
+      advertisers: Array.isArray(advertiserResponse?.items) ? advertiserResponse.items : [],
+    };
+  }, [wid, provider, selectedAuthId]);
+
+  const applyMetadata = useCallback(
+    ({ bcs, advertisers: advItems }) => {
+      const safeBc = Array.isArray(bcs) ? bcs : [];
+      const safeAdvertisers = Array.isArray(advItems) ? advItems : [];
+      setBusinessCenters(safeBc);
+      setAdvertisers(safeAdvertisers);
+      setStoresByAdvertiser((prev) => {
+        const retained = {};
+        safeAdvertisers.forEach((adv) => {
+          const advId = adv?.advertiser_id ? String(adv.advertiser_id) : '';
+          if (advId && prev[advId]) {
+            retained[advId] = prev[advId];
+          }
+        });
+        return retained;
+      });
+      setForm((prev) => {
+        let next = prev;
+        const bcValid = !prev.bcId
+          || safeBc.some((item) => String(item?.bc_id || '') === String(prev.bcId));
+        if (!bcValid) {
+          next = { ...prev, bcId: '', advertiserId: '', storeId: '' };
+          return next;
+        }
+        const advValid = !prev.advertiserId
+          || safeAdvertisers.some((item) => String(item?.advertiser_id || '') === String(prev.advertiserId));
+        if (!advValid) {
+          next = { ...prev, advertiserId: '', storeId: '' };
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const optionsData = useMemo(() => {
+    const safeBc = Array.isArray(businessCenters) ? businessCenters : [];
+    const safeAdvertisers = Array.isArray(advertisers) ? advertisers : [];
+    const storeGroups = Object.values(storesByAdvertiser || {});
+    const stores = storeGroups.flat().filter(Boolean);
+    const bcLinks = {};
+    safeAdvertisers.forEach((item) => {
+      const bcId = item?.bc_id ? String(item.bc_id) : '';
+      const advId = item?.advertiser_id ? String(item.advertiser_id) : '';
+      if (!bcId || !advId) return;
+      if (!bcLinks[bcId]) bcLinks[bcId] = [];
+      bcLinks[bcId].push(advId);
+    });
+    const advertiserStoreLinks = {};
+    Object.entries(storesByAdvertiser || {}).forEach(([advId, list]) => {
+      advertiserStoreLinks[advId] = (Array.isArray(list) ? list : [])
+        .map((store) => (store?.store_id ? String(store.store_id) : null))
+        .filter(Boolean);
+    });
+    return {
+      bcs: safeBc,
+      advertisers: safeAdvertisers,
+      stores,
+      links: {
+        bc_to_advertisers: bcLinks,
+        advertiser_to_stores: advertiserStoreLinks,
+      },
+    };
+  }, [businessCenters, advertisers, storesByAdvertiser]);
+
   const bcOptions = useMemo(
-    () => buildBusinessCenterOptions(optionsPayload, form.bcId),
-    [optionsPayload, form.bcId],
+    () => buildBusinessCenterOptions(optionsData, form.bcId),
+    [optionsData, form.bcId],
   );
 
   const advertiserOptions = useMemo(
-    () => buildAdvertiserOptions(optionsPayload, form.bcId, form.advertiserId),
-    [optionsPayload, form.bcId, form.advertiserId],
+    () => buildAdvertiserOptions(optionsData, form.bcId, form.advertiserId),
+    [optionsData, form.bcId, form.advertiserId],
   );
 
   const storeOptions = useMemo(
-    () => buildStoreOptions(optionsPayload, form.advertiserId, form.storeId),
-    [optionsPayload, form.advertiserId, form.storeId],
+    () => buildStoreOptions(optionsData, form.advertiserId, form.storeId),
+    [optionsData, form.advertiserId, form.storeId],
   );
 
   useEffect(() => {
@@ -227,7 +331,10 @@ export default function GmvMaxManagementPage() {
       setSelectedAuthId('');
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
-      setOptionsPayload(null);
+      setBusinessCenters([]);
+      setAdvertisers([]);
+      setStoresByAdvertiser({});
+      setProductsState({ items: [], total: 0 });
       setOptionsEtag(null);
       return;
     }
@@ -244,48 +351,78 @@ export default function GmvMaxManagementPage() {
     setMetaSummary(null);
     setForm(DEFAULT_FORM);
     setBindingConfig(null);
-    setOptionsPayload(null);
+    setBusinessCenters([]);
+    setAdvertisers([]);
+    setStoresByAdvertiser({});
+    setProductsState({ items: [], total: 0 });
     setOptionsEtag(null);
     setSyncRunStatus(null);
   }, [selectedAuthId]);
 
   useEffect(() => {
     if (!wid || !selectedAuthId) {
-      setOptionsPayload(null);
       setOptionsEtag(null);
       setOptionsLoading(false);
       return;
     }
     let ignore = false;
     const controller = new AbortController();
+    let pending = 2;
     setOptionsLoading(true);
+
+    const finish = () => {
+      pending -= 1;
+      if (!ignore && pending <= 0) {
+        setOptionsLoading(false);
+      }
+    };
+
     fetchGmvOptions(wid, provider, selectedAuthId, { signal: controller.signal })
       .then(({ status, data, etag }) => {
         if (ignore) return;
         if (status === 200 && data) {
-          const { refresh: refreshStatus, idempotency_key: refreshKey, ...rest } = data || {};
-          setOptionsPayload(rest);
+          const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
+          setMetaSummary(summary || null);
           setOptionsEtag(etag || null);
           if (refreshStatus === 'timeout' && refreshKey) {
             setFeedback({ type: 'info', text: `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` });
           }
+        } else if (status === 304) {
+          setOptionsEtag((prev) => etag || prev || null);
         }
       })
       .catch((error) => {
         if (!ignore) {
-          setOptionsPayload(null);
           setOptionsEtag(null);
           setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 选项') });
         }
       })
       .finally(() => {
-        if (!ignore) setOptionsLoading(false);
+        if (!ignore) finish();
       });
+
+    fetchMetadataPayload()
+      .then((metadata) => {
+        if (ignore) return;
+        applyMetadata(metadata);
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setBusinessCenters([]);
+          setAdvertisers([]);
+          setStoresByAdvertiser({});
+          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 TikTok 元数据') });
+        }
+      })
+      .finally(() => {
+        if (!ignore) finish();
+      });
+
     return () => {
       ignore = true;
       controller.abort();
     };
-  }, [wid, provider, selectedAuthId]);
+  }, [wid, provider, selectedAuthId, fetchMetadataPayload, applyMetadata]);
 
   useEffect(() => {
     if (!wid || !selectedAuthId) {
@@ -324,6 +461,46 @@ export default function GmvMaxManagementPage() {
     };
   }, [wid, provider, selectedAuthId, configVersion]);
 
+  useEffect(() => {
+    if (!wid || !selectedAuthId || !form.advertiserId) {
+      setLoadingStores(false);
+      return;
+    }
+    const existing = storesByAdvertiser[form.advertiserId];
+    if (existing) {
+      const hasSelected = existing.some((item) => String(item?.store_id || '') === String(form.storeId));
+      if (!hasSelected && form.storeId) {
+        setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
+      }
+      return;
+    }
+    let ignore = false;
+    setLoadingStores(true);
+    fetchStores(wid, provider, selectedAuthId, form.advertiserId)
+      .then((response) => {
+        if (ignore) return;
+        const storeItems = Array.isArray(response?.items) ? response.items : [];
+        setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: storeItems }));
+        if (!storeItems.some((item) => String(item?.store_id || '') === String(form.storeId))) {
+          setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: [] }));
+          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Store 列表') });
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoadingStores(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [wid, provider, selectedAuthId, form.advertiserId, form.storeId, storesByAdvertiser]);
+
   function handleBindingChange(evt) {
     setSelectedAuthId(evt.target.value || '');
   }
@@ -336,6 +513,8 @@ export default function GmvMaxManagementPage() {
       advertiserId: '',
       storeId: '',
     }));
+    setStoresByAdvertiser({});
+    setProductsState({ items: [], total: 0 });
   }
 
   function handleAdvertiserChange(evt) {
@@ -345,6 +524,7 @@ export default function GmvMaxManagementPage() {
       advertiserId: value,
       storeId: '',
     }));
+    setProductsState({ items: [], total: 0 });
   }
 
   function handleStoreChange(evt) {
@@ -353,6 +533,7 @@ export default function GmvMaxManagementPage() {
       ...prev,
       storeId: value,
     }));
+    setProductsState({ items: [], total: 0 });
   }
 
   function handleAutoSyncToggle(evt) {
@@ -373,13 +554,13 @@ export default function GmvMaxManagementPage() {
       });
       if (status === 304) {
         setFeedback({ type: 'info', text: '元数据未发生变化。' });
-        return;
-      }
-      if (data) {
-        const { refresh: refreshStatus, idempotency_key: refreshKey, ...rest } = data || {};
-        setOptionsPayload(rest);
+        if (etag) {
+          setOptionsEtag(etag);
+        }
+      } else if (data) {
+        const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
+        setMetaSummary(summary || null);
         if (etag) setOptionsEtag(etag);
-        setMetaSummary(null);
         if (refreshStatus === 'timeout') {
           const timeoutText = refreshKey
             ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。`
@@ -388,6 +569,12 @@ export default function GmvMaxManagementPage() {
         } else {
           setFeedback({ type: 'success', text: '已刷新最新可选项。' });
         }
+      }
+      try {
+        const metadata = await fetchMetadataPayload();
+        applyMetadata(metadata);
+      } catch (metaError) {
+        setFeedback({ type: 'error', text: extractErrorMessage(metaError, '刷新成功，但更新 TikTok 元数据失败') });
       }
     } catch (error) {
       setFeedback({ type: 'error', text: extractErrorMessage(error, '刷新失败，请稍后重试') });
@@ -503,11 +690,38 @@ export default function GmvMaxManagementPage() {
     }
   }
 
+  async function handlePullProducts() {
+    if (!wid || !selectedAuthId) return;
+    if (!form.storeId) {
+      setFeedback({ type: 'error', text: '请选择 Store 后再拉取商品。' });
+      return;
+    }
+    setLoadingProducts(true);
+    try {
+      const data = await fetchProducts(wid, provider, selectedAuthId, form.storeId);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
+      setProductsState({ items, total });
+      if (items.length === 0) {
+        setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
+      } else {
+        setFeedback({ type: 'success', text: `已拉取 ${items.length} 条 GMV Max 商品。` });
+      }
+    } catch (error) {
+      setProductsState({ items: [], total: 0 });
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '拉取 GMV Max 商品失败，请稍后重试') });
+    } finally {
+      setLoadingProducts(false);
+    }
+  }
+
   const disableRefresh = !selectedAuthId || refreshingOptions || optionsLoading;
   const disableSave =
     !selectedAuthId || saving || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
   const disableManualSync =
     !selectedAuthId || triggeringSync || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
+  const disablePullProducts =
+    !selectedAuthId || optionsLoading || !form.storeId || loadingProducts || loadingStores;
 
   const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
   const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
@@ -599,12 +813,14 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.storeId}
               onChange={handleStoreChange}
-              disabled={!selectedAuthId || !form.advertiserId || optionsLoading}
+              disabled={!selectedAuthId || !form.advertiserId || optionsLoading || loadingStores}
             >
               <option value="">请选择 Store</option>
               {storeOptions.map((item, idx) => {
                 const value = item?.store_id ? String(item.store_id) : '';
-                const label = formatOptionLabel(item?.name, value);
+                const label = item?.store_code
+                  ? `${item?.name || value}（${item.store_code}）`
+                  : formatOptionLabel(item?.name, value);
                 return (
                   <option key={value || `missing-store-${idx}`} value={value}>
                     {label}
@@ -612,7 +828,7 @@ export default function GmvMaxManagementPage() {
                 );
               })}
             </select>
-            {optionsLoading && <div className="small-muted">加载 Store...</div>}
+            {(optionsLoading || loadingStores) && <div className="small-muted">加载 Store...</div>}
           </FormField>
         </div>
 
@@ -639,10 +855,13 @@ export default function GmvMaxManagementPage() {
             onClick={handleRefresh}
             disabled={disableRefresh}
           >
-            {refreshingOptions ? '刷新中…' : '刷新可选项'}
+            {refreshingOptions ? '刷新中…' : '刷新/同步'}
           </button>
           <button className="btn" type="button" onClick={handleSave} disabled={disableSave}>
             {saving ? '保存中…' : '保存激活组合'}
+          </button>
+          <button className="btn" type="button" onClick={handlePullProducts} disabled={disablePullProducts}>
+            {loadingProducts ? '拉取中…' : '拉取 GMV Max 商品'}
           </button>
           <button className="btn" type="button" onClick={handleProductSync} disabled={disableManualSync}>
             {triggeringSync ? '同步中…' : '同步 GMV Max 商品'}
@@ -659,6 +878,54 @@ export default function GmvMaxManagementPage() {
           >
             {syncRunStatus.message}
             {syncRunStatus.detail ? `（${syncRunStatus.detail}）` : ''}
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ display: 'grid', gap: '12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <h3 style={{ margin: 0 }}>GMV Max 商品</h3>
+          <div className="small-muted">当前共 {productsState.total || 0} 条</div>
+        </div>
+        {productsState.items.length === 0 ? (
+          <div className="small-muted">
+            {loadingProducts ? '正在拉取 GMV Max 商品…' : '请选择 Store 并点击“拉取 GMV Max 商品”查看列表。'}
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>商品 ID</th>
+                  <th>标题</th>
+                  <th>状态</th>
+                  <th>价格</th>
+                  <th>库存</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productsState.items.map((item, idx) => {
+                  const pid = item?.product_id ? String(item.product_id) : '';
+                  return (
+                    <tr key={pid || `product-${idx}`}>
+                      <td>{pid || '-'}</td>
+                      <td>{item?.title || '-'}</td>
+                      <td>{item?.status || '-'}</td>
+                      <td>{formatMoney(item?.currency, item?.price)}</td>
+                      <td>{item?.stock ?? '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

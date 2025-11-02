@@ -25,6 +25,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBBindingConfig,
+    TTBProduct,
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
@@ -183,6 +184,9 @@ class StoreItem(BaseModel):
     name: Optional[str]
     status: Optional[str]
     region_code: Optional[str]
+    store_type: Optional[str]
+    store_code: Optional[str]
+    store_authorized_bc_id: Optional[str]
     ext_created_time: Optional[str]
     ext_updated_time: Optional[str]
     first_seen_at: Optional[str]
@@ -192,6 +196,24 @@ class StoreItem(BaseModel):
 
 class StoreList(BaseModel):
     items: list[StoreItem]
+
+
+class ProductItem(BaseModel):
+    product_id: str
+    store_id: Optional[str]
+    title: Optional[str]
+    status: Optional[str]
+    currency: Optional[str]
+    price: Optional[float]
+    stock: Optional[int]
+    ext_created_time: Optional[str]
+    ext_updated_time: Optional[str]
+    raw: Optional[Dict[str, Any]]
+
+
+class ProductList(BaseModel):
+    items: list[ProductItem]
+    total: int
 
 
 class GMVMaxBindingConfig(BaseModel):
@@ -560,6 +582,14 @@ def _normalize_nullable_str(value: Any) -> Optional[str]:
     return _normalize_nullable_str(str(value))
 
 
+def _as_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value)
+
+
 def _serialize_bc(row: TTBBusinessCenter) -> Dict[str, Any]:
     raw = row.raw_json or {}
     bc_info = raw.get("bc_info") or {}
@@ -578,11 +608,11 @@ def _serialize_bc(row: TTBBusinessCenter) -> Dict[str, Any]:
 
     return {
         "bc_id": bc_id,
-        "name": name,
-        "status": status,
-        "timezone": timezone,
-        "country_code": country_code,
-        "owner_user_id": row.owner_user_id,
+        "name": _as_str(name),
+        "status": _as_str(status),
+        "timezone": _as_str(timezone),
+        "country_code": _as_str(country_code),
+        "owner_user_id": _as_str(row.owner_user_id),
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
         "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
@@ -594,15 +624,15 @@ def _serialize_bc(row: TTBBusinessCenter) -> Dict[str, Any]:
 def _serialize_adv(row: TTBAdvertiser) -> Dict[str, Any]:
     return {
         "advertiser_id": row.advertiser_id,
-        "bc_id": row.bc_id,
-        "name": row.name,
-        "display_name": row.display_name,
-        "status": row.status,
-        "industry": row.industry,
-        "currency": row.currency,
-        "timezone": row.timezone,
-        "display_timezone": row.display_timezone,
-        "country_code": row.country_code,
+        "bc_id": _as_str(row.bc_id),
+        "name": _as_str(row.name),
+        "display_name": _as_str(row.display_name),
+        "status": _as_str(row.status),
+        "industry": _as_str(row.industry),
+        "currency": _as_str(row.currency),
+        "timezone": _as_str(row.timezone),
+        "display_timezone": _as_str(row.display_timezone),
+        "country_code": _as_str(row.country_code),
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
         "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
@@ -614,15 +644,33 @@ def _serialize_adv(row: TTBAdvertiser) -> Dict[str, Any]:
 def _serialize_store(row: TTBStore) -> Dict[str, Any]:
     return {
         "store_id": row.store_id,
-        "advertiser_id": row.advertiser_id,
-        "bc_id": row.bc_id,
-        "name": row.name,
-        "status": row.status,
-        "region_code": row.region_code,
+        "advertiser_id": _as_str(row.advertiser_id),
+        "bc_id": _as_str(row.bc_id),
+        "name": _as_str(row.name),
+        "status": _as_str(row.status),
+        "region_code": _as_str(row.region_code),
+        "store_type": _as_str(getattr(row, "store_type", None) or ""),
+        "store_code": _as_str(getattr(row, "store_code", None) or ""),
+        "store_authorized_bc_id": _as_str(getattr(row, "store_authorized_bc_id", None) or ""),
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
         "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
         "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+        "raw": row.raw_json,
+    }
+
+
+def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
+    return {
+        "product_id": row.product_id,
+        "store_id": _as_str(row.store_id),
+        "title": _as_str(row.title),
+        "status": _as_str(row.status),
+        "currency": _as_str(row.currency),
+        "price": float(row.price) if row.price is not None else None,
+        "stock": int(row.stock) if row.stock is not None else None,
+        "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
+        "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
         "raw": row.raw_json,
     }
 
@@ -844,7 +892,7 @@ def list_business_centers(
 def list_advertisers(
     workspace_id: int,
     provider: str,
-    bc_id: Optional[str] = Query(default=None, max_length=64),
+    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
@@ -922,7 +970,7 @@ def list_account_advertisers(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    bc_id: Optional[str] = Query(default=None, max_length=64),
+    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
@@ -933,8 +981,8 @@ def list_account_advertisers(
         .filter(TTBAdvertiser.workspace_id == int(workspace_id))
         .filter(TTBAdvertiser.auth_id == int(auth_id))
     )
-    if bc_id:
-        query = query.filter(TTBAdvertiser.bc_id == bc_id)
+    if owner_bc_id:
+        query = query.filter(TTBAdvertiser.bc_id == owner_bc_id)
     rows = query.order_by(TTBAdvertiser.display_name.asc(), TTBAdvertiser.advertiser_id.asc()).all()
     return AdvertiserList(items=[AdvertiserItem(**_serialize_adv(r)) for r in rows])
 
@@ -947,7 +995,8 @@ def list_account_stores(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    advertiser_id: Optional[str] = Query(default=None, max_length=64),
+    advertiser_id: str = Query(..., max_length=64),
+    store_authorized_bc_id: Optional[str] = Query(default=None, max_length=64),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
@@ -958,29 +1007,46 @@ def list_account_stores(
         .filter(TTBStore.workspace_id == int(workspace_id))
         .filter(TTBStore.auth_id == int(auth_id))
     )
-    if advertiser_id:
-        query = query.filter(TTBStore.advertiser_id == advertiser_id)
+    query = query.filter(TTBStore.advertiser_id == advertiser_id)
+    if store_authorized_bc_id:
+        query = query.filter(TTBStore.store_authorized_bc_id == store_authorized_bc_id)
     rows = query.order_by(TTBStore.name.asc(), TTBStore.store_id.asc()).all()
     return StoreList(items=[StoreItem(**_serialize_store(r)) for r in rows])
 
 
 @router.get(
     "/{workspace_id}/providers/{provider}/accounts/{auth_id}/products",
+    response_model=ProductList,
 )
 def list_account_products(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    store_id: Optional[str] = Query(default=None, max_length=64),
-    eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
+    store_id: str = Query(..., max_length=64),
     page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(200, ge=1, le=500),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    _legacy_disabled()
+
+    base_query = (
+        db.query(TTBProduct)
+        .filter(TTBProduct.workspace_id == int(workspace_id))
+        .filter(TTBProduct.auth_id == int(auth_id))
+        .filter(TTBProduct.store_id == str(store_id))
+    )
+
+    total = base_query.count()
+    offset = (page - 1) * page_size
+    rows = (
+        base_query.order_by(TTBProduct.title.asc(), TTBProduct.product_id.asc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+    return ProductList(items=[ProductItem(**_serialize_product(r)) for r in rows], total=total)
 
 
 @router.get(

@@ -328,7 +328,12 @@ class TTBApiClient:
                 if isinstance(it, dict):
                     yield it
 
-    async def fetch_advertiser_info(self, *, advertiser_ids: Iterable[str]) -> list[dict]:
+    async def fetch_advertiser_info(
+        self,
+        *,
+        advertiser_ids: Iterable[str],
+        fields: Iterable[str] | None = None,
+    ) -> list[dict]:
         ids = []
         for value in advertiser_ids:
             if value is None:
@@ -340,10 +345,25 @@ class TTBApiClient:
         if not ids:
             return []
 
+        params: Dict[str, Any] = {"advertiser_ids": ",".join(ids)}
+        if fields:
+            unique_fields = []
+            seen: set[str] = set()
+            for field in fields:
+                if not field:
+                    continue
+                key = str(field).strip()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                unique_fields.append(key)
+            if unique_fields:
+                params["fields"] = ",".join(unique_fields)
+
         payload = await self._request_json(
             "GET",
             self._paths.advertiser_info,
-            params={"advertiser_ids": ",".join(ids)},
+            params=params,
         )
         data = payload.get("data") or {}
         candidates = []
@@ -381,8 +401,8 @@ class TTBApiClient:
     async def iter_products(
         self,
         *,
-        bc_id: str,
         store_id: str,
+        bc_id: Optional[str] = None,
         advertiser_id: Optional[str] = None,
         page_size: int = _MAX_PAGE_SIZE,
         eligibility: Optional[Literal["GMV_MAX", "CUSTOM_STORE_ADS"]] = None,
@@ -390,9 +410,10 @@ class TTBApiClient:
         item_group_ids: Optional[list[str]] = None,
     ) -> AsyncIterator[dict]:
         params: Dict[str, Any] = {
-            "bc_id": str(bc_id),
             "store_id": str(store_id),
         }
+        if bc_id:
+            params["bc_id"] = str(bc_id)
         if product_name:
             params["product_name"] = product_name
         if item_group_ids:
