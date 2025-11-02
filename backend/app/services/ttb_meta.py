@@ -118,6 +118,7 @@ def _collect_store_candidates(store: TTBStore) -> Iterable[str]:
         raw_payload.get("authorized_bc_id"),
         raw_payload.get("bc_id"),
         store.bc_id,
+        getattr(store, "store_authorized_bc_id", None),
     ):
         if candidate:
             yield str(candidate)
@@ -208,6 +209,9 @@ def build_gmvmax_options(
                 "name": store.name,
                 "advertiser_id": store.advertiser_id,
                 "bc_id": store.bc_id,
+                "store_type": getattr(store, "store_type", None),
+                "store_code": getattr(store, "store_code", None),
+                "store_authorized_bc_id": getattr(store, "store_authorized_bc_id", None),
             }
         )
 

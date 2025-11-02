@@ -187,6 +187,9 @@ class TTBStore(Base):
     store_id: Mapped[str] = mapped_column(String(64), nullable=False)  # 官方字段：store_id
     advertiser_id: Mapped[str | None] = mapped_column(String(64), default=None)
     bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    store_type: Mapped[str | None] = mapped_column(String(32), default=None)
+    store_code: Mapped[str | None] = mapped_column(String(64), default=None)
+    store_authorized_bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
 
     name: Mapped[str | None] = mapped_column(String(255), default=None)
     status: Mapped[str | None] = mapped_column(String(32), default=None)

@@ -121,6 +121,9 @@ def _seed_gmv_data(db_session) -> None:
         advertiser_id="7492997033645637633",
         bc_id="7508663838649384976",
         name="Drafyn US",
+        store_type="TIKTOK_SHOP",
+        store_code="US001",
+        store_authorized_bc_id="7508663838649384976",
         last_seen_at=datetime(2025, 11, 1, 0, 31, 54, 941650, tzinfo=timezone.utc),
         raw_json={"store_authorized_bc_id": "7508663838649384976"},
     )

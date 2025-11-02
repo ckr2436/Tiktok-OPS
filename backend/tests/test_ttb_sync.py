@@ -24,6 +24,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBBindingConfig,
+    TTBProduct,
 )
 from app.features.tenants.ttb.router import router as ttb_router
 from app.services import ttb_sync
@@ -118,6 +119,10 @@ def _seed_data(db_session) -> None:
         advertiser_id="ADV1",
         bc_id="BC1",
         name="Advertiser",
+        status="ENABLE",
+        currency="USD",
+        timezone="Asia/Shanghai",
+        country_code="CN",
     )
     db_session.add(advertiser)
 
@@ -128,8 +133,25 @@ def _seed_data(db_session) -> None:
         advertiser_id="ADV1",
         bc_id="BC1",
         name="Store",
+        store_type="TIKTOK_SHOP",
+        store_code="CN001",
+        store_authorized_bc_id="BC1",
+        region_code="CN",
     )
     db_session.add(store)
+
+    product = TTBProduct(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        product_id="PROD1",
+        store_id="STORE1",
+        title="Test Product",
+        status="ON_SALE",
+        currency="USD",
+        price=19.9,
+        stock=5,
+    )
+    db_session.add(product)
 
     task = TaskCatalog(
         task_name="ttb.sync.products",
@@ -183,13 +205,44 @@ def test_metadata_endpoints_return_items(tenant_app):
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/advertisers"
     )
     assert resp.status_code == 200
-    assert resp.json()["items"][0]["advertiser_id"] == "ADV1"
+    advertiser = resp.json()["items"][0]
+    assert advertiser["advertiser_id"] == "ADV1"
+    assert advertiser["currency"]
+    assert advertiser["timezone"]
+    assert advertiser["country_code"]
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/stores",
+        params={"advertiser_id": "ADV1"},
+    )
+    assert resp.status_code == 200
+    store = resp.json()["items"][0]
+    assert store["store_id"] == "STORE1"
+    assert store["store_type"] == "TIKTOK_SHOP"
+    assert store["store_authorized_bc_id"] == "BC1"
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1"},
+    )
+    assert resp.status_code == 200
+    products = resp.json()
+    assert products["total"] >= 1
+    assert products["items"][0]["product_id"] == "PROD1"
+
+
+def test_store_and_product_filters_require_ids(tenant_app):
+    client, _ = tenant_app
 
     resp = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/stores"
     )
-    assert resp.status_code == 200
-    assert resp.json()["items"][0]["store_id"] == "STORE1"
+    assert resp.status_code == 422
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products"
+    )
+    assert resp.status_code == 422
 
 
 def test_legacy_routes_return_410(tenant_app):
@@ -338,8 +391,10 @@ def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
         async def iter_advertisers(self, *, app_id, secret, page_size):  # noqa: ANN001
             yield {"advertiser_id": "ADV1", "version": 1}
 
-        async def fetch_advertiser_info(self, advertiser_ids):  # noqa: ANN001
+        async def fetch_advertiser_info(self, advertiser_ids, fields=None):  # noqa: ANN001
             assert advertiser_ids == ["ADV1"]
+            assert fields is not None
+            assert "owner_bc_id" in fields
             return [
                 {
                     "advertiser_id": "ADV1",

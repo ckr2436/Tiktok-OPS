@@ -169,11 +169,11 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - in: query
-          name: bc_id
+          name: owner_bc_id
           schema:
             type: string
             maxLength: 64
-          description: Filter advertisers by business center id
+          description: Optional owner business center id filter
       responses:
         '200':
           description: Paged advertisers
@@ -195,7 +195,14 @@ paths:
           schema:
             type: string
             maxLength: 64
-          description: Filter stores by advertiser id
+          required: true
+          description: Advertiser id to list stores for
+        - in: query
+          name: store_authorized_bc_id
+          schema:
+            type: string
+            maxLength: 64
+          description: Optional filter by authorized business center id
       responses:
         '200':
           description: Paged stores
@@ -217,7 +224,8 @@ paths:
           schema:
             type: string
             maxLength: 64
-          description: Filter products by store id
+          required: true
+          description: Store id whose products should be returned
       responses:
         '200':
           description: Paged products
@@ -442,6 +450,7 @@ components:
                   industry: {type: string}
                   currency: {type: string}
                   timezone: {type: string}
+                  display_timezone: {type: string}
                   country_code: {type: string}
     PagedShops:
       allOf:
@@ -459,6 +468,9 @@ components:
                   name: {type: string}
                   status: {type: string}
                   region_code: {type: string}
+                  store_type: {type: string}
+                  store_code: {type: string}
+                  store_authorized_bc_id: {type: string}
     PagedProducts:
       allOf:
         - $ref: '#/components/schemas/PagedResult'
