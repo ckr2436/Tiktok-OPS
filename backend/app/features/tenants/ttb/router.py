@@ -5,6 +5,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -203,6 +204,9 @@ class ProductItem(BaseModel):
     store_id: Optional[str]
     title: Optional[str]
     status: Optional[str]
+    sku_count: Optional[int]
+    price_range: Optional[str]
+    updated_time: Optional[str]
     currency: Optional[str]
     price: Optional[float]
     stock: Optional[int]
@@ -214,6 +218,8 @@ class ProductItem(BaseModel):
 class ProductList(BaseModel):
     items: list[ProductItem]
     total: int
+    page: int
+    page_size: int
 
 
 class GMVMaxBindingConfig(BaseModel):
@@ -660,12 +666,130 @@ def _serialize_store(row: TTBStore) -> Dict[str, Any]:
     }
 
 
+def _to_decimal(value: Any) -> Optional[Decimal]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _format_price_range(currency: Optional[str], low: Optional[Decimal], high: Optional[Decimal]) -> Optional[str]:
+    if low is None and high is None:
+        return None
+
+    def _fmt(val: Decimal) -> str:
+        try:
+            return f"{float(val):.2f}"
+        except (ValueError, TypeError):
+            return str(val)
+
+    label_currency = (currency or "").strip()
+    if low is not None and high is not None:
+        if label_currency:
+            return f"{label_currency} {_fmt(low)} - {_fmt(high)}"
+        return f"{_fmt(low)} - {_fmt(high)}"
+    chosen = low if low is not None else high
+    if chosen is None:
+        return None
+    if label_currency:
+        return f"{label_currency} {_fmt(chosen)}"
+    return _fmt(chosen)
+
+
+def _extract_product_sku_count(raw: Optional[Dict[str, Any]]) -> Optional[int]:
+    if not isinstance(raw, dict):
+        return None
+    for key in ("sku_count", "skuCount"):
+        value = raw.get(key)
+        if value is not None:
+            try:
+                count = int(value)
+                if count >= 0:
+                    return count
+            except (TypeError, ValueError):
+                continue
+    for key in ("skus", "sku_list", "skuList", "sku_infos", "skuInfos"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            return len([item for item in value if item is not None])
+    return None
+
+
+def _extract_product_price_range(row: TTBProduct) -> Optional[str]:
+    raw = row.raw_json if isinstance(row.raw_json, dict) else {}
+    currency = _as_str(raw.get("currency")) or _as_str(row.currency)
+    candidates: list[Optional[Decimal]] = []
+
+    price_range = raw.get("price_range") or raw.get("priceRange")
+    if isinstance(price_range, dict):
+        candidates.append(_to_decimal(price_range.get("min")))
+        candidates.append(_to_decimal(price_range.get("min_price")))
+        candidates.append(_to_decimal(price_range.get("minPrice")))
+        high_candidates = [
+            _to_decimal(price_range.get("max")),
+            _to_decimal(price_range.get("max_price")),
+            _to_decimal(price_range.get("maxPrice")),
+        ]
+        low_value = next((c for c in candidates if c is not None), None)
+        high_value = next((c for c in high_candidates if c is not None), None)
+        if low_value is not None or high_value is not None:
+            return _format_price_range(currency, low_value, high_value)
+    elif isinstance(price_range, (list, tuple)):
+        values = [_to_decimal(v) for v in price_range]
+        if values:
+            low_value = next((v for v in values if v is not None), None)
+            high_value = next((v for v in reversed(values) if v is not None), None)
+            if low_value is not None or high_value is not None:
+                return _format_price_range(currency, low_value, high_value)
+    elif isinstance(price_range, str):
+        cleaned = price_range.strip()
+        if cleaned:
+            return cleaned
+
+    low = None
+    high = None
+    for key in ("min_price", "minPrice", "price", "sale_price", "salePrice"):
+        val = _to_decimal(raw.get(key))
+        if val is not None:
+            low = val
+            break
+    for key in ("max_price", "maxPrice", "original_price", "originalPrice"):
+        val = _to_decimal(raw.get(key))
+        if val is not None:
+            high = val
+            break
+    if low is None and high is None:
+        low = _to_decimal(row.price)
+    return _format_price_range(currency, low, high)
+
+
+def _extract_product_updated_time(row: TTBProduct) -> Optional[str]:
+    if row.ext_updated_time:
+        return row.ext_updated_time.isoformat()
+    raw = row.raw_json if isinstance(row.raw_json, dict) else {}
+    for key in ("updated_time", "update_time", "modify_time", "updateTime", "updatedTime"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
+    price_range = _extract_product_price_range(row)
+    sku_count = _extract_product_sku_count(row.raw_json if isinstance(row.raw_json, dict) else {})
+    updated_time = _extract_product_updated_time(row)
     return {
         "product_id": row.product_id,
         "store_id": _as_str(row.store_id),
         "title": _as_str(row.title),
         "status": _as_str(row.status),
+        "sku_count": sku_count,
+        "price_range": price_range,
+        "updated_time": updated_time,
         "currency": _as_str(row.currency),
         "price": float(row.price) if row.price is not None else None,
         "stock": int(row.stock) if row.stock is not None else None,
@@ -892,6 +1016,7 @@ def list_business_centers(
 def list_advertisers(
     workspace_id: int,
     provider: str,
+    request: Request,
     owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(50, ge=1, le=200),
@@ -900,6 +1025,11 @@ def list_advertisers(
 ):
     _normalize_provider(provider)
     _legacy_disabled()
+    if "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
 
 
 @router.get(
@@ -909,7 +1039,9 @@ def list_advertisers(
 def list_stores(
     workspace_id: int,
     provider: str,
+    request: Request,
     advertiser_id: Optional[str] = Query(default=None, max_length=64),
+    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(50, ge=1, le=200),
     _: SessionUser = Depends(require_tenant_member),
@@ -917,6 +1049,11 @@ def list_stores(
 ):
     _normalize_provider(provider)
     _legacy_disabled()
+    if "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
 
 
 @router.get(
@@ -970,12 +1107,18 @@ def list_account_advertisers(
     workspace_id: int,
     provider: str,
     auth_id: int,
+    request: Request,
     owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
+    if "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
     query = (
         db.query(TTBAdvertiser)
         .filter(TTBAdvertiser.workspace_id == int(workspace_id))
@@ -995,19 +1138,28 @@ def list_account_stores(
     workspace_id: int,
     provider: str,
     auth_id: int,
+    request: Request,
     advertiser_id: str = Query(..., max_length=64),
+    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     store_authorized_bc_id: Optional[str] = Query(default=None, max_length=64),
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
+    if request and "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
     query = (
         db.query(TTBStore)
         .filter(TTBStore.workspace_id == int(workspace_id))
         .filter(TTBStore.auth_id == int(auth_id))
     )
     query = query.filter(TTBStore.advertiser_id == advertiser_id)
+    if owner_bc_id:
+        query = query.filter(TTBStore.bc_id == owner_bc_id)
     if store_authorized_bc_id:
         query = query.filter(TTBStore.store_authorized_bc_id == store_authorized_bc_id)
     rows = query.order_by(TTBStore.name.asc(), TTBStore.store_id.asc()).all()
@@ -1046,7 +1198,12 @@ def list_account_products(
         .limit(page_size)
         .all()
     )
-    return ProductList(items=[ProductItem(**_serialize_product(r)) for r in rows], total=total)
+    return ProductList(
+        items=[ProductItem(**_serialize_product(r)) for r in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get(

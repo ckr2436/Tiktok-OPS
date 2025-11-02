@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import FormField from '../../../../components/ui/FormField.jsx';
@@ -93,20 +93,43 @@ function formatOptionLabel(name, id) {
   return '未命名';
 }
 
-function formatMoney(currency, price) {
-  if (price === null || price === undefined || price === '') return '-';
-  const numeric = Number(price);
-  if (Number.isNaN(numeric)) {
-    return [currency || '', price].filter(Boolean).join(' ').trim() || '-';
-  }
-  if (currency) {
-    try {
-      return new Intl.NumberFormat('zh-CN', { style: 'currency', currency }).format(numeric);
-    } catch (error) {
-      return `${currency} ${numeric.toFixed(2)}`;
-    }
-  }
-  return numeric.toFixed(2);
+function resolveBusinessCenterName(item) {
+  if (!item) return '';
+  return (
+    (typeof item.name === 'string' && item.name.trim())
+    || (item.raw?.bc_info?.name ? String(item.raw.bc_info.name).trim() : '')
+    || (item.raw?.name ? String(item.raw.name).trim() : '')
+    || (item.bc_id ? String(item.bc_id) : '')
+  );
+}
+
+function resolveAdvertiserName(item) {
+  if (!item) return '';
+  return (
+    (typeof item.display_name === 'string' && item.display_name.trim())
+    || (typeof item.name === 'string' && item.name.trim())
+    || (item.raw?.advertiser_name ? String(item.raw.advertiser_name).trim() : '')
+    || (item.raw?.name ? String(item.raw.name).trim() : '')
+    || (item.advertiser_id ? String(item.advertiser_id) : '')
+  );
+}
+
+function resolveStoreName(item) {
+  if (!item) return '';
+  return (
+    (typeof item.name === 'string' && item.name.trim())
+    || (item.store_code ? String(item.store_code).trim() : '')
+    || (item.store_id ? String(item.store_id) : '')
+  );
+}
+
+function resolveProductTitle(item) {
+  if (!item) return '';
+  const title =
+    (typeof item.title === 'string' && item.title.trim())
+    || (item.raw?.title ? String(item.raw.title).trim() : '')
+    || (item.product_id ? String(item.product_id) : '');
+  return title;
 }
 
 function describeRunStatus(run) {
@@ -186,14 +209,17 @@ export default function GmvMaxManagementPage() {
   const [configVersion, setConfigVersion] = useState(0);
 
   const [form, setForm] = useState(DEFAULT_FORM);
+  const formRef = useRef(DEFAULT_FORM);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [bindingConfig, setBindingConfig] = useState(null);
 
   const [businessCenters, setBusinessCenters] = useState([]);
-  const [advertisers, setAdvertisers] = useState([]);
+  const [allAdvertisers, setAllAdvertisers] = useState([]);
+  const [visibleAdvertisers, setVisibleAdvertisers] = useState([]);
+  const [advertisersLoading, setAdvertisersLoading] = useState(false);
   const [storesByAdvertiser, setStoresByAdvertiser] = useState({});
   const [loadingStores, setLoadingStores] = useState(false);
-  const [productsState, setProductsState] = useState({ items: [], total: 0 });
+  const [productsState, setProductsState] = useState({ items: [], total: 0, page: 1, pageSize: 10 });
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [optionsEtag, setOptionsEtag] = useState(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -204,6 +230,10 @@ export default function GmvMaxManagementPage() {
   const [feedback, setFeedback] = useState(null);
   const [metaSummary, setMetaSummary] = useState(null);
   const [syncRunStatus, setSyncRunStatus] = useState(null);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const fetchMetadataPayload = useCallback(async () => {
     if (!wid || !selectedAuthId) {
@@ -224,7 +254,9 @@ export default function GmvMaxManagementPage() {
       const safeBc = Array.isArray(bcs) ? bcs : [];
       const safeAdvertisers = Array.isArray(advItems) ? advItems : [];
       setBusinessCenters(safeBc);
-      setAdvertisers(safeAdvertisers);
+      setAllAdvertisers(safeAdvertisers);
+      const currentBcId = formRef.current?.bcId ? String(formRef.current.bcId) : '';
+      setVisibleAdvertisers((prev) => (currentBcId ? prev : safeAdvertisers));
       setStoresByAdvertiser((prev) => {
         const retained = {};
         safeAdvertisers.forEach((adv) => {
@@ -256,11 +288,12 @@ export default function GmvMaxManagementPage() {
 
   const optionsData = useMemo(() => {
     const safeBc = Array.isArray(businessCenters) ? businessCenters : [];
-    const safeAdvertisers = Array.isArray(advertisers) ? advertisers : [];
+    const safeAdvertisers = Array.isArray(visibleAdvertisers) ? visibleAdvertisers : [];
+    const safeAllAdvertisers = Array.isArray(allAdvertisers) ? allAdvertisers : safeAdvertisers;
     const storeGroups = Object.values(storesByAdvertiser || {});
     const stores = storeGroups.flat().filter(Boolean);
     const bcLinks = {};
-    safeAdvertisers.forEach((item) => {
+    safeAllAdvertisers.forEach((item) => {
       const bcId = item?.bc_id ? String(item.bc_id) : '';
       const advId = item?.advertiser_id ? String(item.advertiser_id) : '';
       if (!bcId || !advId) return;
@@ -276,13 +309,14 @@ export default function GmvMaxManagementPage() {
     return {
       bcs: safeBc,
       advertisers: safeAdvertisers,
+      allAdvertisers: safeAllAdvertisers,
       stores,
       links: {
         bc_to_advertisers: bcLinks,
         advertiser_to_stores: advertiserStoreLinks,
       },
     };
-  }, [businessCenters, advertisers, storesByAdvertiser]);
+  }, [businessCenters, visibleAdvertisers, allAdvertisers, storesByAdvertiser]);
 
   const bcOptions = useMemo(
     () => buildBusinessCenterOptions(optionsData, form.bcId),
@@ -332,9 +366,11 @@ export default function GmvMaxManagementPage() {
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
       setBusinessCenters([]);
-      setAdvertisers([]);
+      setAllAdvertisers([]);
+      setVisibleAdvertisers([]);
+      setAdvertisersLoading(false);
       setStoresByAdvertiser({});
-      setProductsState({ items: [], total: 0 });
+      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
       setOptionsEtag(null);
       return;
     }
@@ -352,9 +388,11 @@ export default function GmvMaxManagementPage() {
     setForm(DEFAULT_FORM);
     setBindingConfig(null);
     setBusinessCenters([]);
-    setAdvertisers([]);
+    setAllAdvertisers([]);
+    setVisibleAdvertisers([]);
+    setAdvertisersLoading(false);
     setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0 });
+    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
     setOptionsEtag(null);
     setSyncRunStatus(null);
   }, [selectedAuthId]);
@@ -409,7 +447,8 @@ export default function GmvMaxManagementPage() {
       .catch((error) => {
         if (!ignore) {
           setBusinessCenters([]);
-          setAdvertisers([]);
+          setAllAdvertisers([]);
+          setVisibleAdvertisers([]);
           setStoresByAdvertiser({});
           setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 TikTok 元数据') });
         }
@@ -423,6 +462,51 @@ export default function GmvMaxManagementPage() {
       controller.abort();
     };
   }, [wid, provider, selectedAuthId, fetchMetadataPayload, applyMetadata]);
+
+  useEffect(() => {
+    if (!wid || !selectedAuthId) {
+      setVisibleAdvertisers([]);
+      setAdvertisersLoading(false);
+      return;
+    }
+    let ignore = false;
+    setAdvertisersLoading(true);
+    const params = form.bcId ? { owner_bc_id: form.bcId } : {};
+    fetchAdvertisers(wid, provider, selectedAuthId, params)
+      .then((response) => {
+        if (ignore) return;
+        const items = Array.isArray(response?.items) ? response.items : [];
+        setVisibleAdvertisers(items);
+        setStoresByAdvertiser((prev) => {
+          if (!form.bcId) {
+            return prev;
+          }
+          const allowed = new Set(items.map((item) => String(item?.advertiser_id || '')));
+          const next = {};
+          Object.entries(prev || {}).forEach(([advId, stores]) => {
+            if (allowed.has(String(advId))) {
+              next[advId] = stores;
+            }
+          });
+          return next;
+        });
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setVisibleAdvertisers([]);
+          const text = extractErrorMessage(error, '无法加载 Advertiser 列表');
+          setFeedback({ type: 'error', text });
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setAdvertisersLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [wid, provider, selectedAuthId, form.bcId]);
 
   useEffect(() => {
     if (!wid || !selectedAuthId) {
@@ -476,7 +560,7 @@ export default function GmvMaxManagementPage() {
     }
     let ignore = false;
     setLoadingStores(true);
-    fetchStores(wid, provider, selectedAuthId, form.advertiserId)
+    fetchStores(wid, provider, selectedAuthId, form.advertiserId, { owner_bc_id: form.bcId || undefined })
       .then((response) => {
         if (ignore) return;
         const storeItems = Array.isArray(response?.items) ? response.items : [];
@@ -514,7 +598,7 @@ export default function GmvMaxManagementPage() {
       storeId: '',
     }));
     setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0 });
+    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
   }
 
   function handleAdvertiserChange(evt) {
@@ -524,7 +608,7 @@ export default function GmvMaxManagementPage() {
       advertiserId: value,
       storeId: '',
     }));
-    setProductsState({ items: [], total: 0 });
+    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
   }
 
   function handleStoreChange(evt) {
@@ -533,7 +617,7 @@ export default function GmvMaxManagementPage() {
       ...prev,
       storeId: value,
     }));
-    setProductsState({ items: [], total: 0 });
+    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
   }
 
   function handleAutoSyncToggle(evt) {
@@ -567,7 +651,9 @@ export default function GmvMaxManagementPage() {
             : '已触发刷新，稍后再试。';
           setFeedback({ type: 'info', text: timeoutText });
         } else {
-          setFeedback({ type: 'success', text: '已刷新最新可选项。' });
+          const baseText = '已刷新最新可选项。';
+          const successText = refreshKey ? `${baseText}（幂等键 ${refreshKey}）` : baseText;
+          setFeedback({ type: 'success', text: successText });
         }
       }
       try {
@@ -701,14 +787,19 @@ export default function GmvMaxManagementPage() {
       const data = await fetchProducts(wid, provider, selectedAuthId, form.storeId);
       const items = Array.isArray(data?.items) ? data.items : [];
       const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
-      setProductsState({ items, total });
-      if (items.length === 0) {
+      const page = Number.isFinite(Number(data?.page)) ? Number(data.page) : 1;
+      const pageSizeRaw = data?.page_size ?? data?.pageSize;
+      const pageSize = Number.isFinite(Number(pageSizeRaw)) ? Number(pageSizeRaw) : items.length || 10;
+      setProductsState({ items, total, page, pageSize });
+      if (total === 0 || items.length === 0) {
         setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
       } else {
-        setFeedback({ type: 'success', text: `已拉取 ${items.length} 条 GMV Max 商品。` });
+        const previewCount = Math.min(items.length, 10);
+        const message = `已拉取 ${total} 条 GMV Max 商品（展示前 ${previewCount} 条）。`;
+        setFeedback({ type: 'success', text: message });
       }
     } catch (error) {
-      setProductsState({ items: [], total: 0 });
+      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
       setFeedback({ type: 'error', text: extractErrorMessage(error, '拉取 GMV Max 商品失败，请稍后重试') });
     } finally {
       setLoadingProducts(false);
@@ -717,11 +808,30 @@ export default function GmvMaxManagementPage() {
 
   const disableRefresh = !selectedAuthId || refreshingOptions || optionsLoading;
   const disableSave =
-    !selectedAuthId || saving || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
+    !selectedAuthId
+    || saving
+    || optionsLoading
+    || advertisersLoading
+    || loadingStores
+    || !form.bcId
+    || !form.advertiserId
+    || !form.storeId;
   const disableManualSync =
-    !selectedAuthId || triggeringSync || optionsLoading || !form.bcId || !form.advertiserId || !form.storeId;
+    !selectedAuthId
+    || triggeringSync
+    || optionsLoading
+    || advertisersLoading
+    || loadingStores
+    || !form.bcId
+    || !form.advertiserId
+    || !form.storeId;
   const disablePullProducts =
-    !selectedAuthId || optionsLoading || !form.storeId || loadingProducts || loadingStores;
+    !selectedAuthId
+    || optionsLoading
+    || advertisersLoading
+    || !form.storeId
+    || loadingProducts
+    || loadingStores;
 
   const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
   const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
@@ -776,7 +886,7 @@ export default function GmvMaxManagementPage() {
               <option value="">请选择 Business Center</option>
               {bcOptions.map((item, idx) => {
                 const value = item?.bc_id ? String(item.bc_id) : '';
-                const label = formatOptionLabel(item?.name || item?.raw?.name, value);
+                const label = formatOptionLabel(resolveBusinessCenterName(item), value);
                 return (
                   <option key={value || `missing-bc-${idx}`} value={value}>
                     {label}
@@ -792,12 +902,12 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.advertiserId}
               onChange={handleAdvertiserChange}
-              disabled={!selectedAuthId || !form.bcId || optionsLoading}
+              disabled={!selectedAuthId || !form.bcId || optionsLoading || advertisersLoading}
             >
               <option value="">请选择 Advertiser</option>
               {advertiserOptions.map((item, idx) => {
                 const value = item?.advertiser_id ? String(item.advertiser_id) : '';
-                const label = formatOptionLabel(item?.display_name || item?.name, value);
+                const label = formatOptionLabel(resolveAdvertiserName(item), value);
                 return (
                   <option key={value || `missing-adv-${idx}`} value={value}>
                     {label}
@@ -805,7 +915,7 @@ export default function GmvMaxManagementPage() {
                 );
               })}
             </select>
-            {optionsLoading && <div className="small-muted">加载 Advertiser...</div>}
+            {(optionsLoading || advertisersLoading) && <div className="small-muted">加载 Advertiser...</div>}
           </FormField>
 
           <FormField label="Store">
@@ -818,9 +928,7 @@ export default function GmvMaxManagementPage() {
               <option value="">请选择 Store</option>
               {storeOptions.map((item, idx) => {
                 const value = item?.store_id ? String(item.store_id) : '';
-                const label = item?.store_code
-                  ? `${item?.name || value}（${item.store_code}）`
-                  : formatOptionLabel(item?.name, value);
+                const label = formatOptionLabel(resolveStoreName(item), value);
                 return (
                   <option key={value || `missing-store-${idx}`} value={value}>
                     {label}
@@ -900,32 +1008,31 @@ export default function GmvMaxManagementPage() {
             {loadingProducts ? '正在拉取 GMV Max 商品…' : '请选择 Store 并点击“拉取 GMV Max 商品”查看列表。'}
           </div>
         ) : (
-          <div className="table-responsive">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>商品 ID</th>
-                  <th>标题</th>
-                  <th>状态</th>
-                  <th>价格</th>
-                  <th>库存</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productsState.items.map((item, idx) => {
-                  const pid = item?.product_id ? String(item.product_id) : '';
-                  return (
-                    <tr key={pid || `product-${idx}`}>
-                      <td>{pid || '-'}</td>
-                      <td>{item?.title || '-'}</td>
-                      <td>{item?.status || '-'}</td>
-                      <td>{formatMoney(item?.currency, item?.price)}</td>
-                      <td>{item?.stock ?? '-'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="product-preview" style={{ display: 'grid', gap: '6px' }}>
+            <div className="small-muted">
+              展示前 {Math.min(productsState.items.length, 10)} 条（共 {productsState.total} 条）
+            </div>
+            <ol className="product-preview__list" style={{ paddingLeft: '18px', margin: 0, display: 'grid', gap: '8px' }}>
+              {productsState.items.slice(0, 10).map((item, idx) => {
+                const pid = item?.product_id ? String(item.product_id) : '';
+                const title = resolveProductTitle(item) || pid || `商品 ${idx + 1}`;
+                const status = item?.status ? String(item.status) : '';
+                const updatedAt = formatTimestamp(item?.updated_time || item?.ext_updated_time);
+                const skuText = Number.isFinite(Number(item?.sku_count)) ? `SKU：${Number(item.sku_count)}` : null;
+                return (
+                  <li key={pid || `product-${idx}`} className="product-preview__item" style={{ listStyle: 'decimal inside' }}>
+                    <div className="product-preview__title" style={{ fontWeight: 500 }}>{title}</div>
+                    <div className="small-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      <span>商品 ID：{pid || '-'}</span>
+                      {status && <span>状态：{status}</span>}
+                      {item?.price_range && <span>价格区间：{item.price_range}</span>}
+                      {skuText && <span>{skuText}</span>}
+                      {updatedAt && <span>更新时间：{updatedAt}</span>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         )}
       </div>
