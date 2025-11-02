@@ -329,8 +329,8 @@ export default function GmvMaxManagementPage() {
   );
 
   const storeOptions = useMemo(
-    () => buildStoreOptions(optionsData, form.advertiserId, form.storeId),
-    [optionsData, form.advertiserId, form.storeId],
+    () => buildStoreOptions(optionsData, form.advertiserId, form.storeId, form.bcId),
+    [optionsData, form.advertiserId, form.storeId, form.bcId],
   );
 
   useEffect(() => {
@@ -902,7 +902,7 @@ export default function GmvMaxManagementPage() {
               className="form-input"
               value={form.advertiserId}
               onChange={handleAdvertiserChange}
-              disabled={!selectedAuthId || !form.bcId || optionsLoading || advertisersLoading}
+              disabled={!selectedAuthId || optionsLoading || advertisersLoading}
             >
               <option value="">请选择 Advertiser</option>
               {advertiserOptions.map((item, idx) => {
@@ -928,7 +928,25 @@ export default function GmvMaxManagementPage() {
               <option value="">请选择 Store</option>
               {storeOptions.map((item, idx) => {
                 const value = item?.store_id ? String(item.store_id) : '';
-                const label = formatOptionLabel(resolveStoreName(item), value);
+                const baseLabel = formatOptionLabel(resolveStoreName(item), value);
+                const normalizedOwner = form.bcId ? String(form.bcId) : '';
+                let label = baseLabel;
+                if (normalizedOwner) {
+                  const authorizedCandidates = [
+                    item?.store_authorized_bc_id,
+                    item?.bc_id,
+                    item?.bc_id_hint,
+                  ]
+                    .map((candidate) => {
+                      if (candidate === undefined || candidate === null) return '';
+                      return String(candidate);
+                    })
+                    .filter(Boolean);
+                  const isAuthorized = authorizedCandidates.some((candidate) => candidate === normalizedOwner);
+                  if (!isAuthorized) {
+                    label = `${baseLabel}（未确认授权）`;
+                  }
+                }
                 return (
                   <option key={value || `missing-store-${idx}`} value={value}>
                     {label}

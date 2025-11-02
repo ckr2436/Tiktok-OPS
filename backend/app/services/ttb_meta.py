@@ -17,11 +17,15 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBSyncCursor,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
 )
 from app.services.ttb_schema import advertiser_display_timezone_supported
+from app.services.ttb_sync import _normalize_identifier
 
 _PROVIDER = "tiktok-business"
 _LOGGER = logging.getLogger("gmv.ttb.meta")
+_RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,10 @@ def _to_utc(dt: Optional[datetime]) -> Optional[datetime]:
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     utc = _to_utc(dt)
     return utc.isoformat() if utc else None
+
+
+def _relation_rank(value: Optional[str]) -> int:
+    return _RELATION_PRIORITY.get((value or "UNKNOWN").upper(), 5)
 
 
 def get_meta_cursor_state(
@@ -179,6 +187,33 @@ def build_gmvmax_options(
         .order_by(TTBStore.store_id.asc())
         .all()
     )
+    bc_link_rows = (
+        db.query(
+            TTBBCAdvertiserLink.advertiser_id,
+            TTBBCAdvertiserLink.bc_id,
+            TTBBCAdvertiserLink.relation_type,
+            TTBBCAdvertiserLink.last_seen_at,
+        )
+        .filter(
+            TTBBCAdvertiserLink.workspace_id == int(workspace_id),
+            TTBBCAdvertiserLink.auth_id == int(auth_id),
+        )
+        .all()
+    )
+    store_link_rows = (
+        db.query(
+            TTBAdvertiserStoreLink.advertiser_id,
+            TTBAdvertiserStoreLink.store_id,
+            TTBAdvertiserStoreLink.store_authorized_bc_id,
+            TTBAdvertiserStoreLink.bc_id_hint,
+            TTBAdvertiserStoreLink.last_seen_at,
+        )
+        .filter(
+            TTBAdvertiserStoreLink.workspace_id == int(workspace_id),
+            TTBAdvertiserStoreLink.auth_id == int(auth_id),
+        )
+        .all()
+    )
 
     timestamps: list[datetime] = []
 
@@ -196,43 +231,77 @@ def build_gmvmax_options(
             }
         )
 
+    store_link_map: dict[str, dict[str, Optional[str]]] = {}
+    advertiser_to_stores: defaultdict[str, set[str]] = defaultdict(set)
+    for adv_id, store_id, authorized_bc, bc_hint, link_seen in store_link_rows:
+        if link_seen:
+            timestamps.append(_to_utc(link_seen))
+        normalized_adv = _normalize_identifier(adv_id)
+        normalized_store = _normalize_identifier(store_id)
+        if not normalized_adv or not normalized_store:
+            continue
+        advertiser_to_stores[normalized_adv].add(normalized_store)
+        store_link_map[normalized_store] = {
+            "store_authorized_bc_id": _normalize_identifier(authorized_bc),
+            "bc_id_hint": _normalize_identifier(bc_hint),
+        }
+
     stores_by_advertiser: defaultdict[str, list[TTBStore]] = defaultdict(list)
     stores_payload = []
     for store in store_rows:
         if store.last_seen_at:
             timestamps.append(_to_utc(store.last_seen_at))
-        if store.advertiser_id:
-            stores_by_advertiser[store.advertiser_id].append(store)
-        stores_payload.append(
-            {
-                "store_id": store.store_id,
-                "name": store.name,
-                "advertiser_id": store.advertiser_id,
-                "bc_id": store.bc_id,
-                "store_type": getattr(store, "store_type", None),
-                "store_code": getattr(store, "store_code", None),
-                "store_authorized_bc_id": getattr(store, "store_authorized_bc_id", None),
-            }
-        )
+        adv_key = _normalize_identifier(store.advertiser_id)
+        store_key = _normalize_identifier(store.store_id)
+        if adv_key:
+            stores_by_advertiser[adv_key].append(store)
+        payload = {
+            "store_id": store.store_id,
+            "name": store.name,
+            "advertiser_id": store.advertiser_id,
+            "bc_id": store.bc_id,
+            "store_type": getattr(store, "store_type", None),
+            "store_code": getattr(store, "store_code", None),
+            "store_authorized_bc_id": getattr(store, "store_authorized_bc_id", None),
+        }
+        link_info = store_link_map.get(store_key or "")
+        if link_info:
+            if link_info.get("store_authorized_bc_id") and not payload.get("store_authorized_bc_id"):
+                payload["store_authorized_bc_id"] = link_info["store_authorized_bc_id"]
+            if link_info.get("bc_id_hint") and not payload.get("bc_id"):
+                payload["bc_id"] = link_info["bc_id_hint"]
+        stores_payload.append(payload)
+        if adv_key and store_key:
+            advertiser_to_stores[adv_key].add(store_key)
+
+    bc_link_map: dict[str, tuple[int, str]] = {}
+    bc_to_advertisers: defaultdict[str, set[str]] = defaultdict(set)
+    for adv_id, bc_id, relation_type, link_seen in bc_link_rows:
+        if link_seen:
+            timestamps.append(_to_utc(link_seen))
+        normalized_adv = _normalize_identifier(adv_id)
+        normalized_bc = _normalize_identifier(bc_id)
+        if not normalized_adv or not normalized_bc:
+            continue
+        rank = _relation_rank(relation_type)
+        existing = bc_link_map.get(normalized_adv)
+        if existing is None or rank < existing[0]:
+            bc_link_map[normalized_adv] = (rank, normalized_bc)
+        bc_to_advertisers[normalized_bc].add(normalized_adv)
 
     advertisers = []
-    bc_to_advertisers: defaultdict[str, set[str]] = defaultdict(set)
-    advertiser_to_stores: defaultdict[str, list[str]] = defaultdict(list)
-
-    for store in stores_payload:
-        adv_id = store.get("advertiser_id")
-        store_id = store.get("store_id")
-        if adv_id and store_id:
-            advertiser_to_stores[adv_id].append(store_id)
-
     for adv in advertiser_rows:
         if adv.last_seen_at:
             timestamps.append(_to_utc(adv.last_seen_at))
 
+        adv_key = _normalize_identifier(adv.advertiser_id)
         resolved_bc_id = adv.bc_id
+        link_hint = bc_link_map.get(adv_key or "") if adv_key else None
+        if not resolved_bc_id and link_hint:
+            resolved_bc_id = link_hint[1]
         if not resolved_bc_id:
             candidates = Counter()
-            for store in stores_by_advertiser.get(adv.advertiser_id or "", []):
+            for store in stores_by_advertiser.get(adv_key or "", []):
                 for value in _collect_store_candidates(store):
                     candidates[value] += 1
             if candidates:
@@ -265,10 +334,9 @@ def build_gmvmax_options(
                 "bc_id": resolved_bc_id,
             }
         )
-        if resolved_bc_id and adv.advertiser_id:
-            bc_to_advertisers[resolved_bc_id].add(adv.advertiser_id)
+        if resolved_bc_id and adv_key:
+            bc_to_advertisers[str(resolved_bc_id)].add(adv_key)
 
-    # sort advertiser_to_stores lists for stable output
     links_bc_to_adv = {
         bc_id: sorted(values) for bc_id, values in bc_to_advertisers.items()
     }

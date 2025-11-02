@@ -25,11 +25,12 @@ from app.data.models.ttb_entities import (
     TTBStore,
     TTBBindingConfig,
     TTBProduct,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
 )
 from app.features.tenants.ttb.router import router as ttb_router
 from app.services import ttb_sync
 from app.services.ttb_sync import TTBSyncService
-from app.services import oauth_ttb as oauth_ttb_service
 
 ttb_router_module = importlib.import_module("app.features.tenants.ttb.router")
 from app.services.crypto import encrypt_text_to_blob
@@ -117,7 +118,7 @@ def _seed_data(db_session) -> None:
         workspace_id=int(ws.id),
         auth_id=int(account.id),
         advertiser_id="ADV1",
-        bc_id="BC1",
+        bc_id=None,
         name="Advertiser",
         status="ENABLE",
         currency="USD",
@@ -125,6 +126,15 @@ def _seed_data(db_session) -> None:
         country_code="CN",
     )
     db_session.add(advertiser)
+
+    adv_link = TTBBCAdvertiserLink(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        bc_id="BC1",
+        advertiser_id="ADV1",
+        relation_type="OWNER",
+    )
+    db_session.add(adv_link)
 
     store = TTBStore(
         workspace_id=int(ws.id),
@@ -139,6 +149,17 @@ def _seed_data(db_session) -> None:
         region_code="CN",
     )
     db_session.add(store)
+
+    store_link = TTBAdvertiserStoreLink(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        advertiser_id="ADV1",
+        store_id="STORE1",
+        relation_type="AUTHORIZER",
+        store_authorized_bc_id="BC1",
+        bc_id_hint="BC1",
+    )
+    db_session.add(store_link)
 
     product = TTBProduct(
         workspace_id=int(ws.id),
@@ -425,7 +446,8 @@ def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
     _, db_session = tenant_app
 
     class DummyClient:
-        async def iter_advertisers(self, *, app_id, secret, page_size):  # noqa: ANN001
+        async def iter_advertisers(self, *, page_size):  # noqa: ANN001
+            assert page_size == 50
             yield {"advertiser_id": "ADV1", "version": 1}
 
         async def fetch_advertiser_info(self, advertiser_ids, fields=None):  # noqa: ANN001
@@ -446,16 +468,6 @@ def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
                     "owner_bc_id": "BC-HYDRATED",
                 }
             ]
-
-    monkeypatch.setattr(
-        oauth_ttb_service,
-        "get_credentials_for_auth_id",
-        lambda db, auth_id: ("app", "secret", "https://example.com/callback"),
-    )
-    monkeypatch.setattr(
-        "app.services.ttb_sync.get_credentials_for_auth_id",
-        lambda db, auth_id: ("app", "secret", "https://example.com/callback"),
-    )
 
     service = TTBSyncService(db_session, DummyClient(), workspace_id=1, auth_id=1)
 

@@ -18,9 +18,12 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBProduct,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
 )
 from app.services.ttb_api import TTBApiClient
 from app.services.ttb_schema import advertiser_display_timezone_supported
+from app.core.config import settings
 
 
 # --------------------------- 工具：字段提取与时间解析 ---------------------------
@@ -46,6 +49,23 @@ def _clean_str(value: Any) -> str:
     return str(value)
 
 
+def _normalize_relation_type(value: Any, default: str = "UNKNOWN") -> str:
+    if value is None:
+        return default
+    candidate = str(value).strip().upper()
+    if not candidate:
+        return default
+    if candidate not in _ALLOWED_RELATION_TYPES:
+        return default
+    return candidate
+
+
+def _relation_rank(value: Optional[str]) -> int:
+    if not value:
+        return max(_RELATION_PRIORITY.values()) + 1
+    return _RELATION_PRIORITY.get(value.upper(), max(_RELATION_PRIORITY.values()) + 1)
+
+
 def _parse_dt(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -64,7 +84,22 @@ def _parse_dt(value: Any) -> Optional[datetime]:
     return None
 
 
-_ADVERTISER_INFO_BATCH_SIZE = 50
+_ALLOWED_RELATION_TYPES = {"OWNER", "PARTNER", "AUTHORIZER", "UNKNOWN"}
+_RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
+
+
+def _clamp_advertiser_batch_size(raw: Any, default: int = 50) -> int:
+    try:
+        value = int(raw)
+    except Exception:
+        value = default
+    value = max(1, value)
+    return value if value <= 50 else 50
+
+
+_ADVERTISER_INFO_BATCH_SIZE = _clamp_advertiser_batch_size(
+    getattr(settings, "TTB_ADVERTISER_INFO_BATCH_SIZE", 50)
+)
 _ADVERTISER_INFO_FIELDS: tuple[str, ...] = (
     "advertiser_id",
     "name",
@@ -172,6 +207,138 @@ def _upsert(
     db.execute(stmt)
 
 
+def _touch_bc_advertiser_link(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: Optional[str],
+    bc_id: Optional[str],
+    relation_type: Optional[str] = None,
+    source: Optional[str] = None,
+    raw: Optional[dict] = None,
+) -> None:
+    adv = _normalize_identifier(advertiser_id)
+    bc = _normalize_identifier(bc_id)
+    if not adv or not bc:
+        return
+
+    relation = _normalize_relation_type(relation_type)
+    existing = (
+        db.query(TTBBCAdvertiserLink)
+        .filter(
+            TTBBCAdvertiserLink.workspace_id == workspace_id,
+            TTBBCAdvertiserLink.auth_id == auth_id,
+            TTBBCAdvertiserLink.advertiser_id == adv,
+            TTBBCAdvertiserLink.bc_id == bc,
+        )
+        .one_or_none()
+    )
+
+    if existing is None:
+        row = TTBBCAdvertiserLink(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=adv,
+            bc_id=bc,
+            relation_type=relation,
+            source=_clean_str(source) or None,
+            raw_json=raw if isinstance(raw, dict) else None,
+        )
+        if hasattr(row, "last_seen_at"):
+            row.last_seen_at = _now()
+        db.add(row)
+        return
+
+    updated = False
+    normalized_relation = relation
+    if _relation_rank(existing.relation_type) > _relation_rank(normalized_relation):
+        existing.relation_type = normalized_relation
+        updated = True
+    cleaned_source = _clean_str(source) if source else None
+    if cleaned_source and cleaned_source != existing.source:
+        existing.source = cleaned_source
+        updated = True
+    if isinstance(raw, dict):
+        existing.raw_json = raw
+        updated = True
+    if updated or hasattr(existing, "last_seen_at"):
+        existing.last_seen_at = _now()
+    db.add(existing)
+
+
+def _touch_advertiser_store_link(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: Optional[str],
+    store_id: Optional[str],
+    relation_type: Optional[str] = None,
+    store_authorized_bc_id: Optional[str] = None,
+    bc_id_hint: Optional[str] = None,
+    source: Optional[str] = None,
+    raw: Optional[dict] = None,
+) -> None:
+    adv = _normalize_identifier(advertiser_id)
+    store = _normalize_identifier(store_id)
+    if not adv or not store:
+        return
+
+    relation = _normalize_relation_type(relation_type)
+    authorized_bc = _normalize_identifier(store_authorized_bc_id)
+    bc_hint = _normalize_identifier(bc_id_hint)
+
+    existing = (
+        db.query(TTBAdvertiserStoreLink)
+        .filter(
+            TTBAdvertiserStoreLink.workspace_id == workspace_id,
+            TTBAdvertiserStoreLink.auth_id == auth_id,
+            TTBAdvertiserStoreLink.advertiser_id == adv,
+            TTBAdvertiserStoreLink.store_id == store,
+        )
+        .one_or_none()
+    )
+
+    if existing is None:
+        row = TTBAdvertiserStoreLink(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=adv,
+            store_id=store,
+            relation_type=relation,
+            store_authorized_bc_id=authorized_bc,
+            bc_id_hint=bc_hint,
+            source=_clean_str(source) or None,
+            raw_json=raw if isinstance(raw, dict) else None,
+        )
+        if hasattr(row, "last_seen_at"):
+            row.last_seen_at = _now()
+        db.add(row)
+        return
+
+    changed = False
+    if _relation_rank(existing.relation_type) > _relation_rank(relation):
+        existing.relation_type = relation
+        changed = True
+    if authorized_bc and authorized_bc != existing.store_authorized_bc_id:
+        existing.store_authorized_bc_id = authorized_bc
+        changed = True
+    if bc_hint and bc_hint != existing.bc_id_hint:
+        existing.bc_id_hint = bc_hint
+        changed = True
+    cleaned_source = _clean_str(source) if source else None
+    if cleaned_source and cleaned_source != existing.source:
+        existing.source = cleaned_source
+        changed = True
+    if isinstance(raw, dict):
+        existing.raw_json = raw
+        changed = True
+    if changed or hasattr(existing, "last_seen_at"):
+        existing.last_seen_at = _now()
+    db.add(existing)
+
+
 def _upsert_bc(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> bool:
     # 严格按官方字段（不做历史兼容）：bc_id, bc_name, status, timezone, country_code, owner_user_id, create_time, update_time, version
     bc_id = str(_pick(item, "bc_id"))
@@ -217,11 +384,14 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
     if not advertiser_id:
         return False
     supports_display_timezone = advertiser_display_timezone_supported(db)
+    owner_bc = _normalize_identifier(_pick(item, "bc_id", "owner_bc_id"))
+    relation_hint = _normalize_relation_type(_pick(item, "relation_type"))
+    relation_for_link = relation_hint if relation_hint != "UNKNOWN" else "OWNER"
     values = dict(
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
-        bc_id=_normalize_identifier(_pick(item, "bc_id", "owner_bc_id")) or "",
+        bc_id=owner_bc,
         name=_clean_str(_pick(item, "name", "advertiser_name")),
         display_name=_clean_str(_pick(item, "display_name", "advertiser_name", "name")),
         status=_clean_str(_pick(item, "status")),
@@ -264,6 +434,17 @@ def _upsert_adv(db: Session, *, workspace_id: int, auth_id: int, item: dict) -> 
             if supports_display_timezone or column != "display_timezone"
         ),
     )
+    if owner_bc:
+        _touch_bc_advertiser_link(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            bc_id=owner_bc,
+            relation_type=relation_for_link,
+            source="advertiser.get",
+            raw=item if isinstance(item, dict) else None,
+        )
     return True
 
 
@@ -352,7 +533,7 @@ def _upsert_store(
 
     store_type_clean = _clean_str(store_type_raw) or "TIKTOK_SHOP"
     store_code_clean = _clean_str(store_code_raw)
-    authorized_bc_clean = authorized_bc or ""
+    authorized_bc_clean = authorized_bc
 
     if existing is None:
         row = TTBStore(
@@ -382,7 +563,8 @@ def _upsert_store(
         existing.region_code = region_code
         existing.store_type = store_type_clean or existing.store_type or "TIKTOK_SHOP"
         existing.store_code = store_code_clean
-        existing.store_authorized_bc_id = authorized_bc_clean or existing.store_authorized_bc_id or ""
+        if authorized_bc_clean is not None:
+            existing.store_authorized_bc_id = authorized_bc_clean
         existing.ext_created_time = ext_created_time
         existing.ext_updated_time = ext_updated_time
         existing.sync_rev = sync_rev
@@ -391,6 +573,47 @@ def _upsert_store(
             existing.bc_id = normalized_bc_id
         existing.last_seen_at = _now()
         db.add(existing)
+    if advertiser_id:
+        _touch_advertiser_store_link(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=str(store_id),
+            relation_type="AUTHORIZER" if authorized_bc_clean else "UNKNOWN",
+            store_authorized_bc_id=authorized_bc_clean,
+            bc_id_hint=normalized_bc_id,
+            source="store.list",
+            raw=item if isinstance(item, dict) else None,
+        )
+        if authorized_bc_clean:
+            _touch_bc_advertiser_link(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                bc_id=authorized_bc_clean,
+                relation_type="AUTHORIZER",
+                source="store.list",
+                raw=item if isinstance(item, dict) else None,
+            )
+        if normalized_bc_id:
+            if authorized_bc_clean and authorized_bc_clean == normalized_bc_id:
+                inferred = "OWNER"
+            elif authorized_bc_clean:
+                inferred = "PARTNER"
+            else:
+                inferred = "UNKNOWN"
+            _touch_bc_advertiser_link(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                bc_id=normalized_bc_id,
+                relation_type=inferred,
+                source="store.list",
+                raw=item if isinstance(item, dict) else None,
+            )
     return True
 
 
@@ -445,8 +668,6 @@ def _eligibility_to_api(value: Optional[Literal["gmv_max", "ads", "all"]]) -> Op
         return "CUSTOM_STORE_ADS"
     return None
 
-
-from app.services.oauth_ttb import get_credentials_for_auth_id
 
 class TTBSyncService:
     """
@@ -598,6 +819,18 @@ class TTBSyncService:
                 advertiser_id = _normalize_identifier(_pick(info, "advertiser_id", "advertiserId"))
                 if not advertiser_id:
                     continue
+                owner_bc = _normalize_identifier(_pick(info, "owner_bc_id", "bc_id"))
+                if owner_bc:
+                    _touch_bc_advertiser_link(
+                        self.db,
+                        workspace_id=self.workspace_id,
+                        auth_id=self.auth_id,
+                        advertiser_id=advertiser_id,
+                        bc_id=owner_bc,
+                        relation_type="OWNER",
+                        source="advertiser.info",
+                        raw=info if isinstance(info, dict) else None,
+                    )
                 row = mapping.get(advertiser_id)
                 if not row:
                     continue
@@ -620,9 +853,18 @@ class TTBSyncService:
         )
         stats = {"fetched": 0, "upserts": 0, "skipped": 0}
         latest_rev: str | None = cursor.last_rev
-        app_id, app_secret, _ = get_credentials_for_auth_id(self.db, auth_id=self.auth_id)
-        async for item in self.client.iter_advertisers(app_id=app_id, secret=app_secret, page_size=page_size):
+        fetched_ids: Set[str] = set()
+        try:
+            fetch_limit = int(page_size)
+        except Exception:
+            fetch_limit = 0
+        fetch_limit = max(fetch_limit, 0)
+
+        async for item in self.client.iter_advertisers(page_size=_ADVERTISER_INFO_BATCH_SIZE):
             stats["fetched"] += 1
+            adv_id = _normalize_identifier(_pick(item, "advertiser_id"))
+            if adv_id:
+                fetched_ids.add(adv_id)
             ok = _upsert_adv(self.db, workspace_id=self.workspace_id, auth_id=self.auth_id, item=item)
             if ok:
                 stats["upserts"] += 1
@@ -631,8 +873,12 @@ class TTBSyncService:
                     latest_rev = str(rev)
             else:
                 stats["skipped"] += 1
+            if fetch_limit and stats["fetched"] >= fetch_limit:
+                break
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
-        info_stats = await self._hydrate_advertisers()
+        info_stats = await self._hydrate_advertisers(
+            advertiser_ids=fetched_ids if fetched_ids else None
+        )
         stats.update(
             {
                 "info_batches": info_stats.get("batches", 0),

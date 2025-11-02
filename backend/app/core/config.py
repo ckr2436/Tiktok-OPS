@@ -116,6 +116,8 @@ class Settings(BaseSettings):
     TT_BIZ_REVOKE_PATH: str = "/oauth/revoke"
     TT_BIZ_ADVERTISER_LIST_PATH: str = "/oauth/advertiser/list/"
     OAUTH_SESSION_TTL_SECONDS: _TTLSeconds = _TTLSeconds(3600)
+    TTB_API_DEFAULT_QPS: float = 5.0
+    TTB_ADVERTISER_INFO_BATCH_SIZE: int = 50
 
     # =========================
     # HTTP Client

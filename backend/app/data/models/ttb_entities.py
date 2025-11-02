@@ -259,6 +259,114 @@ class TTBProduct(Base):
     )
 
 
+# --------------------------- BC ↔ Advertiser 关系表 ---------------------------
+class TTBBCAdvertiserLink(Base):
+    __tablename__ = "ttb_bc_advertiser_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "bc_id",
+            "advertiser_id",
+            name="uk_ttb_bc_adv_link_scope",
+        ),
+        Index("idx_ttb_bc_adv_link_adv", "advertiser_id"),
+        Index("idx_ttb_bc_adv_link_bc", "bc_id"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+
+    bc_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    relation_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'UNKNOWN'"), default="UNKNOWN"
+    )
+    source: Mapped[str | None] = mapped_column(String(64), default=None)
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    first_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+# --------------------------- Advertiser ↔ Store 关系表 ---------------------------
+class TTBAdvertiserStoreLink(Base):
+    __tablename__ = "ttb_advertiser_store_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            name="uk_ttb_adv_store_link_scope",
+        ),
+        Index("idx_ttb_adv_store_link_adv", "advertiser_id"),
+        Index("idx_ttb_adv_store_link_store", "store_id"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    relation_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'UNKNOWN'"), default="UNKNOWN"
+    )
+    store_authorized_bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    bc_id_hint: Mapped[str | None] = mapped_column(String(64), default=None)
+    source: Mapped[str | None] = mapped_column(String(64), default=None)
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    first_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 # --------------------------- 绑定配置 ---------------------------
 class TTBBindingConfig(Base):
     __tablename__ = "ttb_binding_configs"

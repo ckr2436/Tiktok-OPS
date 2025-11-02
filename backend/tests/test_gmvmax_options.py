@@ -16,6 +16,8 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBSyncCursor,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
 )
 from app.features.tenants.ttb.router import router as ttb_router
 from app.services.crypto import encrypt_text_to_blob
@@ -114,6 +116,16 @@ def _seed_gmv_data(db_session) -> None:
     )
     db_session.add(advertiser)
 
+    adv_link = TTBBCAdvertiserLink(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        advertiser_id="7492997033645637633",
+        bc_id="7508663838649384976",
+        relation_type="OWNER",
+        last_seen_at=seen_at,
+    )
+    db_session.add(adv_link)
+
     store = TTBStore(
         workspace_id=int(ws.id),
         auth_id=int(account.id),
@@ -128,6 +140,18 @@ def _seed_gmv_data(db_session) -> None:
         raw_json={"store_authorized_bc_id": "7508663838649384976"},
     )
     db_session.add(store)
+
+    store_link = TTBAdvertiserStoreLink(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        advertiser_id="7492997033645637633",
+        store_id="7496202240253986992",
+        relation_type="AUTHORIZER",
+        store_authorized_bc_id="7508663838649384976",
+        bc_id_hint="7508663838649384976",
+        last_seen_at=datetime(2025, 11, 1, 0, 31, 54, 941650, tzinfo=timezone.utc),
+    )
+    db_session.add(store_link)
 
     for resource, rev in (
         ("bc", "bc_rev_1"),

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -27,6 +27,8 @@ from app.data.models.ttb_entities import (
     TTBStore,
     TTBBindingConfig,
     TTBProduct,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
@@ -55,6 +57,13 @@ SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
 logger = logging.getLogger("gmv.ttb.meta")
+
+
+_RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
+
+
+def _relation_rank(value: Optional[str]) -> int:
+    return _RELATION_PRIORITY.get((value or "UNKNOWN").upper(), 5)
 
 
 # -------------------------- 请求/响应模型 --------------------------
@@ -469,7 +478,14 @@ def trigger_sync(
 
     bc_hint = options_payload.get("bc_id")
     bc_id = _normalize_identifier(bc_hint) or store.bc_id or advertiser.bc_id
-    _validate_bc_alignment(expected_bc_id=bc_id, advertiser=advertiser, store=store)
+    _validate_bc_alignment(
+        db=db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        expected_bc_id=bc_id,
+        advertiser=advertiser,
+        store=store,
+    )
 
     _enforce_products_limits(
         db,
@@ -917,29 +933,131 @@ def _get_store(
     return row
 
 
+def _collect_bc_candidates(*values: Any) -> set[str]:
+    candidates: set[str] = set()
+    for value in values:
+        normalized = _normalize_nullable_str(value)
+        if normalized:
+            candidates.add(normalized)
+    return candidates
+
+
+def _resolve_advertiser_bc_candidates(
+    db: Session, *, workspace_id: int, auth_id: int, advertiser_id: str
+) -> tuple[set[str], Optional[str]]:
+    rows = (
+        db.query(TTBBCAdvertiserLink.bc_id, TTBBCAdvertiserLink.relation_type)
+        .filter(TTBBCAdvertiserLink.workspace_id == int(workspace_id))
+        .filter(TTBBCAdvertiserLink.auth_id == int(auth_id))
+        .filter(TTBBCAdvertiserLink.advertiser_id == str(advertiser_id))
+        .all()
+    )
+    candidates: set[str] = set()
+    best_rank: Optional[int] = None
+    preferred: Optional[str] = None
+    for bc_id, relation in rows:
+        normalized = _normalize_nullable_str(bc_id)
+        if not normalized:
+            continue
+        candidates.add(normalized)
+        rank = _relation_rank(relation)
+        if best_rank is None or rank < best_rank:
+            best_rank = rank
+            preferred = normalized
+    return candidates, preferred
+
+
+def _resolve_store_bc_candidates(
+    db: Session, *, workspace_id: int, auth_id: int, store_id: str
+) -> tuple[set[str], Optional[str]]:
+    rows = (
+        db.query(
+            TTBAdvertiserStoreLink.store_authorized_bc_id,
+            TTBAdvertiserStoreLink.bc_id_hint,
+        )
+        .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .filter(TTBAdvertiserStoreLink.store_id == str(store_id))
+        .all()
+    )
+    candidates: set[str] = set()
+    best_priority: Optional[int] = None
+    preferred: Optional[str] = None
+    for authorized_bc, bc_hint in rows:
+        for priority, value in enumerate((authorized_bc, bc_hint)):
+            normalized = _normalize_nullable_str(value)
+            if not normalized:
+                continue
+            candidates.add(normalized)
+            if best_priority is None or priority < best_priority:
+                best_priority = priority
+                preferred = normalized
+    return candidates, preferred
+
+
 def _validate_bc_alignment(
     *,
+    db: Session,
+    workspace_id: int,
+    auth_id: int,
     expected_bc_id: Optional[str],
     advertiser: TTBAdvertiser,
     store: TTBStore,
 ) -> None:
     normalized_expected = _normalize_nullable_str(expected_bc_id)
-    advertiser_bc = _normalize_nullable_str(advertiser.bc_id)
-    store_bc = _normalize_nullable_str(store.bc_id)
 
-    if normalized_expected and advertiser_bc and normalized_expected != advertiser_bc:
+    advertiser_direct = _normalize_nullable_str(advertiser.bc_id)
+    store_direct = _normalize_nullable_str(store.bc_id)
+    store_authorized = _normalize_nullable_str(store.store_authorized_bc_id)
+
+    adv_link_candidates, adv_preferred = _resolve_advertiser_bc_candidates(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser.advertiser_id),
+    )
+    store_link_candidates, store_preferred = _resolve_store_bc_candidates(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        store_id=str(store.store_id),
+    )
+
+    advertiser_candidates = _collect_bc_candidates(advertiser_direct, *adv_link_candidates)
+    store_candidates = _collect_bc_candidates(store_direct, store_authorized, *store_link_candidates)
+
+    advertiser_primary = advertiser_direct or adv_preferred
+    store_primary = store_direct or store_authorized or store_preferred
+
+    if normalized_expected:
+        if advertiser_candidates and normalized_expected not in advertiser_candidates:
+            raise APIError(
+                "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+                "Advertiser belongs to a different business center.",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        if store_candidates and normalized_expected not in store_candidates:
+            raise APIError(
+                "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+                "Store belongs to a different business center.",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+    if advertiser_primary and store_direct and advertiser_primary != store_direct:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
-            "Advertiser belongs to a different business center.",
+            "Advertiser and store are not linked to the same business center.",
             status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
-    if normalized_expected and store_bc and normalized_expected != store_bc:
+
+    if advertiser_primary and store_authorized and advertiser_primary != store_authorized:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
-            "Store belongs to a different business center.",
+            "Advertiser and store are not linked to the same business center.",
             status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
-    if advertiser_bc and store_bc and advertiser_bc != store_bc:
+
+    if normalized_expected and store_primary and normalized_expected != store_primary:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
             "Advertiser and store are not linked to the same business center.",
@@ -1124,10 +1242,52 @@ def list_account_advertisers(
         .filter(TTBAdvertiser.workspace_id == int(workspace_id))
         .filter(TTBAdvertiser.auth_id == int(auth_id))
     )
-    if owner_bc_id:
-        query = query.filter(TTBAdvertiser.bc_id == owner_bc_id)
+    normalized_owner = _normalize_identifier(owner_bc_id)
+    if normalized_owner:
+        link_subquery = (
+            db.query(TTBBCAdvertiserLink.advertiser_id)
+            .filter(TTBBCAdvertiserLink.workspace_id == int(workspace_id))
+            .filter(TTBBCAdvertiserLink.auth_id == int(auth_id))
+            .filter(TTBBCAdvertiserLink.bc_id == normalized_owner)
+        )
+        query = query.filter(
+            or_(TTBAdvertiser.advertiser_id.in_(link_subquery), TTBAdvertiser.bc_id == normalized_owner)
+        )
     rows = query.order_by(TTBAdvertiser.display_name.asc(), TTBAdvertiser.advertiser_id.asc()).all()
-    return AdvertiserList(items=[AdvertiserItem(**_serialize_adv(r)) for r in rows])
+
+    advertiser_ids = [str(row.advertiser_id) for row in rows if row and row.advertiser_id]
+    bc_hints: dict[str, tuple[int, str]] = {}
+    if advertiser_ids:
+        link_rows = (
+            db.query(
+                TTBBCAdvertiserLink.advertiser_id,
+                TTBBCAdvertiserLink.bc_id,
+                TTBBCAdvertiserLink.relation_type,
+            )
+            .filter(TTBBCAdvertiserLink.workspace_id == int(workspace_id))
+            .filter(TTBBCAdvertiserLink.auth_id == int(auth_id))
+            .filter(TTBBCAdvertiserLink.advertiser_id.in_(advertiser_ids))
+            .all()
+        )
+        for adv_id, bc_id, relation_type in link_rows:
+            if not adv_id or not bc_id:
+                continue
+            key = str(adv_id)
+            rank = _relation_rank(relation_type)
+            existing = bc_hints.get(key)
+            if existing is None or rank < existing[0]:
+                bc_hints[key] = (rank, str(bc_id))
+
+    items: list[AdvertiserItem] = []
+    for row in rows:
+        payload = _serialize_adv(row)
+        adv_id = payload.get("advertiser_id")
+        if adv_id:
+            hint = bc_hints.get(str(adv_id))
+            if hint and not payload.get("bc_id"):
+                payload["bc_id"] = hint[1]
+        items.append(AdvertiserItem(**payload))
+    return AdvertiserList(items=items)
 
 
 @router.get(
@@ -1152,18 +1312,80 @@ def list_account_stores(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="bc_id parameter is no longer supported; please use owner_bc_id",
         )
+    normalized_adv = _normalize_identifier(advertiser_id)
     query = (
         db.query(TTBStore)
         .filter(TTBStore.workspace_id == int(workspace_id))
         .filter(TTBStore.auth_id == int(auth_id))
+        .filter(TTBStore.advertiser_id == normalized_adv)
     )
-    query = query.filter(TTBStore.advertiser_id == advertiser_id)
-    if owner_bc_id:
-        query = query.filter(TTBStore.bc_id == owner_bc_id)
-    if store_authorized_bc_id:
-        query = query.filter(TTBStore.store_authorized_bc_id == store_authorized_bc_id)
+    normalized_owner_bc = _normalize_identifier(owner_bc_id)
+    normalized_authorized_filter = _normalize_identifier(store_authorized_bc_id)
+    if normalized_authorized_filter:
+        query = query.filter(TTBStore.store_authorized_bc_id == normalized_authorized_filter)
+
     rows = query.order_by(TTBStore.name.asc(), TTBStore.store_id.asc()).all()
-    return StoreList(items=[StoreItem(**_serialize_store(r)) for r in rows])
+
+    link_rows = (
+        db.query(
+            TTBAdvertiserStoreLink.store_id,
+            TTBAdvertiserStoreLink.relation_type,
+            TTBAdvertiserStoreLink.store_authorized_bc_id,
+            TTBAdvertiserStoreLink.bc_id_hint,
+        )
+        .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .filter(TTBAdvertiserStoreLink.advertiser_id == normalized_adv)
+        .all()
+    )
+
+    link_map: dict[str, dict[str, Optional[str]]] = {}
+    for store_id, relation_type, authorized_bc, bc_hint in link_rows:
+        if not store_id:
+            continue
+        link_map[str(store_id)] = {
+            "relation_type": relation_type,
+            "store_authorized_bc_id": _normalize_identifier(authorized_bc),
+            "bc_id_hint": _normalize_identifier(bc_hint),
+        }
+
+    items_with_priority: list[tuple[int, Dict[str, Any]]] = []
+    for row in rows:
+        payload = _serialize_store(row)
+        store_id = payload.get("store_id")
+        link_info = link_map.get(str(store_id)) if store_id else None
+        if link_info:
+            if link_info.get("store_authorized_bc_id") and not payload.get("store_authorized_bc_id"):
+                payload["store_authorized_bc_id"] = link_info["store_authorized_bc_id"]
+            if link_info.get("bc_id_hint") and not payload.get("bc_id"):
+                payload["bc_id"] = link_info["bc_id_hint"]
+
+        authorized_match = False
+        if normalized_owner_bc:
+            owner_value = normalized_owner_bc
+            candidates = [
+                _normalize_identifier(payload.get("store_authorized_bc_id")),
+                _normalize_identifier(payload.get("bc_id")),
+            ]
+            if link_info:
+                candidates.append(link_info.get("store_authorized_bc_id"))
+                candidates.append(link_info.get("bc_id_hint"))
+            authorized_match = any(
+                candidate and str(candidate) == owner_value for candidate in candidates if candidate
+            )
+
+        priority = 0 if authorized_match else 1
+        items_with_priority.append((priority, payload))
+
+    items_with_priority.sort(
+        key=lambda item: (
+            item[0],
+            (item[1].get("name") or "").lower(),
+            item[1].get("store_id") or "",
+        )
+    )
+
+    return StoreList(items=[StoreItem(**payload) for _, payload in items_with_priority])
 
 
 @router.get(
@@ -1345,7 +1567,14 @@ def update_gmv_max_config(
     bc = _get_business_center(db, workspace_id=workspace_id, auth_id=auth_id, bc_id=payload.bc_id)
     advertiser = _get_advertiser(db, workspace_id=workspace_id, auth_id=auth_id, advertiser_id=payload.advertiser_id)
     store = _get_store(db, workspace_id=workspace_id, auth_id=auth_id, store_id=payload.store_id)
-    _validate_bc_alignment(expected_bc_id=bc.bc_id, advertiser=advertiser, store=store)
+    _validate_bc_alignment(
+        db=db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        expected_bc_id=bc.bc_id,
+        advertiser=advertiser,
+        store=store,
+    )
 
     try:
         row = upsert_binding_config(
