@@ -4,9 +4,9 @@ from __future__ import annotations
 """
 TikTok Business API 客户端（严格版）：
 - 只暴露 4 个读取器（异步）：
-    * iter_business_centers()  -> /bc/get/      （data.list + 可能的 page_info.cursor 或 page/page_size）
-    * iter_advertisers()       -> /oauth2/advertiser/get/（data.list；不分页；必须传 app_id/secret）
-    * fetch_advertiser_info()  -> /advertiser/info/（data.list；批量 50 个 advertiser_id）
+    * iter_business_centers()  -> /bc/get/（data.list + 可能的 page_info.cursor 或 page/page_size）
+    * iter_advertisers()       -> /advertiser/get/（data.list；可能包含 cursor 分页）
+    * fetch_advertiser_info()  -> /advertiser/info/（data.list；批量 <=50 个 advertiser_id）
     * iter_stores()             -> /store/list/  （data.stores，页码分页）
     * iter_products()          -> /store/product/get/（data.store_products，页码分页）
 - URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
@@ -101,7 +101,7 @@ class TTBPaths:
     """
     仅支持以下固定 settings 覆盖项（可写相对/绝对路径）：
       - TTB_BC_GET            (默认 "bc/get/")
-      - TTB_ADVERTISERS_GET   (默认 "oauth2/advertiser/get/")
+      - TTB_ADVERTISERS_GET   (默认 "advertiser/get/")
       - TTB_STORES_LIST        (默认 "store/list/")
       - TTB_PRODUCTS_LIST     (默认 "store/product/get/")
     """
@@ -120,7 +120,7 @@ class TTBPaths:
 
         return cls(
             bc_get=g("TTB_BC_GET", "bc/get/"),
-            advertisers_get=g("TTB_ADVERTISERS_GET", "oauth2/advertiser/get/"),
+            advertisers_get=g("TTB_ADVERTISERS_GET", "advertiser/get/"),
             advertiser_info=g("TTB_ADVERTISER_INFO", "advertiser/info/"),
             stores_list=g("TTB_STORES_LIST", "store/list/"),
             products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
@@ -141,14 +141,15 @@ class TTBApiClient:
         self,
         *,
         access_token: str,
-        qps: float = 10.0,
+        qps: float | None = None,
         timeout: float | None = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> None:
         if not access_token:
             raise TTBApiError("missing access token")
         self._paths = TTBPaths.from_settings()
-        self._bucket = TokenBucket(rate_per_sec=qps)
+        default_qps = float(getattr(settings, "TTB_API_DEFAULT_QPS", 5.0))
+        self._bucket = TokenBucket(rate_per_sec=float(qps or default_qps))
         self._timeout = timeout or float(getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0))
 
         # Access-Token 头是必须的
@@ -178,6 +179,7 @@ class TTBApiClient:
         path: str,
         *,
         params: Dict[str, Any] | None = None,
+        json_body: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         await self._bucket.acquire()
 
@@ -187,7 +189,7 @@ class TTBApiClient:
             params["page_size"] = _clamp_page_size(params["page_size"])
 
         url = build_url(path)
-        resp = await self._client.request(method, url, params=params)
+        resp = await self._client.request(method, url, params=params, json=json_body)
 
         if resp.status_code in (429, 500, 502, 503, 504):
             raise TTBHttpError(resp.status_code, "retryable")
@@ -308,25 +310,18 @@ class TTBApiClient:
     async def iter_advertisers(
         self,
         *,
-        app_id: str,
-        secret: str,
-        page_size: int = _MAX_PAGE_SIZE,  # 保留形参以兼容调用方，但此接口不分页
+        page_size: int = _MAX_PAGE_SIZE,
     ) -> AsyncIterator[dict]:
         """
-        /oauth2/advertiser/get/ 返回 data.list；无分页参数。
-        需要 query: app_id, secret
+        /advertiser/get/ 返回 data.list；当存在 page_info.cursor 时按游标分页。
         """
-        payload = await self._request_json(
-            "GET",
-            self._paths.advertisers_get,
-            params={"app_id": str(app_id), "secret": str(secret)},
-        )
-        data = payload.get("data") or {}
-        items = data.get("list") or []
-        if isinstance(items, list):
-            for it in items:
-                if isinstance(it, dict):
-                    yield it
+        async for item in self._paged_cursor(
+            method="GET",
+            path=self._paths.advertisers_get,
+            base_params={},
+            page_size=page_size,
+        ):
+            yield item
 
     async def fetch_advertiser_info(
         self,
@@ -345,7 +340,7 @@ class TTBApiClient:
         if not ids:
             return []
 
-        params: Dict[str, Any] = {"advertiser_ids": ",".join(ids)}
+        payload: Dict[str, Any] = {"advertiser_ids": ids}
         if fields:
             unique_fields = []
             seen: set[str] = set()
@@ -358,14 +353,14 @@ class TTBApiClient:
                 seen.add(key)
                 unique_fields.append(key)
             if unique_fields:
-                params["fields"] = ",".join(unique_fields)
+                payload["fields"] = unique_fields
 
-        payload = await self._request_json(
-            "GET",
+        response = await self._request_json(
+            "POST",
             self._paths.advertiser_info,
-            params=params,
+            json_body=payload,
         )
-        data = payload.get("data") or {}
+        data = response.get("data") or {}
         candidates = []
         for key in ("list", "advertiser_list", "advertiser_infos", "advertisers"):
             value = data.get(key)

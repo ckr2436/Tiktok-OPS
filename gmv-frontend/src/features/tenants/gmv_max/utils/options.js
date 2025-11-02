@@ -38,7 +38,7 @@ export function buildAdvertiserOptions(payload, bcId, selectedAdvertiserId) {
     });
 }
 
-export function buildStoreOptions(payload, advertiserId, selectedStoreId) {
+export function buildStoreOptions(payload, advertiserId, selectedStoreId, ownerBcId) {
   const allStores = Array.isArray(payload?.stores) ? payload.stores : [];
   if (!advertiserId) {
     return allStores;
@@ -62,9 +62,23 @@ export function buildStoreOptions(payload, advertiserId, selectedStoreId) {
       filtered.push({ store_id: selectedStoreId, advertiser_id: advertiserId });
     }
   }
+  const normalizedOwner = ownerBcId ? String(ownerBcId) : '';
   return filtered
     .filter((item) => item?.store_id)
     .sort((a, b) => {
+      const aOwnerMatch = normalizedOwner
+        ? [a.store_authorized_bc_id, a.bc_id, a.bc_id_hint]
+            .map((value) => (value !== undefined && value !== null ? String(value) : ''))
+            .some((value) => value && value === normalizedOwner)
+        : false;
+      const bOwnerMatch = normalizedOwner
+        ? [b.store_authorized_bc_id, b.bc_id, b.bc_id_hint]
+            .map((value) => (value !== undefined && value !== null ? String(value) : ''))
+            .some((value) => value && value === normalizedOwner)
+        : false;
+      if (aOwnerMatch !== bOwnerMatch) {
+        return aOwnerMatch ? -1 : 1;
+      }
       const labelA = (a.name || a.store_id || '').toString();
       const labelB = (b.name || b.store_id || '').toString();
       return labelA.localeCompare(labelB, 'zh-CN');

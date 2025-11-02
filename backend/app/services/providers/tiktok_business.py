@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Mapping, Optional, Literal
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.data.models.oauth_ttb import OAuthAccountTTB
 from app.services.oauth_ttb import get_access_token_plain
 from app.services.policy_engine import PolicyEngine, PolicyLimits
@@ -189,7 +190,8 @@ class TiktokBusinessProvider:
 
     def _build_client(self, db: Session, *, auth_id: int, limits: PolicyLimits) -> TTBApiClient:
         token, _ = get_access_token_plain(db, int(auth_id))
-        qps = float(limits.rate_limit_rps or 10.0)
+        default_qps = float(getattr(settings, "TTB_API_DEFAULT_QPS", 5.0))
+        qps = float(limits.rate_limit_rps or default_qps)
         return TTBApiClient(access_token=token, qps=qps)
 
     async def _run_single(

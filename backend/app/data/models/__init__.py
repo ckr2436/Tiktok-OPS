@@ -25,6 +25,8 @@ from .ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBProduct,
+    TTBBCAdvertiserLink,
+    TTBAdvertiserStoreLink,
     TTBBindingConfig,
 )
 
@@ -52,5 +54,7 @@ __all__ = [
     "TTBAdvertiser",
     "TTBStore",
     "TTBProduct",
+    "TTBBCAdvertiserLink",
+    "TTBAdvertiserStoreLink",
     "TTBBindingConfig",
 ]

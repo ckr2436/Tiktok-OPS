@@ -14,6 +14,7 @@ import asyncio
 import os
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Iterable, Tuple
 
 # Ensure app.* imports work when executed from repository root
@@ -29,7 +30,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.data.db import get_db
-from app.data.models.ttb_entities import TTBAdvertiser
+from app.data.models.ttb_entities import TTBAdvertiser, TTBBCAdvertiserLink
 from app.services.oauth_ttb import get_access_token_plain
 from app.services.ttb_api import TTBApiClient
 from app.services.ttb_sync import TTBSyncService
@@ -106,6 +107,15 @@ async def _repair_account(
     service = TTBSyncService(session, client, workspace_id=workspace_id, auth_id=auth_id)
     try:
         stats = await service.repair_advertisers(advertiser_ids=advertiser_ids)
+        backfilled = _backfill_bc_from_links(
+            session,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_ids=advertiser_ids,
+        )
+        if stats is None:
+            stats = {}
+        stats["bc_backfilled"] = backfilled
         session.flush()
         session.commit()
         session.expire_all()
@@ -137,6 +147,63 @@ async def _run_repairs(
     return results
 
 
+def _backfill_bc_from_links(
+    session: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_ids: Iterable[str],
+) -> int:
+    normalized_ids = {str(item).strip() for item in advertiser_ids if str(item).strip()}
+    if not normalized_ids:
+        return 0
+
+    link_rows = (
+        session.query(TTBBCAdvertiserLink.advertiser_id, TTBBCAdvertiserLink.bc_id)
+        .filter(TTBBCAdvertiserLink.workspace_id == int(workspace_id))
+        .filter(TTBBCAdvertiserLink.auth_id == int(auth_id))
+        .filter(TTBBCAdvertiserLink.advertiser_id.in_(normalized_ids))
+        .all()
+    )
+
+    candidates: dict[str, set[str]] = defaultdict(set)
+    for adv_id, bc_id in link_rows:
+        adv_key = str(adv_id).strip() if adv_id else ""
+        bc_value = str(bc_id).strip() if bc_id else ""
+        if not adv_key or not bc_value:
+            continue
+        candidates[adv_key].add(bc_value)
+
+    if not candidates:
+        return 0
+
+    rows = (
+        session.query(TTBAdvertiser)
+        .filter(TTBAdvertiser.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiser.auth_id == int(auth_id))
+        .filter(TTBAdvertiser.advertiser_id.in_(normalized_ids))
+        .all()
+    )
+
+    updated = 0
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        adv_key = str(row.advertiser_id).strip() if row and row.advertiser_id else ""
+        if not adv_key or row.bc_id:
+            continue
+        options = candidates.get(adv_key) or set()
+        if len(options) != 1:
+            continue
+        bc_value = next(iter(options))
+        if not bc_value:
+            continue
+        row.bc_id = bc_value
+        row.last_seen_at = now
+        session.add(row)
+        updated += 1
+    return updated
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Repair TikTok Business advertisers missing name/timezone/bc_id by refetching advertiser info.",
@@ -146,8 +213,8 @@ def main() -> None:
     parser.add_argument(
         "--qps",
         type=float,
-        default=5.0,
-        help="Maximum QPS for advertiser/info requests (default: 5.0)",
+        default=3.0,
+        help="Maximum QPS for advertiser/info requests (default: 3.0)",
     )
     args = parser.parse_args()
 
@@ -171,9 +238,10 @@ def main() -> None:
             repaired_accounts += 1
             batches = int(stats.get("batches", 0))
             updates = int(stats.get("updates", 0))
+            backfilled = int(stats.get("bc_backfilled", 0))
             repaired_advertisers += updates
             print(
-                f"[OK] {label}: batches={batches} updates={updates}",
+                f"[OK] {label}: batches={batches} updates={updates} bc_backfilled={backfilled}",
             )
 
         print(

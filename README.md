@@ -75,3 +75,15 @@ curl -H 'Authorization: Bearer <token>' \
 curl -H 'Authorization: Bearer <token>' \
   https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/sync-runs/123
 ```
+
+## Data repair utilities
+
+- `backend/scripts/fix_ttb_advertiser_info.py`: Batch rehydrates advertiser metadata via `/advertiser/info` and backfills
+  missing Business Center relations using the new `ttb_bc_advertiser_links` table. Example:
+
+  ```bash
+  python backend/scripts/fix_ttb_advertiser_info.py --workspace-id 2 --auth-id 1 --qps 3.0
+  ```
+
+  The script prints the number of API batches, updated advertisers, and how many `bc_id` fields were inferred from link
+  evidence. It is safe to rerun and only touches rows missing `name`, `timezone`, or `bc_id`.
