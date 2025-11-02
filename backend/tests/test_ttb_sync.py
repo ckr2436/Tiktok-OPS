@@ -210,6 +210,23 @@ def test_metadata_endpoints_return_items(tenant_app):
     assert advertiser["currency"]
     assert advertiser["timezone"]
     assert advertiser["country_code"]
+    assert advertiser["bc_id"] == "BC1"
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/advertisers",
+        params={"owner_bc_id": "BC1"},
+    )
+    assert resp.status_code == 200
+    filtered_advertisers = resp.json()["items"]
+    assert filtered_advertisers
+    assert all(item["bc_id"] == "BC1" for item in filtered_advertisers)
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/advertisers",
+        params={"bc_id": "BC1"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]
 
     resp = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/stores",
@@ -222,13 +239,33 @@ def test_metadata_endpoints_return_items(tenant_app):
     assert store["store_authorized_bc_id"] == "BC1"
 
     resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/stores",
+        params={"advertiser_id": "ADV1", "owner_bc_id": "BC1"},
+    )
+    assert resp.status_code == 200
+    stores_filtered = resp.json()["items"]
+    assert stores_filtered
+    assert all(item["bc_id"] == "BC1" for item in stores_filtered)
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/stores",
+        params={"advertiser_id": "ADV1", "bc_id": "BC1"},
+    )
+    assert resp.status_code == 422
+
+    resp = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
         params={"store_id": "STORE1"},
     )
     assert resp.status_code == 200
     products = resp.json()
     assert products["total"] >= 1
+    assert products["page"] == 1
+    assert products["page_size"] == 200
     assert products["items"][0]["product_id"] == "PROD1"
+    assert "sku_count" in products["items"][0]
+    assert "price_range" in products["items"][0]
+    assert "updated_time" in products["items"][0]
 
 
 def test_store_and_product_filters_require_ids(tenant_app):

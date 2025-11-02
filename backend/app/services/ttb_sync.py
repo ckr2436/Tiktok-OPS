@@ -8,7 +8,7 @@ import contextlib
 
 logger = logging.getLogger("gmv.ttb.sync")
 
-from sqlalchemy import text, and_
+from sqlalchemy import text, and_, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
@@ -530,13 +530,37 @@ class TTBSyncService:
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "bc", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
-    async def _hydrate_advertisers(self) -> dict:
-        rows: List[TTBAdvertiser] = (
+    async def _hydrate_advertisers(
+        self,
+        *,
+        advertiser_ids: Optional[Iterable[str]] = None,
+        only_missing: bool = False,
+    ) -> dict:
+        query = (
             self.db.query(TTBAdvertiser)
             .filter(TTBAdvertiser.workspace_id == self.workspace_id)
             .filter(TTBAdvertiser.auth_id == self.auth_id)
-            .all()
         )
+        normalized_ids: Optional[Set[str]] = None
+        if advertiser_ids is not None:
+            normalized_ids = set()
+            for value in advertiser_ids:
+                normalized = _normalize_identifier(value)
+                if normalized:
+                    normalized_ids.add(normalized)
+            if not normalized_ids:
+                return {"batches": 0, "updates": 0}
+            query = query.filter(TTBAdvertiser.advertiser_id.in_(normalized_ids))
+        if only_missing:
+            query = query.filter(
+                or_(
+                    TTBAdvertiser.name.is_(None),
+                    TTBAdvertiser.timezone.is_(None),
+                    TTBAdvertiser.bc_id.is_(None),
+                )
+            )
+
+        rows: List[TTBAdvertiser] = query.all()
         mapping = {
             str(row.advertiser_id): row
             for row in rows
@@ -616,6 +640,11 @@ class TTBSyncService:
             }
         )
         return {"resource": "advertisers", **stats, "cursor": {"last_rev": cursor.last_rev}}
+
+    async def repair_advertisers(
+        self, *, advertiser_ids: Optional[Iterable[str]] = None
+    ) -> dict:
+        return await self._hydrate_advertisers(advertiser_ids=advertiser_ids, only_missing=True)
 
     async def sync_stores(self, *, page_size: int = 50) -> dict:
         cursor = _get_or_create_cursor(

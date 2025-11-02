@@ -75,18 +75,41 @@ export async function fetchBusinessCenters(wid, provider, authId, options = {}) 
 
 export async function fetchAdvertisers(wid, provider, authId, params = {}, options = {}) {
   const base = `${accountPrefix(wid, provider, authId)}/advertisers`;
-  return apiGet(appendQuery(base, params), options);
+  const normalized = {};
+  if (params && typeof params === 'object') {
+    if (params.owner_bc_id !== undefined && params.owner_bc_id !== null && params.owner_bc_id !== '') {
+      normalized.owner_bc_id = params.owner_bc_id;
+    } else if (params.ownerBcId !== undefined && params.ownerBcId !== null && params.ownerBcId !== '') {
+      normalized.owner_bc_id = params.ownerBcId;
+    }
+  }
+  return apiGet(appendQuery(base, normalized), options);
 }
 
-export async function fetchStores(wid, provider, authId, advertiserId, options = {}) {
+export async function fetchStores(wid, provider, authId, advertiserId, params = {}, options = {}) {
   const base = `${accountPrefix(wid, provider, authId)}/stores`;
-  const url = appendQuery(base, { advertiser_id: advertiserId });
+  const query = { advertiser_id: advertiserId };
+  if (params && typeof params === 'object') {
+    if (params.owner_bc_id !== undefined && params.owner_bc_id !== null && params.owner_bc_id !== '') {
+      query.owner_bc_id = params.owner_bc_id;
+    } else if (params.ownerBcId !== undefined && params.ownerBcId !== null && params.ownerBcId !== '') {
+      query.owner_bc_id = params.ownerBcId;
+    }
+  }
+  const url = appendQuery(base, query);
   return apiGet(url, options);
 }
 
 export async function fetchProducts(wid, provider, authId, storeId, params = {}, options = {}) {
   const base = `${accountPrefix(wid, provider, authId)}/products`;
-  const url = appendQuery(base, { store_id: storeId, ...params });
+  const query = { store_id: storeId, ...params };
+  if (!('page_size' in query)) {
+    query.page_size = 10;
+  }
+  if (!('page' in query)) {
+    query.page = 1;
+  }
+  const url = appendQuery(base, query);
   return apiGet(url, options);
 }
 
