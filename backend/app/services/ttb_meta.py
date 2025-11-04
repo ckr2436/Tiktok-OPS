@@ -7,7 +7,7 @@ import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
 
 from sqlalchemy import literal
 from sqlalchemy.orm import Session
@@ -238,6 +238,7 @@ def build_gmvmax_options(
     # ---------------- Store link 映射（主数据来源） ----------------
     store_link_map: dict[str, dict[str, Optional[str]]] = {}
     advertiser_to_stores: defaultdict[str, set[str]] = defaultdict(set)
+    store_to_advertisers: defaultdict[str, set[str]] = defaultdict(set)
 
     for adv_id, store_id, authorized_bc, bc_hint, link_seen in store_link_rows:
         if link_seen:
@@ -249,6 +250,7 @@ def build_gmvmax_options(
             continue
 
         advertiser_to_stores[normalized_adv].add(normalized_store)
+        store_to_advertisers[normalized_store].add(normalized_adv)
         info = store_link_map.setdefault(
             normalized_store,
             {"store_authorized_bc_id": None, "bc_id_hint": None},
@@ -280,15 +282,23 @@ def build_gmvmax_options(
         if adv_key and store_key:
             advertiser_to_stores[adv_key].add(store_key)
 
-        payload = {
+        payload: dict[str, Any] = {
             "store_id": store.store_id,
             "name": store.name,
-            "advertiser_id": adv_raw,  # 只是补充信息，可能为 None
             "bc_id": store.bc_id,
             "store_type": getattr(store, "store_type", None),
             "store_code": getattr(store, "store_code", None),
             "store_authorized_bc_id": getattr(store, "store_authorized_bc_id", None),
         }
+
+        # 兼容旧字段：如果模型本身带有 advertiser_id，就直接返回
+        if adv_raw:
+            payload["advertiser_id"] = adv_raw
+        else:
+            # 否则根据 link 表反推出 advertiser 列表；若只有一个绑定则填回 payload
+            advertisers = sorted(store_to_advertisers.get(store_key or "", set()))
+            if len(advertisers) == 1:
+                payload["advertiser_id"] = advertisers[0]
 
         # 用 link 提供的线索把缺失字段补齐
         link_info = store_link_map.get(store_key or "")

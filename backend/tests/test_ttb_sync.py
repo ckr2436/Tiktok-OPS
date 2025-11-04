@@ -140,7 +140,6 @@ def _seed_data(db_session) -> None:
         workspace_id=int(ws.id),
         auth_id=int(account.id),
         store_id="STORE1",
-        advertiser_id="ADV1",
         bc_id="BC1",
         name="Store",
         store_type="TIKTOK_SHOP",

@@ -130,7 +130,6 @@ def _seed_gmv_data(db_session) -> None:
         workspace_id=int(ws.id),
         auth_id=int(account.id),
         store_id="7496202240253986992",
-        advertiser_id="7492997033645637633",
         bc_id="7508663838649384976",
         name="Drafyn US",
         store_type="TIKTOK_SHOP",
@@ -186,6 +185,7 @@ def test_options_returns_payload_and_etag(gmv_app):
     assert data["bcs"][0]["bc_id"] == "7508663838649384976"
     assert data["advertisers"][0]["bc_id"] == "7508663838649384976"
     assert data["stores"][0]["store_id"] == "7496202240253986992"
+    assert data["stores"][0]["advertiser_id"] == "7492997033645637633"
     assert data["links"]["bc_to_advertisers"]["7508663838649384976"] == [
         "7492997033645637633"
     ]
@@ -312,7 +312,8 @@ def test_enqueue_meta_sync_builds_payload(monkeypatch):
     payload = recorded["kwargs"]
     assert payload["workspace_id"] == 2
     assert payload["auth_id"] == 3
-    assert payload["scope"] == "meta"
+    expected_scope = "meta" if recorded["name"] == "ttb.sync.meta" else "all"
+    assert payload["scope"] == expected_scope
     envelope = payload["params"]["envelope"]
     assert envelope["meta"]["idempotency_key"] == result.idempotency_key
     from app.core.config import settings
@@ -442,7 +443,6 @@ def test_options_links_handle_raw_variants(gmv_app):
                 workspace_id=1,
                 auth_id=1,
                 store_id=store_json_id,
-                advertiser_id=adv_json_id,
                 bc_id=None,
                 name="JsonStore",
                 last_seen_at=seen_at,
@@ -452,11 +452,50 @@ def test_options_links_handle_raw_variants(gmv_app):
                 workspace_id=1,
                 auth_id=1,
                 store_id=store_raw_id,
-                advertiser_id=adv_raw_id,
                 bc_id=None,
                 name="RawStore",
                 last_seen_at=seen_at,
                 raw_json=None,
+            ),
+        ]
+    )
+    db.add_all(
+        [
+            TTBAdvertiserStoreLink(
+                workspace_id=1,
+                auth_id=1,
+                advertiser_id=adv_json_id,
+                store_id=store_json_id,
+                relation_type="AUTHORIZER",
+                store_authorized_bc_id=bc_id,
+                bc_id_hint=bc_id,
+            ),
+            TTBAdvertiserStoreLink(
+                workspace_id=1,
+                auth_id=1,
+                advertiser_id=adv_raw_id,
+                store_id=store_raw_id,
+                relation_type="PARTNER",
+                store_authorized_bc_id=None,
+                bc_id_hint=bc_id,
+            ),
+        ]
+    )
+    db.add_all(
+        [
+            TTBBCAdvertiserLink(
+                workspace_id=1,
+                auth_id=1,
+                advertiser_id=adv_json_id,
+                bc_id=bc_id,
+                relation_type="OWNER",
+            ),
+            TTBBCAdvertiserLink(
+                workspace_id=1,
+                auth_id=1,
+                advertiser_id=adv_raw_id,
+                bc_id=bc_id,
+                relation_type="PARTNER",
             ),
         ]
     )
