@@ -88,6 +88,10 @@ const router = createBrowserRouter([
           { path: 'tenants/:wid/tiktok-business', element: <TenantGuard><TbAuthList /></TenantGuard> },
           { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
           { path: 'tenants/:wid/gmv-max', element: <TenantGuard><GmvMaxManagementPage /></TenantGuard> },
+          {
+            path: 'tenants/:wid/gmv-max/products/:itemGroupId',
+            element: <TenantGuard><GmvMaxManagementPage /></TenantGuard>,
+          },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
         ],
