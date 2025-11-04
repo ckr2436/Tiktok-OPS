@@ -53,7 +53,8 @@ export default function ProductDetailDrawer({ open = false, product = null, onCl
             <div className="product-detail-drawer__preview">
               <img
                 src={
-                  product?.productImageUrl
+                  product?.imageUrl
+                  || product?.productImageUrl
                   || 'https://lf16-tiktok-business.myfilecdn.com/obj/ad-mcs-sg/marketing-resource-center/placeholder.png'
                 }
                 alt={product?.title || '商品图片'}

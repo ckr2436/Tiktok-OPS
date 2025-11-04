@@ -1,95 +1,83 @@
-const RAW_KEYS = {
-  itemGroupId: ['item', 'group', 'id'].join('_'),
-  productImageUrl: ['product', 'image', 'url'].join('_'),
-  minPrice: ['min', 'price'].join('_'),
-  maxPrice: ['max', 'price'].join('_'),
-  historicalSales: ['historical', 'sales'].join('_'),
-  gmvMaxAdsStatus: ['gmv', 'max', 'ads', 'status'].join('_'),
-  runningCustomShopAds: ['is', 'running', 'custom', 'shop', 'ads'].join('_'),
+const EMPTY_PRODUCT = {
+  itemGroupId: '',
+  title: '',
+  imageUrl: '',
+  productImageUrl: '',
+  minPrice: '',
+  maxPrice: '',
+  currency: '',
+  historicalSales: '',
+  category: '',
+  status: '',
+  gmvMaxAdsStatus: '',
+  isRunningCustomShopAds: false,
 };
 
 function ensureString(value) {
-  if (value === undefined || value === null) return '';
+  if (value === undefined || value === null) {
+    return '';
+  }
   return String(value);
 }
 
-export function adaptProduct(item = {}) {
-  if (!item || typeof item !== 'object') {
-    return {
-      itemGroupId: '',
-      title: '',
-      productImageUrl: '',
-      imageUrl: '',
-      minPrice: '',
-      maxPrice: '',
-      currency: '',
-      historicalSales: '',
-      category: '',
-      status: '',
-      gmvMaxAdsStatus: '',
-      isRunningCustomShopAds: false,
-      raw: item,
-    };
+export function mapStoreProduct(api = {}) {
+  if (!api || typeof api !== 'object') {
+    return { ...EMPTY_PRODUCT };
   }
 
-  const itemGroupId = item.itemGroupId ?? item[RAW_KEYS.itemGroupId] ?? '';
-  const productImageUrl =
-    item.productImageUrl ?? item[RAW_KEYS.productImageUrl] ?? item.imageUrl ?? '';
+  const title =
+    api.title
+    ?? api.product_title
+    ?? api.productName
+    ?? api.product_name
+    ?? '';
+
+  const imageUrl =
+    api.imageUrl
+    ?? api.productImageUrl
+    ?? api.product_image_url
+    ?? api.cover
+    ?? '';
 
   return {
-    itemGroupId: ensureString(itemGroupId),
-    title: ensureString(item.title ?? item.product_title ?? ''),
-    productImageUrl: ensureString(productImageUrl),
-    imageUrl: ensureString(productImageUrl),
-    minPrice: ensureString(item.minPrice ?? item[RAW_KEYS.minPrice] ?? ''),
-    maxPrice: ensureString(item.maxPrice ?? item[RAW_KEYS.maxPrice] ?? ''),
-    currency: ensureString(item.currency ?? ''),
-    historicalSales: ensureString(
-      item.historicalSales ?? item[RAW_KEYS.historicalSales] ?? '',
-    ),
-    category: ensureString(
-      item.category ?? item.product_category ?? item.category_name ?? '',
-    ),
-    status: ensureString(item.status ?? ''),
-    gmvMaxAdsStatus: ensureString(
-      item.gmvMaxAdsStatus ?? item[RAW_KEYS.gmvMaxAdsStatus] ?? '',
-    ),
+    itemGroupId: ensureString(api.itemGroupId ?? api.item_group_id ?? ''),
+    title: ensureString(title),
+    imageUrl: ensureString(imageUrl),
+    productImageUrl: ensureString(imageUrl),
+    minPrice: ensureString(api.minPrice ?? api.min_price ?? ''),
+    maxPrice: ensureString(api.maxPrice ?? api.max_price ?? ''),
+    currency: ensureString(api.currency ?? ''),
+    historicalSales: ensureString(api.historicalSales ?? api.historical_sales ?? ''),
+    category: ensureString(api.category ?? api.product_category ?? api.category_name ?? ''),
+    status: ensureString(api.status ?? ''),
+    gmvMaxAdsStatus: ensureString(api.gmvMaxAdsStatus ?? api.gmv_max_ads_status ?? ''),
     isRunningCustomShopAds: Boolean(
-      item.isRunningCustomShopAds ?? item[RAW_KEYS.runningCustomShopAds] ?? false,
+      api.isRunningCustomShopAds ?? api.is_running_custom_shop_ads ?? false,
     ),
-    raw: item,
   };
 }
 
-export function adaptPageInfo(info = {}) {
-  const page = Number(
-    info.page
-      ?? info.page_no
-      ?? info.current_page
-      ?? info.pageIndex
-      ?? 1,
-  );
-  const pageSize = Number(
-    info.page_size
-      ?? info.pageSize
-      ?? info.size
-      ?? info.page_size ?? 0,
-  ) || 10;
-  const total = Number(
-    info.total
+export function mapPageInfo(info = {}) {
+  const page = Number(info.page ?? info.page_no ?? info.current_page ?? 1);
+  const pageSize = Number(info.pageSize ?? info.page_size ?? info.size ?? 50);
+  const totalNumber = Number(
+    info.totalNumber
       ?? info.total_number
-      ?? info.totalNumber
-      ?? info.total_count
-      ?? info.totalCount
+      ?? info.total
       ?? info.total_items
-      ?? info.totalItems
+      ?? info.total_count
       ?? 0,
   );
-  const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0;
+  const totalPage = Number(
+    info.totalPage
+      ?? info.total_page
+      ?? (pageSize > 0 ? Math.ceil(totalNumber / pageSize) : 0),
+  );
+
   return {
     page: Number.isNaN(page) ? 1 : page,
-    pageSize: Number.isNaN(pageSize) ? 10 : pageSize,
-    total: Number.isNaN(total) ? 0 : total,
-    totalPages,
+    pageSize: Number.isNaN(pageSize) ? 50 : pageSize,
+    totalNumber: Number.isNaN(totalNumber) ? 0 : totalNumber,
+    totalPage: Number.isNaN(totalPage) ? (pageSize > 0 ? Math.ceil(totalNumber / pageSize) : 0) : totalPage,
   };
 }

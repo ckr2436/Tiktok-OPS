@@ -64,6 +64,8 @@ const ProductRow = memo(function ProductRow({
     [product.minPrice, product.maxPrice, product.currency],
   );
 
+  const imageSrc = product.imageUrl || product.productImageUrl || PLACEHOLDER;
+
   return (
     <div
       className="gmv-product-row"
@@ -78,9 +80,9 @@ const ProductRow = memo(function ProductRow({
       }}
     >
       <img
-        src={product.productImageUrl || PLACEHOLDER}
+        src={imageSrc}
         alt={product.title || '商品缩略图'}
-        className="thumb-56"
+        className="product-img"
         loading="lazy"
         onError={(event) => {
           if (event.currentTarget?.dataset?.fallbackApplied) return;
@@ -93,7 +95,12 @@ const ProductRow = memo(function ProductRow({
       <div className="gmv-product-row__content">
         <div className="gmv-product-row__header">
           <div className="gmv-product-row__title">{product.title || '未命名商品'}</div>
-          <div className="gmv-product-row__price">{priceRange}</div>
+          <div className="gmv-product-row__meta">
+            <span className="gmv-product-row__price">{priceRange}</span>
+            {product.historicalSales ? (
+              <span className="gmv-product-row__sales">近 30 天销量：{product.historicalSales}</span>
+            ) : null}
+          </div>
         </div>
         {product.category ? (
           <div className="gmv-product-row__category">{product.category}</div>
