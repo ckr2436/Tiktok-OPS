@@ -50,13 +50,13 @@ function formatStoreLabel(item) {
   return name || code || id || '';
 }
 
-const STATUS_FILTERS = [
+const STATUS_OPTIONS = [
   { value: 'ALL', label: '全部商品' },
   { value: 'AVAILABLE', label: '可投放' },
   { value: 'NOT_AVAILABLE', label: '不可投放' },
 ];
 
-const GMV_FILTERS = [
+const OCCUPIED_OPTIONS = [
   { value: 'ALL', label: '全部占用状态' },
   { value: 'OCCUPIED', label: '仅已占用' },
   { value: 'UNOCCUPIED', label: '仅未占用' },
@@ -95,6 +95,7 @@ export default function GmvMaxManagementPage() {
   const [occupiedOpen, setOccupiedOpen] = useState(false);
 
   const [syncing, setSyncing] = useState(false);
+  const [selectorsOpen, setSelectorsOpen] = useState(false);
 
   const {
     items,
@@ -218,6 +219,28 @@ export default function GmvMaxManagementPage() {
     );
   }, [advertisers, selectedBcId]);
 
+  const selectedBc = useMemo(
+    () => businessCenters.find((item) => String(item.bc_id || item.id) === String(selectedBcId)) || null,
+    [businessCenters, selectedBcId],
+  );
+
+  const selectedAdvertiser = useMemo(
+    () => filteredAdvertisers.find((item) => String(item.advertiser_id || item.id) === String(selectedAdvertiserId)) || null,
+    [filteredAdvertisers, selectedAdvertiserId],
+  );
+
+  const selectedStore = useMemo(
+    () => stores.find((item) => String(item.store_id || item.id) === String(selectedStoreId)) || null,
+    [stores, selectedStoreId],
+  );
+
+  const selectorSummary = useMemo(() => {
+    const bcText = formatBcLabel(selectedBc) || '未选择';
+    const advText = formatAdvertiserLabel(selectedAdvertiser) || '未选择';
+    const storeText = formatStoreLabel(selectedStore) || '未选择';
+    return `BC: ${bcText} · Adv: ${advText} · Store: ${storeText}`;
+  }, [selectedBc, selectedAdvertiser, selectedStore]);
+
   useEffect(() => {
     setSelectedAdvertiserId((prev) => {
       if (prev && filteredAdvertisers.some((item) => String(item.advertiser_id) === String(prev))) {
@@ -268,18 +291,17 @@ export default function GmvMaxManagementPage() {
     }
   }, [loadingProducts]);
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (filters.status !== 'ALL' && item.status !== filters.status) {
-        return false;
-      }
-      if (filters.gmvMax !== 'ALL') {
-        if (filters.gmvMax === 'OCCUPIED' && item.gmvMaxAdsStatus !== 'OCCUPIED') return false;
-        if (filters.gmvMax === 'UNOCCUPIED' && item.gmvMaxAdsStatus !== 'UNOCCUPIED') return false;
-      }
-      return true;
-    });
-  }, [items, filters.status, filters.gmvMax]);
+  useEffect(() => {
+    if (selectorsOpen && selectedStoreId) {
+      setSelectorsOpen(false);
+    }
+  }, [selectorsOpen, selectedStoreId]);
+
+  useEffect(() => {
+    if (!selectedStoreId) {
+      setFilters({ status: 'ALL', occupied: 'ALL', query: '' });
+    }
+  }, [selectedStoreId, setFilters]);
 
   const selectedProduct = useMemo(() => {
     if (!itemGroupId) return null;
@@ -327,114 +349,138 @@ export default function GmvMaxManagementPage() {
   return (
     <div className="gmv-page">
       <header className="gmv-toolbar">
-        <div className="gmv-toolbar__selectors">
-          <label className="gmv-toolbar__field">
-            <span className="gmv-toolbar__label">授权账号</span>
-            <select
-              value={selectedAuthId}
-              onChange={(event) => setSelectedAuthId(event.target.value)}
-              disabled={authLoading || !authBindings.length}
+        <div className="gmv-toolbar__primary">
+          <div className={`gmv-selector${selectorsOpen ? ' is-open' : ''}`}>
+            <button
+              type="button"
+              className="gmv-selector__summary"
+              onClick={() => setSelectorsOpen((prev) => !prev)}
+              aria-expanded={selectorsOpen}
             >
-              <option value="" disabled>
-                {authLoading ? '加载中…' : '请选择授权账号'}
-              </option>
-              {authBindings.map((binding) => (
-                <option key={binding.auth_id} value={binding.auth_id}>
-                  {binding.alias || binding.provider_app_name || binding.auth_id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="gmv-toolbar__field">
-            <span className="gmv-toolbar__label">Business Center</span>
-            <select
-              value={selectedBcId}
-              onChange={(event) => {
-                setSelectedBcId(event.target.value);
-                setSelectedAdvertiserId('');
-                setSelectedStoreId('');
-                setStores([]);
-              }}
-              disabled={optionsLoading || !businessCenters.length}
-            >
-              <option value="">全部 BC</option>
-              {businessCenters.map((bc) => (
-                <option key={bc.bc_id || bc.id} value={bc.bc_id || bc.id}>
-                  {formatBcLabel(bc) || (bc.bc_id || bc.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="gmv-toolbar__field">
-            <span className="gmv-toolbar__label">Advertiser</span>
-            <select
-              value={selectedAdvertiserId}
-              onChange={(event) => {
-                setSelectedAdvertiserId(event.target.value);
-                setSelectedStoreId('');
-              }}
-              disabled={optionsLoading || !filteredAdvertisers.length}
-            >
-              <option value="" disabled>
-                {optionsLoading ? '加载中…' : '请选择 Advertiser'}
-              </option>
-              {filteredAdvertisers.map((adv) => (
-                <option key={adv.advertiser_id || adv.id} value={adv.advertiser_id || adv.id}>
-                  {formatAdvertiserLabel(adv) || (adv.advertiser_id || adv.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="gmv-toolbar__field">
-            <span className="gmv-toolbar__label">Store</span>
-            <select
-              value={selectedStoreId}
-              onChange={(event) => setSelectedStoreId(event.target.value)}
-              disabled={storesLoading || !stores.length}
-            >
-              <option value="" disabled>
-                {storesLoading ? '加载中…' : '请选择 Store'}
-              </option>
-              {stores.map((store) => (
-                <option key={store.store_id || store.id} value={store.store_id || store.id}>
-                  {formatStoreLabel(store) || (store.store_id || store.id)}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span className="gmv-selector__label">当前范围</span>
+              <span className="gmv-selector__text">{selectorSummary}</span>
+              <span className="gmv-selector__caret" aria-hidden="true" />
+            </button>
+            {selectorsOpen ? (
+              <div className="gmv-selector__panel">
+                <label className="gmv-toolbar__field">
+                  <span className="gmv-toolbar__label">授权账号</span>
+                  <select
+                    value={selectedAuthId}
+                    onChange={(event) => setSelectedAuthId(event.target.value)}
+                    disabled={authLoading || !authBindings.length}
+                  >
+                    <option value="" disabled>
+                      {authLoading ? '加载中…' : '请选择授权账号'}
+                    </option>
+                    {authBindings.map((binding) => (
+                      <option key={binding.auth_id} value={binding.auth_id}>
+                        {binding.alias || binding.provider_app_name || binding.auth_id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="gmv-toolbar__field">
+                  <span className="gmv-toolbar__label">Business Center</span>
+                  <select
+                    value={selectedBcId}
+                    onChange={(event) => {
+                      setSelectedBcId(event.target.value);
+                      setSelectedAdvertiserId('');
+                      setSelectedStoreId('');
+                      setStores([]);
+                    }}
+                    disabled={optionsLoading || !businessCenters.length}
+                  >
+                    <option value="">全部 BC</option>
+                    {businessCenters.map((bc) => (
+                      <option key={bc.bc_id || bc.id} value={bc.bc_id || bc.id}>
+                        {formatBcLabel(bc) || (bc.bc_id || bc.id)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="gmv-toolbar__field">
+                  <span className="gmv-toolbar__label">Advertiser</span>
+                  <select
+                    value={selectedAdvertiserId}
+                    onChange={(event) => {
+                      setSelectedAdvertiserId(event.target.value);
+                      setSelectedStoreId('');
+                    }}
+                    disabled={optionsLoading || !filteredAdvertisers.length}
+                  >
+                    <option value="" disabled>
+                      {optionsLoading ? '加载中…' : '请选择 Advertiser'}
+                    </option>
+                    {filteredAdvertisers.map((adv) => (
+                      <option key={adv.advertiser_id || adv.id} value={adv.advertiser_id || adv.id}>
+                        {formatAdvertiserLabel(adv) || (adv.advertiser_id || adv.id)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="gmv-toolbar__field">
+                  <span className="gmv-toolbar__label">Store</span>
+                  <select
+                    value={selectedStoreId}
+                    onChange={(event) => setSelectedStoreId(event.target.value)}
+                    disabled={storesLoading || !stores.length}
+                  >
+                    <option value="" disabled>
+                      {storesLoading ? '加载中…' : '请选择 Store'}
+                    </option>
+                    {stores.map((store) => (
+                      <option key={store.store_id || store.id} value={store.store_id || store.id}>
+                        {formatStoreLabel(store) || (store.store_id || store.id)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+          </div>
+          <div className="gmv-filter-bar">
+            <label className="gmv-filter-bar__field">
+              <span className="gmv-filter-bar__label">可投放</span>
+              <select
+                value={filters.status}
+                onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
+                disabled={!selectedStoreId}
+              >
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="gmv-filter-bar__field">
+              <span className="gmv-filter-bar__label">GMV Max 占用</span>
+              <select
+                value={filters.occupied}
+                onChange={(event) => setFilters((prev) => ({ ...prev, occupied: event.target.value }))}
+                disabled={!selectedStoreId}
+              >
+                {OCCUPIED_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
-        <div className="gmv-toolbar__actions">
-          <input
-            type="search"
-            className="form-input gmv-toolbar__search"
-            placeholder="搜索商品名称"
-            value={filters.productName}
-            onChange={(event) => setFilters((prev) => ({ ...prev, productName: event.target.value }))}
-            disabled={!selectedStoreId}
-          />
-          <div className="gmv-filter-chips">
-            {STATUS_FILTERS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`gmv-chip${filters.status === option.value ? ' gmv-chip--active' : ''}`}
-                onClick={() => setFilters((prev) => ({ ...prev, status: option.value }))}
-                disabled={!selectedStoreId}
-              >
-                {option.label}
-              </button>
-            ))}
-            {GMV_FILTERS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`gmv-chip${filters.gmvMax === option.value ? ' gmv-chip--active' : ''}`}
-                onClick={() => setFilters((prev) => ({ ...prev, gmvMax: option.value }))}
-                disabled={!selectedStoreId}
-              >
-                {option.label}
-              </button>
-            ))}
+        <div className="gmv-toolbar__secondary">
+          <div className="gmv-filter-bar__search">
+            <input
+              type="search"
+              className="form-input"
+              placeholder="搜索商品名称"
+              value={filters.query}
+              onChange={(event) => setFilters((prev) => ({ ...prev, query: event.target.value }))}
+              disabled={!selectedStoreId}
+            />
           </div>
           <div className="gmv-sorter">
             <select
@@ -474,16 +520,16 @@ export default function GmvMaxManagementPage() {
         </div>
       ) : null}
 
-      <div className="gmv-list">
-        <div className="gmv-list__header">
-          <div>
-            {selectedStoreId
-              ? `共 ${pageInfo.total} 条记录，当前展示 ${filteredItems.length} 条`
+        <div className="gmv-list">
+          <div className="gmv-list__header">
+            <div>
+              {selectedStoreId
+              ? `共 ${pageInfo.total} 条记录，当前展示 ${items.length} 条`
               : '请选择 Store 查看商品列表'}
+            </div>
           </div>
-        </div>
 
-        {!selectedStoreId ? (
+          {!selectedStoreId ? (
           <div className="overview-state">
             <div className="overview-state__message">请选择 Business Center / Advertiser / Store 以加载 GMV Max 商品。</div>
           </div>
@@ -500,13 +546,13 @@ export default function GmvMaxManagementPage() {
           <div className="overview-state overview-state--error">
             <div className="overview-state__message">{getErrorMessage(productsError, '商品列表加载失败')}</div>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="overview-state">
             <div className="overview-state__message">未找到符合条件的商品。</div>
           </div>
         ) : (
           <div className="gmv-product-list">
-            {filteredItems.map((product) => (
+            {items.map((product) => (
               <ProductRow
                 key={product.itemGroupId}
                 product={product}

@@ -1,4 +1,7 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
+
+const PLACEHOLDER =
+  'https://lf16-tiktok-business.myfilecdn.com/obj/ad-mcs-sg/marketing-resource-center/placeholder.png';
 
 function formatPriceRange(minPrice, maxPrice, currency) {
   if (!minPrice && !maxPrice) return '—';
@@ -9,32 +12,39 @@ function formatPriceRange(minPrice, maxPrice, currency) {
 }
 
 function StatusBadges({ product = {} }) {
-  const badges = [];
+  const badges = useMemo(() => {
+    const list = [];
+    if (product.status) {
+      list.push({
+        key: 'status',
+        label: product.status === 'AVAILABLE' ? '可投放' : '不可投放',
+        className: product.status === 'AVAILABLE' ? 'badge badge-ok' : 'badge badge-muted',
+      });
+    }
 
-  if (product.status) {
-    badges.push({
-      key: 'status',
-      label: product.status === 'AVAILABLE' ? '可投放' : '不可投放',
-      tone: product.status === 'AVAILABLE' ? 'available' : 'not-available',
-    });
-  }
+    if (product.gmvMaxAdsStatus) {
+      list.push({
+        key: 'gmv',
+        label: product.gmvMaxAdsStatus === 'OCCUPIED' ? '已占用' : '未占用',
+        className:
+          product.gmvMaxAdsStatus === 'OCCUPIED' ? 'badge badge-warn' : 'badge badge-ok',
+      });
+    }
 
-  if (product.gmvMaxAdsStatus) {
-    badges.push({
-      key: 'gmv',
-      label: product.gmvMaxAdsStatus === 'OCCUPIED' ? '已占用' : '未占用',
-      tone: product.gmvMaxAdsStatus === 'OCCUPIED' ? 'occupied' : 'unoccupied',
-    });
-  }
+    if (product.isRunningCustomShopAds) {
+      list.push({ key: 'sa', label: 'Running SA', className: 'badge badge-muted' });
+    }
+    return list;
+  }, [product]);
 
-  if (product.isRunningCustomShopAds) {
-    badges.push({ key: 'sa', label: 'Running SA', tone: 'sa' });
+  if (!badges.length) {
+    return null;
   }
 
   return (
     <div className="gmv-product-row__badges" aria-label="商品标签">
       {badges.map((badge) => (
-        <span key={badge.key} className={`gmv-badge gmv-badge--${badge.tone}`}>
+        <span key={badge.key} className={badge.className}>
           {badge.label}
         </span>
       ))}
@@ -49,6 +59,11 @@ const ProductRow = memo(function ProductRow({
   onCreatePlan,
   onOpenAutomation,
 }) {
+  const priceRange = useMemo(
+    () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
+    [product.minPrice, product.maxPrice, product.currency],
+  );
+
   return (
     <div
       className="gmv-product-row"
@@ -63,16 +78,26 @@ const ProductRow = memo(function ProductRow({
       }}
     >
       <img
-        src={product.imageUrl || 'https://lf16-tiktok-business.myfilecdn.com/obj/ad-mcs-sg/marketing-resource-center/placeholder.png'}
+        src={product.productImageUrl || PLACEHOLDER}
         alt={product.title || '商品缩略图'}
-        className="gmv-product-row__thumb"
+        className="thumb-56"
+        loading="lazy"
+        onError={(event) => {
+          if (event.currentTarget?.dataset?.fallbackApplied) return;
+          if (event.currentTarget) {
+            event.currentTarget.dataset.fallbackApplied = 'true';
+            event.currentTarget.src = PLACEHOLDER;
+          }
+        }}
       />
-      <div className="gmv-product-row__info">
-        <div className="gmv-product-row__title">{product.title || '未命名商品'}</div>
-        <div className="gmv-product-row__meta">
-          <span>{formatPriceRange(product.minPrice, product.maxPrice, product.currency)}</span>
-          {product.historicalSales ? <span>近 30 天销量 {product.historicalSales}</span> : null}
+      <div className="gmv-product-row__content">
+        <div className="gmv-product-row__header">
+          <div className="gmv-product-row__title">{product.title || '未命名商品'}</div>
+          <div className="gmv-product-row__price">{priceRange}</div>
         </div>
+        {product.category ? (
+          <div className="gmv-product-row__category">{product.category}</div>
+        ) : null}
         <StatusBadges product={product} />
       </div>
       <div className="gmv-product-row__actions">

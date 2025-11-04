@@ -53,7 +53,7 @@ export default function ProductDetailDrawer({ open = false, product = null, onCl
             <div className="product-detail-drawer__preview">
               <img
                 src={
-                  product?.imageUrl
+                  product?.productImageUrl
                   || 'https://lf16-tiktok-business.myfilecdn.com/obj/ad-mcs-sg/marketing-resource-center/placeholder.png'
                 }
                 alt={product?.title || '商品图片'}
@@ -71,7 +71,9 @@ export default function ProductDetailDrawer({ open = false, product = null, onCl
               </div>
               <div className="product-detail-drawer__section">
                 <h5>SKU 列表（待接入）</h5>
-                <div className="product-detail-drawer__placeholder">SKU 数据接口对接中，暂不展示详细信息。</div>
+                <div className="product-detail-drawer__placeholder">
+                  TODO：接入 SKU 维度接口后展示规格、库存及定价详情。
+                </div>
               </div>
               <div className="product-detail-drawer__section">
                 <h5>历史表现（待接入）</h5>

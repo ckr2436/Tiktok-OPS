@@ -1,21 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { fetchProducts } from '../products/service.js';
-import { adaptPageInfo, adaptProduct } from '../products/adapters.js';
+import { getStoreProducts } from '../products/service.js';
 
 const DEFAULT_PAGE_INFO = { page: 1, pageSize: 20, total: 0, totalPages: 0 };
 const SEARCH_DEBOUNCE = 400;
 
-function ensureFilters(next) {
+const FILTER_DEFAULTS = {
+  status: 'ALL',
+  occupied: 'ALL',
+  query: '',
+};
+
+function normalizeFilters(next) {
+  if (!next || typeof next !== 'object') {
+    return { ...FILTER_DEFAULTS };
+  }
   return {
-    status: next?.status || 'ALL',
-    gmvMax: next?.gmvMax || 'ALL',
-    productName: next?.productName || '',
+    status: next.status || FILTER_DEFAULTS.status,
+    occupied: next.occupied || FILTER_DEFAULTS.occupied,
+    query: typeof next.query === 'string' ? next.query : FILTER_DEFAULTS.query,
   };
 }
 
 export default function useGmvMaxProducts(initial = {}) {
-  const [query, setQuery] = useState({
+  const [queryState, setQueryState] = useState({
     bcId: initial.bcId || '',
     advertiserId: initial.advertiserId || '',
     storeId: initial.storeId || '',
@@ -25,17 +33,21 @@ export default function useGmvMaxProducts(initial = {}) {
     pageSize: initial.pageSize || 20,
   });
 
-  const [filters, setFiltersState] = useState(() => ensureFilters({ productName: initial.productName }));
-  const [items, setItems] = useState([]);
-  const [pageInfo, setPageInfo] = useState({ ...DEFAULT_PAGE_INFO, pageSize: query.pageSize });
+  const [filters, setFiltersState] = useState(() =>
+    normalizeFilters({ query: initial.productName || initial.query }),
+  );
+  const [debouncedQuery, setDebouncedQuery] = useState(
+    normalizeFilters({ query: initial.productName || initial.query }).query,
+  );
+  const [rawItems, setRawItems] = useState([]);
+  const [pageInfo, setPageInfo] = useState({ ...DEFAULT_PAGE_INFO, pageSize: queryState.pageSize });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
-  const lastRequestRef = useRef(null);
-  const [debouncedSearch, setDebouncedSearch] = useState(filters.productName);
+  const requestRef = useRef(null);
 
   useEffect(() => {
-    setQuery((prev) => ({
+    setQueryState((prev) => ({
       ...prev,
       bcId: initial.bcId || '',
       advertiserId: initial.advertiserId || '',
@@ -44,106 +56,114 @@ export default function useGmvMaxProducts(initial = {}) {
   }, [initial.bcId, initial.advertiserId, initial.storeId]);
 
   useEffect(() => {
-    setFiltersState((prev) => ensureFilters({ ...prev, productName: initial.productName }));
-  }, [initial.productName]);
+    setFiltersState((prev) =>
+      normalizeFilters({ ...prev, query: initial.productName || initial.query || '' }),
+    );
+  }, [initial.productName, initial.query]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(filters.productName || '');
+      const value = typeof filters.query === 'string' ? filters.query.trim() : '';
+      setDebouncedQuery(value);
     }, SEARCH_DEBOUNCE);
     return () => clearTimeout(timer);
-  }, [filters.productName]);
+  }, [filters.query]);
 
   useEffect(() => {
-    setQuery((prev) => ({ ...prev, page: 1 }));
-  }, [debouncedSearch, query.bcId, query.advertiserId, query.storeId]);
+    setQueryState((prev) => ({
+      ...prev,
+      page: 1,
+    }));
+  }, [debouncedQuery, queryState.bcId, queryState.advertiserId, queryState.storeId]);
 
   useEffect(() => {
-    if (!query.bcId || !query.advertiserId || !query.storeId) {
-      setItems([]);
+    if (!queryState.bcId || !queryState.storeId || !queryState.advertiserId) {
+      setRawItems([]);
       setPageInfo((prev) => ({ ...prev, page: 1, total: 0, totalPages: 0 }));
       setError(null);
-      if (lastRequestRef.current) {
-        lastRequestRef.current.abort();
-        lastRequestRef.current = null;
+      if (requestRef.current) {
+        requestRef.current.cancel();
+        requestRef.current = null;
       }
-      return;
+      return undefined;
     }
 
-    const controller = new AbortController();
-    if (lastRequestRef.current) {
-      lastRequestRef.current.abort();
+    if (requestRef.current) {
+      requestRef.current.cancel();
     }
-    lastRequestRef.current = controller;
 
+    const request = getStoreProducts({
+      bcId: queryState.bcId,
+      storeId: queryState.storeId,
+      advertiserId: queryState.advertiserId,
+      productName: debouncedQuery || undefined,
+      sortField: queryState.sortField,
+      sortType: queryState.sortType,
+      page: queryState.page,
+      pageSize: queryState.pageSize,
+      scope: 'GMV_MAX',
+    });
+
+    requestRef.current = request;
     setLoading(true);
     setError(null);
 
-    fetchProducts(
-      {
-        bcId: query.bcId,
-        advertiserId: query.advertiserId,
-        storeId: query.storeId,
-        productName: debouncedSearch || undefined,
-        sortField: query.sortField,
-        sortType: query.sortType,
-        page: query.page,
-        pageSize: query.pageSize,
-        adCreationEligible: 'GMV_MAX',
-      },
-      { signal: controller.signal },
-    )
-      .then((response) => {
-        const rawItems =
-          response?.data?.list
-          ?? response?.data?.items
-          ?? response?.list
-          ?? response?.items
-          ?? [];
-        const adaptedItems = Array.isArray(rawItems) ? rawItems.map(adaptProduct) : [];
-        const rawPageInfo = response?.data?.page_info || response?.page_info || {};
-        const adaptedPageInfo = adaptPageInfo(rawPageInfo);
-        setItems(adaptedItems);
-        setPageInfo({ ...DEFAULT_PAGE_INFO, ...adaptedPageInfo });
+    request.promise
+      .then(({ items, pageInfo: info }) => {
+        setRawItems(Array.isArray(items) ? items : []);
+        setPageInfo({ ...DEFAULT_PAGE_INFO, ...info });
       })
       .catch((err) => {
         if (err?.name === 'AbortError') return;
         setError(err);
+        setRawItems([]);
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
+        if (requestRef.current === request) {
+          requestRef.current = null;
         }
+        setLoading(false);
       });
 
     return () => {
-      controller.abort();
+      request.cancel();
     };
   }, [
-    query.bcId,
-    query.advertiserId,
-    query.storeId,
-    query.sortField,
-    query.sortType,
-    query.page,
-    query.pageSize,
-    debouncedSearch,
+    queryState.bcId,
+    queryState.storeId,
+    queryState.advertiserId,
+    queryState.sortField,
+    queryState.sortType,
+    queryState.page,
+    queryState.pageSize,
+    debouncedQuery,
     refreshToken,
   ]);
 
-  const setFilters = useCallback((updater) => {
-    setFiltersState((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
-      return ensureFilters(next);
+  const items = useMemo(() => {
+    return rawItems.filter((item) => {
+      if (filters.status !== 'ALL' && item.status !== filters.status) {
+        return false;
+      }
+      if (filters.occupied !== 'ALL') {
+        if (filters.occupied === 'OCCUPIED' && item.gmvMaxAdsStatus !== 'OCCUPIED') {
+          return false;
+        }
+        if (filters.occupied === 'UNOCCUPIED' && item.gmvMaxAdsStatus !== 'UNOCCUPIED') {
+          return false;
+        }
+      }
+      return true;
     });
-  }, []);
+  }, [rawItems, filters.status, filters.occupied]);
 
   const setPage = useCallback((page) => {
-    setQuery((prev) => ({ ...prev, page }));
+    const nextPage = Number(page) || 1;
+    setQueryState((prev) => ({ ...prev, page: nextPage < 1 ? 1 : nextPage }));
   }, []);
 
   const setSort = useCallback((field, type) => {
-    setQuery((prev) => ({
+    setQueryState((prev) => ({
       ...prev,
       sortField: field || prev.sortField,
       sortType: type || prev.sortType,
@@ -151,11 +171,22 @@ export default function useGmvMaxProducts(initial = {}) {
     }));
   }, []);
 
+  const setFilters = useCallback((updater) => {
+    setFiltersState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      return normalizeFilters(next);
+    });
+    setQueryState((prev) => ({ ...prev, page: 1 }));
+  }, []);
+
   const refresh = useCallback(() => {
     setRefreshToken((prev) => prev + 1);
   }, []);
 
-  const sort = useMemo(() => ({ field: query.sortField, type: query.sortType }), [query.sortField, query.sortType]);
+  const sort = useMemo(
+    () => ({ field: queryState.sortField, type: queryState.sortType }),
+    [queryState.sortField, queryState.sortType],
+  );
 
   return {
     items,

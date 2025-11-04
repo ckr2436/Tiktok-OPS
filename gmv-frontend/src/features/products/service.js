@@ -1,46 +1,37 @@
+import { adaptPageInfo, adaptProduct } from './adapters.js';
+
 const ENDPOINT = ['/open_api/v1.3', 'store', 'product', 'get'].join('/') + '/';
 
-const KEY_MAP = {
+const PARAM_KEYS = {
   bcId: 'bc_id',
   storeId: 'store_id',
   advertiserId: 'advertiser_id',
-  adCreationEligible: 'ad_creation_eligible',
   productName: 'product_name',
   sortField: 'sort_field',
   sortType: 'sort_type',
-  pageSize: 'page_size',
   page: 'page',
+  pageSize: 'page_size',
 };
 
-function normalizeParams(params = {}) {
-  if (!params || typeof params !== 'object') return {};
-  return Object.entries(params).reduce((acc, [key, value]) => {
-    const mapped = KEY_MAP[key] || key;
-    acc[mapped] = value;
-    return acc;
-  }, {});
-}
+let activeController = null;
 
 function encodeValue(value) {
   if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed === '' ? undefined : trimmed;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (typeof value === 'object') {
+  if (Array.isArray(value) || typeof value === 'object') {
     try {
       return encodeURIComponent(JSON.stringify(value));
     } catch (error) {
       return encodeURIComponent(String(value));
     }
   }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
   return String(value);
 }
 
-function buildQuery(params) {
+function buildSearch(params) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     const encoded = encodeValue(value);
@@ -49,6 +40,17 @@ function buildQuery(params) {
     }
   });
   return search.toString();
+}
+
+function normalizeParams(params = {}) {
+  if (!params || typeof params !== 'object') {
+    return {};
+  }
+  return Object.entries(params).reduce((acc, [key, value]) => {
+    const mapped = PARAM_KEYS[key] || key;
+    acc[mapped] = value;
+    return acc;
+  }, {});
 }
 
 function toApiError(error, fallbackCode = 'REQUEST_FAILED') {
@@ -67,18 +69,43 @@ function toApiError(error, fallbackCode = 'REQUEST_FAILED') {
   };
 }
 
-export async function fetchProducts(params = {}, options = {}) {
+function resolveItems(payload) {
+  const list =
+    payload?.data?.list
+    ?? payload?.data?.items
+    ?? payload?.list
+    ?? payload?.items
+    ?? [];
+  return Array.isArray(list) ? list.map(adaptProduct) : [];
+}
+
+function resolvePageInfo(payload) {
+  const rawInfo = payload?.data?.page_info || payload?.page_info || payload?.data || {};
+  return adaptPageInfo(rawInfo);
+}
+
+export function getStoreProducts(params = {}) {
   const normalized = normalizeParams(params);
-  const requiredKeys = ['bc_id', 'store_id', 'advertiser_id'];
 
-  requiredKeys.forEach((key) => {
-    if (!normalized[key]) {
-      throw { message: `${key} is required`, code: 'INVALID_PARAMS' };
-    }
-  });
+  if (!normalized.bc_id) {
+    throw { message: 'bcId is required', code: 'INVALID_PARAMS' };
+  }
+  if (!normalized.store_id) {
+    throw { message: 'storeId is required', code: 'INVALID_PARAMS' };
+  }
 
-  if (!normalized.ad_creation_eligible) {
+  const scope = params.scope;
+  delete normalized.scope;
+  if (scope === 'GMV_MAX') {
     normalized.ad_creation_eligible = 'GMV_MAX';
+    if (!normalized.advertiser_id) {
+      throw {
+        message: 'advertiserId is required when scope is GMV_MAX',
+        code: 'INVALID_PARAMS',
+      };
+    }
+  } else if (params.advertiserId && !normalized.advertiser_id) {
+    normalized.advertiser_id = params.advertiserId;
   }
 
   if (!normalized.page) {
@@ -88,48 +115,73 @@ export async function fetchProducts(params = {}, options = {}) {
     normalized.page_size = 20;
   }
 
-  const query = buildQuery(normalized);
+  const query = buildSearch(normalized);
   const url = query ? `${ENDPOINT}?${query}` : ENDPOINT;
-  const { signal } = options;
 
-  let response;
-  try {
-    response = await fetch(url, { method: 'GET', credentials: 'include', signal });
-  } catch (error) {
-    throw toApiError(error);
+  if (activeController) {
+    activeController.abort();
   }
 
-  let text;
-  try {
-    text = await response.text();
-  } catch (error) {
-    text = '';
-  }
+  const controller = new AbortController();
+  activeController = controller;
 
-  if (!response.ok) {
-    let message = text || '请求失败';
-    let code = response.status;
-    try {
-      const payload = text ? JSON.parse(text) : null;
-      if (payload) {
-        message = payload?.message || payload?.error?.message || message;
-        code = payload?.code || payload?.error?.code || code;
+  const promise = fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      const text = await response.text();
+      if (!response.ok) {
+        if (!text) {
+          throw { message: '请求失败', code: response.status };
+        }
+        try {
+          const payload = JSON.parse(text);
+          throw {
+            message: payload?.message || payload?.error?.message || '请求失败',
+            code: payload?.code || payload?.error?.code || response.status,
+          };
+        } catch (error) {
+          if (error.name === 'SyntaxError') {
+            throw { message: text || '请求失败', code: response.status };
+          }
+          throw error;
+        }
       }
-    } catch (error) {
-      // ignore json parse error
+
+      if (!text) {
+        return { items: [], pageInfo: adaptPageInfo({}) };
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch (error) {
+        throw { message: '响应解析失败', code: 'PARSE_ERROR' };
+      }
+
+      return {
+        items: resolveItems(payload),
+        pageInfo: resolvePageInfo(payload),
+      };
+    })
+    .catch((error) => {
+      throw toApiError(error);
+    })
+    .finally(() => {
+      if (activeController === controller) {
+        activeController = null;
+      }
+    });
+
+  const cancel = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
     }
-    throw { message, code };
-  }
+  };
 
-  if (!text) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    return {};
-  }
+  return { promise, cancel };
 }
 
-export default { fetchProducts };
+export default { getStoreProducts };
