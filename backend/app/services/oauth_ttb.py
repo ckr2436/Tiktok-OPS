@@ -215,7 +215,7 @@ def create_authz_session(
     db.add(sess)
     db.flush()
 
-    # ★ 官方 Portal 授权入口：/portal/auth
+    # 官方 Portal 授权入口：/portal/auth
     from urllib.parse import urlencode
     base = settings.TT_BIZ_PORTAL_AUTH_URL.rstrip("/")  # 例：https://business-api.tiktok.com/portal
     qs = {
@@ -254,30 +254,26 @@ async def _http_post_json(url: str, payload: dict, *, timeout: float, headers: d
         raise APIError("HTTP_REQUEST_FAILED", f"request error: {e}", 502)
 
 
-# ---------- token exchange (v1.3 /oauth/token，失败兜底 /oauth2/access_token) ----------
+# ---------- token exchange (STRICT v1.3 only) ----------
 def _decrypt_app_secret(app: OAuthProviderApp) -> str:
     aad = f"{app.provider}|{app.client_id}|{app.redirect_uri}"
     return decrypt_blob_to_text(app.client_secret_cipher, aad_text=aad)
 
 
-def _parse_token_response(payload: dict) -> tuple[str | None, Any]:
+def _parse_token_response_v13(payload: dict) -> tuple[str, Any]:
     """
-    兼容两种返回结构：
-    - 新版 /oauth/token 顶层: {"code":0,"access_token":"...","scope":[...],"advertiser_ids":[...]}
-    - 旧版 /oauth2/access_token data: {"code":0,"data":{"access_token":"...","scope":[...],"advertiser_ids":[...]}}
+    严格 v1.3 结构：
+    顶层: {"code":0,"message":"OK","access_token":"...","scope":[...], ...}
     """
     if not isinstance(payload, dict):
-        return None, None
-    # 优先新版
+        raise APIError("TOKEN_EXCHANGE_FAILED", "invalid response json", 502)
+    if int(payload.get("code", -1)) != 0:
+        msg = payload.get("message") or "token exchange error"
+        raise APIError("TOKEN_EXCHANGE_FAILED", str(msg)[:512], 502)
     token = payload.get("access_token")
-    scope = payload.get("scope")
-    if token:
-        return str(token), scope
-    # 兼容旧版
-    data = payload.get("data") or {}
-    token = data.get("access_token")
-    scope = data.get("scope")
-    return (str(token) if token else None), scope
+    if not token:
+        raise APIError("TOKEN_EXCHANGE_FAILED", "no access_token", 502)
+    return str(token), payload.get("scope")
 
 
 async def handle_callback_and_bind_token(
@@ -307,45 +303,33 @@ async def handle_callback_and_bind_token(
 
     client_secret = _decrypt_app_secret(app)
 
-    base = settings.TT_BIZ_TOKEN_URL.rstrip("/")  # 例：https://business-api.tiktok.com/open_api/v1.3
+    # 统一使用 v1.3 基底，避免再被错误的 env 影响
+    api_base = (getattr(settings, "TT_BIZ_API_BASE", "https://business-api.tiktok.com").rstrip("/"))
+    v13 = f"{api_base}/open_api/v1.3"
+    url_oauth_token = f"{v13}/oauth/token/"
+
     timeout = float(getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15))
 
-    # ---- 首选 v1.3 新接口 /oauth/token/ ----
+    # ---- 严格 v1.3 /oauth/token/ ----
     payload_token = {
         "grant_type": "authorization_code",
         "code": code,
         "client_id": app.client_id,
         "client_secret": client_secret,
     }
-    http = await _http_post_json(f"{base}/oauth/token/", payload_token, timeout=timeout)
+    http = await _http_post_json(url_oauth_token, payload_token, timeout=timeout)
 
     js = http.get("json") or {}
-    if http["status_code"] >= 400 or int(js.get("code", -1)) != 0:
-        # ---- 兜底到 v1.3 旧结构 /oauth2/access_token/（参数名是 auth_code）----
-        payload_access_token = {
-            "app_id": app.client_id,
-            "secret": client_secret,
-            "auth_code": code,
-        }
-        http2 = await _http_post_json(f"{base}/oauth2/access_token/", payload_access_token, timeout=timeout)
-        js2 = http2.get("json") or {}
-        if http2["status_code"] >= 400 or int(js2.get("code", -1)) != 0:
-            # 失败：记录并报错（不在服务层 commit）
-            sess.status = "failed"
-            sess.error_code = str(js.get("code") or js2.get("code") or "token_exchange_failed")
-            sess.error_message = (js.get("message") or js2.get("message") or "token exchange error")[:512]
-            db.add(sess)
-            raise APIError("TOKEN_EXCHANGE_FAILED", sess.error_message, 502)
-        js = js2  # 用兜底成功的结果
-
-    token, scope = _parse_token_response(js)
-    logger.info("TTB token exchange ok state=%s has_token=%s", state, bool(token))
-    if not token:
+    if http["status_code"] >= 400:
+        msg = (isinstance(js, dict) and js.get("message")) or f"http {http['status_code']}"
         sess.status = "failed"
-        sess.error_code = "no_token"
-        sess.error_message = "no access_token in response"
+        sess.error_code = str(js.get("code") if isinstance(js, dict) else http["status_code"])
+        sess.error_message = str(msg)[:512]
         db.add(sess)
-        raise APIError("TOKEN_EXCHANGE_FAILED", "no access_token", 502)
+        raise APIError("TOKEN_EXCHANGE_FAILED", sess.error_message, 502)
+
+    token, scope = _parse_token_response_v13(js)
+    logger.info("TTB token exchange ok state=%s has_token=%s", state, bool(token))
 
     # 持久化账户（携带 alias）
     key_version = int(app.client_secret_key_version)
@@ -411,76 +395,50 @@ def get_access_token_plain(db: Session, account_id: int) -> tuple[str, OAuthProv
     return token, app
 
 
-# ---------- revoke (NEW: /oauth2/revoke_token/) ----------
+# ---------- revoke (STRICT v1.3) ----------
 async def revoke_remote_token(*, access_token: str, app: OAuthProviderApp, timeout: float) -> None:
     """
-    TikTok Business 撤销长期令牌：
+    TikTok Business 撤销长期令牌（严格 v1.3）：
       POST /open_api/v1.3/oauth2/revoke_token/
-      要求：
-        - Header: Access-Token: <要撤销的那个 access_token>
-        - Content-Type: application/json
-        - Body(首选): { "app_id": "...", "secret": "...", "access_token": "..." }
-        - Body(兼容): { "client_id": "...", "client_secret": "...", "token": "..." }
+      Header: Access-Token: <要撤销的那个 access_token>
+      Body:   { "app_id": "...", "secret": "...", "access_token": "..." }
     """
     secret = _decrypt_app_secret(app)
-    url = settings.TT_BIZ_TOKEN_URL.rstrip("/") + "/oauth2/revoke_token/"
+    api_base = (getattr(settings, "TT_BIZ_API_BASE", "https://business-api.tiktok.com").rstrip("/"))
+    v13 = f"{api_base}/open_api/v1.3"
+    url = f"{v13}/oauth2/revoke_token/"
 
     headers_json = {
         "Content-Type": "application/json",
-        "Access-Token": access_token,  # ★ 必填：要撤销的 token 也要放在 Header
+        "Access-Token": access_token,
     }
 
     async with httpx.AsyncClient(timeout=timeout, http2=True) as client:
-        # 1) 官方首选字段名：app_id / secret / access_token
-        payload1 = {
+        payload = {
             "app_id": app.client_id,
             "secret": secret,
             "access_token": access_token,
         }
-        r1 = await client.post(url, json=payload1, headers=headers_json)
+        r = await client.post(url, json=payload, headers=headers_json)
         try:
-            js1 = r1.json()
+            js = r.json()
         except Exception:
-            js1 = {}
+            js = {}
         logger.debug(
-            "TTB REVOKE JSON#1 status=%s json=%s",
-            getattr(r1, "status_code", "?"),
-            {k: ("***" if k in {"access_token", "secret"} else v) for k, v in (js1 or {}).items()},
+            "TTB REVOKE v1.3 status=%s json=%s",
+            getattr(r, "status_code", "?"),
+            {k: ("***" if k in {"access_token", "secret"} else v) for k, v in (js or {}).items()},
         )
-        if (r1.status_code < 400) and isinstance(js1, dict) and int(js1.get("code", -1)) == 0:
+        if (r.status_code < 400) and isinstance(js, dict) and int(js.get("code", -1)) == 0:
             return
 
-        # 2) 兼容字段名：client_id / client_secret / token （仍然用 JSON）
-        payload2 = {
-            "client_id": app.client_id,
-            "client_secret": secret,
-            "token": access_token,
-        }
-        r2 = await client.post(url, json=payload2, headers=headers_json)
-        try:
-            js2 = r2.json()
-        except Exception:
-            js2 = {}
-        logger.debug(
-            "TTB REVOKE JSON#2 status=%s json=%s",
-            getattr(r2, "status_code", "?"),
-            {k: ("***" if k in {"token", "client_secret"} else v) for k, v in (js2 or {}).items()},
-        )
-        if (r2.status_code < 400) and isinstance(js2, dict) and int(js2.get("code", -1)) == 0:
-            return
-
-    msg = (
-        (isinstance(js2, dict) and js2.get("message"))
-        or (isinstance(js1, dict) and js1.get("message"))
-        or "revoke failed"
-    )
+    msg = (isinstance(js, dict) and js.get("message")) or "revoke failed"
     raise APIError("REVOKE_FAILED", msg, 502)
 
 
 def _mark_local_revoked(db: Session, *, workspace_id: int, auth_id: int) -> None:
     """
     本地软撤销：将账户标记为 revoked，并清空别名 alias。
-    （已移除广告主表，无需清理关联）
     """
     acc = db.get(OAuthAccountTTB, int(auth_id))
     if not acc or acc.workspace_id != int(workspace_id):
@@ -495,7 +453,7 @@ def _mark_local_revoked(db: Session, *, workspace_id: int, auth_id: int) -> None
         .values(
             status="revoked",
             revoked_at=datetime.now(timezone.utc),
-            alias=None,  # 清空名称，避免展示冲突
+            alias=None,
         )
     )
 
@@ -546,13 +504,12 @@ def update_oauth_account_alias(
 
     return acc
 
-# === 追加到 app/services/oauth_ttb.py 末尾，作为公共取凭据的辅助 ===
 
+# === 公共取凭据 ===
 def get_credentials_for_auth_id(db: Session, auth_id: int) -> tuple[str, str, str]:
     """
     返回 (app_id, app_secret_plain, redirect_uri)
     - 严格密文解密（使用 provider|client_id|redirect_uri 作为 AAD）
-    - 不兜底明文
     """
     acc = db.get(OAuthAccountTTB, int(auth_id))
     if not acc:

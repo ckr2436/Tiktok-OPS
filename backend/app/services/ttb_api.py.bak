@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 """
-TikTok Business API 客户端：
-- 只暴露 5 个读取器（异步）：
+TikTok Business API 客户端（严格版）：
+- 只暴露 4 个读取器（异步）：
     * iter_business_centers()  -> /bc/get/（data.list + 可能的 page_info.cursor 或 page/page_size）
-    * iter_advertisers()       -> /oauth2/advertiser/get/（data.list；cursor 分页；本文件里会自动附加 app_id/secret）
-    * fetch_advertiser_info()  -> /advertiser/info/（GET，query: advertiser_ids, fields 均为 JSON 数组字符串）
-    * iter_stores()            -> /store/list/  （data.stores，页码分页）
+    * iter_advertisers()       -> /advertiser/get/（data.list；可能包含 cursor 分页）
+    * fetch_advertiser_info()  -> /advertiser/info/（data.list；批量 <=50 个 advertiser_id）
+    * iter_stores()             -> /store/list/  （data.stores，页码分页）
     * iter_products()          -> /store/product/get/（data.store_products，页码分页）
 - URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
 - 令牌桶限速（默认 10 QPS），429/5xx 指数退避，page_size 强制上限 50（支持分页的接口才生效）。
@@ -17,7 +17,6 @@ import asyncio
 import json
 import math
 import time
-import logging
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple, Literal
 
@@ -33,12 +32,7 @@ from app.core.config import settings
 from app.services.ttb_http import build_url
 
 
-logger = logging.getLogger("gmv.ttb.http")
-
-
 # --------------------------- 错误类型 ---------------------------
-
-
 class TTBApiError(Exception):
     """业务层错误（HTTP 2xx 但 code 非 0）"""
 
@@ -66,9 +60,7 @@ class TTBHttpError(Exception):
 
 
 # --------------------------- 常量/限流 ---------------------------
-
 _MAX_PAGE_SIZE = 50  # 官方上限
-
 
 def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
     try:
@@ -104,17 +96,14 @@ class TokenBucket:
 
 
 # --------------------------- 端点路径（来自 settings，可覆盖） ---------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class TTBPaths:
     """
     仅支持以下固定 settings 覆盖项（可写相对/绝对路径）：
-      - TTB_BC_GET             (默认 "bc/get/")
-      - TTB_ADVERTISERS_GET    (默认 "oauth2/advertiser/get/")
-      - TTB_ADVERTISER_INFO    (默认 "advertiser/info/")
+      - TTB_BC_GET            (默认 "bc/get/")
+      - TTB_ADVERTISERS_GET   (默认 "advertiser/get/")
       - TTB_STORES_LIST        (默认 "store/list/")
-      - TTB_PRODUCTS_LIST      (默认 "store/product/get/")
+      - TTB_PRODUCTS_LIST     (默认 "store/product/get/")
     """
 
     bc_get: str
@@ -131,7 +120,7 @@ class TTBPaths:
 
         return cls(
             bc_get=g("TTB_BC_GET", "bc/get/"),
-            advertisers_get=g("TTB_ADVERTISERS_GET", "oauth2/advertiser/get/"),
+            advertisers_get=g("TTB_ADVERTISERS_GET", "advertiser/get/"),
             advertiser_info=g("TTB_ADVERTISER_INFO", "advertiser/info/"),
             stores_list=g("TTB_STORES_LIST", "store/list/"),
             products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
@@ -139,14 +128,11 @@ class TTBPaths:
 
 
 # --------------------------- 客户端主体 ---------------------------
-
-
 class TTBApiClient:
     """
     读取器：
       - iter_business_centers()
       - iter_advertisers()
-      - fetch_advertiser_info()
       - iter_stores()
       - iter_products()
     """
@@ -155,25 +141,16 @@ class TTBApiClient:
         self,
         *,
         access_token: str,
-        app_id: str | None = None,
-        app_secret: str | None = None,
         qps: float | None = None,
         timeout: float | None = None,
         headers: Optional[Dict[str, str]] = None,
-        **_: Any,  # 吃掉将来多传的 keyword（比如 limits 等），避免 unexpected keyword argument
     ) -> None:
         if not access_token:
             raise TTBApiError("missing access token")
-
         self._paths = TTBPaths.from_settings()
-        self._app_id = app_id
-        self._app_secret = app_secret
-
         default_qps = float(getattr(settings, "TTB_API_DEFAULT_QPS", 5.0))
         self._bucket = TokenBucket(rate_per_sec=float(qps or default_qps))
-        self._timeout = timeout or float(
-            getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0)
-        )
+        self._timeout = timeout or float(getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0))
 
         # Access-Token 头是必须的
         default_headers = {
@@ -190,7 +167,6 @@ class TTBApiClient:
         await self._client.aclose()
 
     # ---------- 请求基元 ----------
-
     @retry(
         retry=retry_if_exception_type((TTBHttpError, httpx.TransportError)),
         wait=wait_exponential_jitter(initial=0.5, max=8.0),
@@ -207,71 +183,30 @@ class TTBApiClient:
     ) -> Dict[str, Any]:
         await self._bucket.acquire()
 
-        params = dict(params or {})
-
         # 只有支持分页的接口才会校正 page_size
-        if "page_size" in params:
+        if params and "page_size" in params:
+            params = dict(params)
             params["page_size"] = _clamp_page_size(params["page_size"])
-
-        # 对 /oauth2/advertiser/get/ 自动附加 app_id / secret（若提供）
-        needs_app_credentials = path.rstrip("/") == self._paths.advertisers_get.rstrip("/")
-        if needs_app_credentials and self._app_id and self._app_secret:
-            params.setdefault("app_id", self._app_id)
-            params.setdefault("secret", self._app_secret)
 
         url = build_url(path)
         resp = await self._client.request(method, url, params=params, json=json_body)
 
-        status = resp.status_code
-        text = resp.text
-
-        if status in (429, 500, 502, 503, 504):
-            # 这些是可重试错误，tenacity 会自动重试
-            raise TTBHttpError(status, "retryable", payload=text)
-
-        if status >= 400:
-            # 不可重试的 HTTP 错误：打详细日志，再抛出
-            logger.error(
-                "TTB HTTP non-retryable error method=%s url=%s status=%s body=%s",
-                method,
-                url,
-                status,
-                text[:1000],
-            )
-            raise TTBHttpError(status, "client/server error", payload=text)
+        if resp.status_code in (429, 500, 502, 503, 504):
+            raise TTBHttpError(resp.status_code, "retryable")
+        if resp.status_code >= 400:
+            raise TTBHttpError(resp.status_code, "client/server error", payload=resp.text)
 
         try:
             data = resp.json()
         except Exception:
-            logger.error(
-                "TTB HTTP invalid json method=%s url=%s status=%s body=%s",
-                method,
-                url,
-                status,
-                text[:1000],
-            )
-            raise TTBApiError("invalid json response", payload=text, status=status)
+            raise TTBApiError("invalid json response", payload=resp.text, status=resp.status_code)
 
         code = data.get("code")
         if code not in (0, "0", None):
-            logger.error(
-                "TTB API business error method=%s url=%s status=%s code=%s body=%s",
-                method,
-                url,
-                status,
-                code,
-                json.dumps(data, ensure_ascii=False)[:1000],
-            )
-            raise TTBApiError(
-                data.get("message") or "api error",
-                code=code,
-                payload=data,
-                status=status,
-            )
+            raise TTBApiError(data.get("message") or "api error", code=code, payload=data, status=resp.status_code)
         return data
 
     # ---------- 提取器 ----------
-
     @staticmethod
     def _extract_list_page(payload: Dict[str, Any]) -> Tuple[Iterable[dict], Optional[str]]:
         """
@@ -287,7 +222,7 @@ class TTBApiClient:
 
     @staticmethod
     def _extract_stores(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
-        data = payload.get("data") or {}
+        data = (payload.get("data") or {})
         items = data.get("stores") or []
         if not isinstance(items, list):
             items = []
@@ -295,14 +230,13 @@ class TTBApiClient:
 
     @staticmethod
     def _extract_products(payload: Dict[str, Any]) -> Tuple[Iterable[dict], bool]:
-        data = payload.get("data") or {}
+        data = (payload.get("data") or {})
         items = data.get("store_products") or []
         if not isinstance(items, list):
             items = []
         return items, bool(items)
 
     # ---------- 分页 ----------
-
     async def _paged_cursor(
         self,
         *,
@@ -364,12 +298,7 @@ class TTBApiClient:
             page += 1
 
     # ---------- 公共读取器 ----------
-
-    async def iter_business_centers(
-        self,
-        *,
-        page_size: int = _MAX_PAGE_SIZE,
-    ) -> AsyncIterator[dict]:
+    async def iter_business_centers(self, *, page_size: int = _MAX_PAGE_SIZE) -> AsyncIterator[dict]:
         async for it in self._paged_cursor(
             method="GET",
             path=self._paths.bc_get,
@@ -384,8 +313,7 @@ class TTBApiClient:
         page_size: int = _MAX_PAGE_SIZE,
     ) -> AsyncIterator[dict]:
         """
-        /oauth2/advertiser/get/ 返回 data.list；当存在 page_info.cursor 时按游标分页。
-        本方法内部会自动附加 app_id / secret（如果在构造 TTBApiClient 时提供）。
+        /advertiser/get/ 返回 data.list；当存在 page_info.cursor 时按游标分页。
         """
         async for item in self._paged_cursor(
             method="GET",
@@ -401,14 +329,7 @@ class TTBApiClient:
         advertiser_ids: Iterable[str],
         fields: Iterable[str] | None = None,
     ) -> list[dict]:
-        """
-        GET /advertiser/info/
-        - Header: Access-Token
-        - Query:
-            advertiser_ids: JSON list string, e.g. ["123","456"]
-            fields: JSON list string, e.g. ["advertiser_id","name",...]
-        """
-        ids: list[str] = []
+        ids = []
         for value in advertiser_ids:
             if value is None:
                 continue
@@ -419,12 +340,9 @@ class TTBApiClient:
         if not ids:
             return []
 
-        params: Dict[str, Any] = {
-            "advertiser_ids": json.dumps(ids, ensure_ascii=False),
-        }
-
+        payload: Dict[str, Any] = {"advertiser_ids": ids}
         if fields:
-            unique_fields: list[str] = []
+            unique_fields = []
             seen: set[str] = set()
             for field in fields:
                 if not field:
@@ -435,12 +353,12 @@ class TTBApiClient:
                 seen.add(key)
                 unique_fields.append(key)
             if unique_fields:
-                params["fields"] = json.dumps(unique_fields, ensure_ascii=False)
+                payload["fields"] = unique_fields
 
         response = await self._request_json(
-            "GET",
+            "POST",
             self._paths.advertiser_info,
-            params=params,
+            json_body=payload,
         )
         data = response.get("data") or {}
         candidates = []
@@ -497,10 +415,7 @@ class TTBApiClient:
             params["item_group_ids"] = item_group_ids[:10]
         if eligibility:
             if not advertiser_id:
-                raise TTBApiError(
-                    "advertiser_id is required when filtering by eligibility",
-                    code="MISSING_ADVERTISER",
-                )
+                raise TTBApiError("advertiser_id is required when filtering by eligibility", code="MISSING_ADVERTISER")
             params["advertiser_id"] = str(advertiser_id)
             params["filtering"] = json.dumps({"ad_creation_eligible": eligibility})
             params["ad_creation_eligible"] = eligibility
@@ -517,4 +432,3 @@ class TTBApiClient:
 
 
 __all__ = ["TTBApiClient", "TTBApiError", "TTBHttpError", "TTBPaths"]
-

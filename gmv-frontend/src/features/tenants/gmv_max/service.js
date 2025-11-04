@@ -86,9 +86,19 @@ export async function fetchAdvertisers(wid, provider, authId, params = {}, optio
   return apiGet(appendQuery(base, normalized), options);
 }
 
+/**
+ * 这里改成和你 curl 一致的后端路由：
+ * GET /accounts/{auth_id}/advertisers/{advertiser_id}/stores
+ * 可选 owner_bc_id 作为查询参数。
+ */
 export async function fetchStores(wid, provider, authId, advertiserId, params = {}, options = {}) {
-  const base = `${accountPrefix(wid, provider, authId)}/stores`;
-  const query = { advertiser_id: advertiserId };
+  if (!advertiserId) {
+    throw new Error('advertiserId is required to fetch stores');
+  }
+
+  const base = `${accountPrefix(wid, provider, authId)}/advertisers/${encodeURIComponent(advertiserId)}/stores`;
+  const query = {};
+
   if (params && typeof params === 'object') {
     if (params.owner_bc_id !== undefined && params.owner_bc_id !== null && params.owner_bc_id !== '') {
       query.owner_bc_id = params.owner_bc_id;
@@ -96,19 +106,35 @@ export async function fetchStores(wid, provider, authId, advertiserId, params = 
       query.owner_bc_id = params.ownerBcId;
     }
   }
+
   const url = appendQuery(base, query);
   return apiGet(url, options);
 }
 
+/**
+ * 商品查询：按 store_id 查询 GMV Max 商品，默认带 eligibility=gmv_max，
+ * 并且补齐 page / page_size。
+ */
 export async function fetchProducts(wid, provider, authId, storeId, params = {}, options = {}) {
+  if (!storeId) {
+    throw new Error('storeId is required to fetch products');
+  }
+
   const base = `${accountPrefix(wid, provider, authId)}/products`;
-  const query = { store_id: storeId, ...params };
+
+  const query = {
+    store_id: storeId,
+    eligibility: params.eligibility || params.product_eligibility || 'gmv_max',
+    ...params,
+  };
+
   if (!('page_size' in query)) {
     query.page_size = 10;
   }
   if (!('page' in query)) {
     query.page = 1;
   }
+
   const url = appendQuery(base, query);
   return apiGet(url, options);
 }
@@ -171,3 +197,4 @@ export async function fetchSyncRun(wid, provider, authId, runId, options = {}) {
 }
 
 export { listBindings, normProvider };
+

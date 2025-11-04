@@ -170,7 +170,6 @@ class TTBStore(Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "auth_id", "store_id", name="uk_ttb_store_scope"),
         Index("idx_ttb_store_scope", "workspace_id", "auth_id", "store_id"),
-        Index("idx_ttb_store_adv", "advertiser_id"),
         Index("idx_ttb_store_updated", "ext_updated_time"),
         Index("idx_ttb_store_status", "status"),
     )
@@ -185,7 +184,6 @@ class TTBStore(Base):
     )
 
     store_id: Mapped[str] = mapped_column(String(64), nullable=False)  # 官方字段：store_id
-    advertiser_id: Mapped[str | None] = mapped_column(String(64), default=None)
     bc_id: Mapped[str | None] = mapped_column(String(64), default=None)
     store_type: Mapped[str | None] = mapped_column(String(32), default=None)
     store_code: Mapped[str | None] = mapped_column(String(64), default=None)

@@ -666,7 +666,7 @@ def _serialize_adv(row: TTBAdvertiser) -> Dict[str, Any]:
 def _serialize_store(row: TTBStore) -> Dict[str, Any]:
     return {
         "store_id": row.store_id,
-        "advertiser_id": _as_str(row.advertiser_id),
+        "advertiser_id": None,  # 统一由调用方（比如 list_account_stores）覆盖
         "bc_id": _as_str(row.bc_id),
         "name": _as_str(row.name),
         "status": _as_str(row.status),
@@ -1291,41 +1291,25 @@ def list_account_advertisers(
 
 
 @router.get(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/stores",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/advertisers/{advertiser_id}/stores",
     response_model=StoreList,
 )
 def list_account_stores(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    request: Request,
-    advertiser_id: str = Query(..., max_length=64),
-    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
-    store_authorized_bc_id: Optional[str] = Query(default=None, max_length=64),
+    advertiser_id: str,
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    if request and "bc_id" in request.query_params:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="bc_id parameter is no longer supported; please use owner_bc_id",
-        )
+
     normalized_adv = _normalize_identifier(advertiser_id)
-    query = (
-        db.query(TTBStore)
-        .filter(TTBStore.workspace_id == int(workspace_id))
-        .filter(TTBStore.auth_id == int(auth_id))
-        .filter(TTBStore.advertiser_id == normalized_adv)
-    )
-    normalized_owner_bc = _normalize_identifier(owner_bc_id)
-    normalized_authorized_filter = _normalize_identifier(store_authorized_bc_id)
-    if normalized_authorized_filter:
-        query = query.filter(TTBStore.store_authorized_bc_id == normalized_authorized_filter)
+    if not normalized_adv:
+        return StoreList(items=[])
 
-    rows = query.order_by(TTBStore.name.asc(), TTBStore.store_id.asc()).all()
-
+    # 先从 link 表拿到这个 advertiser 绑定的所有 store
     link_rows = (
         db.query(
             TTBAdvertiserStoreLink.store_id,
@@ -1339,53 +1323,54 @@ def list_account_stores(
         .all()
     )
 
-    link_map: dict[str, dict[str, Optional[str]]] = {}
-    for store_id, relation_type, authorized_bc, bc_hint in link_rows:
-        if not store_id:
-            continue
-        link_map[str(store_id)] = {
-            "relation_type": relation_type,
-            "store_authorized_bc_id": _normalize_identifier(authorized_bc),
-            "bc_id_hint": _normalize_identifier(bc_hint),
-        }
+    linked_store_ids = {str(store_id) for store_id, *_ in link_rows if store_id}
+    if not linked_store_ids:
+        return StoreList(items=[])
 
-    items_with_priority: list[tuple[int, Dict[str, Any]]] = []
-    for row in rows:
-        payload = _serialize_store(row)
-        store_id = payload.get("store_id")
-        link_info = link_map.get(str(store_id)) if store_id else None
-        if link_info:
-            if link_info.get("store_authorized_bc_id") and not payload.get("store_authorized_bc_id"):
-                payload["store_authorized_bc_id"] = link_info["store_authorized_bc_id"]
-            if link_info.get("bc_id_hint") and not payload.get("bc_id"):
-                payload["bc_id"] = link_info["bc_id_hint"]
-
-        authorized_match = False
-        if normalized_owner_bc:
-            owner_value = normalized_owner_bc
-            candidates = [
-                _normalize_identifier(payload.get("store_authorized_bc_id")),
-                _normalize_identifier(payload.get("bc_id")),
-            ]
-            if link_info:
-                candidates.append(link_info.get("store_authorized_bc_id"))
-                candidates.append(link_info.get("bc_id_hint"))
-            authorized_match = any(
-                candidate and str(candidate) == owner_value for candidate in candidates if candidate
-            )
-
-        priority = 0 if authorized_match else 1
-        items_with_priority.append((priority, payload))
-
-    items_with_priority.sort(
-        key=lambda item: (
-            item[0],
-            (item[1].get("name") or "").lower(),
-            item[1].get("store_id") or "",
-        )
+    # 按 store_id 查真正的 store 行
+    store_rows: list[TTBStore] = (
+        db.query(TTBStore)
+        .filter(TTBStore.workspace_id == int(workspace_id))
+        .filter(TTBStore.auth_id == int(auth_id))
+        .filter(TTBStore.store_id.in_(linked_store_ids))
+        .all()
     )
 
-    return StoreList(items=[StoreItem(**payload) for _, payload in items_with_priority])
+    # 为每个 store 选一个“最佳” link（OWNER > AUTHORIZER > PARTNER > UNKNOWN）
+    best_link_by_store: dict[str, dict[str, Any]] = {}
+    for store_id, relation_type, store_authorized_bc_id, bc_id_hint in link_rows:
+        sid = str(store_id)
+        current = best_link_by_store.get(sid)
+        if (
+            current is None
+            or _relation_rank(relation_type) < _relation_rank(current.get("relation_type"))
+        ):
+            best_link_by_store[sid] = {
+                "relation_type": relation_type,
+                "store_authorized_bc_id": store_authorized_bc_id,
+                "bc_id_hint": bc_id_hint,
+            }
+
+    items: list[dict[str, Any]] = []
+    for row in store_rows:
+        payload = _serialize_store(row)
+
+        # 关键点：这里强制响应里的 advertiser_id = 当前 advertiser
+        payload["advertiser_id"] = normalized_adv
+
+        link_info = best_link_by_store.get(str(row.store_id)) or {}
+
+        # 如果 store 上没写 authorized_bc_id，用 link 里的覆盖一下
+        if not payload.get("store_authorized_bc_id") and link_info.get("store_authorized_bc_id"):
+            payload["store_authorized_bc_id"] = link_info["store_authorized_bc_id"]
+
+        # 如果 store 上没写 bc_id，用 link 的 bc_id_hint 填上
+        if not payload.get("bc_id") and link_info.get("bc_id_hint"):
+            payload["bc_id"] = link_info["bc_id_hint"]
+
+        items.append(payload)
+
+    return StoreList(items=items)
 
 
 @router.get(
@@ -1565,7 +1550,9 @@ def update_gmv_max_config(
     _ensure_account(db, workspace_id, auth_id)
 
     bc = _get_business_center(db, workspace_id=workspace_id, auth_id=auth_id, bc_id=payload.bc_id)
-    advertiser = _get_advertiser(db, workspace_id=workspace_id, auth_id=auth_id, advertiser_id=payload.advertiser_id)
+    advertiser = _get_advertiser(
+        db, workspace_id=workspace_id, auth_id=auth_id, advertiser_id=payload.advertiser_id
+    )
     store = _get_store(db, workspace_id=workspace_id, auth_id=auth_id, store_id=payload.store_id)
     _validate_bc_alignment(
         db=db,
@@ -1606,6 +1593,7 @@ _DEPRECATION_DETAIL = (
     "This endpoint was replaced by /api/v1/tenants/providers/tiktok-business/*. "
     "Legacy tenants/ttb routes will be removed after 2024-12-31."
 )
+
 
 @router.api_route(
     "/{workspace_id}/ttb/{path:path}",
