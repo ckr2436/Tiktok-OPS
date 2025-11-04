@@ -1290,26 +1290,13 @@ def list_account_advertisers(
     return AdvertiserList(items=items)
 
 
-@router.get(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/advertisers/{advertiser_id}/stores",
-    response_model=StoreList,
-)
-def list_account_stores(
-    workspace_id: int,
-    provider: str,
-    auth_id: int,
-    advertiser_id: str,
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    _normalize_provider(provider)
-    _ensure_account(db, workspace_id, auth_id)
-
+def _build_account_store_list(
+    db: Session, *, workspace_id: int, auth_id: int, advertiser_id: str
+) -> StoreList:
     normalized_adv = _normalize_identifier(advertiser_id)
     if not normalized_adv:
         return StoreList(items=[])
 
-    # 先从 link 表拿到这个 advertiser 绑定的所有 store
     link_rows = (
         db.query(
             TTBAdvertiserStoreLink.store_id,
@@ -1327,7 +1314,6 @@ def list_account_stores(
     if not linked_store_ids:
         return StoreList(items=[])
 
-    # 按 store_id 查真正的 store 行
     store_rows: list[TTBStore] = (
         db.query(TTBStore)
         .filter(TTBStore.workspace_id == int(workspace_id))
@@ -1336,7 +1322,6 @@ def list_account_stores(
         .all()
     )
 
-    # 为每个 store 选一个“最佳” link（OWNER > AUTHORIZER > PARTNER > UNKNOWN）
     best_link_by_store: dict[str, dict[str, Any]] = {}
     for store_id, relation_type, store_authorized_bc_id, bc_id_hint in link_rows:
         sid = str(store_id)
@@ -1354,23 +1339,67 @@ def list_account_stores(
     items: list[dict[str, Any]] = []
     for row in store_rows:
         payload = _serialize_store(row)
-
-        # 关键点：这里强制响应里的 advertiser_id = 当前 advertiser
         payload["advertiser_id"] = normalized_adv
 
         link_info = best_link_by_store.get(str(row.store_id)) or {}
-
-        # 如果 store 上没写 authorized_bc_id，用 link 里的覆盖一下
         if not payload.get("store_authorized_bc_id") and link_info.get("store_authorized_bc_id"):
             payload["store_authorized_bc_id"] = link_info["store_authorized_bc_id"]
-
-        # 如果 store 上没写 bc_id，用 link 的 bc_id_hint 填上
         if not payload.get("bc_id") and link_info.get("bc_id_hint"):
             payload["bc_id"] = link_info["bc_id_hint"]
 
         items.append(payload)
 
     return StoreList(items=items)
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/stores",
+    response_model=StoreList,
+)
+def list_account_stores_query(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    request: Request,
+    advertiser_id: str = Query(..., max_length=64),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    if "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
+    return _build_account_store_list(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+    )
+
+
+@router.get(
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/advertisers/{advertiser_id}/stores",
+    response_model=StoreList,
+)
+def list_account_stores(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    _normalize_provider(provider)
+    _ensure_account(db, workspace_id, auth_id)
+    return _build_account_store_list(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+    )
 
 
 @router.get(
