@@ -136,7 +136,36 @@ export async function fetchProducts(wid, provider, authId, storeId, params = {},
   }
 
   const url = appendQuery(base, query);
-  return apiGet(url, options);
+  const headers = { ...(options.headers || {}) };
+  if (options.etag) {
+    headers['If-None-Match'] = options.etag;
+  }
+
+  const response = await fetch(url, {
+    credentials: 'include',
+    signal: options.signal,
+    headers,
+  });
+
+  const etag = response.headers.get('ETag');
+  const wantsMeta = Boolean(options.returnMeta);
+
+  if (response.status === 304) {
+    return wantsMeta ? { status: 304, data: null, etag: etag || options.etag || null } : null;
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(text || 'Request failed');
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = text ? JSON.parse(text) : null;
+  if (wantsMeta) {
+    return { status: response.status, data, etag: etag || null };
+  }
+  return data;
 }
 
 export async function fetchGmvOptions(

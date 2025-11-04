@@ -40,6 +40,7 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
 import GmvMaxManagementPage from '../features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx';
+import ProductDetail from '../features/tenants/gmv_max/pages/ProductDetail.jsx';
 
 function LegacyGmvRedirect() {
   const { wid } = useParams();
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
           { path: 'tenants/:wid/tiktok-business', element: <TenantGuard><TbAuthList /></TenantGuard> },
           { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
           { path: 'tenants/:wid/gmv-max', element: <TenantGuard><GmvMaxManagementPage /></TenantGuard> },
+          { path: 'tenants/:wid/gmv-max/products/:item_group_id', element: <TenantGuard><ProductDetail /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
           { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
         ],
