@@ -1,386 +1,242 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import kieTenantApi from '../service.js'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
-import CopyButton from '../../../../components/CopyButton.jsx'
 
-const ASPECT_OPTIONS = [
+const PROMPT_MAX = 10_000
+
+const aspectOptions = [
   { value: 'portrait', label: '竖屏 (9:16)' },
   { value: 'landscape', label: '横屏 (16:9)' },
 ]
 
-const N_FRAME_OPTIONS = [
-  { value: 10, label: '10 秒' },
-  { value: 15, label: '15 秒' },
+const frameOptions = [
+  { value: '10', label: '10 秒' },
+  { value: '15', label: '15 秒' },
 ]
 
-const POLL_INTERVAL = 3500
-
 export default function Sora2ImageToVideoPage() {
-  const { workspaceId } = useParams()
-  const wsId = workspaceId || ''
+  const { wid } = useParams()    // ★ 直接从路由拿 workspace_id
 
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState('portrait')
-  const [nFrames, setNFrames] = useState(10)
+  const [nFrames, setNFrames] = useState('10')
   const [removeWatermark, setRemoveWatermark] = useState(true)
   const [imageFile, setImageFile] = useState(null)
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState('')
 
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
   const [task, setTask] = useState(null)
   const [files, setFiles] = useState([])
-  const [polling, setPolling] = useState(false)
-  const [pollError, setPollError] = useState('')
-  const [downloadMap, setDownloadMap] = useState({}) // {fileId: url}
+  const [loadingTask, setLoadingTask] = useState(false)
 
-  const resetResult = () => {
-    setTask(null)
-    setFiles([])
-    setDownloadMap({})
-    setPollError('')
-  }
+  const promptCount = useMemo(() => prompt.length, [prompt])
 
-  const handleFileChange = (e) => {
-    const f = e.target.files?.[0]
-    if (!f) {
-      setImageFile(null)
-      return
-    }
-    if (!f.type.startsWith('image/')) {
-      window.alert('仅支持图片文件')
-      e.target.value = ''
-      return
-    }
-    if (f.size > 20 * 1024 * 1024) {
-      window.alert('图片不能超过 20MB')
-      e.target.value = ''
-      return
-    }
-    setImageFile(f)
-  }
+  const handleFileChange = useCallback((e) => {
+    const file = e.target.files?.[0] || null
+    setImageFile(file)
+  }, [])
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault()
-    if (creating) return
-    setCreateError('')
+    setError('')
 
+    if (!wid) {
+      setError('缺少 workspace_id，无法创建任务，请从侧边菜单重新进入此页面。')
+      return
+    }
     if (!prompt.trim()) {
-      setCreateError('提示词不能为空')
+      setError('请填写提示词。')
+      return
+    }
+    if (prompt.length > PROMPT_MAX) {
+      setError(`提示词长度不能超过 ${PROMPT_MAX} 字符，目前为 ${prompt.length}。`)
       return
     }
     if (!imageFile) {
-      setCreateError('请选择一张图片')
+      setError('请上传一张 PNG/JPG 图片。')
       return
     }
 
-    setCreating(true)
-    resetResult()
+    setSubmitting(true)
     try {
-      const resp = await kieTenantApi.createSora2Task(wsId, {
+      const resp = await kieTenantApi.createSora2Task(wid, {
         prompt: prompt.trim(),
         aspect_ratio: aspectRatio,
-        n_frames: nFrames,
+        n_frames: nFrames,           // service 里会转成字符串
         remove_watermark: removeWatermark,
-        imageFile,
+        image: imageFile,
       })
-      setTask(resp.task)
-      // 上传文件也在 resp.upload_file 里，但我们统一从后端查询
-      setFiles(resp.upload_file ? [resp.upload_file] : [])
-      setPollError('')
-      setPolling(true)
+      setTask(resp?.task || null)
+      setFiles(resp?.upload_file ? [resp.upload_file] : [])
     } catch (err) {
-      setCreateError(err?.message || '创建任务失败')
+      setError(err?.message || '创建任务失败，请稍后再试。')
     } finally {
-      setCreating(false)
+      setSubmitting(false)
     }
-  }
+  }, [wid, prompt, aspectRatio, nFrames, removeWatermark, imageFile])
 
-  const refreshTaskAndFiles = useCallback(async () => {
-    if (!task?.id) return
+  const handleRefresh = useCallback(async () => {
+    if (!wid || !task?.id) return
+    setLoadingTask(true)
+    setError('')
     try {
-      const t = await kieTenantApi.getSora2Task(wsId, task.id, { refresh: true })
-      setTask(t)
-      const fs = await kieTenantApi.listTaskFiles(wsId, task.id)
-      setFiles(fs)
+      const latest = await kieTenantApi.getSora2Task(wid, task.id, { refresh: true })
+      setTask(latest)
+      const fs = await kieTenantApi.listSora2TaskFiles(wid, task.id)
+      setFiles(fs || [])
     } catch (err) {
-      setPollError(err?.message || '刷新任务状态失败')
+      setError(err?.message || '刷新任务状态失败。')
+    } finally {
+      setLoadingTask(false)
     }
-  }, [task?.id, wsId])
-
-  // 轮询：任务非终态时每隔几秒刷新一次
-  useEffect(() => {
-    if (!polling || !task?.state) return
-
-    if (['success', 'fail', 'failed', 'error'].includes(task.state)) {
-      setPolling(false)
-      return
-    }
-
-    const timer = setTimeout(() => {
-      refreshTaskAndFiles()
-    }, POLL_INTERVAL)
-
-    return () => clearTimeout(timer)
-  }, [polling, task?.state, refreshTaskAndFiles])
-
-  const handleManualRefresh = async () => {
-    await refreshTaskAndFiles()
-    if (task?.state && !['success', 'fail', 'failed', 'error'].includes(task.state)) {
-      setPolling(true)
-    }
-  }
-
-  const handleGetDownloadUrl = async (file) => {
-    try {
-      const url = await kieTenantApi.getFileDownloadUrl(wsId, file.id)
-      setDownloadMap((m) => ({ ...m, [file.id]: url }))
-    } catch (err) {
-      window.alert(err?.message || '获取下载链接失败')
-    }
-  }
-
-  const statusLabel = useMemo(() => {
-    if (!task?.state) return ''
-    const s = String(task.state).toLowerCase()
-    if (s === 'waiting' || s === 'queuing') return '排队中'
-    if (s === 'generating') return '生成中'
-    if (s === 'success') return '完成'
-    if (s === 'fail' || s === 'failed' || s === 'error') return '失败'
-    return task.state
-  }, [task?.state])
+  }, [wid, task])
 
   return (
     <div>
-      <header className="page-header">
-        <h1 className="page-title">KIE Sora 2 - 图片生成视频</h1>
-        <p className="page-subtitle">
-          上传一张产品图 + 文案提示词，调用 KIE AI 的 Sora 2 模型生成营销视频。
+      <h1 className="page-title">KIE Sora 2 - 图片生成视频</h1>
+
+      {!wid && (
+        <div className="alert alert--error" style={{ marginBottom: 16 }}>
+          无法识别 workspace_id，请从侧边菜单重新进入本页面。
+        </div>
+      )}
+
+      <section className="card" style={{ marginBottom: 24 }}>
+        <h2 className="card__title">创建任务</h2>
+
+        <form onSubmit={handleSubmit}>
+          <FormField label={`提示词（英文建议，最多 ${PROMPT_MAX} 字符）`}>
+            <textarea
+              className="input"
+              rows={10}
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              maxLength={PROMPT_MAX}
+              placeholder="请输入英文提示词，描述画面和镜头运镜..."
+            />
+            <div className="form-field__hint">
+              {promptCount} / {PROMPT_MAX}
+            </div>
+          </FormField>
+
+          <FormField label="画面比例">
+            <select
+              className="input"
+              value={aspectRatio}
+              onChange={e => setAspectRatio(e.target.value)}
+            >
+              {aspectOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="视频时长">
+            <select
+              className="input"
+              value={nFrames}
+              onChange={e => setNFrames(e.target.value)}
+            >
+              {frameOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="水印">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={removeWatermark}
+                onChange={e => setRemoveWatermark(e.target.checked)}
+              />
+              <span>去除水印（若模型支持）</span>
+            </label>
+          </FormField>
+
+          <FormField label="源图片（PNG/JPG，≤ 20MB）">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+            />
+            {imageFile && (
+              <div className="form-field__hint">
+                已选择：{imageFile.name}（{Math.round(imageFile.size / 1024)} KB）
+              </div>
+            )}
+          </FormField>
+
+          {error && (
+            <div className="alert alert--error" style={{ marginBottom: 16 }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={submitting || !wid}
+          >
+            {submitting ? '创建中...' : '创建任务'}
+          </button>
+        </form>
+
+        <p className="small-muted" style={{ marginTop: 16 }}>
+          说明：提示词尽量具体，包含镜头感、情绪、时长等信息。目前 demo 不保证无违禁内容，
+          且你在提示词中描述完整 10s/15s 的镜头脚本效果会更好。
         </p>
-      </header>
+      </section>
 
-      <div className="grid grid--2col">
+      {task && (
         <section className="card">
-          <div className="card__header">
-            <h2 className="card__title">创建任务</h2>
+          <h2 className="card__title">任务详情</h2>
+          <div className="form-grid">
+            <div>任务 ID：</div>
+            <div>{task.id}</div>
+            <div>KIE TaskId：</div>
+            <div>{task.task_id}</div>
+            <div>模型：</div>
+            <div>{task.model}</div>
+            <div>状态：</div>
+            <div>{task.state}</div>
           </div>
-          <div className="card__body">
-            <form className="form vertical" onSubmit={handleSubmit}>
-              <FormField label="提示词（英文建议，最多 10000 字符）">
-                <textarea
-                  className="input input--textarea"
-                  rows={10}
-                  maxLength={10_000}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="例如：10-second vertical video for TikTok..."
-                />
-              </FormField>
 
-              <FormField label="画幅比例">
-                <select
-                  className="input"
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value)}
-                >
-                  {ASPECT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="视频时长">
-                <select
-                  className="input"
-                  value={nFrames}
-                  onChange={(e) => setNFrames(Number(e.target.value))}
-                >
-                  {N_FRAME_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="水印">
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={removeWatermark}
-                    onChange={(e) => setRemoveWatermark(e.target.checked)}
-                  />
-                  <span>去除水印（若模型支持）</span>
-                </label>
-              </FormField>
-
-              <FormField label="源图片（PNG/JPG，≤ 20MB）">
-                <input type="file" accept="image/*" onChange={handleFileChange} />
-              </FormField>
-
-              {createError && (
-                <div className="form__error" style={{ marginBottom: 8 }}>
-                  {createError}
-                </div>
-              )}
-
-              <div className="form__actions">
-                <button
-                  type="submit"
-                  className="btn btn--primary"
-                  disabled={creating}
-                >
-                  {creating ? '创建中...' : '创建任务'}
-                </button>
-              </div>
-
-              <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>
-                建议：提示词尽量具体，包含镜头、情绪、时长等信息。当前 demo 不做分段拼接，由你在提示词中描述完整 10s/15s 的脚本。
-              </p>
-            </form>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleRefresh}
+              disabled={loadingTask}
+            >
+              {loadingTask ? '刷新中...' : '刷新状态 & 文件列表'}
+            </button>
           </div>
+
+          <h3 style={{ marginTop: 16 }}>相关文件</h3>
+          {loadingTask && <Loading />}
+          {!loadingTask && files?.length === 0 && (
+            <div className="small-muted">暂时还没有文件。</div>
+          )}
+          {!loadingTask && files?.length > 0 && (
+            <ul className="file-list">
+              {files.map(f => (
+                <li key={f.id}>
+                  <div>
+                    <strong>{f.kind}</strong>（ID: {f.id}）
+                  </div>
+                  <div className="small-muted">
+                    原始地址：{f.file_url}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
-
-        <section className="card">
-          <div className="card__header">
-            <h2 className="card__title">任务状态 & 结果</h2>
-            {task && (
-              <div className="card__extra">
-                <button
-                  type="button"
-                  className="btn btn--sm"
-                  onClick={handleManualRefresh}
-                >
-                  手动刷新
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="card__body">
-            {!task ? (
-              <div className="empty">还没有任务，请先在左侧创建。</div>
-            ) : (
-              <>
-                <div className="kv">
-                  <div className="kv__row">
-                    <div className="kv__key">任务 ID</div>
-                    <div className="kv__value">{task.id}</div>
-                  </div>
-                  <div className="kv__row">
-                    <div className="kv__key">外部 TaskId</div>
-                    <div className="kv__value small-muted">{task.task_id}</div>
-                  </div>
-                  <div className="kv__row">
-                    <div className="kv__key">模型</div>
-                    <div className="kv__value">{task.model}</div>
-                  </div>
-                  <div className="kv__row">
-                    <div className="kv__key">状态</div>
-                    <div className="kv__value">
-                      {statusLabel}
-                      {polling && <span className="small-muted">（轮询中...）</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {pollError && (
-                  <div className="alert alert--error" style={{ marginTop: 8 }}>
-                    {pollError}
-                  </div>
-                )}
-
-                <hr style={{ margin: '16px 0' }} />
-
-                <h3 className="section-title">生成结果</h3>
-                {files.length === 0 ? (
-                  <div className="empty small">暂未查询到文件记录，请稍后刷新。</div>
-                ) : (
-                  <div className="table-wrapper">
-                    <table className="table table--compact">
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>类型</th>
-                          <th>文件 URL</th>
-                          <th>下载链接（20 分钟）</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {files.map((f) => {
-                          const dl = downloadMap[f.id]
-                          return (
-                            <tr key={f.id}>
-                              <td>{f.id}</td>
-                              <td>{f.kind}</td>
-                              <td>
-                                <a
-                                  href={f.file_url}
-                                  target="_blank"
-                                  rel="noopener"
-                                  className="small-muted"
-                                >
-                                  源地址
-                                </a>
-                              </td>
-                              <td>
-                                {dl ? (
-                                  <div className="download-url-cell">
-                                    <a
-                                      href={dl}
-                                      target="_blank"
-                                      rel="noopener"
-                                      className="small-muted"
-                                    >
-                                      打开
-                                    </a>
-                                    <CopyButton
-                                      text={dl}
-                                      size="sm"
-                                      className="ml-2"
-                                    />
-                                  </div>
-                                ) : (
-                                  <span className="small-muted">尚未获取</span>
-                                )}
-                              </td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn btn--sm"
-                                  onClick={() => handleGetDownloadUrl(f)}
-                                >
-                                  获取下载 URL
-                                </button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {task?.prompt && (
-                  <>
-                    <hr style={{ margin: '16px 0' }} />
-                    <details>
-                      <summary>查看本次提示词</summary>
-                      <pre className="prompt-preview">
-                        {task.prompt}
-                      </pre>
-                    </details>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-      </div>
+      )}
     </div>
   )
 }

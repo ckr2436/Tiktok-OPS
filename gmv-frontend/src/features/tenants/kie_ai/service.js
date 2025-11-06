@@ -1,59 +1,78 @@
 // src/features/tenants/kie_ai/service.js
 import http from '../../../core/httpClient.js'
 
-/**
- * 租户侧 KIE - Sora2 视频生成相关 API
- */
-
-function tenantBase(workspaceId) {
-  return `/tenants/${workspaceId}/kie-ai`
+// 这里 wid 是必填的 workspace_id
+const tenantPrefix = (wid) => {
+  if (!wid && wid !== 0) {
+    throw new Error('workspace_id(wid) is required')
+  }
+  return `/tenants/${encodeURIComponent(wid)}/kie-ai`
 }
 
-export async function createSora2Task(workspaceId, payload) {
-  const url = `${tenantBase(workspaceId)}/sora2/image-to-video`
-
+// 创建 Sora2 任务：上传图片 + prompt
+async function createSora2Task(
+  wid,
+  { prompt, aspect_ratio, n_frames, remove_watermark, image }
+) {
   const form = new FormData()
-  form.append('prompt', payload.prompt || '')
-  form.append('aspect_ratio', payload.aspect_ratio || 'portrait')
-  if (payload.n_frames != null) {
-    form.append('n_frames', String(payload.n_frames))
-  }
-  form.append('remove_watermark', String(!!payload.remove_watermark))
-  form.append('image', payload.imageFile)
 
+  form.append('prompt', prompt ?? '')
+  form.append('aspect_ratio', aspect_ratio || 'portrait')
+
+  // 后端定义 n_frames 为 10 / 15（秒），这里统一转成字符串
+  if (n_frames != null && n_frames !== '') {
+    form.append('n_frames', String(n_frames))
+  }
+
+  form.append('remove_watermark', remove_watermark ? 'true' : 'false')
+
+  if (image) {
+    form.append('image', image)
+  }
+
+  const url = `${tenantPrefix(wid)}/sora2/image-to-video`
   const res = await http.post(url, form, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': 'multipart/form-data' },
   })
   return res.data
 }
 
-export async function getSora2Task(workspaceId, taskId, opts = {}) {
-  const refresh = opts.refresh ?? true
-  const url = `${tenantBase(workspaceId)}/sora2/tasks/${taskId}`
+// 查询任务
+async function getSora2Task(wid, taskId, { refresh = true } = {}) {
+  const url = `${tenantPrefix(wid)}/sora2/tasks/${encodeURIComponent(taskId)}`
   const res = await http.get(url, { params: { refresh } })
   return res.data
 }
 
-export async function listTaskFiles(workspaceId, taskId) {
-  const url = `${tenantBase(workspaceId)}/sora2/tasks/${taskId}/files`
-  const res = await http.get(url)
-  return res.data || []
-}
-
-export async function getFileDownloadUrl(workspaceId, fileId) {
-  const url = `${tenantBase(workspaceId)}/files/${fileId}/download-url`
+// 查询任务文件列表
+async function listSora2TaskFiles(wid, taskId) {
+  const url = `${tenantPrefix(wid)}/sora2/tasks/${encodeURIComponent(taskId)}/files`
   const res = await http.get(url)
   return res.data
 }
 
+// 获取文件下载 URL
+async function getFileDownloadUrl(wid, fileId) {
+  const url = `${tenantPrefix(wid)}/files/${encodeURIComponent(fileId)}/download-url`
+  const res = await http.get(url)
+  return res.data
+}
+
+// 默认导出：兼容 import kieTenantApi from '../service.js'
 const kieTenantApi = {
   createSora2Task,
   getSora2Task,
-  listTaskFiles,
+  listSora2TaskFiles,
   getFileDownloadUrl,
 }
 
 export default kieTenantApi
+
+// 具名导出：如果以后想按需导入也可以
+export {
+  createSora2Task,
+  getSora2Task,
+  listSora2TaskFiles,
+  getFileDownloadUrl,
+}
 
