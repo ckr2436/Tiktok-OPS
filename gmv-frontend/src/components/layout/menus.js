@@ -30,6 +30,7 @@ export function buildMenus(session) {
           { to: '/platform/oauth-apps',  label: 'OAuth 应用' },
           { to: '/platform/policies',    label: 'Platform Policies' },
           { to: '/platform/apis',        label: 'API 管理' },
+	  { to: '/platform/kie-ai',      label: 'KIE AI 接入' },
         ],
       },
     ];
@@ -51,6 +52,7 @@ export function buildMenus(session) {
         items: [
           { to: `/tenants/${wsId}/tiktok-business`, label: 'TikTok Business 授权' },
           { to: `/tenants/${wsId}/gmv-max`, label: 'GMV Max 管理' },
+	  { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'KIE Sora2 视频' },
         ],
       },
     ];
@@ -64,6 +66,7 @@ export function buildMenus(session) {
         { to: '/dashboard',             label: '仪表盘', exact: true },
         { to: `/tenants/${wsId}/users`, label: '成员' },
         { to: `/tenants/${wsId}/gmv-max`, label: 'GMV Max 管理' },
+	{ to: `/tenants/${wsId}/kie-ai/sora2`, label: 'KIE Sora2 视频' },
       ],
     },
   ];

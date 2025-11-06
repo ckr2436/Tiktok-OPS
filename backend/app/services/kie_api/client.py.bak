@@ -1,0 +1,371 @@
+# backend/app/services/kie_api/client.py
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, Optional
+
+import httpx
+
+from app.core.config import settings
+
+
+DEFAULT_KIE_API_BASE_URL = "https://api.kie.ai"
+DEFAULT_KIE_FILE_BASE_URL = "https://kieai.redpandaai.co"
+
+
+class KieApiError(Exception):
+    """统一的 Kie API 异常封装."""
+
+    def __init__(
+        self,
+        *,
+        http_status: int,
+        code: Optional[int],
+        message: Optional[str],
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        msg = message or f"Kie API error (code={code})"
+        super().__init__(msg)
+        self.http_status = http_status
+        self.code = code
+        self.payload = payload or {}
+
+
+class KieApiClient:
+    """
+    Kie 通用 HTTP 客户端.
+
+    - base_url: https://api.kie.ai        （积分 / 下载URL / 任务）
+    - file_base_url: https://kieai.redpandaai.co （文件上传）
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        base_url: Optional[str] = None,
+        file_base_url: Optional[str] = None,
+        timeout: float = 30.0,
+    ) -> None:
+        if not api_key:
+            raise ValueError("api_key must be non-empty")
+
+        self.api_key = api_key.strip()
+        # 允许从 settings 覆盖
+        self.base_url = (
+            base_url
+            or getattr(settings, "KIE_API_BASE_URL", None)
+            or DEFAULT_KIE_API_BASE_URL
+        )
+        self.file_base_url = (
+            file_base_url
+            or getattr(settings, "KIE_FILE_API_BASE_URL", None)
+            or DEFAULT_KIE_FILE_BASE_URL
+        )
+
+        self._client = httpx.AsyncClient(timeout=timeout)
+
+    async def aclose(self) -> None:
+        """关闭底层 httpx client."""
+        await self._client.aclose()
+
+    # ---------- 内部工具 ----------
+
+    def _auth_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+        }
+
+    async def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        统一发起请求并解析 JSON，处理 Kie 规范的 code/msg/success.
+        """
+        all_headers: Dict[str, str] = self._auth_headers()
+        if headers:
+            all_headers.update(headers)
+
+        resp = await self._client.request(method, url, headers=all_headers, **kwargs)
+
+        raw_text = resp.text
+        try:
+            data = resp.json()
+        except Exception:
+            raise KieApiError(
+                http_status=resp.status_code,
+                code=None,
+                message=f"Non-JSON response from Kie API: {raw_text[:200]}",
+                payload=None,
+            )
+
+        code = data.get("code")
+        msg = data.get("msg") or data.get("message")
+        success_flag = data.get("success")
+
+        # HTTP 层错误
+        if resp.status_code >= 400:
+            raise KieApiError(
+                http_status=resp.status_code,
+                code=code,
+                message=msg or f"HTTP {resp.status_code} from Kie API",
+                payload=data,
+            )
+
+        # 业务层 code 判断：大多数接口 code=200 代表成功
+        if code not in (200, None) and not success_flag:
+            raise KieApiError(
+                http_status=resp.status_code,
+                code=code,
+                message=msg or "Kie API returned non-success code",
+                payload=data,
+            )
+
+        return data
+
+    # ---------- 通用接口：积分 & 下载URL ----------
+
+    async def get_remaining_credits(self) -> int:
+        """
+        GET /api/v1/chat/credit
+
+        返回剩余积分（data 字段，int）
+        """
+        url = f"{self.base_url}/api/v1/chat/credit"
+        data = await self._request_json("GET", url)
+        credits = data.get("data")
+        if not isinstance(credits, int):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected response: `data` is not integer",
+                payload=data,
+            )
+        return credits
+
+    async def get_download_url(self, url_to_download: str) -> str:
+        """
+        POST /api/v1/common/download-url
+
+        传入 Kie 生成的文件 URL，返回可下载 URL（有效 20 分钟）
+        """
+        url = f"{self.base_url}/api/v1/common/download-url"
+        payload = {"url": url_to_download}
+        data = await self._request_json("POST", url, json=payload)
+        download_url = data.get("data")
+        if not isinstance(download_url, str):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected response: `data` is not string (download url)",
+                payload=data,
+            )
+        return download_url
+
+    # ---------- 文件上传 ----------
+
+    async def upload_file_from_url(
+        self,
+        *,
+        file_url: str,
+        upload_path: str | None = None,
+        file_name: str | None = None,
+    ) -> Dict[str, Any]:
+        """
+        POST {file_base_url}/api/file-url-upload
+
+        使用远程 URL 上传文件，返回 data（包含 fileUrl / downloadUrl 等）
+        """
+        url = f"{self.file_base_url}/api/file-url-upload"
+        payload: Dict[str, Any] = {"fileUrl": file_url}
+        if upload_path:
+            payload["uploadPath"] = upload_path
+        if file_name:
+            payload["fileName"] = file_name
+
+        data = await self._request_json(
+            "POST",
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        # 文件上传接口通常结构为 { success, code, msg, data: {...} }
+        file_info = data.get("data") or {}
+        if not isinstance(file_info, dict):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected upload-file response: `data` is not object",
+                payload=data,
+            )
+        return file_info
+
+    async def upload_file_stream(
+        self,
+        *,
+        file_bytes: bytes,
+        upload_path: str | None = None,
+        file_name: str | None = None,
+        mime_type: str | None = None,
+    ) -> Dict[str, Any]:
+        """
+        POST {file_base_url}/api/file-stream-upload
+
+        直接上传二进制文件（适合大文件）。
+        """
+        url = f"{self.file_base_url}/api/file-stream-upload"
+
+        # httpx 的文件字段格式: (filename, fileobj/bytes, content_type?)
+        files: Dict[str, Any] = {
+            "file": (
+                file_name or "upload.bin",
+                file_bytes,
+                mime_type or "application/octet-stream",
+            ),
+        }
+
+        if upload_path is not None:
+            files["uploadPath"] = (None, upload_path)
+        if file_name is not None:
+            files["fileName"] = (None, file_name)
+
+        # 注意：files 方式不能再用 json/body
+        data = await self._request_json("POST", url, files=files)
+        file_info = data.get("data") or {}
+        if not isinstance(file_info, dict):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected upload-file-stream response: `data` is not object",
+                payload=data,
+            )
+        return file_info
+
+    async def upload_file_base64(
+        self,
+        *,
+        base64_data: str,
+        upload_path: str | None = None,
+        file_name: str | None = None,
+    ) -> Dict[str, Any]:
+        """
+        POST {file_base_url}/api/file-base64-upload
+
+        使用 Base64 数据上传文件（适合小文件）。
+        """
+        url = f"{self.file_base_url}/api/file-base64-upload"
+
+        payload: Dict[str, Any] = {"base64Data": base64_data}
+        if upload_path:
+            payload["uploadPath"] = upload_path
+        if file_name:
+            payload["fileName"] = file_name
+
+        data = await self._request_json(
+            "POST",
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        file_info = data.get("data") or {}
+        if not isinstance(file_info, dict):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected upload-file-base64 response: `data` is not object",
+                payload=data,
+            )
+        return file_info
+
+    # ---------- 任务：通用 createTask / recordInfo ----------
+
+    async def create_task(
+        self,
+        *,
+        model: str,
+        input_params: Dict[str, Any],
+        call_back_url: str | None = None,
+    ) -> Dict[str, Any]:
+        """
+        POST /api/v1/jobs/createTask
+
+        返回 data 部分，例如: { "taskId": "task_123" }
+        """
+        url = f"{self.base_url}/api/v1/jobs/createTask"
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": input_params,
+        }
+        if call_back_url:
+            payload["callBackUrl"] = call_back_url
+
+        data = await self._request_json(
+            "POST",
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        task_info = data.get("data") or {}
+        if not isinstance(task_info, dict):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected createTask response: `data` is not object",
+                payload=data,
+            )
+        return task_info
+
+    async def get_task_record(self, task_id: str) -> Dict[str, Any]:
+        """
+        GET /api/v1/jobs/recordInfo
+
+        返回 data 部分（包含 state / param / resultJson 等）
+        """
+        url = f"{self.base_url}/api/v1/jobs/recordInfo"
+        params = {"taskId": task_id}
+        data = await self._request_json("GET", url, params=params)
+
+        record = data.get("data") or {}
+        if not isinstance(record, dict):
+            raise KieApiError(
+                http_status=200,
+                code=data.get("code"),
+                message="Unexpected recordInfo response: `data` is not object",
+                payload=data,
+            )
+        return record
+
+    # ---------- 小工具 ----------
+
+    @staticmethod
+    def parse_result_json(record: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        帮忙把 record 中的 resultJson / param （如果是 JSON 字符串）转换成 dict，附加回 record.
+
+        - resultJson → record["resultJsonParsed"]
+        - param      → record["paramParsed"]
+        """
+        result_json_raw = record.get("resultJson")
+        if isinstance(result_json_raw, str):
+            try:
+                record["resultJsonParsed"] = json.loads(result_json_raw)
+            except Exception:
+                # 保持原样
+                pass
+
+        param_raw = record.get("param")
+        if isinstance(param_raw, str):
+            try:
+                record["paramParsed"] = json.loads(param_raw)
+            except Exception:
+                pass
+
+        return record
+

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, Protocol
 
-
 class ProviderHandler(Protocol):
     """Protocol describing provider specific sync handlers."""
 
@@ -51,9 +50,19 @@ def load_builtin_providers() -> None:
     通过 app.services.providers.builtin_providers(registry) 完成注册，
     避免在此直接引用具体 Provider 实现引发循环导入。
     """
-    from app.services.providers import builtin_providers  # local import to avoid cycles
+    # 延迟导入，避免循环导入
+    from app.services.providers.kie_ai import KieAIProvider  # 延迟导入 KieAIProvider
+    from app.services.providers.tiktok_business import TiktokBusinessProvider  # 延迟导入 TiktokBusinessProvider
 
-    builtin_providers(provider_registry)
+    # 注册 KieAI 提供商
+    kie_ai_provider = KieAIProvider()
+    provider_registry.register("kie-ai", kie_ai_provider)
+    provider_registry.register("kie_ai", kie_ai_provider)
+
+    # 注册 TiktokBusiness 提供商
+    ttb = TiktokBusinessProvider()
+    provider_registry.register("tiktok-business", ttb)
+    provider_registry.register("tiktok_business", ttb)
 
 
 __all__ = [

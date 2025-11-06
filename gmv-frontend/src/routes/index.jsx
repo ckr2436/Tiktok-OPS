@@ -31,15 +31,21 @@ import AdminList from '../features/platform/admin/pages/AdminList.jsx';
 // 平台管理员 · OAuth Provider Apps
 import OAuthAppsPage from '../features/platform/oauth/pages/OAuthAppsPage.jsx';
 
+// 平台 - KIE AI Key 管理
+import PlatformKieKeyPage from '../features/platform/kie_ai/pages/PlatformKieKeyPage.jsx';
+
 // 公司域：成员
 import UserList from '../features/tenants/users/pages/UserList.jsx';
 import UserCreate from '../features/tenants/users/pages/UserCreate.jsx';
 import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 
-// 公司域：TikTok Business 授权
+// 公司域：TikTok Business 授权 + GMV Max
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
 import GmvMaxManagementPage from '../features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx';
+
+// 租户 - KIE Sora2 页面
+import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
 
 function LegacyGmvRedirect() {
   const { wid } = useParams();
@@ -51,7 +57,14 @@ function LegacyGmvRedirect() {
 
 const router = createBrowserRouter([
   // 登录页
-  { path: '/login', element: <MinimalLayout><LoginView /></MinimalLayout> },
+  {
+    path: '/login',
+    element: (
+      <MinimalLayout>
+        <LoginView />
+      </MinimalLayout>
+    ),
+  },
 
   // 受保护区域
   {
@@ -76,20 +89,92 @@ const router = createBrowserRouter([
               { path: 'policies', element: <PlatformPolicies /> },
               { path: 'apis', element: <ApiDocsView /> },
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
+              // ★ 新增：平台 - KIE AI Key 管理
+              { path: 'kie-ai', element: <PlatformKieKeyPage /> },
             ],
           },
 
           // 公司域 - 成员
-          { path: 'tenants/:wid/users', element: <TenantGuard><UserList /></TenantGuard> },
-          { path: 'tenants/:wid/users/create', element: <TenantGuard><UserCreate /></TenantGuard> },
-          { path: 'tenants/:wid/users/:uid', element: <TenantGuard><UserEdit /></TenantGuard> },
+          {
+            path: 'tenants/:wid/users',
+            element: (
+              <TenantGuard>
+                <UserList />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/users/create',
+            element: (
+              <TenantGuard>
+                <UserCreate />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/users/:uid',
+            element: (
+              <TenantGuard>
+                <UserEdit />
+              </TenantGuard>
+            ),
+          },
 
           // 公司域 - TikTok Business 授权
-          { path: 'tenants/:wid/tiktok-business', element: <TenantGuard><TbAuthList /></TenantGuard> },
-          { path: 'tenants/:wid/tiktok-business/:auth_id', element: <TenantGuard><TbAuthDetail /></TenantGuard> },
-          { path: 'tenants/:wid/gmv-max', element: <TenantGuard><GmvMaxManagementPage /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
-          { path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*', element: <TenantGuard><LegacyGmvRedirect /></TenantGuard> },
+          {
+            path: 'tenants/:wid/tiktok-business',
+            element: (
+              <TenantGuard>
+                <TbAuthList />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/tiktok-business/:auth_id',
+            element: (
+              <TenantGuard>
+                <TbAuthDetail />
+              </TenantGuard>
+            ),
+          },
+
+          // 公司域 - GMV Max
+          {
+            path: 'tenants/:wid/gmv-max',
+            element: (
+              <TenantGuard>
+                <GmvMaxManagementPage />
+              </TenantGuard>
+            ),
+          },
+
+          // ★ 新增：公司域 - KIE Sora2 视频
+          {
+            path: 'tenants/:wid/kie-ai/sora2',
+            element: (
+              <TenantGuard>
+                <Sora2ImageToVideoPage />
+              </TenantGuard>
+            ),
+          },
+
+          // 兼容旧链接重定向
+          {
+            path: 'tenants/:wid/integrations/tiktok-business/accounts',
+            element: (
+              <TenantGuard>
+                <LegacyGmvRedirect />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*',
+            element: (
+              <TenantGuard>
+                <LegacyGmvRedirect />
+              </TenantGuard>
+            ),
+          },
         ],
       },
     ],

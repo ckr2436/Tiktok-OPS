@@ -23,6 +23,7 @@ from app.features.platform.router_oauth_apps import router as platform_oauth_app
 from app.features.platform.router_oauth_callback import router as oauth_callback_router
 from app.features.platform.router_tasks import router as platform_tasks_router  # 平台任务触发网关
 from app.features.platform.router_platform_policies import router as platform_policies_router
+from app.features.platform.kie_ai.routes import router as platform_kie_ai_router  # ★ 这里指向 routes
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -35,6 +36,9 @@ from app.features.tenants.oauth_ttb.router_sync_all import router as sync_all_ro
 from app.features.tenants.oauth_ttb.router_cursors import router as cursors_router
 from app.features.tenants.oauth_ttb.router_jobs import router as jobs_router
 from app.features.tenants.ttb.router import router as tenant_ttb_router
+
+# 新增：kie 相关独立路由
+from app.features.tenants.kie_ai.router_sora2 import router as tenant_kie_ai_router
 
 from app.services.provider_registry import load_builtin_providers
 
@@ -64,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_oauth_apps_router)
     app.include_router(platform_tasks_router)
     app.include_router(platform_policies_router)
+    app.include_router(platform_kie_ai_router)
 
     app.include_router(tenant_users_router)
     app.include_router(tenant_oauth_ttb_router)
@@ -75,6 +80,9 @@ def create_app() -> FastAPI:
     app.include_router(cursors_router)
     app.include_router(jobs_router)
     app.include_router(tenant_ttb_router)
+
+    # 租户侧 Kie AI 路由
+    app.include_router(tenant_kie_ai_router)
 
     app.include_router(oauth_callback_router)  # /api/oauth/tiktok-business/callback（不版本化）
 
@@ -147,7 +155,10 @@ def create_app() -> FastAPI:
         else:
             @app.get("/api/admin-docs/docs", include_in_schema=False)
             def _missing_admin_docs():
-                raise HTTPException(status_code=500, detail="ADMIN_DOCS_ENABLE=true 但未找到 admin-docs 静态资源目录。")
+                raise HTTPException(
+                    status_code=500,
+                    detail="ADMIN_DOCS_ENABLE=true 但未找到 admin-docs 静态资源目录。",
+                )
 
     return app
 

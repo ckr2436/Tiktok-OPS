@@ -111,4 +111,4 @@ celery_app.conf.update(
 # ★ 导入任务，确保 worker 启动即注册
 import app.tasks.oauth_tasks   # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401  # ← 注册 ttb 同步任务
-
+import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401  # ← 新增：注册 kie_ai 任务
