@@ -1,7 +1,7 @@
 // src/components/ui/ApiHealthBadge.jsx
 import { useEffect, useMemo, useState } from 'react';
 
-const POLL_INTERVAL = 10000;
+const POLL_INTERVAL = 120000;
 
 const STATUS_LABELS = {
   online: 'Online',

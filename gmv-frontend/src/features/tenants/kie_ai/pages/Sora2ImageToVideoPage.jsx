@@ -1,12 +1,14 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import kieTenantApi from '../service.js'
 
 const MAX_PROMPT_LEN = 10_000
 const LAST_TASK_KEY_PREFIX = 'kie_sora2_last_task_'
+const MAX_HISTORY_TOTAL = 500
 
 function getLastTaskKey (wid) {
   return `${LAST_TASK_KEY_PREFIX}${wid ?? ''}`
@@ -21,6 +23,8 @@ const DURATION_OPTIONS = [
   { value: 10, label: '10 秒' },
   { value: 15, label: '15 秒' },
 ]
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
 function Badge ({ type = 'default', children }) {
   const colorMap = {
@@ -51,8 +55,36 @@ function Badge ({ type = 'default', children }) {
   )
 }
 
+function shouldPollByState (state) {
+  if (!state) return true
+  const s = String(state).toLowerCase()
+
+  if (
+    s.includes('success') ||
+    s.includes('succeeded') ||
+    s === 'ok' ||
+    s.includes('fail') ||
+    s.includes('error') ||
+    s.includes('timeout')
+  ) {
+    return false
+  }
+
+  if (
+    s.includes('wait') ||
+    s.includes('queue') ||
+    s.includes('run') ||
+    s.includes('process')
+  ) {
+    return true
+  }
+
+  return false
+}
+
 export default function Sora2ImageToVideoPage () {
   const { wid } = useParams()
+  const queryClient = useQueryClient()
 
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState('portrait')
@@ -64,19 +96,83 @@ export default function Sora2ImageToVideoPage () {
   const [dragOver, setDragOver] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
-
-  const [task, setTask] = useState(null)
-  const [files, setFiles] = useState([])
-  const [loadingTask, setLoadingTask] = useState(false)
   const [err, setErr] = useState('')
 
-  // 任务历史
-  const [history, setHistory] = useState([])
-  const [historyTotal, setHistoryTotal] = useState(0)
-  const [historyLoading, setHistoryLoading] = useState(false)
+  // 当前任务 ID
+  const [currentTaskId, setCurrentTaskId] = useState(null)
 
-  // 预览弹窗（图片 / 视频）
+  // 历史分页
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
+
+  // 预览弹窗（视频）
   const [preview, setPreview] = useState(null) // { url, kind, mime }
+
+  const lastTaskKey = getLastTaskKey(wid)
+
+  // 挂载时恢复最近任务 ID
+  useEffect(() => {
+    if (!wid || typeof window === 'undefined') return
+    const lastId = window.localStorage.getItem(lastTaskKey)
+    if (lastId) {
+      setCurrentTaskId(Number(lastId) || lastId)
+    }
+  }, [wid, lastTaskKey])
+
+  // pageSize 变化回到第一页
+  useEffect(() => {
+    setPage(1)
+  }, [pageSize])
+
+  // ------- React Query：当前任务 -------
+  const {
+    data: task,
+    isLoading: loadingTask,
+    error: taskError,
+    refetch: refetchTask,
+  } = useQuery({
+    queryKey: ['sora2-task', wid, currentTaskId],
+    queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
+    enabled: !!wid && !!currentTaskId,
+    refetchInterval: query =>
+      shouldPollByState(query.state.data?.state) ? 8000 : false,
+  })
+
+  // ------- React Query：当前任务文件 -------
+  const {
+    data: files = [],
+  } = useQuery({
+    queryKey: ['sora2-files', wid, currentTaskId],
+    queryFn: () => kieTenantApi.listTaskFiles(wid, currentTaskId),
+    enabled: !!wid && !!currentTaskId,
+    refetchInterval: () => {
+      if (!task) return 8000
+      return shouldPollByState(task.state) ? 8000 : false
+    },
+  })
+
+  // ------- React Query：任务历史（仅在需要时刷）-------
+  const {
+    data: historyResp,
+    isLoading: historyLoading,
+    refetch: refetchHistory,
+  } = useQuery({
+    queryKey: ['sora2-history', wid, page, pageSize],
+    queryFn: () => kieTenantApi.listTasks(wid, { page, size: pageSize }),
+    enabled: !!wid,
+    refetchInterval: false,
+    keepPreviousData: true,
+  })
+
+  const rawTotal = historyResp?.total ?? 0
+  const historyTotal = Math.min(rawTotal, MAX_HISTORY_TOTAL)
+  const history = historyResp?.items || []
+
+  const totalPages = historyTotal
+    ? Math.max(1, Math.ceil(historyTotal / pageSize))
+    : 1
+  const canPrev = page > 1
+  const canNext = page < totalPages
 
   const statusType = useMemo(() => {
     const s = (task?.state || '').toLowerCase()
@@ -88,67 +184,6 @@ export default function Sora2ImageToVideoPage () {
     if (s.includes('fail') || s.includes('error')) return 'fail'
     return 'default'
   }, [task])
-
-  const lastTaskKey = getLastTaskKey(wid)
-
-  // -------- 共用：按 taskId 拉取任务 + 文件 --------
-  const loadTaskAndFiles = useCallback(
-    async (taskId, { refresh = true } = {}) => {
-      if (!wid || !taskId) return
-      setLoadingTask(true)
-      setErr('')
-      try {
-        const t = await kieTenantApi.getTask(wid, taskId, { refresh })
-        setTask(t || null)
-        const fs = await kieTenantApi.listTaskFiles(wid, taskId)
-        setFiles(fs || [])
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(lastTaskKey, String(taskId))
-        }
-      } catch (e) {
-        console.error(e)
-        setErr(e?.message || '加载任务失败')
-        if (typeof e?.status === 'number' && e.status === 404) {
-          if (typeof window !== 'undefined') {
-            window.localStorage.removeItem(lastTaskKey)
-          }
-          setTask(null)
-          setFiles([])
-        }
-      } finally {
-        setLoadingTask(false)
-      }
-    },
-    [wid, lastTaskKey],
-  )
-
-  // -------- 历史记录 --------
-  const loadHistory = useCallback(
-    async (page = 1, size = 10) => {
-      if (!wid) return
-      setHistoryLoading(true)
-      try {
-        const res = await kieTenantApi.listTasks(wid, { page, size })
-        setHistory(res?.items || [])
-        setHistoryTotal(res?.total ?? (res?.items ? res.items.length : 0))
-      } catch (e) {
-        console.error(e)
-      } finally {
-        setHistoryLoading(false)
-      }
-    },
-    [wid],
-  )
-
-  // -------- 刷新页面时，自动恢复最近一次任务 --------
-  useEffect(() => {
-    if (!wid || typeof window === 'undefined') return
-    const lastId = window.localStorage.getItem(lastTaskKey)
-    if (lastId) {
-      loadTaskAndFiles(lastId, { refresh: true })
-    }
-    loadHistory()
-  }, [wid, lastTaskKey, loadTaskAndFiles, loadHistory])
 
   // -------- 上传文件相关 --------
   function applyFile (f) {
@@ -211,20 +246,20 @@ export default function Sora2ImageToVideoPage () {
         throw new Error('创建成功但未返回任务 ID')
       }
 
-      setTask(newTask)
-      const uploadFile = resp?.upload_file
-      setFiles(uploadFile ? [uploadFile] : [])
-
+      setCurrentTaskId(newTaskId)
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(lastTaskKey, String(newTaskId))
       }
 
-      await loadTaskAndFiles(newTaskId, { refresh: true })
-      await loadHistory()
+      // 回到第一页，刷新当前任务 + 历史
+      setPage(1)
+      await refetchTask()
+      await refetchHistory()
+
       alert('任务已创建')
-    } catch (e) {
-      console.error(e)
-      setErr(e?.message || '创建任务失败')
+    } catch (e2) {
+      console.error(e2)
+      setErr(e2?.message || '创建任务失败')
     } finally {
       setSubmitting(false)
     }
@@ -232,22 +267,23 @@ export default function Sora2ImageToVideoPage () {
 
   // 手动刷新当前任务
   async function onRefreshTask () {
-    if (!task?.id) return
-    await loadTaskAndFiles(task.id, { refresh: true })
-    await loadHistory()
+    if (!currentTaskId) return
+    await refetchTask()
+    await refetchHistory()
   }
 
   // 清除当前任务
   function onClearTask () {
-    setTask(null)
-    setFiles([])
+    setCurrentTaskId(null)
     setPreview(null)
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(lastTaskKey)
     }
+    queryClient.removeQueries({ queryKey: ['sora2-task', wid] })
+    queryClient.removeQueries({ queryKey: ['sora2-files', wid] })
   }
 
-  // 下载
+  // 下载视频
   async function handleDownload (fileId) {
     if (!wid || !fileId) return
     try {
@@ -261,13 +297,13 @@ export default function Sora2ImageToVideoPage () {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-    } catch (e) {
-      console.error(e)
-      alert(e?.message || '获取下载链接失败')
+    } catch (e2) {
+      console.error(e2)
+      alert(e2?.message || '获取下载链接失败')
     }
   }
 
-  // 预览（弹窗）
+  // 预览视频
   async function handlePreview (fileObj) {
     if (!wid || !fileObj?.id) return
     try {
@@ -278,9 +314,9 @@ export default function Sora2ImageToVideoPage () {
         kind: fileObj.kind,
         mime: fileObj.mime_type || '',
       })
-    } catch (e) {
-      console.error(e)
-      alert(e?.message || '获取预览链接失败')
+    } catch (e2) {
+      console.error(e2)
+      alert(e2?.message || '获取预览链接失败')
     }
   }
 
@@ -289,11 +325,6 @@ export default function Sora2ImageToVideoPage () {
   }
 
   const promptCharsLeft = MAX_PROMPT_LEN - (prompt?.length || 0)
-
-  const isPreviewImage =
-    preview &&
-    (preview.mime?.startsWith('image/') ||
-      preview.kind === 'upload')
 
   return (
     <div className="card card--elevated">
@@ -308,7 +339,7 @@ export default function Sora2ImageToVideoPage () {
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
           gap: 24,
-	  alignItems: 'flex-start',
+          alignItems: 'flex-start',
         }}
       >
         {/* 左侧：创建任务 */}
@@ -470,9 +501,9 @@ export default function Sora2ImageToVideoPage () {
         {/* 右侧：当前任务 + 历史 */}
         <div>
           {/* 错误提示 */}
-          {err && (
+          {(err || taskError) && (
             <div className="alert alert--error" style={{ marginBottom: 12 }}>
-              {err}
+              {err || taskError?.message || '请求失败'}
             </div>
           )}
 
@@ -603,28 +634,22 @@ export default function Sora2ImageToVideoPage () {
                         .filter(f => f.kind === 'result')
                         .map(f => (
                           <li key={f.id} style={{ marginBottom: 6 }}>
-                            <div>
-                              [结果文件]&nbsp;
-                            </div>
+                            <div>[结果文件]</div>
                             <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {f.kind === 'result' && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn ghost"
-                                    onClick={() => handlePreview(f)}
-                                  >
-                                    预览视频
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn ghost"
-                                    onClick={() => handleDownload(f.id)}
-                                  >
-                                    下载视频
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                type="button"
+                                className="btn ghost"
+                                onClick={() => handlePreview(f)}
+                              >
+                                预览视频
+                              </button>
+                              <button
+                                type="button"
+                                className="btn ghost"
+                                onClick={() => handleDownload(f.id)}
+                              >
+                                下载视频
+                              </button>
                             </div>
                           </li>
                         ))}
@@ -645,17 +670,40 @@ export default function Sora2ImageToVideoPage () {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: 8,
+                gap: 12,
               }}
             >
               <h3 style={{ margin: 0 }}>任务记录</h3>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => loadHistory()}
-                disabled={historyLoading}
-              >
-                {historyLoading ? '刷新中…' : '刷新'}
-              </button>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label className="small-muted" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  每页
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(Number(e.target.value) || 10)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: 'var(--panel-2)',
+                      color: 'inherit',
+                      fontSize: 12,
+                    }}
+                  >
+                    {PAGE_SIZE_OPTIONS.map(sz => (
+                      <option key={sz} value={sz}>{sz}</option>
+                    ))}
+                  </select>
+                  条
+                </label>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => refetchHistory()}
+                  disabled={historyLoading}
+                >
+                  {historyLoading ? '刷新中…' : '刷新'}
+                </button>
+              </div>
             </div>
 
             {historyLoading && <Loading />}
@@ -665,61 +713,102 @@ export default function Sora2ImageToVideoPage () {
             )}
 
             {!historyLoading && history.length > 0 && (
-              <div className="table-wrapper" style={{ maxHeight: 260, overflow: 'auto' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 80 }}>ID</th>
-                      <th style={{ width: 90 }}>状态</th>
-                      <th>提示词摘要</th>
-                      <th style={{ width: 120 }}>创建时间</th>
-                      <th style={{ width: 80 }}>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map(t => (
-                      <tr key={t.id}>
-                        <td>{t.id}</td>
-                        <td>
-                          <Badge
-                            type={(() => {
-                              const s = (t.state || '').toLowerCase()
-                              if (!s) return 'default'
-                              if (s.includes('wait')) return 'waiting'
-                              if (s.includes('run') || s.includes('process')) return 'running'
-                              if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
-                              if (s.includes('timeout')) return 'timeout'
-                              if (s.includes('fail') || s.includes('error')) return 'fail'
-                              return 'default'
-                            })()}
-                          >
-                            {t.state}
-                          </Badge>
-                        </td>
-                        <td className="small-muted">
-                          {(t.prompt || '').slice(0, 40)}
-                          {t.prompt && t.prompt.length > 40 ? '…' : ''}
-                        </td>
-                        <td className="small-muted">
-                          {t.created_at ? new Date(t.created_at).toLocaleString() : ''}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn ghost"
-                            onClick={() => loadTaskAndFiles(t.id, { refresh: false })}
-                          >
-                            查看
-                          </button>
-                        </td>
+              <>
+                <div className="table-wrapper" style={{ maxHeight: 260, overflow: 'auto' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 80 }}>ID</th>
+                        <th style={{ width: 90 }}>状态</th>
+                        <th>提示词摘要</th>
+                        <th style={{ width: 120 }}>创建时间</th>
+                        <th style={{ width: 80 }}>操作</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="small-muted" style={{ marginTop: 4 }}>
-                  共 {historyTotal} 条记录（仅展示最近一页）
+                    </thead>
+                    <tbody>
+                      {history.map(t => (
+                        <tr key={t.id}>
+                          <td>{t.id}</td>
+                          <td>
+                            <Badge
+                              type={(() => {
+                                const s = (t.state || '').toLowerCase()
+                                if (!s) return 'default'
+                                if (s.includes('wait')) return 'waiting'
+                                if (s.includes('run') || s.includes('process')) return 'running'
+                                if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
+                                if (s.includes('timeout')) return 'timeout'
+                                if (s.includes('fail') || s.includes('error')) return 'fail'
+                                return 'default'
+                              })()}
+                            >
+                              {t.state}
+                            </Badge>
+                          </td>
+                          <td className="small-muted">
+                            {(t.prompt || '').slice(0, 40)}
+                            {t.prompt && t.prompt.length > 40 ? '…' : ''}
+                          </td>
+                          <td className="small-muted">
+                            {t.created_at ? new Date(t.created_at).toLocaleString() : ''}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              onClick={() => {
+                                setCurrentTaskId(t.id)
+                                if (typeof window !== 'undefined') {
+                                  window.localStorage.setItem(lastTaskKey, String(t.id))
+                                }
+                              }}
+                            >
+                              查看
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+
+                <div
+                  className="small-muted"
+                  style={{
+                    marginTop: 6,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                  }}
+                >
+                  <span>
+                    共 {historyTotal} 条记录（最多展示 {MAX_HISTORY_TOTAL} 条）
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      disabled={!canPrev}
+                      onClick={() => canPrev && setPage(p => p - 1)}
+                    >
+                      上一页
+                    </button>
+                    <span>
+                      第 {page} / {totalPages} 页
+                    </span>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      disabled={!canNext}
+                      onClick={() => canNext && setPage(p => p + 1)}
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </section>
 
@@ -730,7 +819,7 @@ export default function Sora2ImageToVideoPage () {
         </div>
       </div>
 
-      {/* 预览弹窗：图片 / 视频小卡片 */}
+      {/* 预览弹窗：视频小卡片 */}
       {preview && (
         <div className="modal-backdrop" onClick={closePreview}>
           <div
@@ -739,38 +828,23 @@ export default function Sora2ImageToVideoPage () {
             style={{ width: 'min(820px, 92vw)' }}
           >
             <div className="modal__header">
-              <div className="modal__title">
-                {isPreviewImage ? '图片预览' : '视频预览'}
-              </div>
+              <div className="modal__title">视频预览</div>
               <button className="modal__close" type="button" onClick={closePreview}>
                 关闭
               </button>
             </div>
             <div className="modal__body" style={{ textAlign: 'center' }}>
-              {isPreviewImage ? (
-                <img
-                  src={preview.url}
-                  alt="预览"
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '72vh',
-                    borderRadius: 12,
-                    boxShadow: '0 8px 30px rgba(0,0,0,.25)',
-                  }}
-                />
-              ) : (
-                <video
-                  src={preview.url}
-                  controls
-                  autoPlay
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '72vh',
-                    borderRadius: 12,
-                    boxShadow: '0 8px 30px rgba(0,0,0,.25)',
-                  }}
-                />
-              )}
+              <video
+                src={preview.url}
+                controls
+                autoPlay
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '72vh',
+                  borderRadius: 12,
+                  boxShadow: '0 8px 30px rgba(0,0,0,.25)',
+                }}
+              />
             </div>
           </div>
         </div>
