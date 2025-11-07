@@ -52,7 +52,12 @@ export function buildMenus(session) {
         items: [
           { to: `/tenants/${wsId}/tiktok-business`, label: 'TikTok Business 授权' },
           { to: `/tenants/${wsId}/gmv-max`, label: 'GMV Max 管理' },
-	  { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'KIE Sora2 视频' },
+        ],
+      },
+      {
+        title: 'AI视频',
+        items: [
+	  { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'Sora2 视频' },
         ],
       },
     ];

@@ -1,6 +1,7 @@
 # app/features/platform/kie_ai/routes.py
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,16 +14,20 @@ from app.data.db import get_db
 from app.services.kie_api.accounts import (
     list_keys,
     get_key_by_id,
+    get_default_key,
     create_kie_key,
     update_kie_key,
     deactivate_kie_key,
 )
 from app.services.kie_api.common import get_remaining_credits_for_key
+from app.services.kie_api.sora2 import KieApiError
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/kie-ai",
     tags=["Platform / Kie AI"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 class KieKeyOut(BaseModel):
@@ -139,13 +144,28 @@ async def get_default_key_credit(
     """
     平台管理员：查询“默认 key”的当前余额。
     """
-    credits = await get_remaining_credits_for_key(
-        db,
-        key_id=None,
-        actor_user_id=None,
-        actor_workspace_id=None,
-    )
-    return credits
+    key = get_default_key(db, require_active=True)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Default key not found")
+
+    try:
+        credits = await get_remaining_credits_for_key(
+            db,
+            key_id=int(key.id),
+            actor_user_id=None,
+            actor_workspace_id=None,
+        )
+        return credits
+    except (KieApiError, ValueError) as exc:
+        logger.exception(
+            "get_default_key_credit failed",
+            extra={"key_id": int(key.id)},
+        )
+        # 前端 alert 里看到的就是这个 detail
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch credits for key: {exc}",
+        ) from exc
 
 
 @router.get("/keys/{key_id}/credit", response_model=int)
@@ -157,11 +177,25 @@ async def get_key_credit(
     """
     平台管理员：查询指定 key 的当前余额。
     """
-    credits = await get_remaining_credits_for_key(
-        db,
-        key_id=key_id,
-        actor_user_id=None,
-        actor_workspace_id=None,
-    )
-    return credits
+    key = get_key_by_id(db, key_id=key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+
+    try:
+        credits = await get_remaining_credits_for_key(
+            db,
+            key_id=int(key.id),
+            actor_user_id=None,
+            actor_workspace_id=None,
+        )
+        return credits
+    except (KieApiError, ValueError) as exc:
+        logger.exception(
+            "get_key_credit failed",
+            extra={"key_id": int(key.id)},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch credits for key: {exc}",
+        ) from exc
 

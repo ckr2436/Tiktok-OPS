@@ -1,241 +1,779 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useCallback, useMemo, useState } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import kieTenantApi from '../service.js'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
+import kieTenantApi from '../service.js'
 
-const PROMPT_MAX = 10_000
+const MAX_PROMPT_LEN = 10_000
+const LAST_TASK_KEY_PREFIX = 'kie_sora2_last_task_'
 
-const aspectOptions = [
-  { value: 'portrait', label: '竖屏 (9:16)' },
-  { value: 'landscape', label: '横屏 (16:9)' },
+function getLastTaskKey (wid) {
+  return `${LAST_TASK_KEY_PREFIX}${wid ?? ''}`
+}
+
+const ASPECT_OPTIONS = [
+  { value: 'portrait', label: '竖屏 9:16' },
+  { value: 'landscape', label: '横屏 16:9' },
 ]
 
-const frameOptions = [
-  { value: '10', label: '10 秒' },
-  { value: '15', label: '15 秒' },
+const DURATION_OPTIONS = [
+  { value: 10, label: '10 秒' },
+  { value: 15, label: '15 秒' },
 ]
 
-export default function Sora2ImageToVideoPage() {
-  const { wid } = useParams()    // ★ 直接从路由拿 workspace_id
+function Badge ({ type = 'default', children }) {
+  const colorMap = {
+    waiting: '#999',
+    running: '#0d6efd',
+    success: '#16a34a',
+    fail: '#dc2626',
+    timeout: '#f97316',
+    default: '#666',
+  }
+  const bg = `${colorMap[type] || colorMap.default}22`
+  const border = `${colorMap[type] || colorMap.default}44`
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 8px',
+        borderRadius: 999,
+        fontSize: 12,
+        color: colorMap[type] || colorMap.default,
+        backgroundColor: bg,
+        border: `1px solid ${border}`,
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+export default function Sora2ImageToVideoPage () {
+  const { wid } = useParams()
 
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState('portrait')
-  const [nFrames, setNFrames] = useState('10')
+  const [nFrames, setNFrames] = useState(10)
   const [removeWatermark, setRemoveWatermark] = useState(true)
-  const [imageFile, setImageFile] = useState(null)
+
+  const [file, setFile] = useState(null)
+  const [filePreview, setFilePreview] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+
   const [task, setTask] = useState(null)
   const [files, setFiles] = useState([])
   const [loadingTask, setLoadingTask] = useState(false)
+  const [err, setErr] = useState('')
 
-  const promptCount = useMemo(() => prompt.length, [prompt])
+  // 任务历史
+  const [history, setHistory] = useState([])
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyLoading, setHistoryLoading] = useState(false)
 
-  const handleFileChange = useCallback((e) => {
-    const file = e.target.files?.[0] || null
-    setImageFile(file)
-  }, [])
+  // 预览弹窗（图片 / 视频）
+  const [preview, setPreview] = useState(null) // { url, kind, mime }
 
-  const handleSubmit = useCallback(async (e) => {
+  const statusType = useMemo(() => {
+    const s = (task?.state || '').toLowerCase()
+    if (!s) return 'default'
+    if (s.includes('wait')) return 'waiting'
+    if (s.includes('run') || s.includes('process')) return 'running'
+    if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
+    if (s.includes('timeout')) return 'timeout'
+    if (s.includes('fail') || s.includes('error')) return 'fail'
+    return 'default'
+  }, [task])
+
+  const lastTaskKey = getLastTaskKey(wid)
+
+  // -------- 共用：按 taskId 拉取任务 + 文件 --------
+  const loadTaskAndFiles = useCallback(
+    async (taskId, { refresh = true } = {}) => {
+      if (!wid || !taskId) return
+      setLoadingTask(true)
+      setErr('')
+      try {
+        const t = await kieTenantApi.getTask(wid, taskId, { refresh })
+        setTask(t || null)
+        const fs = await kieTenantApi.listTaskFiles(wid, taskId)
+        setFiles(fs || [])
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(lastTaskKey, String(taskId))
+        }
+      } catch (e) {
+        console.error(e)
+        setErr(e?.message || '加载任务失败')
+        if (typeof e?.status === 'number' && e.status === 404) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(lastTaskKey)
+          }
+          setTask(null)
+          setFiles([])
+        }
+      } finally {
+        setLoadingTask(false)
+      }
+    },
+    [wid, lastTaskKey],
+  )
+
+  // -------- 历史记录 --------
+  const loadHistory = useCallback(
+    async (page = 1, size = 10) => {
+      if (!wid) return
+      setHistoryLoading(true)
+      try {
+        const res = await kieTenantApi.listTasks(wid, { page, size })
+        setHistory(res?.items || [])
+        setHistoryTotal(res?.total ?? (res?.items ? res.items.length : 0))
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setHistoryLoading(false)
+      }
+    },
+    [wid],
+  )
+
+  // -------- 刷新页面时，自动恢复最近一次任务 --------
+  useEffect(() => {
+    if (!wid || typeof window === 'undefined') return
+    const lastId = window.localStorage.getItem(lastTaskKey)
+    if (lastId) {
+      loadTaskAndFiles(lastId, { refresh: true })
+    }
+    loadHistory()
+  }, [wid, lastTaskKey, loadTaskAndFiles, loadHistory])
+
+  // -------- 上传文件相关 --------
+  function applyFile (f) {
+    if (!f) {
+      setFile(null)
+      setFilePreview(null)
+      return
+    }
+    setFile(f)
+    try {
+      const url = URL.createObjectURL(f)
+      setFilePreview(url)
+    } catch {
+      setFilePreview(null)
+    }
+  }
+
+  function onFileInputChange (e) {
+    const f = e.target.files?.[0]
+    applyFile(f || null)
+  }
+
+  function onDrop (e) {
     e.preventDefault()
-    setError('')
+    setDragOver(false)
+    const f = e.dataTransfer.files?.[0]
+    if (f) applyFile(f)
+  }
 
+  // -------- 创建任务 --------
+  async function onSubmit (e) {
+    e.preventDefault()
     if (!wid) {
-      setError('缺少 workspace_id，无法创建任务，请从侧边菜单重新进入此页面。')
+      alert('缺少 workspace id')
+      return
+    }
+    if (!file) {
+      alert('请先选择一张图片')
       return
     }
     if (!prompt.trim()) {
-      setError('请填写提示词。')
-      return
-    }
-    if (prompt.length > PROMPT_MAX) {
-      setError(`提示词长度不能超过 ${PROMPT_MAX} 字符，目前为 ${prompt.length}。`)
-      return
-    }
-    if (!imageFile) {
-      setError('请上传一张 PNG/JPG 图片。')
+      alert('请输入提示词')
       return
     }
 
     setSubmitting(true)
+    setErr('')
     try {
-      const resp = await kieTenantApi.createSora2Task(wid, {
-        prompt: prompt.trim(),
+      const resp = await kieTenantApi.createImageToVideoTask(wid, {
+        prompt: prompt.slice(0, MAX_PROMPT_LEN),
         aspect_ratio: aspectRatio,
-        n_frames: nFrames,           // service 里会转成字符串
+        n_frames: nFrames,
         remove_watermark: removeWatermark,
-        image: imageFile,
+        image: file,
       })
-      setTask(resp?.task || null)
-      setFiles(resp?.upload_file ? [resp.upload_file] : [])
-    } catch (err) {
-      setError(err?.message || '创建任务失败，请稍后再试。')
+
+      const newTask = resp?.task || resp
+      const newTaskId = newTask?.id
+      if (!newTaskId) {
+        throw new Error('创建成功但未返回任务 ID')
+      }
+
+      setTask(newTask)
+      const uploadFile = resp?.upload_file
+      setFiles(uploadFile ? [uploadFile] : [])
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(lastTaskKey, String(newTaskId))
+      }
+
+      await loadTaskAndFiles(newTaskId, { refresh: true })
+      await loadHistory()
+      alert('任务已创建')
+    } catch (e) {
+      console.error(e)
+      setErr(e?.message || '创建任务失败')
     } finally {
       setSubmitting(false)
     }
-  }, [wid, prompt, aspectRatio, nFrames, removeWatermark, imageFile])
+  }
 
-  const handleRefresh = useCallback(async () => {
-    if (!wid || !task?.id) return
-    setLoadingTask(true)
-    setError('')
-    try {
-      const latest = await kieTenantApi.getSora2Task(wid, task.id, { refresh: true })
-      setTask(latest)
-      const fs = await kieTenantApi.listSora2TaskFiles(wid, task.id)
-      setFiles(fs || [])
-    } catch (err) {
-      setError(err?.message || '刷新任务状态失败。')
-    } finally {
-      setLoadingTask(false)
+  // 手动刷新当前任务
+  async function onRefreshTask () {
+    if (!task?.id) return
+    await loadTaskAndFiles(task.id, { refresh: true })
+    await loadHistory()
+  }
+
+  // 清除当前任务
+  function onClearTask () {
+    setTask(null)
+    setFiles([])
+    setPreview(null)
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(lastTaskKey)
     }
-  }, [wid, task])
+  }
+
+  // 下载
+  async function handleDownload (fileId) {
+    if (!wid || !fileId) return
+    try {
+      const url = await kieTenantApi.getFileDownloadUrl(wid, fileId)
+      if (!url) return
+      const a = document.createElement('a')
+      a.href = url
+      a.target = '_blank'
+      a.rel = 'noopener'
+      a.download = ''
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (e) {
+      console.error(e)
+      alert(e?.message || '获取下载链接失败')
+    }
+  }
+
+  // 预览（弹窗）
+  async function handlePreview (fileObj) {
+    if (!wid || !fileObj?.id) return
+    try {
+      const url = await kieTenantApi.getFileDownloadUrl(wid, fileObj.id)
+      if (!url) return
+      setPreview({
+        url,
+        kind: fileObj.kind,
+        mime: fileObj.mime_type || '',
+      })
+    } catch (e) {
+      console.error(e)
+      alert(e?.message || '获取预览链接失败')
+    }
+  }
+
+  function closePreview () {
+    setPreview(null)
+  }
+
+  const promptCharsLeft = MAX_PROMPT_LEN - (prompt?.length || 0)
+
+  const isPreviewImage =
+    preview &&
+    (preview.mime?.startsWith('image/') ||
+      preview.kind === 'upload')
 
   return (
-    <div>
-      <h1 className="page-title">KIE Sora 2 - 图片生成视频</h1>
+    <div className="card card--elevated">
+      <h2 style={{ marginTop: 0 }}>Sora 2 - 图片生成视频</h2>
 
-      {!wid && (
-        <div className="alert alert--error" style={{ marginBottom: 16 }}>
-          无法识别 workspace_id，请从侧边菜单重新进入本页面。
-        </div>
-      )}
+      <p className="small-muted" style={{ marginBottom: 16 }}>
+        上传一张产品图片 + 文案提示词，调用 Sora 2 模型生成 10s / 15s 竖屏或横屏视频。
+      </p>
 
-      <section className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card__title">创建任务</h2>
-
-        <form onSubmit={handleSubmit}>
-          <FormField label={`提示词（英文建议，最多 ${PROMPT_MAX} 字符）`}>
-            <textarea
-              className="input"
-              rows={10}
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              maxLength={PROMPT_MAX}
-              placeholder="请输入英文提示词，描述画面和镜头运镜..."
-            />
-            <div className="form-field__hint">
-              {promptCount} / {PROMPT_MAX}
-            </div>
-          </FormField>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+          gap: 24,
+	  alignItems: 'flex-start',
+        }}
+      >
+        {/* 左侧：创建任务 */}
+        <form onSubmit={onSubmit} className="form-grid" style={{ marginBottom: 24 }}>
+          {/* 提示词独立一行 */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <FormField label={`提示词（英文建议，最多 ${MAX_PROMPT_LEN} 字符）`}>
+              <div style={{ position: 'relative' }}>
+                <textarea
+                  rows={8}
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                  maxLength={MAX_PROMPT_LEN}
+                  placeholder="请详细描述你希望生成的视频内容、风格、镜头、时长等..."
+                  style={{
+                    width: '100%',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    borderRadius: 8,
+                    paddingRight: 90,
+                  }}
+                />
+                <span
+                  className="small-muted"
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    bottom: 6,
+                    fontSize: 11,
+                    opacity: 0.7,
+                  }}
+                >
+                  {promptCharsLeft} 剩余
+                </span>
+              </div>
+            </FormField>
+          </div>
 
           <FormField label="画面比例">
-            <select
-              className="input"
-              value={aspectRatio}
-              onChange={e => setAspectRatio(e.target.value)}
-            >
-              {aspectOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <div style={{ display: 'inline-flex', gap: 8 }}>
+              {ASPECT_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setAspectRatio(opt.value)}
+                  className={aspectRatio === opt.value ? 'btn' : 'btn ghost'}
+                  style={{ padding: '6px 14px', fontSize: 13 }}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
+            </div>
           </FormField>
 
           <FormField label="视频时长">
-            <select
-              className="input"
-              value={nFrames}
-              onChange={e => setNFrames(e.target.value)}
-            >
-              {frameOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <div style={{ display: 'inline-flex', gap: 8 }}>
+              {DURATION_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setNFrames(opt.value)}
+                  className={nFrames === opt.value ? 'btn' : 'btn ghost'}
+                  style={{ padding: '6px 14px', fontSize: 13 }}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
+            </div>
           </FormField>
 
           <FormField label="水印">
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={removeWatermark}
-                onChange={e => setRemoveWatermark(e.target.checked)}
-              />
-              <span>去除水印（若模型支持）</span>
-            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  className={!removeWatermark ? 'btn' : 'btn ghost'}
+                  style={{ padding: '4px 10px', fontSize: 13 }}
+                  onClick={() => setRemoveWatermark(false)}
+                >
+                  保留水印
+                </button>
+                <button
+                  type="button"
+                  className={removeWatermark ? 'btn' : 'btn ghost'}
+                  style={{ padding: '4px 10px', fontSize: 13 }}
+                  onClick={() => setRemoveWatermark(true)}
+                >
+                  去除水印
+                </button>
+              </div>
+            </div>
           </FormField>
 
           <FormField label="源图片（PNG/JPG，≤ 20MB）">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-            />
-            {imageFile && (
-              <div className="form-field__hint">
-                已选择：{imageFile.name}（{Math.round(imageFile.size / 1024)} KB）
-              </div>
-            )}
+            <div
+              onDragOver={e => {
+                e.preventDefault()
+                setDragOver(true)
+              }}
+              onDragLeave={e => {
+                e.preventDefault()
+                setDragOver(false)
+              }}
+              onDrop={onDrop}
+              style={{
+                border: dragOver ? '2px dashed #2563eb' : '2px dashed #e5e7eb',
+                borderRadius: 10,
+                padding: 16,
+                textAlign: 'center',
+                cursor: 'pointer',
+                backgroundColor: dragOver ? '#eff6ff' : '#fafafa',
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 13 }}>
+                拖拽图片到此处，或{' '}
+                <label style={{ color: '#2563eb', cursor: 'pointer' }}>
+                  点击选择
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={onFileInputChange}
+                  />
+                </label>
+              </p>
+              {file && (
+                <div style={{ marginTop: 8 }} className="small-muted">
+                  已选择：{file.name}（{Math.round(file.size / 1024)} KB）
+                </div>
+              )}
+              {filePreview && (
+                <div style={{ marginTop: 12 }}>
+                  <img
+                    src={filePreview}
+                    alt="预览"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: 220,
+                      borderRadius: 8,
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </FormField>
 
-          {error && (
-            <div className="alert alert--error" style={{ marginBottom: 16 }}>
-              {error}
+          <div style={{ marginTop: 8 }}>
+            <button
+              className="btn"
+              type="submit"
+              disabled={submitting}
+            >
+              {submitting ? '创建中…' : '创建任务'}
+            </button>
+          </div>
+        </form>
+
+        {/* 右侧：当前任务 + 历史 */}
+        <div>
+          {/* 错误提示 */}
+          {err && (
+            <div className="alert alert--error" style={{ marginBottom: 12 }}>
+              {err}
             </div>
           )}
 
-          <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={submitting || !wid}
-          >
-            {submitting ? '创建中...' : '创建任务'}
-          </button>
-        </form>
-
-        <p className="small-muted" style={{ marginTop: 16 }}>
-          说明：提示词尽量具体，包含镜头感、情绪、时长等信息。目前 demo 不保证无违禁内容，
-          且你在提示词中描述完整 10s/15s 的镜头脚本效果会更好。
-        </p>
-      </section>
-
-      {task && (
-        <section className="card">
-          <h2 className="card__title">任务详情</h2>
-          <div className="form-grid">
-            <div>任务 ID：</div>
-            <div>{task.id}</div>
-            <div>KIE TaskId：</div>
-            <div>{task.task_id}</div>
-            <div>模型：</div>
-            <div>{task.model}</div>
-            <div>状态：</div>
-            <div>{task.state}</div>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={handleRefresh}
-              disabled={loadingTask}
+          {/* 当前任务状态 */}
+          <section style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
             >
-              {loadingTask ? '刷新中...' : '刷新状态 & 文件列表'}
-            </button>
-          </div>
+              <h3 style={{ margin: 0 }}>当前任务</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {task?.id && (
+                  <>
+                    <button className="btn ghost" type="button" onClick={onRefreshTask}>
+                      刷新状态
+                    </button>
+                    <button className="btn ghost" type="button" onClick={onClearTask}>
+                      清除当前任务
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
 
-          <h3 style={{ marginTop: 16 }}>相关文件</h3>
-          {loadingTask && <Loading />}
-          {!loadingTask && files?.length === 0 && (
-            <div className="small-muted">暂时还没有文件。</div>
-          )}
-          {!loadingTask && files?.length > 0 && (
-            <ul className="file-list">
-              {files.map(f => (
-                <li key={f.id}>
+            {!task && !loadingTask && (
+              <div className="small-muted">
+                暂无任务。创建一个任务后，这里会显示最近一次任务状态。
+              </div>
+            )}
+
+            {loadingTask && <Loading />}
+
+            {task && !loadingTask && (
+              <div className="card" style={{ marginTop: 4 }}>
+                <div style={{ marginBottom: 8 }}>
                   <div>
-                    <strong>{f.kind}</strong>（ID: {f.id}）
+                    <strong>任务 ID：</strong>
+                    {task.id}
                   </div>
-                  <div className="small-muted">
-                    原始地址：{f.file_url}
+                  <div>
+                    <strong>模型：</strong>
+                    {task.model}
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong>状态：</strong>
+                    <Badge type={statusType}>
+                      {(task.state || '').toString()}
+                    </Badge>
+                  </div>
+
+                  {/* 简单进度条 */}
+                  <div
+                    style={{
+                      marginTop: 8,
+                      height: 6,
+                      borderRadius: 999,
+                      background: '#e5e7eb',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width:
+                          statusType === 'waiting'
+                            ? '20%'
+                            : statusType === 'running'
+                              ? '60%'
+                              : '100%',
+                        background:
+                          statusType === 'success'
+                            ? '#16a34a'
+                            : statusType === 'fail' || statusType === 'timeout'
+                              ? '#dc2626'
+                              : '#0d6efd',
+                        height: '100%',
+                        transition: 'width 0.3s ease',
+                      }}
+                    />
+                  </div>
+
+                  {(task.fail_code || task.fail_msg) && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        backgroundColor: '#fef2f2',
+                        color: '#b91c1c',
+                        fontSize: 12,
+                      }}
+                    >
+                      <strong>失败原因：</strong>
+                      {task.fail_code && <>[{task.fail_code}] </>}
+                      {task.fail_msg || '未知错误'}
+                    </div>
+                  )}
+                </div>
+
+                {task.prompt && (
+                  <details style={{ marginTop: 4 }}>
+                    <summary className="small-muted">查看提示词</summary>
+                    <pre
+                      style={{
+                        marginTop: 4,
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: 12,
+                        background: '#f7f7f7',
+                        padding: 8,
+                        borderRadius: 4,
+                      }}
+                    >
+                      {task.prompt}
+                    </pre>
+                  </details>
+                )}
+
+                <div style={{ marginTop: 12 }}>
+                  <strong>视频生成：</strong>
+                  {files && files.length > 0 ? (
+                    <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+                      {files
+                        .filter(f => f.kind === 'result')
+                        .map(f => (
+                          <li key={f.id} style={{ marginBottom: 6 }}>
+                            <div>
+                              [结果文件]&nbsp;
+                            </div>
+                            <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {f.kind === 'result' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn ghost"
+                                    onClick={() => handlePreview(f)}
+                                  >
+                                    预览视频
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn ghost"
+                                    onClick={() => handleDownload(f.id)}
+                                  >
+                                    下载视频
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <div className="small-muted">暂无文件，请稍后刷新状态。</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* 任务历史 */}
+          <section>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <h3 style={{ margin: 0 }}>任务记录</h3>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => loadHistory()}
+                disabled={historyLoading}
+              >
+                {historyLoading ? '刷新中…' : '刷新'}
+              </button>
+            </div>
+
+            {historyLoading && <Loading />}
+
+            {!historyLoading && history.length === 0 && (
+              <div className="small-muted">暂无历史记录。</div>
+            )}
+
+            {!historyLoading && history.length > 0 && (
+              <div className="table-wrapper" style={{ maxHeight: 260, overflow: 'auto' }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 80 }}>ID</th>
+                      <th style={{ width: 90 }}>状态</th>
+                      <th>提示词摘要</th>
+                      <th style={{ width: 120 }}>创建时间</th>
+                      <th style={{ width: 80 }}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map(t => (
+                      <tr key={t.id}>
+                        <td>{t.id}</td>
+                        <td>
+                          <Badge
+                            type={(() => {
+                              const s = (t.state || '').toLowerCase()
+                              if (!s) return 'default'
+                              if (s.includes('wait')) return 'waiting'
+                              if (s.includes('run') || s.includes('process')) return 'running'
+                              if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
+                              if (s.includes('timeout')) return 'timeout'
+                              if (s.includes('fail') || s.includes('error')) return 'fail'
+                              return 'default'
+                            })()}
+                          >
+                            {t.state}
+                          </Badge>
+                        </td>
+                        <td className="small-muted">
+                          {(t.prompt || '').slice(0, 40)}
+                          {t.prompt && t.prompt.length > 40 ? '…' : ''}
+                        </td>
+                        <td className="small-muted">
+                          {t.created_at ? new Date(t.created_at).toLocaleString() : ''}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => loadTaskAndFiles(t.id, { refresh: false })}
+                          >
+                            查看
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="small-muted" style={{ marginTop: 4 }}>
+                  共 {historyTotal} 条记录（仅展示最近一页）
+                </div>
+              </div>
+            )}
+          </section>
+
+          <p className="small-muted" style={{ marginTop: 16 }}>
+            提示：视频实际画质、时长、转场效果由模型与平台控制，当前不做内容审核。建议在提示词中描述完整的
+            10s / 15s 剧本。
+          </p>
+        </div>
+      </div>
+
+      {/* 预览弹窗：图片 / 视频小卡片 */}
+      {preview && (
+        <div className="modal-backdrop" onClick={closePreview}>
+          <div
+            className="modal"
+            onClick={e => e.stopPropagation()}
+            style={{ width: 'min(820px, 92vw)' }}
+          >
+            <div className="modal__header">
+              <div className="modal__title">
+                {isPreviewImage ? '图片预览' : '视频预览'}
+              </div>
+              <button className="modal__close" type="button" onClick={closePreview}>
+                关闭
+              </button>
+            </div>
+            <div className="modal__body" style={{ textAlign: 'center' }}>
+              {isPreviewImage ? (
+                <img
+                  src={preview.url}
+                  alt="预览"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '72vh',
+                    borderRadius: 12,
+                    boxShadow: '0 8px 30px rgba(0,0,0,.25)',
+                  }}
+                />
+              ) : (
+                <video
+                  src={preview.url}
+                  controls
+                  autoPlay
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '72vh',
+                    borderRadius: 12,
+                    boxShadow: '0 8px 30px rgba(0,0,0,.25)',
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

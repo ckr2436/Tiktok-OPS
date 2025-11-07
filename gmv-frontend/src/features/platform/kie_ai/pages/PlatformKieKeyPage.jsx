@@ -3,14 +3,36 @@ import { useEffect, useMemo, useState } from 'react'
 import kiePlatformApi from '../service.js'
 import Modal from '../../../../components/ui/Modal.jsx'
 import FormField from '../../../../components/ui/FormField.jsx'
-import CopyButton from '../../../../components/CopyButton.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
+
+const CREDIT_CACHE_KEY = 'kie_platform_key_credit_cache'
 
 function emptyForm() {
   return {
     name: '',
     api_key: '',
     is_default: false,
+  }
+}
+
+function loadCreditCache() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(CREDIT_CACHE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveCreditCache(map) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CREDIT_CACHE_KEY, JSON.stringify(map || {}))
+  } catch {
+    // ignore
   }
 }
 
@@ -25,14 +47,27 @@ export default function PlatformKieKeyPage() {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [creditMap, setCreditMap] = useState({}) // {id: number}
+
+  // { keyId: credits }
+  const [creditMap, setCreditMap] = useState(() => loadCreditCache())
 
   const refresh = async () => {
     setLoading(true)
     setError('')
     try {
       const list = await kiePlatformApi.listKeys()
-      setItems(list || [])
+      const arr = list || []
+      setItems(arr)
+
+      // 把本地缓存里已有的余额映射到当前 key 列表上
+      const cache = loadCreditCache()
+      const next = {}
+      for (const it of arr) {
+        if (cache[it.id] != null) {
+          next[it.id] = cache[it.id]
+        }
+      }
+      setCreditMap(next)
     } catch (err) {
       setError(err?.message || '加载失败')
     } finally {
@@ -45,7 +80,7 @@ export default function PlatformKieKeyPage() {
       const v = await kiePlatformApi.getDefaultKeyCredit()
       setDefaultCredit(v)
     } catch {
-      // ignore
+      // 查询失败就保持原值不动
     }
   }
 
@@ -134,10 +169,36 @@ export default function PlatformKieKeyPage() {
     }
   }
 
+  // 启用 key：走 PATCH，把 is_active 调回 true
+  const handleActivate = async (item) => {
+    try {
+      await kiePlatformApi.updateKey(item.id, { is_active: true })
+      await refresh()
+      await refreshDefaultCredit()
+    } catch (err) {
+      window.alert(err?.message || '启用失败')
+    }
+  }
+
+  // 设置为默认 key：走 PATCH is_default=true，后端会自动取消其他默认
+  const handleSetDefault = async (item) => {
+    try {
+      await kiePlatformApi.updateKey(item.id, { is_default: true })
+      await refresh()
+      await refreshDefaultCredit()
+    } catch (err) {
+      window.alert(err?.message || '设置默认失败')
+    }
+  }
+
   const handleCheckCredit = async (item) => {
     try {
       const v = await kiePlatformApi.getKeyCredit(item.id)
-      setCreditMap((m) => ({ ...m, [item.id]: v }))
+      setCreditMap((m) => {
+        const next = { ...m, [item.id]: v }
+        saveCreditCache(next)
+        return next
+      })
       if (item.is_default) {
         setDefaultCredit(v)
       }
@@ -148,7 +209,7 @@ export default function PlatformKieKeyPage() {
 
   const totalActive = useMemo(
     () => (items || []).filter((x) => x.is_active).length,
-    [items]
+    [items],
   )
 
   return (
@@ -163,8 +224,20 @@ export default function PlatformKieKeyPage() {
       </header>
 
       {defaultCredit != null && (
-        <div className="alert alert--info" style={{ marginBottom: '16px' }}>
-          默认 Key 当前余额：<strong>{defaultCredit}</strong> credits
+        <div
+          className="alert alert--info"
+          style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: 12 }}
+        >
+          <span>
+            默认 Key 当前余额：<strong>{defaultCredit}</strong> credits
+          </span>
+          <button
+            type="button"
+            className="btn btn--sm"
+            onClick={refreshDefaultCredit}
+          >
+            刷新
+          </button>
         </div>
       )}
 
@@ -208,16 +281,19 @@ export default function PlatformKieKeyPage() {
                         <td>{it.is_default ? '是' : '否'}</td>
                         <td>
                           {creditMap[it.id] != null ? (
-                            <span>{creditMap[it.id]}</span>
+                            <span style={{ marginRight: 8 }}>{creditMap[it.id]}</span>
                           ) : (
-                            <button
-                              type="button"
-                              className="btn btn--sm"
-                              onClick={() => handleCheckCredit(it)}
-                            >
-                              查询余额
-                            </button>
+                            <span className="small-muted" style={{ marginRight: 8 }}>
+                              -
+                            </span>
                           )}
+                          <button
+                            type="button"
+                            className="btn btn--sm"
+                            onClick={() => handleCheckCredit(it)}
+                          >
+                            {creditMap[it.id] != null ? '刷新余额' : '查询余额'}
+                          </button>
                         </td>
                         <td>
                           <button
@@ -227,7 +303,8 @@ export default function PlatformKieKeyPage() {
                           >
                             编辑
                           </button>
-                          {it.is_active && (
+
+                          {it.is_active ? (
                             <button
                               type="button"
                               className="btn btn--sm btn--danger"
@@ -235,6 +312,26 @@ export default function PlatformKieKeyPage() {
                               onClick={() => handleDeactivate(it)}
                             >
                               停用
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => handleActivate(it)}
+                            >
+                              启用
+                            </button>
+                          )}
+
+                          {it.is_active && !it.is_default && (
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => handleSetDefault(it)}
+                            >
+                              设为默认
                             </button>
                           )}
                         </td>

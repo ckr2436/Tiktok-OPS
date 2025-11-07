@@ -1,4 +1,4 @@
-# app/services/kie_api/sora2.py
+# app/services/kie_api/client.py
 from __future__ import annotations
 
 import os
@@ -116,6 +116,7 @@ class Sora2ImageToVideoService:
             raise KieApiError("upload_file_stream: file_bytes is empty")
 
         url = "https://kieai.redpandaai.co/api/file-stream-upload"
+
         data: dict[str, str] = {}
         if upload_path:
             data["uploadPath"] = upload_path
@@ -123,7 +124,11 @@ class Sora2ImageToVideoService:
             data["fileName"] = file_name
 
         files = {
-            "file": (file_name or filename or "upload", file_bytes, mime_type or "application/octet-stream"),
+            "file": (
+                file_name or filename or "upload",
+                file_bytes,
+                mime_type or "application/octet-stream",
+            ),
         }
 
         headers = self._auth_headers()

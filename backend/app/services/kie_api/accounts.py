@@ -1,12 +1,13 @@
 # app/services/kie_api/accounts.py
 from __future__ import annotations
 
-from typing import Optional, Iterable, List
+from typing import Optional, Iterable, List, Mapping, Any
 
 from sqlalchemy.orm import Session
 
 from app.data.models.kie_api import KieApiKey
 from app.services.audit import log_event
+from app.services.kie_api.sora2 import Sora2ImageToVideoService, KieApiError
 
 
 # === 加解密占位实现 ===
@@ -77,6 +78,115 @@ def get_effective_key(
     if k is None:
         raise ValueError("No KIE API key configured")
     return k
+
+
+# === 余额查询 & 自动选择 Key（供平台/租户共享）===
+
+def _parse_credit_value(resp: Mapping[str, Any]) -> Optional[int]:
+    """
+    从 /api/v1/chat/credit 的响应中解析当前剩余 credits。
+    兼容几种字段名：credits / credit / balance / remain / remaining。
+    """
+    if not isinstance(resp, Mapping):
+        return None
+
+    data = resp.get("data") or resp
+    if not isinstance(data, Mapping):
+        return None
+
+    for key in ("credits", "credit", "balance", "remain", "remaining"):
+        if key not in data:
+            continue
+        val = data.get(key)
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            continue
+
+    return None
+
+
+async def fetch_key_credits(key: KieApiKey) -> Optional[int]:
+    """
+    调用 KIE /api/v1/chat/credit 查询某个 key 的当前 credits。
+    查询失败或返回格式不对时，返回 None（不抛异常）。
+    """
+    api_key = decrypt_api_key(key.api_key_ciphertext)
+    if not api_key:
+        return None
+
+    client = Sora2ImageToVideoService(api_key=api_key)
+    try:
+        resp = await client.get_remaining_credits()
+    except Exception:
+        return None
+
+    return _parse_credit_value(resp)
+
+
+async def select_best_kie_key_for_task(
+    db: Session,
+    *,
+    min_credits: int = 1,
+) -> KieApiKey:
+    """
+    选择一个“启用、余额满足 min_credits”的 key：
+    - 优先尝试默认 key（is_default=1 且 is_active=1）
+    - 若默认 key 余额不足，则在其它启用 key 中找 credits >= min_credits 的
+    - 若都查不到有效余额：
+        - 若有默认 key，则返回默认 key
+        - 否则返回任意一个 active key
+        - 若连 active key 都没有，则抛 ValueError
+    """
+    tried: set[int] = set()
+
+    # 1) 默认 key 优先
+    default_key = get_default_key(db, require_active=True)
+    if default_key is not None:
+        tried.add(int(default_key.id))
+        credits = await fetch_key_credits(default_key)
+        if credits is not None and credits >= min_credits:
+            return default_key
+
+    # 2) 其它启用的 key
+    others: List[KieApiKey] = (
+        db.query(KieApiKey)
+        .filter(KieApiKey.is_active.is_(True))
+        .order_by(KieApiKey.id.asc())
+        .all()
+    )
+
+    best_key: Optional[KieApiKey] = None
+    best_credits: int = -1
+
+    for k in others:
+        if int(k.id) in tried:
+            continue
+        credits = await fetch_key_credits(k)
+        if credits is None:
+            continue
+        if credits >= min_credits and credits > best_credits:
+            best_key = k
+            best_credits = credits
+
+    if best_key is not None:
+        return best_key
+
+    # 3) 都没有有效余额：尽量返回一个“默认 key 或任意 active key”，
+    #    让调用方拿到更明确的上游错误，而不是本地直接挂死。
+    if default_key is not None:
+        return default_key
+
+    any_active = (
+        db.query(KieApiKey)
+        .filter(KieApiKey.is_active.is_(True))
+        .order_by(KieApiKey.id.asc())
+        .first()
+    )
+    if any_active is not None:
+        return any_active
+
+    raise ValueError("No active KIE API key configured")
 
 
 def create_kie_key(
@@ -267,5 +377,7 @@ __all__ = [
     "create_kie_key",
     "update_kie_key",
     "deactivate_kie_key",
+    "fetch_key_credits",
+    "select_best_kie_key_for_task",
 ]
 
