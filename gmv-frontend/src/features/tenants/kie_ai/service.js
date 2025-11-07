@@ -9,32 +9,92 @@ function tenantPrefix (wid) {
   return `/tenants/${encodeURIComponent(wid)}/kie-ai/sora2`
 }
 
-// 创建 Sora2 任务：上传图片 + prompt（走 Celery）
-async function createImageToVideoTask (
-  wid,
-  { prompt, aspect_ratio, n_frames, remove_watermark, image }
-) {
-  const form = new FormData()
-  form.append('prompt', prompt ?? '')
-  form.append('aspect_ratio', aspect_ratio || 'portrait')
+function pathForModel (wid, modelId) {
+  const base = tenantPrefix(wid)
+  switch (modelId) {
+    case 'sora-2-text-to-video':
+      return `${base}/text-to-video`
+    case 'sora-2-pro-text-to-video':
+      return `${base}/pro-text-to-video`
+    case 'sora-2-image-to-video':
+      return `${base}/image-to-video`
+    case 'sora-2-pro-image-to-video':
+      return `${base}/pro-image-to-video`
+    case 'sora-2-pro-storyboard':
+      return `${base}/pro-storyboard`
+    case 'sora-watermark-remover':
+      return `${base}/watermark-remover`
+    default:
+      throw new Error(`Unsupported Sora2 model: ${modelId}`)
+  }
+}
 
+// 通用创建 Sora2 任务
+async function createSora2Task (
+  wid,
+  {
+    modelId,
+    prompt,
+    aspect_ratio,
+    n_frames,
+    remove_watermark,
+    size,
+    image,
+    video_url,
+    shots,
+  },
+) {
+  if (!modelId) {
+    throw new Error('modelId is required for createSora2Task')
+  }
+  const url = pathForModel(wid, modelId)
+
+  const form = new FormData()
+  if (prompt != null && prompt !== '') {
+    form.append('prompt', prompt)
+  }
+  if (aspect_ratio) {
+    form.append('aspect_ratio', aspect_ratio)
+  }
   if (n_frames != null && n_frames !== '') {
     form.append('n_frames', String(n_frames))
   }
-
-  form.append('remove_watermark', remove_watermark ? 'true' : 'false')
-
+  if (typeof remove_watermark === 'boolean') {
+    form.append('remove_watermark', remove_watermark ? 'true' : 'false')
+  }
+  if (size) {
+    form.append('size', size)
+  }
+  if (video_url) {
+    form.append('video_url', video_url)
+  }
+  if (shots && Array.isArray(shots) && shots.length > 0) {
+    form.append('shots', JSON.stringify(shots))
+  }
   if (image) {
     form.append('image', image)
   }
 
-  const url = `${tenantPrefix(wid)}/image-to-video`
   const res = await http.post(url, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    // 上传 + 调 KIE 比较慢，单独把超时时间拉长一点
     timeout: 60_000,
   })
   return res?.data ?? res
+}
+
+// 兼容用法：只创建标准版 image-to-video（旧页面如果还在用的话）
+async function createImageToVideoTask (
+  wid,
+  { prompt, aspect_ratio, n_frames, remove_watermark, image },
+) {
+  return createSora2Task(wid, {
+    modelId: 'sora-2-image-to-video',
+    prompt,
+    aspect_ratio,
+    n_frames,
+    remove_watermark,
+    image,
+  })
 }
 
 /**
@@ -49,8 +109,7 @@ async function getTask (wid, taskId, { refresh = true } = {}) {
 
 /**
  * 任务历史列表
- * GET /tenants/{wid}/kie-ai/sora2/tasks?page=&size=&state=
- * （后端按你那边实现，这里只消费 items/total）
+ * GET /tenants/{wid}/kie-ai/sora2/tasks?page=&size=&state=&model=
  */
 async function listTasks (wid, params = {}) {
   const url = `${tenantPrefix(wid)}/tasks`
@@ -79,6 +138,7 @@ async function getFileDownloadUrl (wid, fileId) {
 }
 
 const kieTenantApi = {
+  createSora2Task,
   createImageToVideoTask,
   getTask,
   listTasks,
@@ -88,6 +148,7 @@ const kieTenantApi = {
 
 export default kieTenantApi
 export {
+  createSora2Task,
   createImageToVideoTask,
   getTask,
   listTasks,

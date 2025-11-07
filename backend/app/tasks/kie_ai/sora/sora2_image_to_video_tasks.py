@@ -21,49 +21,6 @@ def _db_session() -> Session:
 
 
 @celery_app.task(
-    name="kie_ai.sora2.refresh_task_status_once",
-    bind=True,
-    queue="gmv.tasks.kie_ai",
-)
-def refresh_sora2_task_status_once(
-    self,
-    *,
-    workspace_id: int,
-    local_task_id: int,
-    **_: Any,
-) -> dict[str, Any]:
-    """
-    保留一个“单次刷新”的任务（兼容老逻辑/手动排查时用）。
-    """
-    db = _db_session()
-    try:
-        result = asyncio.run(
-            refresh_sora2_task_status_by_task_id(
-                db,
-                workspace_id=workspace_id,
-                local_task_id=local_task_id,
-            )
-        )
-        db.commit()
-        return {
-            "id": result.id,
-            "task_id": result.task_id,
-            "state": result.state,
-            "fail_code": result.fail_code,
-            "fail_msg": result.fail_msg,
-        }
-    except Exception as exc:  # noqa: BLE001
-        db.rollback()
-        logger.exception(
-            "refresh_sora2_task_status_once failed",
-            extra={"workspace_id": workspace_id, "local_task_id": local_task_id},
-        )
-        raise exc
-    finally:
-        db.close()
-
-
-@celery_app.task(
     name="kie_ai.sora2.poll_task_status",
     bind=True,
     queue="gmv.tasks.kie_ai",
@@ -80,7 +37,7 @@ def poll_sora2_task_status(
     **_: Any,
 ) -> dict[str, Any]:
     """
-    生产级轮询任务：
+    Sora2 任务轮询器（适用于所有模型）：
 
     - 周期性调用 recordInfo 刷新本地 KieTask
     - 遇到终态（success / failed / error / timeout）就退出
@@ -103,7 +60,6 @@ def poll_sora2_task_status(
                 db.commit()
             except KieApiError as exc:
                 db.rollback()
-                # 对外部 API 错误做有限次重试
                 logger.warning(
                     "KIE recordInfo error, will retry",
                     extra={
