@@ -439,7 +439,7 @@ export default function Sora2ImageToVideoPage () {
       }
     }
 
-    if (currentModel.hasImageUpload && !file) {
+    if (currentModel.hasImageUpload && kind !== 'storyboard' && !file) {
       alert('请先选择一张图片')
       return
     }
