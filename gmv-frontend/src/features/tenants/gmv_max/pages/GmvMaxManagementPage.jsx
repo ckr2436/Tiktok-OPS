@@ -639,7 +639,7 @@ export default function GmvMaxManagementPage() {
         advertiserId: form.advertiserId,
         storeId: form.storeId,
         bcId: form.bcId,
-        eligibility: 'gmv_max',
+        product_eligibility: 'gmv_max',
         mode: 'full',
         idempotency_key: idempotencyKey,
       };

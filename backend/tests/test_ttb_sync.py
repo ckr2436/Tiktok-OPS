@@ -302,11 +302,12 @@ def test_store_and_product_filters_require_ids(tenant_app):
     assert resp.status_code == 422
 
 
-def test_legacy_routes_return_410(tenant_app):
+def test_legacy_routes_removed(tenant_app):
     client, _ = tenant_app
     resp = client.get("/api/v1/tenants/1/providers/tiktok-business/business-centers")
-    assert resp.status_code == 410
-    assert resp.json()["error"]["code"] == "TTB_LEGACY_DISABLED"
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body.get("detail") == "Not Found"
 
 
 def test_meta_sync_returns_summary(monkeypatch, tenant_app):
@@ -335,7 +336,7 @@ def test_product_sync_missing_advertiser(tenant_app):
     client, _ = tenant_app
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
-        json={"scope": "products", "options": {"store_id": "STORE1"}},
+        json={"scope": "products", "store_id": "STORE1"},
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "ADVERTISER_REQUIRED_FOR_GMV_MAX"
@@ -352,7 +353,8 @@ def test_product_sync_bc_mismatch(tenant_app):
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
         json={
             "scope": "products",
-            "options": {"advertiser_id": "ADV1", "store_id": "STORE1"},
+            "advertiser_id": "ADV1",
+            "store_id": "STORE1",
         },
     )
     assert resp.status_code == 422
@@ -397,7 +399,7 @@ def test_product_sync_rate_limited(monkeypatch, tenant_app):
 
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
-        json={"scope": "products", "options": {"advertiser_id": "ADV1", "store_id": "STORE1"}},
+        json={"scope": "products", "advertiser_id": "ADV1", "store_id": "STORE1"},
     )
     assert resp.status_code == 429
     assert resp.json()["error"]["code"] == "SYNC_RATE_LIMITED"
@@ -425,11 +427,9 @@ def test_product_sync_dispatch(monkeypatch, tenant_app):
         json={
             "scope": "products",
             "mode": "full",
-            "options": {
-                "advertiser_id": "ADV1",
-                "store_id": "STORE1",
-                "eligibility": "gmv_max",
-            },
+            "advertiser_id": "ADV1",
+            "store_id": "STORE1",
+            "product_eligibility": "gmv_max",
         },
     )
     assert resp.status_code == 202
