@@ -1,14 +1,16 @@
 // src/features/platform/auth/pages/LoginView.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import auth from '../service.js'
 import { useAppDispatch, useAppSelector } from '../../../../app/hooks.js'
-import { setSession, markChecked } from '../sessionSlice.js'
+import { setSession } from '../sessionSlice.js'
 import MinimalLayout from '../../../../components/layout/MinimalLayout.jsx'
 import InitOwnerModal from './InitOwnerModal.jsx'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Modal from '../../../../components/ui/Modal.jsx'
 import Doc from '../../../../components/ui/Doc.jsx'
+import { useAdminExistsQuery, useSessionQuery } from '../hooks.js'
 
 function EyeButton({ on, onToggle }) {
   return (
@@ -102,9 +104,12 @@ export default function LoginView() {
   const location = useLocation()
   const from = (location.state && location.state.from) || '/dashboard'
 
+  useSessionQuery()
+  const queryClient = useQueryClient()
   const dispatch = useAppDispatch()
   const session = useAppSelector(s => s.session.data)
   const checked = useAppSelector(s => s.session.checked)
+  const adminExistsQuery = useAdminExistsQuery({ enabled: checked && !session })
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -126,28 +131,33 @@ export default function LoginView() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    // 预填用户名（仅在勾选自动登录时保存）
     const savedName = localStorage.getItem('gmv.username')
     if (savedName) setUsername(savedName)
+  }, [])
 
-    ;(async () => {
-      try {
-        const s = await auth.session()
-        if (s?.id) {
-          dispatch(setSession(s))
-          nav(from, { replace: true })
-          return
-        }
-      } catch {/* 未登录 */}
+  useEffect(() => {
+    if (checked && session) {
+      nav(from, { replace: true })
+    }
+  }, [checked, session, nav, from])
 
-      try {
-        const exists = await auth.adminExists()
-        setShowInit(exists === false)
-      } catch { setShowInit(false) }
+  useEffect(() => {
+    if (session) {
+      setShowInit(false)
+    }
+  }, [session])
 
-      dispatch(markChecked())
-    })()
-  }, [dispatch, nav, from])
+  useEffect(() => {
+    if (adminExistsQuery.data === false) {
+      setShowInit(true)
+    }
+  }, [adminExistsQuery.data])
+
+  useEffect(() => {
+    if (adminExistsQuery.isError) {
+      setShowInit(false)
+    }
+  }, [adminExistsQuery.isError])
 
   async function performLogin({ workspace_id } = {}) {
     setError('')
@@ -162,6 +172,7 @@ export default function LoginView() {
         localStorage.setItem('gmv.remember', '0')
         localStorage.removeItem('gmv.username')
       }
+      queryClient.setQueryData(['platform', 'session'], s)
       dispatch(setSession(s))
       nav(from, { replace: true })
       return true
@@ -270,7 +281,10 @@ export default function LoginView() {
       <InitOwnerModal
         open={showInit}
         onClose={() => setShowInit(false)}
-        onDone={() => setShowInit(false)}
+        onDone={() => {
+          setShowInit(false)
+          adminExistsQuery.refetch()
+        }}
       />
 
       {/* 选择租户弹窗 */}

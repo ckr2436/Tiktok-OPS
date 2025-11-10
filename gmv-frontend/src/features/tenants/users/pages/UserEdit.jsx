@@ -1,5 +1,6 @@
 // src/features/tenants/users/pages/UserEdit.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import FormField from '../../../../components/ui/FormField.jsx'
@@ -55,7 +56,6 @@ export default function UserEdit() {
   const { isOwner, isAdmin } = useMyRole()
 
   const [metaName, setMetaName] = useState(`公司 ${wid || ''}`)
-  const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
 
   const [id, setId] = useState(null)
@@ -81,45 +81,65 @@ export default function UserEdit() {
   const canDelete = canToggleActive
   const canResetPwd = canToggleActive
 
-  useEffect(() => {
-    let abort = false
-    ;(async () => {
-      try {
-        const m = await getTenantMeta(wid)
-        if (!abort && m?.name) setMetaName(m.name)
-      } catch {
-        // 忽略
-      }
-    })()
-    return () => {
-      abort = true
-    }
-  }, [wid])
+  useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: !!wid,
+    onSuccess: meta => {
+      if (meta?.name) setMetaName(meta.name)
+    },
+  })
+
+  const queryClient = useQueryClient()
+  const userQuery = useQuery({
+    queryKey: ['tenant-user', wid, uid],
+    queryFn: () => getTenantUser(wid, uid),
+    enabled: !!wid && !!uid,
+    onError: e => {
+      setErr(e?.message || '加载失败')
+    },
+  })
+
+  const loading = userQuery.isLoading || userQuery.isFetching
 
   useEffect(() => {
-    let abort = false
-    ;(async () => {
-      setLoading(true)
+    const u = userQuery.data
+    if (!u) return
+    setId(u.id)
+    setEmail(u.email)
+    setRole(u.role)
+    setDisplayName(u.display_name || '')
+    setUsername(u.username || '')
+    setIsActive(!!u.is_active)
+  }, [userQuery.data])
+
+  useEffect(() => {
+    if (!loading && userQuery.error) {
+      setErr(userQuery.error?.message || '加载失败')
+    } else if (userQuery.isSuccess) {
       setErr('')
-      try {
-        const u = await getTenantUser(wid, uid)
-        if (abort) return
-        setId(u.id)
-        setEmail(u.email)
-        setRole(u.role)
-        setDisplayName(u.display_name || '')
-        setUsername(u.username || '')
-        setIsActive(!!u.is_active)
-      } catch (e) {
-        if (!abort) setErr(e?.message || '加载失败')
-      } finally {
-        if (!abort) setLoading(false)
-      }
-    })()
-    return () => {
-      abort = true
     }
-  }, [wid, uid])
+  }, [loading, userQuery.error, userQuery.isSuccess])
+
+  const updateMutation = useMutation({
+    mutationFn: ({ userId, patch }) => updateTenantUser(wid, userId, patch),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
+      queryClient.setQueryData(['tenant-user', wid, uid], old => ({ ...(old || {}), ...(data || {}) }))
+    },
+  })
+
+  const resetPwdMutation = useMutation({
+    mutationFn: ({ userId, password }) => resetTenantUserPassword(wid, userId, password),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ userId }) => deleteTenantUser(wid, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
+      queryClient.removeQueries({ queryKey: ['tenant-user', wid, uid] })
+    },
+  })
 
   async function onSave() {
     if (!id) return
@@ -133,7 +153,7 @@ export default function UserEdit() {
     }
 
     try {
-      const updated = await updateTenantUser(wid, id, patch)
+      const updated = await updateMutation.mutateAsync({ userId: id, patch })
       setRole(updated.role)
       setDisplayName(updated.display_name || '')
       setUsername(updated.username || '')
@@ -150,7 +170,7 @@ export default function UserEdit() {
     if (np === null) return
     if (!np || np.length < 8) return alert('密码长度不足 8 位')
     try {
-      await resetTenantUserPassword(wid, id, np)
+      await resetPwdMutation.mutateAsync({ userId: id, password: np })
       alert('密码已重置')
     } catch (e) {
       alert(e?.message || '重置失败')
@@ -161,7 +181,7 @@ export default function UserEdit() {
     if (!id || !canDelete) return
     if (!confirm(`确定删除成员「${username || email}」吗？`)) return
     try {
-      await deleteTenantUser(wid, id)
+      await deleteMutation.mutateAsync({ userId: id })
       alert('已删除')
       nav(`/tenants/${wid}/users`, { replace: true })
     } catch (e) {
@@ -257,18 +277,18 @@ export default function UserEdit() {
             <button
               className="btn"
               onClick={onSave}
-              disabled={!canEdit && !canChangeRole && !canToggleActive}
+              disabled={(!canEdit && !canChangeRole && !canToggleActive) || updateMutation.isPending}
             >
-              保存
+              {updateMutation.isPending ? '保存中…' : '保存'}
             </button>
             {canResetPwd && (
-              <button className="btn ghost" onClick={onResetPwd}>
-                重置密码
+              <button className="btn ghost" onClick={onResetPwd} disabled={resetPwdMutation.isPending}>
+                {resetPwdMutation.isPending ? '重置中…' : '重置密码'}
               </button>
             )}
             {canDelete && (
-              <button className="btn danger" onClick={onDelete}>
-                删除成员
+              <button className="btn danger" onClick={onDelete} disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? '删除中…' : '删除成员'}
               </button>
             )}
           </div>

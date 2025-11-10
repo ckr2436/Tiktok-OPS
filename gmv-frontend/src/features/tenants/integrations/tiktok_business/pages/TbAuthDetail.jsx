@@ -1,5 +1,6 @@
 // TikTok Business authorization detail page
 import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   listBindings,
@@ -32,64 +33,109 @@ function fmt(dt) {
 export default function TbAuthDetail() {
   const { wid, auth_id } = useParams();
   const nav = useNavigate();
-
-  const [binding, setBinding] = useState(null);
-  const [advertisers, setAdvertisers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
+  const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState('');
-  const [saving, setSaving] = useState(false);
 
+  const bindingQuery = useQuery({
+    queryKey: ['tb-binding', wid, auth_id],
+    enabled: !!wid && !!auth_id,
+    queryFn: async () => {
+      const list = await listBindings(wid);
+      const binding = list.find((x) => String(x.auth_id) === String(auth_id));
+      if (!binding) {
+        const err = new Error('未找到该授权记录');
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+      return binding;
+    },
+  });
+
+  const advertisersQuery = useQuery({
+    queryKey: ['tb-advertisers', wid, auth_id],
+    enabled: bindingQuery.isSuccess,
+    queryFn: async () => {
+      const ads = await advertisersOf(wid, auth_id);
+      return Array.isArray(ads) ? ads : [];
+    },
+  });
+
+  useEffect(() => {
+    if (bindingQuery.data) {
+      setNameInput(bindingQuery.data.alias || '');
+    }
+  }, [bindingQuery.data]);
+
+  const updateAliasMutation = useMutation({
+    mutationFn: (alias) => updateAlias(wid, auth_id, alias),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['tb-binding', wid, auth_id], (old) => ({
+        ...(old || {}),
+        alias: res?.alias ?? null,
+      }));
+      setEditing(false);
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (remote) => revokeBinding(wid, auth_id, remote),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-binding', wid, auth_id] });
+      queryClient.invalidateQueries({ queryKey: ['tb-bindings', wid] });
+    },
+  });
+
+  const hardDeleteMutation = useMutation({
+    mutationFn: () => hardDeleteBinding(wid, auth_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-bindings', wid] });
+      nav(`/tenants/${encodeURIComponent(wid)}/tiktok-business`);
+    },
+  });
+
+  const setPrimaryMutation = useMutation({
+    mutationFn: (advertiserId) => setPrimary(wid, auth_id, advertiserId),
+    onSuccess: () => {
+      advertisersQuery.refetch();
+    },
+  });
+
+  const binding = bindingQuery.data;
+  const advertisers = advertisersQuery.data || [];
   const primaryId = useMemo(
     () => (advertisers.find((a) => a.primary_flag) || {}).advertiser_id,
-    [advertisers]
+    [advertisers],
   );
 
-  async function loadAll() {
-    setLoading(true);
-    setErr(null);
-    try {
-      // 后端没有「按 id 取详情」接口，这里从列表中过滤
-      const list = await listBindings(wid);
-      const b = list.find((x) => String(x.auth_id) === String(auth_id));
-      if (!b) {
-        setErr('未找到该授权记录');
-        setLoading(false);
-        return;
-      }
-      setBinding(b);
-      setNameInput(b.alias || '');
-      const ads = await advertisersOf(wid, auth_id);
-      setAdvertisers(Array.isArray(ads) ? ads : []);
-    } catch (e) {
-      setErr(e?.message || '加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loading = bindingQuery.isLoading || bindingQuery.isFetching || (bindingQuery.isSuccess && (advertisersQuery.isLoading || advertisersQuery.isFetching));
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [wid, auth_id]);
-
+  const error = bindingQuery.error;
   if (loading) return <div className="p-6">加载中…</div>;
-  if (err) {
+  if (error) {
     return (
       <div className="p-6 space-y-3">
-        <div className="text-red-500">错误：{String(err)}</div>
+        <div className="text-red-500">错误：{String(error.message || error)}</div>
         <button className="btn ghost" onClick={() => nav(-1)}>返回</button>
       </div>
     );
+  }
+
+  function refreshAll() {
+    return Promise.all([
+      bindingQuery.refetch(),
+      advertisersQuery.refetch(),
+    ]);
   }
 
   // 操作：冻结/激活/重新授权/移除
   async function onFreezeOrActivate() {
     if (String(binding.status).toLowerCase() === 'active') {
       if (!confirm('确定要冻结（撤销长期令牌）吗？')) return;
-      await revokeBinding(wid, binding.auth_id, true);
-      await loadAll();
+      await revokeMutation.mutateAsync(true);
+      await refreshAll();
     } else {
-      // 激活 = 重新授权
       const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
       await createAuthz(wid, {
         provider_app_id: binding.provider_app_id,
@@ -100,6 +146,7 @@ export default function TbAuthDetail() {
       });
     }
   }
+
   async function onReauth() {
     const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
     const { auth_url } = await createAuthz(wid, {
@@ -109,10 +156,10 @@ export default function TbAuthDetail() {
     });
     window.open(auth_url, '_blank', 'noopener,noreferrer');
   }
+
   async function onRemove() {
     if (!confirm('确定要移除该授权记录吗？此操作会直接删除本地记录。')) return;
-    await hardDeleteBinding(wid, binding.auth_id);
-    nav(`/tenants/${encodeURIComponent(wid)}/tiktok-business`);
+    await hardDeleteMutation.mutateAsync();
   }
 
   return (
@@ -136,7 +183,9 @@ export default function TbAuthDetail() {
             >
               查看数据
             </Link>
-            <button className="btn ghost" onClick={loadAll}>刷新</button>
+            <button className="btn ghost" onClick={refreshAll} disabled={bindingQuery.isRefetching || advertisersQuery.isRefetching}>
+              {(bindingQuery.isRefetching || advertisersQuery.isRefetching) ? '刷新中…' : '刷新'}
+            </button>
           </div>
         </div>
       </div>
@@ -152,11 +201,13 @@ export default function TbAuthDetail() {
             </div>
             <div className="flex items-center gap-8">
               <button className="btn ghost" onClick={() => setEditing(true)}>编辑名称</button>
-              <button className="btn ghost" onClick={onFreezeOrActivate}>
+              <button className="btn ghost" onClick={onFreezeOrActivate} disabled={revokeMutation.isPending}>
                 {String(binding.status).toLowerCase() === 'active' ? '冻结' : '激活'}
               </button>
               <button className="btn ghost" onClick={onReauth}>重新授权</button>
-              <button className="btn danger" onClick={onRemove}>移除授权</button>
+              <button className="btn danger" onClick={onRemove} disabled={hardDeleteMutation.isPending}>
+                {hardDeleteMutation.isPending ? '处理中…' : '移除授权'}
+              </button>
             </div>
           </div>
         ) : (
@@ -169,21 +220,16 @@ export default function TbAuthDetail() {
             />
             <button
               className="btn"
-              disabled={saving}
+              disabled={updateAliasMutation.isPending}
               onClick={async () => {
                 try {
-                  setSaving(true);
-                  const res = await updateAlias(wid, auth_id, nameInput);
-                  setBinding((b) => ({ ...(b || {}), alias: res?.alias ?? null }));
-                  setEditing(false);
+                  await updateAliasMutation.mutateAsync(nameInput);
                 } catch (e) {
                   alert(`保存失败：${e?.message || 'unknown error'}`);
-                } finally {
-                  setSaving(false);
                 }
               }}
             >
-              保存
+              {updateAliasMutation.isPending ? '保存中…' : '保存'}
             </button>
             <button className="btn ghost" onClick={() => { setEditing(false); setNameInput(binding.alias || ''); }}>
               取消
@@ -192,9 +238,13 @@ export default function TbAuthDetail() {
         )}
       </div>
 
-      {/* 广告主列表卡（不再提供“同步广告主”按钮） */}
+      {/* 广告主列表卡 */}
       <div className="card">
         <div className="text-base font-semibold mb-3">广告主</div>
+
+        {advertisersQuery.error && (
+          <div className="alert alert--error mb-3">{advertisersQuery.error.message || '获取广告主失败'}</div>
+        )}
 
         <div className="table-wrap">
           <table className="oauth-table">
@@ -215,7 +265,7 @@ export default function TbAuthDetail() {
               {advertisers.map((a) => {
                 const isPrimary = String(a.advertiser_id) === String(primaryId);
                 return (
-                  <tr key={a.id}>
+                  <tr key={a.id || a.advertiser_id}>
                     <td className="px-2 py-2">{a.advertiser_id}</td>
                     <td className="px-2 py-2">{a.name || '-'}</td>
                     <td className="px-2 py-2">
@@ -225,20 +275,16 @@ export default function TbAuthDetail() {
                       <div className="table-actions">
                         <button
                           className="btn sm ghost"
-                          disabled={isPrimary}
+                          disabled={isPrimary || setPrimaryMutation.isPending}
                           onClick={async () => {
                             try {
-                              const res = await setPrimary(wid, auth_id, a.advertiser_id);
-                              if ((res?.count ?? 0) > 0) {
-                                const ads = await advertisersOf(wid, auth_id);
-                                setAdvertisers(Array.isArray(ads) ? ads : []);
-                              }
+                              await setPrimaryMutation.mutateAsync(a.advertiser_id);
                             } catch (e) {
                               alert(`设置失败：${e?.message || 'unknown error'}`);
                             }
                           }}
                         >
-                          设为主广告主
+                          {setPrimaryMutation.isPending && !isPrimary ? '设置中…' : '设为主广告主'}
                         </button>
                       </div>
                     </td>
@@ -252,4 +298,3 @@ export default function TbAuthDetail() {
     </div>
   );
 }
-
