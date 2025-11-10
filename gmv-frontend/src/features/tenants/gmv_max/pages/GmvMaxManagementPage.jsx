@@ -58,9 +58,10 @@ function saveProductsCache({ wid, authId, storeId, productsState }) {
   const db = readLS();
   db.__products__ = db.__products__ || {};
   const key = scopeBucketKey({ wid, authId, storeId });
+  const normalized = normalizeProductsPayload(productsState, now());
   db.__products__[key] = {
-    productsState,
-    savedAt: now(),
+    productsState: normalized,
+    savedAt: normalized.receivedAt || now(),
   };
   writeLS(db);
 }
@@ -70,7 +71,9 @@ function readProductsCache({ wid, authId, storeId }) {
   const rec = db.__products__?.[key];
   if (!rec) return null;
   if (!rec.savedAt || now() - rec.savedAt > PRODUCTS_TTL_MS) return null;
-  return rec.productsState || null;
+  const cached = rec.productsState || rec;
+  const normalized = normalizeProductsPayload(cached, rec.savedAt);
+  return normalized;
 }
 
 /** ---------------------------
@@ -88,6 +91,8 @@ const SUMMARY_SECTIONS = [
   { key: 'advertisers', label: 'Advertisers' },
   { key: 'stores', label: 'Stores' },
 ];
+
+const PRODUCT_POLL_INTERVAL_MS = 30 * 1000;
 
 function extractErrorMessage(error, fallback = '操作失败') {
   if (!error) return fallback;
@@ -107,6 +112,17 @@ function formatTimestamp(isoString) {
     if (Number.isNaN(date.getTime())) return isoString;
     return date.toLocaleString('zh-CN', { hour12: false });
   } catch { return typeof isoString === 'string' ? isoString : null; }
+}
+
+function formatLocalTimeFromMillis(value) {
+  if (value === null || value === undefined) return null;
+  try {
+    const date = new Date(Number(value));
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString('zh-CN', { hour12: false });
+  } catch {
+    return null;
+  }
 }
 function formatSyncSummaryText(summary) {
   if (!summary || typeof summary !== 'object') {
@@ -171,6 +187,191 @@ function resolveProductTitle(item) {
     || (item.raw?.title ? String(item.raw.title).trim() : '')
     || (item.product_id ? String(item.product_id) : '');
   return title;
+}
+
+function resolveItemGroupId(item) {
+  if (!item || typeof item !== 'object') return '';
+  const candidates = [
+    item.item_group_id,
+    item.item_groupid,
+    item.itemGroupId,
+    item.raw?.item_group_id,
+    item.raw?.item_groupid,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const value = String(candidate).trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function guessBooleanFromStatus(status) {
+  if (status === null || status === undefined) return null;
+  if (typeof status === 'boolean') return status;
+  if (typeof status === 'number') {
+    if (status === 1) return true;
+    if (status === 0) return false;
+  }
+  const normalized = String(status).trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  if (normalized === '1') return true;
+  if (normalized === '0') return false;
+
+  const negativeKeywords = [
+    'inactive', 'unavailable', 'off_sale', 'off', 'offline', 'disabled', 'suspended',
+    'deleted', 'sold_out', 'not_available', 'blocked', 'invalid', 'unbound', 'released',
+  ];
+  if (negativeKeywords.some((keyword) => normalized.includes(keyword))) return false;
+
+  const positiveKeywords = [
+    'available', 'on_sale', 'active', 'online', 'enabled', 'published', 'in_stock',
+    'occupied', 'binding', 'bound', 'in_use', 'linked',
+  ];
+  if (positiveKeywords.some((keyword) => normalized.includes(keyword))) return true;
+
+  return null;
+}
+
+function isProductAvailable(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.is_available !== undefined) return Boolean(item.is_available);
+  if (item.available !== undefined) return Boolean(item.available);
+  if (item.availability?.is_available !== undefined) return Boolean(item.availability.is_available);
+  if (item.inventory?.available !== undefined) return Boolean(item.inventory.available);
+
+  const statusCandidates = [
+    item.availability_status,
+    item.availability,
+    item.status,
+    item.lifecycle_status,
+    item.sale_status,
+  ];
+
+  for (const candidate of statusCandidates) {
+    const guessed = guessBooleanFromStatus(candidate);
+    if (guessed !== null) return guessed;
+  }
+
+  return true;
+}
+
+function describeAvailabilityStatus(item) {
+  if (!item || typeof item !== 'object') return '';
+  const textCandidates = [
+    item.availability_status,
+    item.status_text,
+    item.status,
+    item.lifecycle_status,
+    item.sale_status,
+    item.availability,
+  ];
+
+  for (const candidate of textCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+
+  if (item.is_available === false || item.available === false) return '不可用';
+  if (item.is_available === true || item.available === true) return '可用';
+
+  return '';
+}
+
+function isOccupiedByGmvMax(item) {
+  if (!item || typeof item !== 'object') return false;
+
+  const booleanCandidates = [
+    item.is_gmv_max_bound,
+    item.gmv_max_bound,
+    item.gmv_max_binding_active,
+    item.gmv_max_binding?.is_active,
+    item.gmv_max_binding?.active,
+  ];
+  for (const candidate of booleanCandidates) {
+    if (candidate === undefined || candidate === null) continue;
+    if (typeof candidate === 'boolean') return candidate;
+    if (typeof candidate === 'number') return candidate === 1;
+  }
+
+  const statusCandidates = [
+    item.gmv_max_binding_status,
+    item.gmv_max_status,
+    item.gmv_status,
+    item.gmv_max_binding?.status,
+    item.gmv_binding_status,
+  ];
+  for (const candidate of statusCandidates) {
+    const guessed = guessBooleanFromStatus(candidate);
+    if (guessed !== null) return guessed;
+  }
+
+  if (Array.isArray(item.gmv_max_bindings) && item.gmv_max_bindings.length > 0) return true;
+  if (item.gmv_max_binding && Object.keys(item.gmv_max_binding).length > 0) return true;
+
+  return false;
+}
+
+function extractProductImage(item) {
+  if (!item || typeof item !== 'object') return '';
+  const candidates = [];
+  const push = (value) => {
+    if (!value) return;
+    if (typeof value === 'string' && value.trim()) candidates.push(value.trim());
+    else if (typeof value === 'object' && value.url && typeof value.url === 'string' && value.url.trim()) candidates.push(value.url.trim());
+  };
+
+  push(item.image_url || item.imageUrl || item.image);
+  if (Array.isArray(item.images)) item.images.forEach(push);
+  if (Array.isArray(item.image_list)) item.image_list.forEach(push);
+  if (Array.isArray(item.raw?.images)) item.raw.images.forEach(push);
+  push(item.raw?.image_url || item.raw?.cover_image_url);
+  push(item.cover_image?.url || item.main_image?.url || item.thumbnail_url);
+
+  return candidates.find(Boolean) || '';
+}
+
+function normalizeProductsPayload(payload, receivedAtHint) {
+  if (!payload) {
+    return {
+      items: [],
+      availableCount: 0,
+      totalFromApi: 0,
+      rawItemsCount: 0,
+      filteredOut: 0,
+      page: 1,
+      pageSize: 10,
+      receivedAt: receivedAtHint || now(),
+      __normalized: true,
+    };
+  }
+
+  if (payload.__normalized) {
+    return {
+      ...payload,
+      receivedAt: payload.receivedAt || receivedAtHint || now(),
+    };
+  }
+
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const availableItems = rawItems.filter(isProductAvailable);
+  const totalFromApi = Number.isFinite(Number(payload.total)) ? Number(payload.total) : rawItems.length;
+  const page = Number.isFinite(Number(payload.page)) ? Number(payload.page) : 1;
+  const pageSizeRaw = payload.page_size ?? payload.pageSize;
+  const pageSize = Number.isFinite(Number(pageSizeRaw)) ? Number(pageSizeRaw) : Math.max(availableItems.length, 10);
+
+  return {
+    items: availableItems,
+    availableCount: availableItems.length,
+    totalFromApi,
+    rawItemsCount: rawItems.length,
+    filteredOut: rawItems.length - availableItems.length,
+    page,
+    pageSize,
+    receivedAt: receivedAtHint || now(),
+    __normalized: true,
+  };
 }
 function describeRunStatus(run) {
   if (!run) return { state: 'unknown', message: '同步任务已提交，正在等待状态更新。' };
@@ -258,8 +459,6 @@ export default function GmvMaxManagementPage() {
   const queryClient = useQueryClient();
 
   const [storesByAdvertiser, setStoresByAdvertiser] = useState({});
-  const [productsState, setProductsState] = useState({ items: [], total: 0, page: 1, pageSize: 10 });
-  const [loadingProducts, setLoadingProducts] = useState(false);
   const [triggeringSync, setTriggeringSync] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -267,6 +466,7 @@ export default function GmvMaxManagementPage() {
   const [syncRunStatus, setSyncRunStatus] = useState(null);
 
   const optionsEtagRef = useRef(null);
+  const productsAnnouncementRef = useRef(false);
 
   const pushErrorFeedback = useCallback((error, fallback) => {
     const text = extractErrorMessage(error, fallback);
@@ -400,6 +600,59 @@ export default function GmvMaxManagementPage() {
     onError: (error) => pushErrorFeedback(error, '刷新失败，请稍后重试'),
   });
 
+  const productsQueryEnabled = !!wid && !!selectedAuthId && !!form.storeId;
+  const productQueryKey = useMemo(
+    () => ['gmv-max', 'products', wid || '', selectedAuthId || '', form.storeId || ''],
+    [wid, selectedAuthId, form.storeId],
+  );
+  const initialProductsCache = useMemo(
+    () => (productsQueryEnabled ? readProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId }) : null),
+    [productsQueryEnabled, wid, selectedAuthId, form.storeId],
+  );
+
+  const productsQuery = useQuery({
+    queryKey: productQueryKey,
+    enabled: productsQueryEnabled,
+    queryFn: ({ signal }) => fetchProducts(
+      wid,
+      provider,
+      selectedAuthId,
+      form.storeId,
+      {},
+      { signal },
+    ),
+    initialData: initialProductsCache || undefined,
+    keepPreviousData: true,
+    staleTime: 0,
+    refetchInterval: productsQueryEnabled ? PRODUCT_POLL_INTERVAL_MS : false,
+    refetchOnWindowFocus: false,
+    select: (payload) => normalizeProductsPayload(payload, Date.now()),
+    onSuccess: (data) => {
+      if (!wid || !selectedAuthId || !form.storeId) return;
+      saveProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId, productsState: data });
+      if (productsAnnouncementRef.current) {
+        if ((data?.availableCount || 0) === 0) {
+          setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
+        } else {
+          const filteredNote = data.filteredOut > 0
+            ? `（已过滤 ${data.filteredOut} 条不可用商品）`
+            : '';
+          setFeedback({
+            type: 'success',
+            text: `已拉取 ${data.availableCount} 条可用 GMV Max 商品${filteredNote}。`,
+          });
+        }
+        productsAnnouncementRef.current = false;
+      }
+    },
+    onError: (error) => {
+      if (productsAnnouncementRef.current) {
+        setFeedback({ type: 'error', text: extractErrorMessage(error, '拉取 GMV Max 商品失败，请稍后重试') });
+        productsAnnouncementRef.current = false;
+      }
+    },
+  });
+
   const bindingsLoading = bindingsQuery.isLoading || bindingsQuery.isFetching;
   const optionsLoading = optionsQuery.isLoading || optionsQuery.isFetching;
   const businessCenters = businessCentersQuery.data || [];
@@ -436,7 +689,8 @@ export default function GmvMaxManagementPage() {
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
       setStoresByAdvertiser({});
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+      queryClient.removeQueries({ queryKey: ['gmv-max', 'products'], exact: false });
+      productsAnnouncementRef.current = false;
       optionsEtagRef.current = null;
       return;
     }
@@ -445,7 +699,8 @@ export default function GmvMaxManagementPage() {
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
       setStoresByAdvertiser({});
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+      queryClient.removeQueries({ queryKey: ['gmv-max', 'products'], exact: false });
+      productsAnnouncementRef.current = false;
       optionsEtagRef.current = null;
       return;
     }
@@ -457,14 +712,15 @@ export default function GmvMaxManagementPage() {
       const first = bindings[0];
       return first ? String(first.auth_id) : '';
     });
-  }, [bindings, urlAuthId, wid]);
+  }, [bindings, queryClient, urlAuthId, wid]);
 
   /** 切换绑定后，恢复 scope（优先 URL -> LS -> 服务端配置） */
   useEffect(() => {
     setMetaSummary(null);
     setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
     setSyncRunStatus(null);
+    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    productsAnnouncementRef.current = false;
     optionsEtagRef.current = null;
 
     if (!wid || !selectedAuthId) {
@@ -499,7 +755,7 @@ export default function GmvMaxManagementPage() {
       advertiserId: '',
       storeId: '',
     }));
-  }, [selectedAuthId, wid, urlBcId, urlAdvId, urlStoreId]);
+  }, [queryClient, selectedAuthId, wid, urlBcId, urlAdvId, urlStoreId]);
 
   /** 绑定配置（用于初次 scope 回填） */
   useEffect(() => {
@@ -542,15 +798,16 @@ export default function GmvMaxManagementPage() {
     setSelectedAuthId(v);
     saveScopeToLS({ wid, authId: v, bcId: '', advertiserId: '', storeId: '' });
     syncUrl({ authId: v, bcId: '', advertiserId: '', storeId: '' });
-    // 尝试恢复已缓存的产品（此时 storeId 为空，不恢复列表）
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || ''], exact: false });
+    productsAnnouncementRef.current = false;
   }
   function handleBcChange(evt) {
     const value = evt.target.value || '';
     const next = { ...form, bcId: value, advertiserId: '', storeId: '' };
     setForm(next);
     setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    productsAnnouncementRef.current = false;
     saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
     syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
   }
@@ -558,22 +815,33 @@ export default function GmvMaxManagementPage() {
     const value = evt.target.value || '';
     const next = { ...form, advertiserId: value, storeId: '' };
     setForm(next);
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    productsAnnouncementRef.current = false;
     saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
     syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
   }
   function handleStoreChange(evt) {
     const value = evt.target.value || '';
     const next = { ...form, storeId: value };
+    const prevStoreId = form.storeId;
     setForm(next);
 
-    // 命中缓存则立即展示，无需点击“拉取”
+    if (prevStoreId && prevStoreId !== value) {
+      queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || '', prevStoreId], exact: true });
+    }
+
     if (value) {
       const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: value });
-      if (cached) setProductsState(cached);
-      else setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+      if (cached) {
+        queryClient.setQueryData(['gmv-max', 'products', wid || '', selectedAuthId || '', value], cached);
+        productsAnnouncementRef.current = false;
+      } else {
+        queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || '', value], exact: true });
+        productsAnnouncementRef.current = true;
+      }
     } else {
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+      queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+      productsAnnouncementRef.current = false;
     }
 
     saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
@@ -590,8 +858,11 @@ export default function GmvMaxManagementPage() {
   useEffect(() => {
     if (!wid || !selectedAuthId || !form.storeId) return;
     const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId });
-    if (cached) setProductsState(cached);
-  }, [wid, selectedAuthId]); // storeId 已在 handleStoreChange 里处理
+    if (cached) {
+      queryClient.setQueryData(['gmv-max', 'products', wid || '', selectedAuthId || '', form.storeId], cached);
+      productsAnnouncementRef.current = false;
+    }
+  }, [form.storeId, queryClient, selectedAuthId, wid]);
 
   /** 刷新元数据 */
   function handleRefresh() {
@@ -688,49 +959,15 @@ export default function GmvMaxManagementPage() {
     }
   }
 
-  /** 拉取商品：带 AbortController，结束后写入缓存 */
-  const productsAbortRef = useRef(null);
-  async function handlePullProducts() {
+  /** 手动拉取商品（触发 React Query 重新拉取） */
+  function handlePullProducts(refetchFn) {
     if (!wid || !selectedAuthId) return;
     if (!form.storeId) {
       setFeedback({ type: 'error', text: '请选择 Store 后再拉取商品。' });
       return;
     }
-    // 取消旧请求
-    if (productsAbortRef.current) productsAbortRef.current.abort();
-    const controller = new AbortController();
-    productsAbortRef.current = controller;
-
-    setLoadingProducts(true);
-    try {
-      const data = await fetchProducts(
-        wid, provider, selectedAuthId, form.storeId,
-        {}, { signal: controller.signal }
-      );
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
-      const page = Number.isFinite(Number(data?.page)) ? Number(data.page) : 1;
-      const pageSizeRaw = data?.page_size ?? data?.pageSize;
-      const pageSize = Number.isFinite(Number(pageSizeRaw)) ? Number(pageSizeRaw) : items.length || 10;
-
-      const next = { items, total, page, pageSize };
-      setProductsState(next);
-      // ✅ 写入缓存
-      saveProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId, productsState: next });
-
-      if (total === 0 || items.length === 0) setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
-      else {
-        const previewCount = Math.min(items.length, 10);
-        setFeedback({ type: 'success', text: `已拉取 ${total} 条 GMV Max 商品（展示前 ${previewCount} 条）。` });
-      }
-    } catch (error) {
-      if (error?.name === 'AbortError') return; // 被取消，不提示
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-      setFeedback({ type: 'error', text: extractErrorMessage(error, '拉取 GMV Max 商品失败，请稍后重试') });
-    } finally {
-      setLoadingProducts(false);
-      productsAbortRef.current = null;
-    }
+    productsAnnouncementRef.current = true;
+    if (typeof refetchFn === 'function') refetchFn();
   }
 
   /** 禁用状态 */
@@ -741,8 +978,9 @@ export default function GmvMaxManagementPage() {
   const disableManualSync =
     !selectedAuthId || triggeringSync || optionsLoading || advertisersLoading || loadingStores
     || !form.bcId || !form.advertiserId || !form.storeId;
+  const productQueryFetching = productsQuery.isFetching;
   const disablePullProducts =
-    !selectedAuthId || optionsLoading || advertisersLoading || !form.storeId || loadingProducts || loadingStores;
+    !selectedAuthId || optionsLoading || advertisersLoading || !form.storeId || loadingStores || productQueryFetching;
 
   const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
   const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
@@ -750,6 +988,32 @@ export default function GmvMaxManagementPage() {
   const lastAutoSummaryText = formatSyncSummaryText(bindingConfig?.last_auto_sync_summary);
 
   const hasBindings = bindings.length > 0;
+  const productsData = productsQuery.data || null;
+  const productItems = Array.isArray(productsData?.items) ? productsData.items : [];
+  const productAvailableCount = Number.isFinite(Number(productsData?.availableCount))
+    ? Number(productsData.availableCount)
+    : productItems.length;
+  const productFilteredOut = Number.isFinite(Number(productsData?.filteredOut))
+    ? Number(productsData.filteredOut)
+    : 0;
+  const productTotalFromApi = Number.isFinite(Number(productsData?.totalFromApi))
+    ? Number(productsData.totalFromApi)
+    : (Number.isFinite(Number(productsData?.rawItemsCount))
+      ? Number(productsData.rawItemsCount)
+      : productItems.length);
+  const productsLastUpdatedText = formatLocalTimeFromMillis(productsData?.receivedAt);
+  const hasProductItems = productItems.length > 0;
+  const productPreviewLimit = 24;
+  const productVisibleItems = hasProductItems ? productItems.slice(0, productPreviewLimit) : [];
+  const productsInitialLoading = productsQuery.isLoading && !initialProductsCache;
+  const productsRefetching = productsQuery.isFetching && !!form.storeId;
+  const productsSummaryText = !productsQueryEnabled
+    ? '请选择 Store 查看 GMV Max 商品。'
+    : [
+      `可用 ${productAvailableCount} 条`,
+      productFilteredOut > 0 ? `已过滤 ${productFilteredOut} 条不可用` : null,
+      productTotalFromApi > productAvailableCount ? `API 返回 ${productTotalFromApi} 条` : null,
+    ].filter(Boolean).join(' · ');
 
   /** 选项数据构建（保持你现状） */
   const optionsData = useMemo(() => {
@@ -881,8 +1145,13 @@ export default function GmvMaxManagementPage() {
           <button className="btn" type="button" onClick={handleSave} disabled={disableSave}>
             {saving ? '保存中…' : '保存激活组合'}
           </button>
-          <button className="btn" type="button" onClick={handlePullProducts} disabled={disablePullProducts}>
-            {loadingProducts ? '拉取中…' : '拉取 GMV Max 商品'}
+          <button
+            className="btn"
+            type="button"
+            onClick={() => handlePullProducts(productsQuery.refetch)}
+            disabled={disablePullProducts}
+          >
+            {productsRefetching ? '刷新中…' : '拉取 GMV Max 商品'}
           </button>
           <button className="btn" type="button" onClick={handleProductSync} disabled={disableManualSync}>
             {triggeringSync ? '同步中…' : '同步 GMV Max 商品'}
@@ -898,41 +1167,100 @@ export default function GmvMaxManagementPage() {
         )}
       </div>
 
-      <div className="card" style={{ display: 'grid', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          <h3 style={{ margin: 0 }}>GMV Max 商品</h3>
-          <div className="small-muted">当前共 {productsState.total || 0} 条</div>
+      <div className="card gmv-products-card">
+        <div className="gmv-products__header">
+          <div>
+            <h3 style={{ margin: 0 }}>GMV Max 商品</h3>
+            <div className="small-muted">{productsSummaryText}</div>
+            {productsLastUpdatedText && <div className="small-muted">最近更新：{productsLastUpdatedText}</div>}
+          </div>
+          <div className="gmv-products__actions">
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => handlePullProducts(productsQuery.refetch)}
+              disabled={disablePullProducts}
+            >
+              {productsRefetching ? '刷新中…' : '刷新商品列表'}
+            </button>
+          </div>
         </div>
 
-        {productsState.items.length === 0 ? (
-          <div className="small-muted">
-            {loadingProducts ? '正在拉取 GMV Max 商品…' : (form.storeId ? '暂无缓存，请点击“拉取 GMV Max 商品”。' : '请选择 Store 并点击“拉取 GMV Max 商品”查看列表。')}
+        {!productsQueryEnabled ? (
+          <div className="gmv-products__empty small-muted">请选择 Store 查看 GMV Max 商品。</div>
+        ) : !hasProductItems ? (
+          <div className="gmv-products__empty small-muted">
+            {productsInitialLoading || productsRefetching
+              ? '正在拉取 GMV Max 商品…'
+              : '暂无可用商品，请稍后重试或执行同步。'}
           </div>
         ) : (
-          <div className="product-preview" style={{ display: 'grid', gap: '6px' }}>
-            <div className="small-muted">展示前 {Math.min(productsState.items.length, 10)} 条（共 {productsState.total} 条）</div>
-            <ol className="product-preview__list" style={{ paddingLeft: '18px', margin: 0, display: 'grid', gap: '8px' }}>
-              {productsState.items.slice(0, 10).map((item, idx) => {
-                const pid = item?.product_id ? String(item.product_id) : '';
-                const title = resolveProductTitle(item) || pid || `商品 ${idx + 1}`;
-                const status = item?.status ? String(item.status) : '';
-                const updatedAt = formatTimestamp(item?.updated_time || item?.ext_updated_time);
-                const skuText = Number.isFinite(Number(item?.sku_count)) ? `SKU：${Number(item.sku_count)}` : null;
-                return (
-                  <li key={pid || `product-${idx}`} className="product-preview__item" style={{ listStyle: 'decimal inside' }}>
-                    <div className="product-preview__title" style={{ fontWeight: 500 }}>{title}</div>
-                    <div className="small-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      <span>商品 ID：{pid || '-'}</span>
-                      {status && <span>状态：{status}</span>}
-                      {item?.price_range && <span>价格区间：{item.price_range}</span>}
-                      {skuText && <span>{skuText}</span>}
-                      {updatedAt && <span>更新时间：{updatedAt}</span>}
+          <div className="gmv-products__grid">
+            {productVisibleItems.map((item, idx) => {
+              const pid = item?.product_id ? String(item.product_id) : '';
+              const title = resolveProductTitle(item) || pid || `商品 ${idx + 1}`;
+              const imageUrl = extractProductImage(item);
+              const itemGroupId = resolveItemGroupId(item);
+              const availabilityText = describeAvailabilityStatus(item);
+              const occupied = isOccupiedByGmvMax(item);
+              const updatedAt = formatTimestamp(
+                item?.updated_time
+                || item?.ext_updated_time
+                || item?.last_updated_time
+                || item?.last_update_time,
+              );
+              const priceText = item?.price_range
+                || item?.price?.display
+                || item?.price?.text
+                || (item?.min_price && item?.max_price ? `${item.min_price} ~ ${item.max_price}` : null);
+              return (
+                <article
+                  key={pid || itemGroupId || `product-${idx}`}
+                  className={`gmv-product-card${occupied ? ' is-occupied' : ''}`}
+                >
+                  <div className="gmv-product-card__thumb">
+                    {imageUrl ? (
+                      <img src={imageUrl} alt={`${title} 主图`} loading="lazy" />
+                    ) : (
+                      <span className="gmv-product-card__thumb--placeholder">无主图</span>
+                    )}
+                  </div>
+                  <div className="gmv-product-card__body">
+                    <div className="gmv-product-card__header">
+                      <div className="gmv-product-card__title">{title}</div>
+                      <div className="gmv-product-card__badges">
+                        <span
+                          className={`gmv-product-card__badge ${occupied
+                            ? 'gmv-product-card__badge--occupied'
+                            : 'gmv-product-card__badge--free'}`}
+                        >
+                          {occupied ? 'GMV Max 占用' : '未占用'}
+                        </span>
+                        {availabilityText && (
+                          <span className="gmv-product-card__badge gmv-product-card__badge--status">
+                            {availabilityText}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </li>
-                );
-              })}
-            </ol>
+                    <div className="gmv-product-card__meta">
+                      <div>商品 ID：{pid || '-'}</div>
+                      <div>Item Group：{itemGroupId || '-'}</div>
+                      {priceText && <div>价格：{priceText}</div>}
+                      {updatedAt && <div>更新时间：{updatedAt}</div>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
+        )}
+
+        {hasProductItems && productItems.length > productPreviewLimit && (
+          <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
+        )}
+        {productFilteredOut > 0 && productsQueryEnabled && (
+          <div className="small-muted">已自动过滤 {productFilteredOut} 条不可用商品。</div>
         )}
       </div>
 
