@@ -1186,15 +1186,19 @@ export default function GmvMaxManagementPage() {
           </div>
         </div>
 
-        {!productsQueryEnabled ? (
+        {!productsQueryEnabled && (
           <div className="gmv-products__empty small-muted">请选择 Store 查看 GMV Max 商品。</div>
-        ) : !hasProductItems ? (
+        )}
+
+        {productsQueryEnabled && !hasProductItems && (
           <div className="gmv-products__empty small-muted">
             {productsInitialLoading || productsRefetching
               ? '正在拉取 GMV Max 商品…'
               : '暂无可用商品，请稍后重试或执行同步。'}
           </div>
-        ) : (
+        )}
+
+        {productsQueryEnabled && hasProductItems && (
           <div className="gmv-products__grid">
             {productVisibleItems.map((item, idx) => {
               const pid = item?.product_id ? String(item.product_id) : '';
@@ -1255,6 +1259,13 @@ export default function GmvMaxManagementPage() {
             })}
           </div>
         ))}
+
+        {hasProductItems && productItems.length > productPreviewLimit && (
+          <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
+        )}
+        {productFilteredOut > 0 && productsQueryEnabled && (
+          <div className="small-muted">已自动过滤 {productFilteredOut} 条不可用商品。</div>
+        )}
 
         {hasProductItems && productItems.length > productPreviewLimit && (
           <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
