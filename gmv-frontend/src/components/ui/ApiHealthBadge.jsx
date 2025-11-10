@@ -1,5 +1,6 @@
 // src/components/ui/ApiHealthBadge.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 const POLL_INTERVAL = 120000;
 
@@ -9,37 +10,25 @@ const STATUS_LABELS = {
   loading: 'Checking…',
 };
 
+async function fetchApiHealth() {
+  const res = await fetch('/api/healthz', { cache: 'no-store' });
+  if (!res.ok) throw new Error('Health check failed');
+  return res.json();
+}
+
 export default function ApiHealthBadge() {
-  const [status, setStatus] = useState('loading');
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['api-health'],
+    queryFn: fetchApiHealth,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
 
-  useEffect(() => {
-    let active = true;
-    let timer = null;
-
-    async function fetchHealth() {
-      try {
-        const res = await fetch('/api/healthz', { cache: 'no-store' });
-        if (!res.ok) throw new Error('Health check failed');
-
-        const payload = await res.json();
-        if (!active) return;
-        setStatus(payload?.ok ? 'online' : 'offline');
-      } catch (err) {
-        if (!active) return;
-        setStatus('offline');
-      } finally {
-        if (!active) return;
-        timer = window.setTimeout(fetchHealth, POLL_INTERVAL);
-      }
-    }
-
-    fetchHealth();
-
-    return () => {
-      active = false;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, []);
+  const status = useMemo(() => {
+    if (isLoading) return 'loading';
+    if (isError) return 'offline';
+    return data?.ok ? 'online' : 'offline';
+  }, [data, isError, isLoading]);
 
   const label = useMemo(() => STATUS_LABELS[status] || STATUS_LABELS.loading, [status]);
 

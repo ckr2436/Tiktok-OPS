@@ -1,5 +1,6 @@
 // src/features/platform/kie_ai/pages/PlatformKieKeyPage.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import kiePlatformApi from '../service.js'
 import Modal from '../../../../components/ui/Modal.jsx'
 import FormField from '../../../../components/ui/FormField.jsx'
@@ -37,57 +38,55 @@ function saveCreditCache(map) {
 }
 
 export default function PlatformKieKeyPage() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [defaultCredit, setDefaultCredit] = useState(null)
+  const queryClient = useQueryClient()
+  const keysQuery = useQuery({
+    queryKey: ['platform', 'kie-keys'],
+    queryFn: () => kiePlatformApi.listKeys(),
+    staleTime: 60 * 1000,
+  })
+  const items = keysQuery.data ?? []
+  const loading = keysQuery.isLoading
+  const errorMessage = keysQuery.error?.message || ''
+
+  const defaultCreditQuery = useQuery({
+    queryKey: ['platform', 'kie-default-credit'],
+    queryFn: () => kiePlatformApi.getDefaultKeyCredit(),
+    retry: false,
+    staleTime: 60 * 1000,
+  })
+  const defaultCredit = defaultCreditQuery.data ?? null
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null) // null = 新建
   const [form, setForm] = useState(emptyForm())
-  const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
   // { keyId: credits }
   const [creditMap, setCreditMap] = useState(() => loadCreditCache())
-
-  const refresh = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const list = await kiePlatformApi.listKeys()
-      const arr = list || []
-      setItems(arr)
-
-      // 把本地缓存里已有的余额映射到当前 key 列表上
-      const cache = loadCreditCache()
-      const next = {}
-      for (const it of arr) {
-        if (cache[it.id] != null) {
-          next[it.id] = cache[it.id]
-        }
-      }
-      setCreditMap(next)
-    } catch (err) {
-      setError(err?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const refreshDefaultCredit = async () => {
-    try {
-      const v = await kiePlatformApi.getDefaultKeyCredit()
-      setDefaultCredit(v)
-    } catch {
-      // 查询失败就保持原值不动
-    }
-  }
-
   useEffect(() => {
-    refresh()
-    refreshDefaultCredit()
-  }, [])
+    const cache = loadCreditCache()
+    const next = {}
+    for (const it of items || []) {
+      if (cache[it.id] != null) {
+        next[it.id] = cache[it.id]
+      }
+    }
+    setCreditMap(next)
+  }, [items])
+
+  const upsertKeyMutation = useMutation(({ id, payload }) => (
+    id ? kiePlatformApi.updateKey(id, payload) : kiePlatformApi.createKey(payload)
+  ))
+  const deactivateKeyMutation = useMutation((id) => kiePlatformApi.deactivateKey(id))
+  const updateKeyMutation = useMutation(({ id, payload }) => kiePlatformApi.updateKey(id, payload))
+  const checkCreditMutation = useMutation((id) => kiePlatformApi.getKeyCredit(id))
+
+  const invalidateAll = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['platform', 'kie-keys'] }),
+    queryClient.invalidateQueries({ queryKey: ['platform', 'kie-default-credit'] }),
+  ])
+
+  const isSaving = upsertKeyMutation.isPending
 
   const openCreate = () => {
     setEditing(null)
@@ -108,7 +107,7 @@ export default function PlatformKieKeyPage() {
   }
 
   const closeModal = () => {
-    if (saving) return
+    if (isSaving) return
     setModalOpen(false)
   }
 
@@ -118,8 +117,7 @@ export default function PlatformKieKeyPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (saving) return
-    setSaving(true)
+    if (isSaving) return
     setSaveError('')
 
     try {
@@ -132,38 +130,29 @@ export default function PlatformKieKeyPage() {
         throw new Error('API Key 不能为空')
       }
 
-      if (editing) {
-        const payload = {
-          name: form.name.trim(),
-          is_default: !!form.is_default,
-        }
-        if (form.api_key.trim()) {
-          payload.api_key = form.api_key.trim()
-        }
-        await kiePlatformApi.updateKey(editing.id, payload)
-      } else {
-        await kiePlatformApi.createKey({
-          name: form.name.trim(),
-          api_key: form.api_key.trim(),
-          is_default: !!form.is_default,
-        })
+      const payload = {
+        name: form.name.trim(),
+        is_default: !!form.is_default,
       }
-      await refresh()
-      await refreshDefaultCredit()
+      if (!editing) {
+        payload.api_key = form.api_key.trim()
+      } else if (form.api_key.trim()) {
+        payload.api_key = form.api_key.trim()
+      }
+
+      await upsertKeyMutation.mutateAsync({ id: editing?.id ?? null, payload })
+      await invalidateAll()
       setModalOpen(false)
     } catch (err) {
       setSaveError(err?.message || '保存失败')
-    } finally {
-      setSaving(false)
     }
   }
 
   const handleDeactivate = async (item) => {
     if (!window.confirm(`确定要停用「${item.name}」吗？`)) return
     try {
-      await kiePlatformApi.deactivateKey(item.id)
-      await refresh()
-      await refreshDefaultCredit()
+      await deactivateKeyMutation.mutateAsync(item.id)
+      await invalidateAll()
     } catch (err) {
       window.alert(err?.message || '停用失败')
     }
@@ -172,9 +161,8 @@ export default function PlatformKieKeyPage() {
   // 启用 key：走 PATCH，把 is_active 调回 true
   const handleActivate = async (item) => {
     try {
-      await kiePlatformApi.updateKey(item.id, { is_active: true })
-      await refresh()
-      await refreshDefaultCredit()
+      await updateKeyMutation.mutateAsync({ id: item.id, payload: { is_active: true } })
+      await invalidateAll()
     } catch (err) {
       window.alert(err?.message || '启用失败')
     }
@@ -183,9 +171,8 @@ export default function PlatformKieKeyPage() {
   // 设置为默认 key：走 PATCH is_default=true，后端会自动取消其他默认
   const handleSetDefault = async (item) => {
     try {
-      await kiePlatformApi.updateKey(item.id, { is_default: true })
-      await refresh()
-      await refreshDefaultCredit()
+      await updateKeyMutation.mutateAsync({ id: item.id, payload: { is_default: true } })
+      await invalidateAll()
     } catch (err) {
       window.alert(err?.message || '设置默认失败')
     }
@@ -193,14 +180,14 @@ export default function PlatformKieKeyPage() {
 
   const handleCheckCredit = async (item) => {
     try {
-      const v = await kiePlatformApi.getKeyCredit(item.id)
+      const v = await checkCreditMutation.mutateAsync(item.id)
       setCreditMap((m) => {
         const next = { ...m, [item.id]: v }
         saveCreditCache(next)
         return next
       })
       if (item.is_default) {
-        setDefaultCredit(v)
+        queryClient.setQueryData(['platform', 'kie-default-credit'], v)
       }
     } catch (err) {
       window.alert(err?.message || '查询余额失败')
@@ -234,16 +221,17 @@ export default function PlatformKieKeyPage() {
           <button
             type="button"
             className="btn btn--sm"
-            onClick={refreshDefaultCredit}
+            onClick={() => defaultCreditQuery.refetch()}
+            disabled={defaultCreditQuery.isFetching}
           >
-            刷新
+            {defaultCreditQuery.isFetching ? '刷新中…' : '刷新'}
           </button>
         </div>
       )}
 
-      {error && (
+      {errorMessage && (
         <div className="alert alert--error" style={{ marginBottom: '16px' }}>
-          {error}
+          {errorMessage}
         </div>
       )}
 
@@ -386,22 +374,22 @@ export default function PlatformKieKeyPage() {
           )}
 
           <div className="form__actions">
-            <button
-              type="button"
-              className="btn"
-              onClick={closeModal}
-              disabled={saving}
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              className="btn btn--primary"
-              disabled={saving}
-              style={{ marginLeft: 8 }}
-            >
-              {saving ? '保存中...' : '保存'}
-            </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={closeModal}
+                disabled={isSaving}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={isSaving}
+                style={{ marginLeft: 8 }}
+              >
+                {isSaving ? '保存中...' : '保存'}
+              </button>
           </div>
         </form>
       </Modal>

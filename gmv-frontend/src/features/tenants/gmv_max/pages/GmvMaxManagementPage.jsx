@@ -1,5 +1,6 @@
 // src/features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 
 import FormField from '../../../../components/ui/FormField.jsx';
@@ -256,27 +257,164 @@ export default function GmvMaxManagementPage() {
   });
   const formRef = useRef(DEFAULT_FORM);
 
-  const [loadingConfig, setLoadingConfig] = useState(false);
-  const [bindingConfig, setBindingConfig] = useState(null);
+  const queryClient = useQueryClient();
 
-  const [businessCenters, setBusinessCenters] = useState([]);
-  const [allAdvertisers, setAllAdvertisers] = useState([]);
-  const [visibleAdvertisers, setVisibleAdvertisers] = useState([]);
-  const [advertisersLoading, setAdvertisersLoading] = useState(false);
   const [storesByAdvertiser, setStoresByAdvertiser] = useState({});
-  const [loadingStores, setLoadingStores] = useState(false);
-
   const [productsState, setProductsState] = useState({ items: [], total: 0, page: 1, pageSize: 10 });
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [optionsEtag, setOptionsEtag] = useState(null);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-
-  const [refreshingOptions, setRefreshingOptions] = useState(false);
   const [triggeringSync, setTriggeringSync] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [metaSummary, setMetaSummary] = useState(null);
   const [syncRunStatus, setSyncRunStatus] = useState(null);
+
+  const optionsEtagRef = useRef(null);
+
+  const pushErrorFeedback = useCallback((error, fallback) => {
+    const text = extractErrorMessage(error, fallback);
+    setFeedback((prev) => {
+      if (prev?.type === 'error' && prev.text === text) return prev;
+      return { type: 'error', text };
+    });
+  }, [setFeedback]);
+
+  const bindingsQuery = useQuery({
+    queryKey: ['gmv-max', 'bindings', wid],
+    enabled: !!wid,
+    queryFn: () => (wid ? listBindings(wid) : []),
+    onError: (error) => pushErrorFeedback(error, '无法获取绑定列表'),
+  });
+
+  const bindings = useMemo(
+    () => (Array.isArray(bindingsQuery.data) ? bindingsQuery.data : []),
+    [bindingsQuery.data],
+  );
+
+  const optionsQueryKey = useMemo(
+    () => ['gmv-max', 'options', wid, selectedAuthId],
+    [wid, selectedAuthId],
+  );
+
+  const optionsQuery = useQuery({
+    queryKey: optionsQueryKey,
+    enabled: !!wid && !!selectedAuthId,
+    queryFn: ({ signal }) => fetchGmvOptions(wid, provider, selectedAuthId, { etag: optionsEtagRef.current, signal }),
+    onSuccess: (result) => {
+      if (result?.etag !== undefined) optionsEtagRef.current = result.etag || null;
+      if (result?.data?.summary !== undefined) setMetaSummary(result.data.summary || null);
+    },
+    onError: (error) => pushErrorFeedback(error, '无法加载 GMV Max 选项'),
+  });
+
+  const businessCentersQuery = useQuery({
+    queryKey: ['gmv-max', 'business-centers', wid, selectedAuthId],
+    enabled: !!wid && !!selectedAuthId,
+    queryFn: ({ signal }) => fetchBusinessCenters(wid, provider, selectedAuthId, { signal }),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => pushErrorFeedback(error, '无法加载 TikTok 元数据'),
+  });
+
+  const advertisersAllQuery = useQuery({
+    queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId, 'all'],
+    enabled: !!wid && !!selectedAuthId,
+    queryFn: ({ signal }) => fetchAdvertisers(wid, provider, selectedAuthId, {}, { signal }),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => pushErrorFeedback(error, '无法加载 TikTok 元数据'),
+  });
+
+  const advertisersByBcQuery = useQuery({
+    queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId, 'bc', form.bcId || ''],
+    enabled: !!wid && !!selectedAuthId && !!form.bcId,
+    queryFn: ({ signal }) => fetchAdvertisers(
+      wid,
+      provider,
+      selectedAuthId,
+      { owner_bc_id: form.bcId },
+      { signal },
+    ),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => pushErrorFeedback(error, '无法加载 Advertiser 列表'),
+  });
+
+  const storesQuery = useQuery({
+    queryKey: ['gmv-max', 'stores', wid, selectedAuthId, form.advertiserId || '', form.bcId || ''],
+    enabled: !!wid && !!selectedAuthId && !!form.advertiserId,
+    queryFn: ({ signal }) => fetchStores(
+      wid,
+      provider,
+      selectedAuthId,
+      form.advertiserId,
+      form.bcId ? { owner_bc_id: form.bcId } : {},
+      { signal },
+    ),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => pushErrorFeedback(error, '无法加载 Store 列表'),
+  });
+
+  const bindingConfigQuery = useQuery({
+    queryKey: ['gmv-max', 'binding-config', wid, selectedAuthId, configVersion],
+    enabled: !!wid && !!selectedAuthId,
+    queryFn: ({ signal }) => fetchBindingConfig(wid, provider, selectedAuthId, { signal }),
+    select: (response) => response || null,
+    onError: (error) => pushErrorFeedback(error, '无法加载 GMV Max 配置'),
+  });
+
+  const bindingConfig = bindingConfigQuery.data || null;
+
+  const refreshOptionsMutation = useMutation({
+    mutationFn: async () => {
+      if (!wid || !selectedAuthId) {
+        throw new Error('缺少必要的绑定信息');
+      }
+      return fetchGmvOptions(wid, provider, selectedAuthId, { refresh: true, etag: optionsEtagRef.current });
+    },
+    onSuccess: (result) => {
+      if (result?.etag !== undefined) optionsEtagRef.current = result.etag || null;
+      if (result?.data?.summary !== undefined) setMetaSummary(result.data.summary || null);
+
+      if (result?.status === 304) {
+        setFeedback({ type: 'info', text: '元数据未发生变化。' });
+      } else if (result?.data) {
+        const { refresh: refreshStatus, idempotency_key: refreshKey } = result.data || {};
+        if (refreshStatus === 'timeout') {
+          setFeedback({
+            type: 'info',
+            text: refreshKey
+              ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。`
+              : '已触发刷新，稍后再试。',
+          });
+        } else {
+          setFeedback({
+            type: 'success',
+            text: refreshKey
+              ? `已刷新最新可选项（幂等键 ${refreshKey}）。`
+              : '已刷新最新可选项。',
+          });
+        }
+      }
+
+      if (wid && selectedAuthId) {
+        queryClient.setQueryData(optionsQueryKey, result);
+        queryClient.invalidateQueries({ queryKey: ['gmv-max', 'business-centers', wid, selectedAuthId] });
+        queryClient.invalidateQueries({ queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId] });
+      }
+    },
+    onError: (error) => pushErrorFeedback(error, '刷新失败，请稍后重试'),
+  });
+
+  const bindingsLoading = bindingsQuery.isLoading || bindingsQuery.isFetching;
+  const optionsLoading = optionsQuery.isLoading || optionsQuery.isFetching;
+  const businessCenters = businessCentersQuery.data || [];
+  const allAdvertisers = advertisersAllQuery.data || [];
+  const advertisersForBc = advertisersByBcQuery.data || [];
+  const advertisersLoading = form.bcId
+    ? (advertisersByBcQuery.isLoading || advertisersByBcQuery.isFetching)
+    : (advertisersAllQuery.isLoading || advertisersAllQuery.isFetching);
+  const visibleAdvertisers = form.bcId ? advertisersForBc : allAdvertisers;
+  const stores = storesQuery.data || [];
+  const loadingStores = storesQuery.isLoading || storesQuery.isFetching;
+  const loadingConfig = bindingConfigQuery.isLoading;
+  const refreshingOptions = refreshOptionsMutation.isPending;
 
   // 让 ref 时刻反映最新 form
   useEffect(() => { formRef.current = form; }, [form]);
@@ -293,34 +431,24 @@ export default function GmvMaxManagementPage() {
     navigate({ pathname: location.pathname, search: sp.toString() }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
-  /** 绑定列表 */
-  useEffect(() => {
-    if (!wid) {
-      setBindings([]); setSelectedAuthId(''); return;
-    }
-    let ignore = false;
-    setBindingsLoading(true);
-    setFeedback(null);
-    listBindings(wid)
-      .then((items) => { if (!ignore) setBindings(Array.isArray(items) ? items : []); })
-      .catch((error) => { if (!ignore) { setBindings([]); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法获取绑定列表') }); } })
-      .finally(() => { if (!ignore) setBindingsLoading(false); });
-    return () => { ignore = true; };
-  }, [wid]);
-
   /** 绑定选中逻辑（默认选第一个；优先 URL / LS） */
   useEffect(() => {
-    if (!bindings?.length) {
+    if (!wid) {
       setSelectedAuthId('');
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
-      setBusinessCenters([]);
-      setAllAdvertisers([]);
-      setVisibleAdvertisers([]);
-      setAdvertisersLoading(false);
       setStoresByAdvertiser({});
       setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-      setOptionsEtag(null);
+      optionsEtagRef.current = null;
+      return;
+    }
+    if (!bindings.length) {
+      setSelectedAuthId('');
+      setMetaSummary(null);
+      setForm(DEFAULT_FORM);
+      setStoresByAdvertiser({});
+      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+      optionsEtagRef.current = null;
       return;
     }
     setSelectedAuthId((prev) => {
@@ -336,19 +464,16 @@ export default function GmvMaxManagementPage() {
   /** 切换绑定后，恢复 scope（优先 URL -> LS -> 服务端配置） */
   useEffect(() => {
     setMetaSummary(null);
-    setBindingConfig(null);
-    setBusinessCenters([]);
-    setAllAdvertisers([]);
-    setVisibleAdvertisers([]);
-    setAdvertisersLoading(false);
     setStoresByAdvertiser({});
     setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    setOptionsEtag(null);
     setSyncRunStatus(null);
+    optionsEtagRef.current = null;
 
-    if (!wid || !selectedAuthId) return;
+    if (!wid || !selectedAuthId) {
+      setForm(DEFAULT_FORM);
+      return;
+    }
 
-    // 1) URL 有值 -> 用 URL
     if (urlBcId || urlAdvId || urlStoreId) {
       setForm((prev) => ({
         ...prev,
@@ -359,7 +484,6 @@ export default function GmvMaxManagementPage() {
       return;
     }
 
-    // 2) LS 有值
     const saved = readScopeFromLS(wid);
     if (saved?.authId && String(saved.authId) === String(selectedAuthId)) {
       setForm((prev) => ({
@@ -371,150 +495,48 @@ export default function GmvMaxManagementPage() {
       return;
     }
 
-    // 3) fallback: 服务端配置
-    // 留给下面的 fetchBindingConfig useEffect 去做
-  }, [selectedAuthId]); // eslint-disable-line
-
-  /** 拉取 GMV 元数据 + TikTok 元数据 */
-  useEffect(() => {
-    if (!wid || !selectedAuthId) {
-      setOptionsEtag(null);
-      setOptionsLoading(false);
-      return;
-    }
-    let ignore = false;
-    const controller = new AbortController();
-    let pending = 2;
-    setOptionsLoading(true);
-    const finish = () => { if (!ignore && --pending <= 0) setOptionsLoading(false); };
-
-    fetchGmvOptions(wid, provider, selectedAuthId, { signal: controller.signal })
-      .then(({ status, data, etag }) => {
-        if (ignore) return;
-        if (status === 200 && data) {
-          const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
-          setMetaSummary(summary || null);
-          setOptionsEtag(etag || null);
-          if (refreshStatus === 'timeout' && refreshKey) {
-            setFeedback({ type: 'info', text: `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` });
-          }
-        } else if (status === 304) {
-          setOptionsEtag((prev) => etag || prev || null);
-        }
-      })
-      .catch((error) => {
-        if (!ignore) { setOptionsEtag(null); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 选项') }); }
-      })
-      .finally(finish);
-
-    Promise.resolve()
-      .then(async () => {
-        const [bcResponse, advertiserResponse] = await Promise.all([
-          fetchBusinessCenters(wid, provider, selectedAuthId),
-          fetchAdvertisers(wid, provider, selectedAuthId),
-        ]);
-        if (ignore) return;
-        setBusinessCenters(Array.isArray(bcResponse?.items) ? bcResponse.items : []);
-        const advItems = Array.isArray(advertiserResponse?.items) ? advertiserResponse.items : [];
-        setAllAdvertisers(advItems);
-        // 如果当前 bcId 为空，默认允许全部 advertiser 先展示
-        setVisibleAdvertisers((prev) => (formRef.current?.bcId ? prev : advItems));
-      })
-      .catch((error) => {
-        if (!ignore) {
-          setBusinessCenters([]); setAllAdvertisers([]); setVisibleAdvertisers([]); setStoresByAdvertiser({});
-          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 TikTok 元数据') });
-        }
-      })
-      .finally(finish);
-
-    return () => { ignore = true; controller.abort(); };
-  }, [wid, provider, selectedAuthId]);
+    setForm((prev) => ({
+      ...prev,
+      bcId: '',
+      advertiserId: '',
+      storeId: '',
+    }));
+  }, [selectedAuthId, wid, urlBcId, urlAdvId, urlStoreId]);
 
   /** 绑定配置（用于初次 scope 回填） */
   useEffect(() => {
-    if (!wid || !selectedAuthId) { setLoadingConfig(false); return; }
-    let ignore = false;
-    setLoadingConfig(true);
-    (async () => {
-      try {
-        const config = await fetchBindingConfig(wid, provider, selectedAuthId);
-        if (ignore) return;
-        setBindingConfig(config || null);
+    if (!bindingConfig || !selectedAuthId) return;
+    setForm((prev) => ({
+      ...prev,
+      bcId: prev.bcId || (bindingConfig?.bc_id ?? ''),
+      advertiserId: prev.advertiserId || (bindingConfig?.advertiser_id ?? ''),
+      storeId: prev.storeId || (bindingConfig?.store_id ?? ''),
+      autoSyncProducts: Boolean(bindingConfig?.auto_sync_products),
+    }));
+  }, [bindingConfig, selectedAuthId]);
 
-        // 若 URL/LS 都没有，采用后端配置
-        setForm((prev) => ({
-          ...prev,
-          bcId: prev.bcId || (config?.bc_id ?? ''),
-          advertiserId: prev.advertiserId || (config?.advertiser_id ?? ''),
-          storeId: prev.storeId || (config?.store_id ?? ''),
-          autoSyncProducts: Boolean(config?.auto_sync_products),
-        }));
-      } catch (error) {
-        if (!ignore) { setBindingConfig(null); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 配置') }); }
-      } finally {
-        if (!ignore) setLoadingConfig(false);
-      }
-    })();
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, configVersion]);
-
-  /** 变更 BC -> 过滤 advertiser 与清空后续 */
   useEffect(() => {
-    if (!wid || !selectedAuthId) { setAdvertisersLoading(false); return; }
-    let ignore = false;
-    setAdvertisersLoading(true);
-    const params = form.bcId ? { owner_bc_id: form.bcId } : {};
-    fetchAdvertisers(wid, provider, selectedAuthId, params)
-      .then((response) => {
-        if (ignore) return;
-        const items = Array.isArray(response?.items) ? response.items : [];
-        setVisibleAdvertisers(items);
-        setStoresByAdvertiser((prev) => {
-          if (!form.bcId) return prev;
-          const allowed = new Set(items.map((item) => String(item?.advertiser_id || '')));
-          const next = {};
-          Object.entries(prev || {}).forEach(([advId, stores]) => {
-            if (allowed.has(String(advId))) next[advId] = stores;
-          });
-          return next;
-        });
-      })
-      .catch((error) => {
-        if (!ignore) { setVisibleAdvertisers([]); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Advertiser 列表') }); }
-      })
-      .finally(() => { if (!ignore) setAdvertisersLoading(false); });
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, form.bcId]);
+    if (!form.bcId) return;
+    const allowed = new Set(visibleAdvertisers.map((item) => String(item?.advertiser_id || '')));
+    setStoresByAdvertiser((prev) => {
+      const next = {};
+      Object.entries(prev || {}).forEach(([advId, storesList]) => {
+        if (allowed.has(String(advId))) next[advId] = storesList;
+      });
+      return next;
+    });
+  }, [form.bcId, visibleAdvertisers]);
 
-  /** 拉取 Store（按 Advertiser） */
   useEffect(() => {
-    if (!wid || !selectedAuthId || !form.advertiserId) { setLoadingStores(false); return; }
-    const existing = storesByAdvertiser[form.advertiserId];
-    if (existing) {
-      const hasSelected = existing.some((item) => String(item?.store_id || '') === String(form.storeId));
-      if (!hasSelected && form.storeId) {
-        setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
-      }
-      return;
+    if (!form.advertiserId || !Array.isArray(stores)) return;
+    setStoresByAdvertiser((prev) => ({
+      ...prev,
+      [form.advertiserId]: stores,
+    }));
+    if (form.storeId && !stores.some((item) => String(item?.store_id || '') === String(form.storeId))) {
+      setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
     }
-    let ignore = false;
-    setLoadingStores(true);
-    fetchStores(wid, provider, selectedAuthId, form.advertiserId, { owner_bc_id: form.bcId || undefined })
-      .then((response) => {
-        if (ignore) return;
-        const storeItems = Array.isArray(response?.items) ? response.items : [];
-        setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: storeItems }));
-        if (!storeItems.some((item) => String(item?.store_id || '') === String(form.storeId))) {
-          setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
-        }
-      })
-      .catch((error) => {
-        if (!ignore) { setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: [] })); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Store 列表') }); }
-      })
-      .finally(() => { if (!ignore) setLoadingStores(false); });
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, form.advertiserId, form.storeId, storesByAdvertiser]);
+  }, [form.advertiserId, form.storeId, stores]);
 
   /** ---------- 事件处理：scope 变更 + URL/LS 同步 ---------- */
   function handleBindingChange(evt) {
@@ -574,41 +596,9 @@ export default function GmvMaxManagementPage() {
   }, [wid, selectedAuthId]); // storeId 已在 handleStoreChange 里处理
 
   /** 刷新元数据 */
-  async function handleRefresh() {
-    if (!wid || !selectedAuthId) return;
-    setRefreshingOptions(true);
-    try {
-      const { status, data, etag } = await fetchGmvOptions(wid, provider, selectedAuthId, { refresh: true, etag: optionsEtag });
-      if (status === 304) {
-        setFeedback({ type: 'info', text: '元数据未发生变化。' });
-        if (etag) setOptionsEtag(etag);
-      } else if (data) {
-        const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
-        setMetaSummary(summary || null);
-        if (etag) setOptionsEtag(etag);
-        if (refreshStatus === 'timeout') {
-          setFeedback({ type: 'info', text: refreshKey ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` : '已触发刷新，稍后再试。' });
-        } else {
-          setFeedback({ type: 'success', text: refreshKey ? `已刷新最新可选项（幂等键 ${refreshKey}）。` : '已刷新最新可选项。' });
-        }
-      }
-      try {
-        const [bcRes, advRes] = await Promise.all([
-          fetchBusinessCenters(wid, provider, selectedAuthId),
-          fetchAdvertisers(wid, provider, selectedAuthId),
-        ]);
-        setBusinessCenters(Array.isArray(bcRes?.items) ? bcRes.items : []);
-        const advItems = Array.isArray(advRes?.items) ? advRes.items : [];
-        setAllAdvertisers(advItems);
-        setVisibleAdvertisers((prev) => (formRef.current?.bcId ? prev : advItems));
-      } catch (e) {
-        setFeedback({ type: 'error', text: extractErrorMessage(e, '刷新成功，但更新 TikTok 元数据失败') });
-      }
-    } catch (error) {
-      setFeedback({ type: 'error', text: extractErrorMessage(error, '刷新失败，请稍后重试') });
-    } finally {
-      setRefreshingOptions(false);
-    }
+  function handleRefresh() {
+    if (!wid || !selectedAuthId || refreshingOptions) return;
+    refreshOptionsMutation.mutate();
   }
 
   /** 保存激活组合 */

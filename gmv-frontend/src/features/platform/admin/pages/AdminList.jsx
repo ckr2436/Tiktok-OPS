@@ -1,5 +1,6 @@
 // src/features/platform/admin/pages/AdminList.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppSelector } from '../../../../app/hooks'
 import {
   listPlatformAdmins,
@@ -15,37 +16,35 @@ export default function AdminList() {
   const [page, setPage] = useState(1)
   const [size] = useState(20)
 
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [errMsg, setErrMsg] = useState('')
+  const queryClient = useQueryClient()
+  const adminsQueryKey = ['platform', 'admins', { q, page, size }]
+  const adminsQuery = useQuery({
+    queryKey: adminsQueryKey,
+    queryFn: () => listPlatformAdmins({ q, page, size }),
+    keepPreviousData: true,
+    select: (data) => ({
+      items: Array.isArray(data?.items) ? data.items : [],
+      total: Number.isFinite(data?.total) ? data.total : 0,
+    }),
+  })
+  const rows = adminsQuery.data?.items ?? []
+  const total = adminsQuery.data?.total ?? 0
+  const loading = adminsQuery.isLoading
+  const errorMessage = adminsQuery.error?.message || ''
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
 
-  async function load() {
-    setLoading(true)
-    setErrMsg('')
-    try {
-      const data = await listPlatformAdmins({ q, page, size })
-      setRows(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      setErrMsg(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [q, page, size])
+  const deleteMutation = useMutation((id) => deletePlatformAdmin(id))
+  const updateDisplayNameMutation = useMutation(({ id, displayName }) => updatePlatformAdminDisplayName(id, displayName))
 
   async function onDelete(r) {
     if (!isOwner) return
     if (!confirm(`确定删除平台管理员「${r.username} / ${r.email}」吗？`)) return
     try {
-      await deletePlatformAdmin(r.id)
-      setRows(prev => prev.filter(x => x.id !== r.id))
-      setTotal(t => Math.max(0, t - 1))
+      await deleteMutation.mutateAsync(r.id)
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'admins'] })
     } catch (e) {
-      setErrMsg(e?.response?.data?.detail || e?.message || '删除失败')
+      alert(e?.response?.data?.detail || e?.message || '删除失败')
     }
   }
 
@@ -53,8 +52,15 @@ export default function AdminList() {
     const val = prompt('请输入新的 Display Name（留空表示清除）：', r.display_name || '')
     if (val === null) return
     try {
-      await updatePlatformAdminDisplayName(r.id, val || null)
-      setRows(prev => prev.map(x => x.id === r.id ? { ...x, display_name: val || null } : x))
+      await updateDisplayNameMutation.mutateAsync({ id: r.id, displayName: val || null })
+      queryClient.setQueryData(adminsQueryKey, (prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          items: prev.items.map((item) => (item.id === r.id ? { ...item, display_name: val || null } : item)),
+        }
+      })
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'admins'] })
     } catch (e) {
       const status = e?.response?.status
       const msg = (status === 404 || status === 405)
@@ -79,7 +85,7 @@ export default function AdminList() {
         </div>
       </div>
 
-      {errMsg && <div className="alert alert--error" style={{marginBottom:10}}>{errMsg}</div>}
+      {errorMessage && <div className="alert alert--error" style={{marginBottom:10}}>{errorMessage}</div>}
 
       {/* ❗ 包上 .table-wrap，移除 overflow:hidden */}
       <div className="table-wrap" style={{border:'1px solid var(--border)', borderRadius:12}}>

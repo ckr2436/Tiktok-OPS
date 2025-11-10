@@ -1,5 +1,6 @@
 // src/features/platform/oauth/pages/OAuthAppsPage.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppSelector } from '../../../../app/hooks.js'
 import { parseBoolLike } from '../../../../utils/booleans.js'
 import { listProviderApps } from '../../oauth/service.js'
@@ -12,33 +13,30 @@ export default function OAuthAppsPage() {
   const isOwner = (me?.role || '').toLowerCase() === 'owner'
   const canCreate = isPlatformAdmin && isOwner
 
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [err, setErr] = useState('')
+  const queryClient = useQueryClient()
+  const appsQuery = useQuery({
+    queryKey: ['platform', 'oauth-apps'],
+    queryFn: listProviderApps,
+    staleTime: 5 * 60 * 1000,
+  })
+  const rows = appsQuery.data ?? []
+  const loading = appsQuery.isLoading
+  const errorMessage = appsQuery.error?.message || ''
+  const empty = !loading && rows.length === 0
 
   const [showNew, setShowNew] = useState(false)
   const [editItem, setEditItem] = useState(null)
 
-  async function load() {
-    setLoading(true); setErr('')
-    try {
-      const items = await listProviderApps()
-      setRows(Array.isArray(items) ? items : (items?.items ?? []))
-    } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [])
-  const empty = !loading && (!rows || rows.length === 0)
+  const invalidateApps = () => queryClient.invalidateQueries({ queryKey: ['platform', 'oauth-apps'] })
 
   return (
     <div className="card card--elevated">
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
         <h3 style={{margin:0}}>OAuth Provider Apps（TikTok Business）</h3>
         <div style={{display:'flex', gap:8}}>
-          <button className="btn ghost" onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+          <button className="btn ghost" onClick={() => appsQuery.refetch()} disabled={appsQuery.isFetching}>
+            {appsQuery.isFetching ? 'Loading…' : 'Refresh'}
+          </button>
           <button className="btn" onClick={()=>setShowNew(true)} disabled={!canCreate}>New App</button>
         </div>
       </div>
@@ -47,7 +45,7 @@ export default function OAuthAppsPage() {
         仅平台管理员可见。表中不回显 Client Secret；<b>更新</b>时 Client Secret 留空代表不变。
       </p>
 
-      {err && <div className="alert alert--error" style={{marginBottom:10}}>{err}</div>}
+      {errorMessage && <div className="alert alert--error" style={{marginBottom:10}}>{errorMessage}</div>}
 
       {/* ❗ table-wrap 开启横向滚动 */}
       <div className="table-wrap" style={{border:'1px solid var(--border)', borderRadius:12}}>
@@ -96,8 +94,22 @@ export default function OAuthAppsPage() {
         </table>
       </div>
 
-      <NewAppModal open={showNew} onClose={() => setShowNew(false)} onSaved={() => load()} mode="create" />
-      <NewAppModal open={!!editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); load() }} mode="edit" initial={editItem} />
+      <NewAppModal
+        open={showNew}
+        onClose={() => setShowNew(false)}
+        onSaved={() => invalidateApps()}
+        mode="create"
+      />
+      <NewAppModal
+        open={!!editItem}
+        onClose={() => setEditItem(null)}
+        onSaved={() => {
+          setEditItem(null)
+          invalidateApps()
+        }}
+        mode="edit"
+        initial={editItem}
+      />
     </div>
   )
 }

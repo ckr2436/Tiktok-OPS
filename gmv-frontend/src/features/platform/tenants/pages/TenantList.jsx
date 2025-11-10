@@ -1,5 +1,6 @@
 // src/features/platform/tenants/pages/TenantList.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import { listCompanies, deleteCompany } from '../service'
@@ -13,36 +14,33 @@ export default function TenantList() {
   const [page, setPage] = useState(1)
   const [size] = useState(20)
 
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [errMsg, setErrMsg] = useState('')
+  const queryClient = useQueryClient()
+  const tenantsQueryKey = ['platform', 'tenants', { q, page, size }]
+  const tenantsQuery = useQuery({
+    queryKey: tenantsQueryKey,
+    queryFn: () => listCompanies({ q, page, size }),
+    keepPreviousData: true,
+    select: (data) => ({
+      items: Array.isArray(data?.items) ? data.items : [],
+      total: Number.isFinite(data?.total) ? data.total : 0,
+    }),
+  })
+  const rows = tenantsQuery.data?.items ?? []
+  const total = tenantsQuery.data?.total ?? 0
+  const loading = tenantsQuery.isLoading
+  const errorMessage = tenantsQuery.error?.message || ''
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
 
-  async function load() {
-    setLoading(true)
-    setErrMsg('')
-    try {
-      const data = await listCompanies({ q, page, size })
-      setRows(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      setErrMsg(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [q, page, size])
+  const deleteMutation = useMutation((id) => deleteCompany(id))
 
   async function onDelete(ws) {
     if (!isPlatformOwner) return
     if (ws.company_code === '0000') return
     if (!confirm(`确定删除公司「${ws.name} / ${ws.company_code}」吗？将同时软删其所有用户。`)) return
     try {
-      await deleteCompany(ws.id)
-      setRows(prev => prev.filter(x => x.id !== ws.id))
-      setTotal(t => Math.max(0, t - 1))
+      await deleteMutation.mutateAsync(ws.id)
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'tenants'] })
     } catch (e) {
       alert(e?.response?.data?.detail || e?.message || '删除失败')
     }
@@ -64,7 +62,7 @@ export default function TenantList() {
         </div>
       </div>
 
-      {errMsg && <div className="alert alert--error" style={{marginBottom:10}}>{errMsg}</div>}
+      {errorMessage && <div className="alert alert--error" style={{marginBottom:10}}>{errorMessage}</div>}
 
       {/* ❗ 改为 .table-wrap */}
       <div className="table-wrap" style={{border:'1px solid var(--border)', borderRadius:12}}>
