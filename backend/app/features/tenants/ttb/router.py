@@ -72,9 +72,9 @@ class SyncRequest(BaseModel):
     mode: Optional[Literal["incremental", "full"]] = "full"
     advertiser_id: Optional[str] = Field(default=None, max_length=128)
     store_id: Optional[str] = Field(default=None, max_length=128)
-    idempotency_key: Optional[str] = Field(default=None, max_length=128)
+    bc_id: Optional[str] = Field(default=None, max_length=128)
     product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = None
-    options: Optional[Dict[str, Any]] = None
+    idempotency_key: Optional[str] = Field(default=None, max_length=128)
 
 
 class MetaSummaryItem(BaseModel):
@@ -350,14 +350,6 @@ async def _poll_for_meta_refresh(
     return state, changed
 
 
-def _legacy_disabled() -> None:
-    raise APIError(
-        "TTB_LEGACY_DISABLED",
-        "TikTok Business legacy data endpoints have been disabled.",
-        status.HTTP_410_GONE,
-    )
-
-
 # -------------------------- 账号列表 --------------------------
 @router.get(
     "/{workspace_id}/providers",
@@ -425,11 +417,9 @@ def trigger_sync(
     normalized_provider = _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
 
-    options_payload = dict(body.options or {})
-    payload_idempotency = options_payload.pop("idempotency_key", None)
-    requested_idempotency = body.idempotency_key or payload_idempotency
+    requested_idempotency = body.idempotency_key
 
-    raw_mode = options_payload.pop("mode", None) or body.mode or "full"
+    raw_mode = body.mode or "full"
     normalized_mode = str(raw_mode).strip().lower() if raw_mode else "full"
     if normalized_mode not in {"incremental", "full"}:
         raise APIError("INVALID_MODE", "mode must be incremental or full.", status.HTTP_400_BAD_REQUEST)
@@ -447,8 +437,8 @@ def trigger_sync(
     if body.scope != "products":
         raise APIError("UNSUPPORTED_SCOPE", f"Scope {body.scope} is not supported.", status.HTTP_400_BAD_REQUEST)
 
-    advertiser_id = options_payload.get("advertiser_id") or body.advertiser_id
-    store_id = options_payload.get("store_id") or body.store_id
+    advertiser_id = body.advertiser_id
+    store_id = body.store_id
 
     if not advertiser_id:
         raise APIError(
@@ -476,7 +466,7 @@ def trigger_sync(
         store_id=str(store_id),
     )
 
-    bc_hint = options_payload.get("bc_id")
+    bc_hint = body.bc_id
     bc_id = _normalize_identifier(bc_hint) or store.bc_id or advertiser.bc_id
     _validate_bc_alignment(
         db=db,
@@ -495,12 +485,7 @@ def trigger_sync(
         store_id=str(store_id),
     )
 
-    raw_eligibility = (
-        options_payload.pop("product_eligibility", None)
-        or options_payload.pop("eligibility", None)
-        or body.product_eligibility
-        or "gmv_max"
-    )
+    raw_eligibility = body.product_eligibility or "gmv_max"
     product_eligibility = str(raw_eligibility).strip().lower()
     if product_eligibility not in {"gmv_max", "ads", "all"}:
         raise APIError(
@@ -514,8 +499,10 @@ def trigger_sync(
         "advertiser_id": str(advertiser_id),
         "store_id": str(store_id),
         "product_eligibility": product_eligibility,
-        "bc_id": bc_id,
     }
+
+    if bc_id:
+        params["bc_id"] = bc_id
 
     try:
         result: DispatchResult = dispatch_sync(
@@ -1107,90 +1094,6 @@ def _perform_meta_sync(
         )
     )
     return result.get("summary") or {}
-
-
-# -------------------------- 不带 auth_id 的列表（兼容旧前端） --------------------------
-@router.get(
-    "/{workspace_id}/providers/{provider}/business-centers",
-    response_model=PagedResult,
-)
-def list_business_centers(
-    workspace_id: int,
-    provider: str,
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
-    auth_id: Optional[int] = Query(default=None, gt=0),
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    _normalize_provider(provider)
-    _legacy_disabled()
-
-
-@router.get(
-    "/{workspace_id}/providers/{provider}/advertisers",
-    response_model=PagedResult,
-)
-def list_advertisers(
-    workspace_id: int,
-    provider: str,
-    request: Request,
-    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    _normalize_provider(provider)
-    _legacy_disabled()
-    if "bc_id" in request.query_params:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="bc_id parameter is no longer supported; please use owner_bc_id",
-        )
-
-
-@router.get(
-    "/{workspace_id}/providers/{provider}/stores",
-    response_model=PagedResult,
-)
-def list_stores(
-    workspace_id: int,
-    provider: str,
-    request: Request,
-    advertiser_id: Optional[str] = Query(default=None, max_length=64),
-    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    _normalize_provider(provider)
-    _legacy_disabled()
-    if "bc_id" in request.query_params:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="bc_id parameter is no longer supported; please use owner_bc_id",
-        )
-
-
-@router.get(
-    "/{workspace_id}/providers/{provider}/products",
-    response_model=PagedResult,
-)
-def list_products(
-    workspace_id: int,
-    provider: str,
-    store_id: Optional[str] = Query(default=None, max_length=64),
-    # NEW: 基于 JSON 的过滤
-    eligibility: Optional[Literal["gmv_max", "ads", "all"]] = Query(default=None),
-    page: int = Query(1, ge=1, le=1000),
-    page_size: int = Query(50, ge=1, le=200),
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    _normalize_provider(provider)
-    _legacy_disabled()
 
 
 # -------------------------- 新增：account-scoped 别名路由（修复前端 404） --------------------------

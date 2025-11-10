@@ -112,7 +112,7 @@ export async function fetchStores(wid, provider, authId, advertiserId, params = 
 }
 
 /**
- * 商品查询：按 store_id 查询 GMV Max 商品，默认带 eligibility=gmv_max，
+ * 商品查询：按 store_id 查询 GMV Max 商品，默认带 product_eligibility=gmv_max，
  * 并且补齐 page / page_size。
  */
 export async function fetchProducts(wid, provider, authId, storeId, params = {}, options = {}) {
@@ -122,11 +122,14 @@ export async function fetchProducts(wid, provider, authId, storeId, params = {},
 
   const base = `${accountPrefix(wid, provider, authId)}/products`;
 
+  const { product_eligibility, eligibility, ...rest } = params || {};
   const query = {
     store_id: storeId,
-    eligibility: params.eligibility || params.product_eligibility || 'gmv_max',
-    ...params,
+    product_eligibility: product_eligibility || eligibility || 'gmv_max',
+    ...rest,
   };
+
+  delete query.eligibility;
 
   if (!('page_size' in query)) {
     query.page_size = 10;
@@ -171,23 +174,17 @@ export async function triggerProductSync(wid, provider, authId, payload) {
   const body = {
     scope: 'products',
     mode: payload?.mode || 'full',
-    idempotency_key: payload?.idempotency_key,
-    options: {
-      advertiser_id: payload?.advertiserId || payload?.advertiser_id,
-      store_id: payload?.storeId || payload?.store_id,
-      eligibility: payload?.eligibility || payload?.product_eligibility || 'gmv_max',
-      bc_id: payload?.bcId || payload?.bc_id || undefined,
-    },
+    idempotency_key: payload?.idempotency_key || undefined,
+    advertiser_id: payload?.advertiserId || payload?.advertiser_id,
+    store_id: payload?.storeId || payload?.store_id,
+    bc_id: payload?.bcId || payload?.bc_id || undefined,
+    product_eligibility: payload?.product_eligibility || payload?.eligibility || 'gmv_max',
   };
-  if (!body.options.advertiser_id || !body.options.store_id) {
+  if (!body.advertiser_id || !body.store_id) {
     throw new Error('advertiser_id and store_id are required');
   }
-  if (!body.idempotency_key) {
-    delete body.idempotency_key;
-  }
-  if (!body.options.bc_id) {
-    delete body.options.bc_id;
-  }
+  if (!body.bc_id) delete body.bc_id;
+  if (!body.idempotency_key) delete body.idempotency_key;
   return apiPost(url, body);
 }
 
