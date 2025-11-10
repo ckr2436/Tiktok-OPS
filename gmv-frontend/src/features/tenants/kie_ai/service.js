@@ -129,11 +129,20 @@ async function listTaskFiles (wid, taskId) {
 
 /**
  * 获取文件下载 URL
- * GET /tenants/{wid}/kie-ai/files/{fileId}/download-url
+ * GET /tenants/{wid}/kie-ai/sora2/files/{fileId}/download-url
+ * 返回值是后端从 KIE 刷新的真实下载链接字符串
  */
 async function getFileDownloadUrl (wid, fileId) {
-  const url = `/tenants/${encodeURIComponent(wid)}/kie-ai/files/${encodeURIComponent(fileId)}/download-url`
+  if (!wid && wid !== 0) {
+    throw new Error('workspace_id (wid) is required')
+  }
+  if (!fileId && fileId !== 0) {
+    throw new Error('fileId is required')
+  }
+
+  const url = `${tenantPrefix(wid)}/files/${encodeURIComponent(fileId)}/download-url`
   const res = await http.get(url)
+  // 后端直接返回 string，所以这里直接透传
   return res?.data ?? res
 }
 

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional, Any
 
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -15,6 +16,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -505,7 +507,7 @@ async def create_sora2_pro_storyboard(
     n_frames: int = Form(..., description="总时长：10 / 15 / 25 秒"),
     shots: str = Form(
         ...,
-        description="分镜 JSON 数组：[{\"Scene\": \"...\", \"duration\": 7.5}, ...]",
+        description='分镜 JSON 数组：[{"Scene": "...", "duration": 7.5}, ...]',
     ),
     image: Optional[UploadFile] = File(
         None,
@@ -796,7 +798,8 @@ async def get_file_download_url(
     db: Session = Depends(get_db),
 ):
     """
-    把 KIE 文件 URL 换成 20 分钟有效的下载 URL。
+    把 KIE 文件 URL 换成 20 分钟有效的下载 URL（仅返回字符串）。
+    目前前端已不直接使用这个接口，但先保留兼容。
     """
     file = (
         db.query(KieFile)
@@ -814,4 +817,38 @@ async def get_file_download_url(
         file=file,
     )
     return url
+
+@router.get(
+    "/files/{file_id}/download-url",
+    response_model=str,
+)
+async def get_file_download_url(
+    workspace_id: int,
+    file_id: int,
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    """
+    返回 KIE 任务结果文件的下载 URL。
+
+    目前直接返回 resultJson.resultUrls 里保存到数据库的 file_url，
+    不再调用 KIE /common/download-url 做二次签名，避免出现签名失效导致 401/Unauthorized 的问题。
+    如果后续 KIE 收紧权限，再按官方文档改成签名模式即可。
+    """
+    file = (
+        db.query(KieFile)
+        .filter(
+            KieFile.id == int(file_id),
+            KieFile.workspace_id == int(workspace_id),
+        )
+        .one_or_none()
+    )
+    if file is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not file.file_url:
+        raise HTTPException(status_code=502, detail="File URL is empty")
+
+    # 直接把 KIE 返回的原始链接给前端用
+    return file.file_url
 
