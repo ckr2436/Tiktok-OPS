@@ -244,8 +244,6 @@ export default function GmvMaxManagementPage() {
   const urlAdvId = qs.get('advertiserId') || '';
   const urlStoreId = qs.get('storeId') || '';
 
-  const [bindings, setBindings] = useState([]);
-  const [bindingsLoading, setBindingsLoading] = useState(false);
   const [selectedAuthId, setSelectedAuthId] = useState(urlAuthId || '');
   const [configVersion, setConfigVersion] = useState(0);
 
