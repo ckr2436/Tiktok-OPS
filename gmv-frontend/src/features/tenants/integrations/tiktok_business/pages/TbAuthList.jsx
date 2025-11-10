@@ -1,157 +1,159 @@
 // TikTok Business authorization list page
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useParams } from 'react-router-dom'
 import {
   getTenantMeta,
   listBindings,
   listProviderApps,
   createAuthz,
   hardDeleteBinding,
-} from '../service.js';
+} from '../service.js'
 
 /* 英文状态 -> 中文展示 */
 function cnStatus(s) {
-  const v = String(s || '').toLowerCase();
-  if (v === 'active') return '已授权';
-  if (v === 'revoked') return '已撤销';
-  if (v === 'inactive') return '已冻结';
-  if (v === 'expired') return '已过期';
-  return '未知';
+  const v = String(s || '').toLowerCase()
+  if (v === 'active') return '已授权'
+  if (v === 'revoked') return '已撤销'
+  if (v === 'inactive') return '已冻结'
+  if (v === 'expired') return '已过期'
+  return '未知'
 }
 
 /* 时间格式 */
 function fmt(dt) {
   try {
-    if (!dt) return '-';
-    const d = new Date(dt);
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    if (!dt) return '-'
+    const d = new Date(dt)
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
   } catch {
-    return String(dt || '-');
+    return String(dt || '-')
   }
 }
 
-/** 统一列配置（确保表头与行严格一致） */
+/** 统一列配置 */
 const COLUMNS = [
-  { key: 'name',   title: '名称',     width: '44%', align: 'left'  },
-  { key: 'status', title: '状态',     width: 120,   align: 'left'  },
-  { key: 'time',   title: '授权时间', width: 220,   align: 'left'  },
-  { key: 'ops',    title: '操作',     width: 260,   align: 'center'},
-];
+  { key: 'name', title: '名称', width: '44%', align: 'left' },
+  { key: 'status', title: '状态', width: 120, align: 'left' },
+  { key: 'time', title: '授权时间', width: 220, align: 'left' },
+  { key: 'ops', title: '操作', width: 260, align: 'center' },
+]
 
-/** 操作按钮统一尺寸 */
-const BTN = { width: 104, height: 32, gap: 12 };
+const BTN = { width: 104, height: 32, gap: 12 }
 
 export default function TbAuthList() {
-  const { wid } = useParams();
+  const { wid } = useParams()
+  const queryClient = useQueryClient()
 
-  const [companyName, setCompanyName] = useState('');
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [showNew, setShowNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPid, setNewPid] = useState('')
 
-  const [providers, setProviders] = useState([]);
-  const [showNew, setShowNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newPid, setNewPid] = useState('');
+  const title = useMemo(() => 'TikTok Business 授权', [])
 
-  const title = useMemo(() => 'TikTok Business 授权', []);
+  const metaQuery = useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: Boolean(wid),
+  })
 
-  /* 读取公司名（不从 session 取） */
+  const bindingsQuery = useQuery({
+    queryKey: ['tb-bindings', wid],
+    queryFn: () => listBindings(wid),
+    enabled: Boolean(wid),
+  })
+
+  const providersQuery = useQuery({
+    queryKey: ['tb-provider-apps', wid],
+    queryFn: () => listProviderApps(wid),
+    enabled: Boolean(wid),
+  })
+
   useEffect(() => {
-    getTenantMeta(wid)
-      .then((m) => setCompanyName(m?.name || ''))
-      .catch(() => setCompanyName(''));
-  }, [wid]);
-
-  /* 回调参数提示并刷新 */
-  useEffect(() => {
-    const qs = new URLSearchParams(window.location.search || '');
-    if (qs.has('ok')) {
-      const ok = qs.get('ok') === '1';
-      const msg = ok ? '授权成功' : `授权失败：${qs.get('code') || ''} ${qs.get('msg') || ''}`;
-      alert(msg.trim());
-      const url = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, '', url);
-      refresh();
+    const providers = providersQuery.data || []
+    if (providers.length === 1) {
+      setNewPid(String(providers[0]?.id || ''))
+    } else {
+      setNewPid('')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      const list = await listBindings(wid);
-      const safe = list.map((x) => ({
-        auth_id: x.auth_id,
-        provider_app_id: x.provider_app_id,
-        name: x.alias || '-',             // alias -> 名称
-        status: x.status,
-        created_at: x.created_at,
-      }));
-      setRows(safe);
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [providersQuery.data])
 
   useEffect(() => {
-    refresh();
-    listProviderApps(wid)
-      .then((items) => {
-        setProviders(items || []);
-        if (items && items.length === 1) {
-          setNewPid(String(items[0].id)); // 只有 1 个时自动选中且在 UI 隐藏选择器
-        } else {
-          setNewPid('');
-        }
-      })
-      .catch(() => {
-        setProviders([]);
-        setNewPid('');
-      });
-  }, [wid]);
+    const qs = new URLSearchParams(window.location.search || '')
+    if (!qs.has('ok')) return
+    const ok = qs.get('ok') === '1'
+    const msg = ok ? '授权成功' : `授权失败：${qs.get('code') || ''} ${qs.get('msg') || ''}`
+    alert(msg.trim())
+    const url = window.location.origin + window.location.pathname
+    window.history.replaceState({}, '', url)
+    bindingsQuery.refetch()
+  }, [])
 
-  /* 打开“新建授权”弹窗（可复用某行的 provider 与名称） */
+  const createMutation = useMutation({
+    mutationFn: (payload) => createAuthz(wid, payload),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (authId) => hardDeleteBinding(wid, authId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-bindings', wid] })
+    },
+  })
+
+  const rows = Array.isArray(bindingsQuery.data) ? bindingsQuery.data.map((x) => ({
+    auth_id: x.auth_id,
+    provider_app_id: x.provider_app_id,
+    name: x.alias || '-',
+    status: x.status,
+    created_at: x.created_at,
+  })) : []
+  const loading = bindingsQuery.isLoading || bindingsQuery.isFetching
+  const companyName = metaQuery.data?.name || ''
+  const providers = Array.isArray(providersQuery.data) ? providersQuery.data : []
+  const onlyOneProvider = providers.length === 1
+
   function openNewAuthDialog(prefill) {
     if (prefill) {
-      setNewName(prefill.name && prefill.name !== '-' ? prefill.name : '');
-      setNewPid(String(prefill.provider_app_id || ''));
+      setNewName(prefill.name && prefill.name !== '-' ? prefill.name : '')
+      setNewPid(String(prefill.provider_app_id || ''))
     } else {
-      setNewName('');
+      setNewName('')
     }
-    setShowNew(true);
+    setShowNew(true)
   }
 
   async function handleCreateSubmit() {
-    const pid = Number(newPid || (providers[0]?.id ?? 0));
-    if (!pid) return;
-    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
-    const { auth_url } = await createAuthz(wid, {
-      provider_app_id: pid,
-      return_to,
-      alias: newName.trim() || null,
-    });
-    // 当前页跳转，回调后返回 return_to
-    window.location.assign(auth_url);
+    const pid = Number(newPid || (providers[0]?.id ?? 0))
+    if (!pid) return
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`
+    try {
+      const { auth_url } = await createMutation.mutateAsync({
+        provider_app_id: pid,
+        alias: newName.trim() || null,
+        return_to,
+      })
+      window.location.assign(auth_url)
+    } catch (err) {
+      alert(err?.message || '发起授权失败')
+    }
   }
 
-  /* 重新授权：弹出新建授权对话框，预填原 provider 与名称 */
   function handleReauth(row) {
-    openNewAuthDialog(row);
+    openNewAuthDialog(row)
   }
 
-  /* 取消授权：直接硬删记录 */
   async function handleCancel(row) {
-    if (!confirm('确定要取消授权吗？此操作会删除该授权记录。')) return;
-    await hardDeleteBinding(wid, row.auth_id);
-    await refresh();
+    if (!confirm('确定要取消授权吗？此操作会删除该授权记录。')) return
+    try {
+      await deleteMutation.mutateAsync(row.auth_id)
+    } catch (err) {
+      alert(err?.message || '取消授权失败')
+    }
   }
-
-  const onlyOneProvider = providers.length === 1;
 
   return (
     <div className="p-4 md:p-6 space-y-12">
-      {/* 顶部标题卡片 */}
       <div className="card">
         <div className="flex items-center justify-between">
           <div>
@@ -168,7 +170,7 @@ export default function TbAuthList() {
             >
               查看数据
             </Link>
-            <button className="btn ghost" onClick={refresh}>刷新</button>
+            <button className="btn ghost" onClick={() => bindingsQuery.refetch()}>刷新</button>
             <button className="btn" onClick={() => openNewAuthDialog()}>
               新建授权
             </button>
@@ -176,7 +178,6 @@ export default function TbAuthList() {
         </div>
       </div>
 
-      {/* 列表卡片 */}
       <div className="card">
         <div className="text-base font-semibold mb-3">授权列表</div>
 
@@ -214,7 +215,6 @@ export default function TbAuthList() {
 
               {!loading && rows.map((r) => (
                 <tr key={r.auth_id}>
-                  {/* 名称 */}
                   <td
                     className="px-2 py-2 truncate"
                     style={{ textAlign: COLUMNS[0].align }}
@@ -222,15 +222,12 @@ export default function TbAuthList() {
                   >
                     {r.name || '-'}
                   </td>
-                  {/* 状态 */}
                   <td className="px-2 py-2" style={{ textAlign: COLUMNS[1].align }}>
                     {cnStatus(r.status)}
                   </td>
-                  {/* 时间 */}
                   <td className="px-2 py-2" style={{ textAlign: COLUMNS[2].align, fontVariantNumeric: 'tabular-nums' }}>
                     {fmt(r.created_at)}
                   </td>
-                  {/* 操作 */}
                   <td className="px-2 py-2" style={{ textAlign: COLUMNS[3].align }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center' }}>
                       <button
@@ -244,8 +241,9 @@ export default function TbAuthList() {
                         className="btn sm danger"
                         style={{ width: BTN.width, height: BTN.height }}
                         onClick={() => handleCancel(r)}
+                        disabled={deleteMutation.isPending && deleteMutation.variables === r.auth_id}
                       >
-                        取消授权
+                        {deleteMutation.isPending && deleteMutation.variables === r.auth_id ? '取消中…' : '取消授权'}
                       </button>
                     </div>
                   </td>
@@ -256,7 +254,6 @@ export default function TbAuthList() {
         </div>
       </div>
 
-      {/* 新建授权：弹窗（Provider 只有一个时隐藏选择器） */}
       {showNew && (
         <div className="modal-backdrop" onClick={() => setShowNew(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -307,10 +304,10 @@ export default function TbAuthList() {
                 <button
                   className="btn"
                   style={{ width: BTN.width, height: BTN.height }}
-                  disabled={(providers.length > 1 && !newPid) || providers.length === 0}
+                  disabled={(providers.length > 1 && !newPid) || providers.length === 0 || createMutation.isPending}
                   onClick={handleCreateSubmit}
                 >
-                  去授权
+                  {createMutation.isPending ? '跳转中…' : '去授权'}
                 </button>
                 <button
                   className="btn ghost"
@@ -325,6 +322,5 @@ export default function TbAuthList() {
         </div>
       )}
     </div>
-  );
+  )
 }
-

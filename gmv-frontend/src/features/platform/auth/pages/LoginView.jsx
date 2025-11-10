@@ -1,5 +1,6 @@
 // src/features/platform/auth/pages/LoginView.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import auth from '../service.js'
 import { useAppDispatch, useAppSelector } from '../../../../app/hooks.js'
@@ -50,7 +51,6 @@ function TenantPickerModal({ open, onClose, username, candidates = [], onPick, s
         你输入的用户名 <b>{username}</b> 在多个公司中存在，请选择要登录的公司：
       </div>
 
-      {/* ❗ 关键：包一层 .table-wrap 以便移动端横向滚动 */}
       <div className="table-wrap" style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
           <thead style={{ background: 'var(--panel-2)' }}>
@@ -106,55 +106,74 @@ export default function LoginView() {
   const session = useAppSelector(s => s.session.data)
   const checked = useAppSelector(s => s.session.checked)
 
+  const queryClient = useQueryClient()
+
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [remember, setRemember] = useState(() => {
     const v = localStorage.getItem('gmv.remember')
-    return v === null ? true : v === '1' // 默认开启自动登录
+    return v === null ? true : v === '1'
   })
   const [error, setError] = useState('')
   const [showInit, setShowInit] = useState(false)
   const [shake, setShake] = useState(false)
-
-  // Markdown 文档弹窗：'terms' | 'privacy' | null
   const [docOpen, setDocOpen] = useState(null)
-
-  // 选择租户弹窗
   const [pickOpen, setPickOpen] = useState(false)
   const [candidates, setCandidates] = useState([])
-  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    // 预填用户名（仅在勾选自动登录时保存）
     const savedName = localStorage.getItem('gmv.username')
     if (savedName) setUsername(savedName)
+  }, [])
 
-    ;(async () => {
-      try {
-        const s = await auth.session()
-        if (s?.id) {
-          dispatch(setSession(s))
-          nav(from, { replace: true })
-          return
-        }
-      } catch {/* 未登录 */}
+  const sessionQuery = useQuery({
+    queryKey: ['platform-session'],
+    queryFn: auth.session,
+    retry: false,
+  })
 
-      try {
-        const exists = await auth.adminExists()
-        setShowInit(exists === false)
-      } catch { setShowInit(false) }
+  useEffect(() => {
+    if (sessionQuery.data?.id) {
+      dispatch(setSession(sessionQuery.data))
+      nav(from, { replace: true })
+    }
+  }, [sessionQuery.data, dispatch, nav, from])
 
-      dispatch(markChecked())
-    })()
-  }, [dispatch, nav, from])
+  const adminExistsQuery = useQuery({
+    queryKey: ['platform-admin-exists'],
+    queryFn: auth.adminExists,
+    enabled: sessionQuery.isError,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (adminExistsQuery.data === false) {
+      setShowInit(true)
+    } else if (adminExistsQuery.isFetched) {
+      setShowInit(false)
+    }
+  }, [adminExistsQuery.data, adminExistsQuery.isFetched])
+
+  useEffect(() => {
+    if (sessionQuery.isFetching) return
+    if (sessionQuery.data?.id) return
+    if (adminExistsQuery.isFetching) return
+    dispatch(markChecked())
+  }, [sessionQuery.isFetching, sessionQuery.data, adminExistsQuery.isFetching, dispatch])
+
+  const loginMutation = useMutation({
+    mutationFn: (payload) => auth.login(payload),
+  })
+
+  const discoverMutation = useMutation({
+    mutationFn: (name) => auth.discoverTenants(name),
+  })
 
   async function performLogin({ workspace_id } = {}) {
     setError('')
-    setSubmitting(true)
     try {
-      const s = await auth.login({ username, password, remember, workspace_id })
-      // 保存“自动登录”偏好与用户名（不保存密码）
+      const s = await loginMutation.mutateAsync({ username, password, remember, workspace_id })
       if (remember) {
         localStorage.setItem('gmv.remember', '1')
         localStorage.setItem('gmv.username', username)
@@ -163,10 +182,10 @@ export default function LoginView() {
         localStorage.removeItem('gmv.username')
       }
       dispatch(setSession(s))
+      queryClient.invalidateQueries({ queryKey: ['platform-session'] })
       nav(from, { replace: true })
       return true
     } catch (err) {
-      // 统一转成友好错误
       const code = err?.payload?.error?.code || err?.response?.data?.error?.code || ''
       const msg =
         code === 'AUTH_FAILED' ? '用户名或密码不正确' :
@@ -174,26 +193,22 @@ export default function LoginView() {
       setError(msg)
       setShake(true); setTimeout(() => setShake(false), 420)
 
-      // 仅当后端返回 AUTH_FAILED 时进行租户发现（避免把其它错误也当成多租户问题）
       if (code === 'AUTH_FAILED') {
         try {
-          const list = await auth.discoverTenants(username)
+          const list = await discoverMutation.mutateAsync(username)
           if (Array.isArray(list) && list.length >= 2) {
             setCandidates(list)
             setPickOpen(true)
             return false
           }
-        } catch {/* 静默 */}
+        } catch {/* ignore */}
       }
       return false
-    } finally {
-      setSubmitting(false)
     }
   }
 
   const onSubmit = async (e) => {
     e.preventDefault()
-    // 第一次直接尝试登录（后端若唯一密码命中会直接成功；否则前端再触发发现）
     await performLogin()
   }
 
@@ -240,7 +255,6 @@ export default function LoginView() {
             </div>
           </FormField>
 
-          {/* 自动登录（默认选中） */}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
             <input
               type="checkbox"
@@ -251,7 +265,6 @@ export default function LoginView() {
             <span>自动登录</span>
           </label>
 
-          {/* 行业通用声明 —— 点击打开 Markdown 弹窗 */}
           <div className="small-muted" style={{ marginTop: 6, textAlign: 'center' }}>
             登录即代表你已阅读并同意{' '}
             <a href="#" onClick={(e) => { e.preventDefault(); setDocOpen('terms') }}>《服务条款》</a> 与{' '}
@@ -261,33 +274,29 @@ export default function LoginView() {
           {error && <div className="alert alert--error">{error}</div>}
 
           <div className="actions">
-            <button className="btn" disabled={submitting}>登录</button>
+            <button className="btn" disabled={loginMutation.isPending}>登录</button>
           </div>
         </form>
       </div>
 
-      {/* 初始化 Owner */}
       <InitOwnerModal
         open={showInit}
         onClose={() => setShowInit(false)}
         onDone={() => setShowInit(false)}
       />
 
-      {/* 选择租户弹窗 */}
       <TenantPickerModal
         open={pickOpen}
         onClose={() => setPickOpen(false)}
         username={username}
         candidates={candidates}
-        submitting={submitting}
+        submitting={loginMutation.isPending}
         onPick={async (wid) => {
-          // 选择租户后，携带 workspace_id 再次登录
           const ok = await performLogin({ workspace_id: wid })
           if (ok) setPickOpen(false)
         }}
       />
 
-      {/* Markdown 文档弹窗 */}
       <Modal
         open={!!docOpen}
         onClose={() => setDocOpen(null)}
@@ -298,4 +307,3 @@ export default function LoginView() {
     </MinimalLayout>
   )
 }
-

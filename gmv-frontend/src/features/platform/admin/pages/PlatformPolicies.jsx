@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import FormField from '../../../../components/ui/FormField.jsx'
@@ -489,63 +490,74 @@ export default function PlatformPolicies() {
     return Number.isFinite(raw) && raw > 0 ? raw : 1
   })
 
-  const [providers, setProviders] = useState([])
-  const [policies, setPolicies] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [modalState, setModalState] = useState({ open: false, policy: null })
   const [dryRunState, setDryRunState] = useState({ open: false, policy: null })
   const [toast, showToast] = useToast()
-  const [refreshToken, setRefreshToken] = useState(0)
 
-  useEffect(() => {
-    let cancelled = false
-    async function loadProviders() {
-      try {
-        const data = await listPolicyProviders()
-        if (!cancelled && Array.isArray(data)) {
-          setProviders(data)
-        }
-      } catch (err) {
-        if (!cancelled) showToast(err?.message || '加载提供方失败', 'error')
-      }
-    }
-    loadProviders()
-    return () => {
-      cancelled = true
-    }
-  }, [showToast])
+  const queryClient = useQueryClient()
 
-  const loadPolicies = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const query = {
-        provider_key: providerKey || undefined,
-        mode: mode || undefined,
-        domain: domainFilter || undefined,
-        status: statusFilter || undefined,
-        page,
-        page_size: 20,
-        sort: '-updated_at',
-      }
-      const data = await listPolicies(query)
-      const items = Array.isArray(data?.items) ? data.items : []
-      setPolicies(items)
-      setTotal(Number.isFinite(data?.total) ? data.total : 0)
-    } catch (err) {
-      setPolicies([])
-      setTotal(0)
-      setError(err?.message || '加载策略失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [providerKey, mode, domainFilter, statusFilter, page])
+  const providersQuery = useQuery({
+    queryKey: ['platform-policy-providers'],
+    queryFn: listPolicyProviders,
+    onError: (err) => {
+      showToast(err?.message || '加载提供方失败', 'error')
+    },
+  })
 
-  useEffect(() => {
-    loadPolicies()
-  }, [loadPolicies, refreshToken])
+  const policiesQueryKey = useMemo(() => [
+    'platform-policies',
+    { providerKey, mode, domainFilter, statusFilter, page },
+  ], [providerKey, mode, domainFilter, statusFilter, page])
+
+  const policiesQuery = useQuery({
+    queryKey: policiesQueryKey,
+    queryFn: () => listPolicies({
+      provider_key: providerKey || undefined,
+      mode: mode || undefined,
+      domain: domainFilter || undefined,
+      status: statusFilter || undefined,
+      page,
+      page_size: 20,
+      sort: '-updated_at',
+    }),
+    keepPreviousData: true,
+  })
+
+  const savePolicyMutation = useMutation({
+    mutationFn: ({ policyId, payload }) => (
+      policyId ? updatePolicy(policyId, payload) : createPolicy(payload)
+    ),
+    onSuccess: (_, variables) => {
+      showToast(variables?.policyId ? '策略已更新' : '策略已创建', 'success')
+      queryClient.invalidateQueries({ queryKey: ['platform-policies'] })
+    },
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ policyId, next }) => togglePolicy(policyId, next),
+    onSuccess: (_, variables) => {
+      showToast(`策略已${variables?.next ? '启用' : '停用'}`, 'success')
+      queryClient.invalidateQueries({ queryKey: ['platform-policies'] })
+    },
+    onError: (err) => {
+      showToast(err?.message || '切换失败', 'error')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deletePolicy,
+    onSuccess: () => {
+      showToast('策略已删除', 'success')
+      queryClient.invalidateQueries({ queryKey: ['platform-policies'] })
+    },
+    onError: (err) => {
+      showToast(err?.message || '删除失败', 'error')
+    },
+  })
+
+  const dryRunMutation = useMutation({
+    mutationFn: ({ policyId, payload }) => dryRunPolicy(policyId, payload),
+  })
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -557,6 +569,13 @@ export default function PlatformPolicies() {
     setSearchParams(params, { replace: true })
   }, [providerKey, mode, domainFilter, statusFilter, page, setSearchParams])
 
+  const providers = Array.isArray(providersQuery.data) ? providersQuery.data : []
+  const total = policiesQuery.data?.total ?? 0
+  const policies = Array.isArray(policiesQuery.data?.items) ? policiesQuery.data.items : []
+  const loading = policiesQuery.isLoading || policiesQuery.isFetching
+  const error = policiesQuery.error instanceof Error
+    ? policiesQuery.error
+    : (policiesQuery.error?.message ? new Error(policiesQuery.error.message) : null)
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / 20)), [total])
 
   const openCreateModal = () => setModalState({ open: true, policy: null })
@@ -566,47 +585,35 @@ export default function PlatformPolicies() {
   const openDryRunModal = (policy) => setDryRunState({ open: true, policy })
   const closeDryRunModal = () => setDryRunState({ open: false, policy: null })
 
-  const refresh = () => setRefreshToken((x) => x + 1)
-
-  const handleSubmit = async (payload) => {
-    if (modalState.policy) {
-      await updatePolicy(modalState.policy.id, payload)
-      showToast('策略已更新', 'success')
-    } else {
-      await createPolicy(payload)
-      showToast('策略已创建', 'success')
-    }
-    refresh()
-  }
+  const handleSubmit = useCallback(async (payload) => {
+    await savePolicyMutation.mutateAsync({ policyId: modalState.policy?.id, payload })
+  }, [modalState.policy?.id, savePolicyMutation])
 
   const handleToggle = async (policy) => {
     const next = !policy.is_enabled
-    setPolicies((prev) => prev.map((item) => (item.id === policy.id ? { ...item, is_enabled: next } : item)))
     try {
-      await togglePolicy(policy.id, next)
-      showToast(`策略已${next ? '启用' : '停用'}`, 'success')
-      refresh()
-    } catch (err) {
-      setPolicies((prev) => prev.map((item) => (item.id === policy.id ? { ...item, is_enabled: policy.is_enabled } : item)))
-      showToast(err?.message || '切换失败', 'error')
+      await toggleMutation.mutateAsync({ policyId: policy.id, next })
+    } catch (_) {
+      /* handled via onError */
     }
   }
 
   const handleDelete = async (policy) => {
     if (!window.confirm(`确定删除策略「${policy.name}」吗？`)) return
     try {
-      await deletePolicy(policy.id)
-      showToast('策略已删除', 'success')
-      refresh()
-    } catch (err) {
-      showToast(err?.message || '删除失败', 'error')
+      await deleteMutation.mutateAsync(policy.id)
+    } catch (_) {
+      /* handled via onError */
     }
   }
 
   const handleDryRun = async (payload) => {
-    const response = await dryRunPolicy(dryRunState.policy.id, payload)
-    return response
+    const result = await dryRunMutation.mutateAsync({ policyId: dryRunState.policy.id, payload })
+    return result
   }
+
+  const togglingId = toggleMutation.isPending ? toggleMutation.variables?.policyId : null
+  const deletingId = deleteMutation.isPending ? deleteMutation.variables : null
 
   return (
     <div className="card card--elevated" style={{ padding: 16 }}>
@@ -625,7 +632,7 @@ export default function PlatformPolicies() {
           <span className="input-group__label">提供方</span>
           <select className="input" value={providerKey} onChange={(e) => setProviderKey(e.target.value)}>
             <option value="">全部提供方</option>
-            {providers.map((item) => (
+            { (providersQuery.data || []).map((item) => (
               <option key={item.key} value={item.key}>
                 {item.name}
               </option>
@@ -663,8 +670,8 @@ export default function PlatformPolicies() {
 
       {error && (
         <div className="alert alert--error" role="alert">
-          {error}
-          <button className="btn ghost" onClick={loadPolicies} style={{ marginLeft: 12 }}>
+          {error.message || '加载策略失败'}
+          <button className="btn ghost" onClick={() => policiesQuery.refetch()} style={{ marginLeft: 12 }}>
             重试
           </button>
         </div>
@@ -717,14 +724,22 @@ export default function PlatformPolicies() {
                       <button className="btn ghost" onClick={() => openEditModal(policy)}>
                         编辑
                       </button>
-                      <button className="btn ghost" onClick={() => handleToggle(policy)}>
-                        {policy.is_enabled ? '停用' : '启用'}
+                      <button
+                        className="btn ghost"
+                        onClick={() => handleToggle(policy)}
+                        disabled={togglingId === policy.id}
+                      >
+                        {togglingId === policy.id ? '处理中…' : (policy.is_enabled ? '停用' : '启用')}
                       </button>
                       <button className="btn ghost" onClick={() => openDryRunModal(policy)}>
                         测试
                       </button>
-                      <button className="btn danger ghost" onClick={() => handleDelete(policy)}>
-                        删除
+                      <button
+                        className="btn danger ghost"
+                        onClick={() => handleDelete(policy)}
+                        disabled={deletingId === policy.id}
+                      >
+                        {deletingId === policy.id ? '删除中…' : '删除'}
                       </button>
                     </div>
                   </td>

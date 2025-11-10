@@ -1,7 +1,7 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
 import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import kieTenantApi from '../service.js'
@@ -149,6 +149,11 @@ function shouldPollByState (state) {
   return false
 }
 
+function getErrorMessage (error) {
+  if (!error) return ''
+  return error?.response?.data?.message || error?.message || '请求失败'
+}
+
 // 小工具：并发限制的批量执行（最多 concurrency 个 worker 同时跑）
 async function runWithConcurrency (items, concurrency, worker) {
   const results = new Array(items.length)
@@ -199,9 +204,6 @@ export default function Sora2ImageToVideoPage () {
   const [filePreview, setFilePreview] = useState(null)
   const [dragOver, setDragOver] = useState(false)
 
-  const [submitting, setSubmitting] = useState(false)
-  const [err, setErr] = useState('')
-
   // 当前任务 ID
   const [currentTaskId, setCurrentTaskId] = useState(null)
 
@@ -217,9 +219,63 @@ export default function Sora2ImageToVideoPage () {
     [wid, modelId],
   )
 
+  const createTaskMutation = useMutation({
+    mutationKey: ['sora2-create-task', wid, modelId],
+    mutationFn: async variables => {
+      if (!wid) {
+        throw new Error('缺少 workspace id')
+      }
+      const resp = await kieTenantApi.createSora2Task(wid, variables)
+      const newTask = resp?.task || resp
+      if (!newTask?.id) {
+        throw new Error('创建成功但未返回任务 ID')
+      }
+      return newTask
+    },
+    onSuccess: newTask => {
+      const newTaskId = newTask?.id
+      if (newTaskId != null) {
+        setCurrentTaskId(newTaskId)
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(lastTaskKey, String(newTaskId))
+        }
+      }
+
+      setPage(1)
+      queryClient.invalidateQueries({
+        queryKey: ['sora2-task', wid, modelId],
+        exact: false,
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['sora2-files', wid, modelId],
+        exact: false,
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['sora2-history', wid, modelId],
+        exact: false,
+      })
+    },
+  })
+
+  const fileDownloadMutation = useMutation({
+    mutationKey: ['sora2-file-download', wid],
+    mutationFn: async ({ fileId }) => {
+      if (!wid) {
+        throw new Error('缺少 workspace id')
+      }
+      if (!fileId && fileId !== 0) {
+        throw new Error('缺少文件 id')
+      }
+      return kieTenantApi.getFileDownloadUrl(wid, fileId)
+    },
+  })
+
+  useEffect(() => {
+    createTaskMutation.reset()
+  }, [modelId, createTaskMutation])
+
   // 模型切换时重置部分状态
   useEffect(() => {
-    setErr('')
     setCurrentTaskId(null)
     setPreview(null)
     setPage(1)
@@ -317,6 +373,9 @@ export default function Sora2ImageToVideoPage () {
     return 'default'
   }, [task])
 
+  const isCreating = createTaskMutation.isPending
+  const creationError = createTaskMutation.error
+
   // -------- 上传文件相关 --------
   function applyFile (f) {
     if (!f) {
@@ -368,6 +427,7 @@ export default function Sora2ImageToVideoPage () {
       return
     }
 
+    createTaskMutation.reset()
     const kind = currentModel.kind
 
     // 批量去水印：多行链接，一个链接一个任务，同时最多 10 个请求在跑
@@ -382,27 +442,16 @@ export default function Sora2ImageToVideoPage () {
         return
       }
 
-      setSubmitting(true)
-      setErr('')
-
       let created = 0
       let failed = 0
-      let lastTaskId = null
 
       try {
         await runWithConcurrency(lines, 10, async (urlStr, idx) => {
           try {
-            const resp = await kieTenantApi.createSora2Task(wid, {
+            await createTaskMutation.mutateAsync({
               modelId,
               video_url: urlStr,
             })
-            const newTask = resp?.task || resp
-            if (newTask?.id) {
-              lastTaskId = newTask.id
-              if (typeof window !== 'undefined') {
-                window.localStorage.setItem(lastTaskKey, String(newTask.id))
-              }
-            }
             created += 1
           } catch (err2) {
             console.error('创建去水印任务失败', idx, err2)
@@ -410,22 +459,9 @@ export default function Sora2ImageToVideoPage () {
           }
         })
 
-        if (lastTaskId != null) {
-          setCurrentTaskId(lastTaskId)
-        }
-
-        setPage(1)
-        await refetchHistory()
-        if (lastTaskId != null) {
-          await refetchTask()
-        }
-
         alert(`去水印任务已创建：成功 ${created} 条，失败 ${failed} 条`)
       } catch (e2) {
         console.error(e2)
-        setErr(e2?.message || '创建任务失败')
-      } finally {
-        setSubmitting(false)
       }
 
       return
@@ -462,8 +498,6 @@ export default function Sora2ImageToVideoPage () {
       }
     }
 
-    setSubmitting(true)
-    setErr('')
     try {
       const payload = {
         modelId,
@@ -486,29 +520,10 @@ export default function Sora2ImageToVideoPage () {
           }))
       }
 
-      const resp = await kieTenantApi.createSora2Task(wid, payload)
-
-      const newTask = resp?.task || resp
-      const newTaskId = newTask?.id
-      if (!newTaskId) {
-        throw new Error('创建成功但未返回任务 ID')
-      }
-
-      setCurrentTaskId(newTaskId)
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(lastTaskKey, String(newTaskId))
-      }
-
-      setPage(1)
-      await refetchTask()
-      await refetchHistory()
-
+      await createTaskMutation.mutateAsync(payload)
       alert('任务已创建')
     } catch (e2) {
       console.error(e2)
-      setErr(e2?.message || '创建任务失败')
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -534,7 +549,7 @@ export default function Sora2ImageToVideoPage () {
   async function handleDownload (fileId) {
     if (!wid || !fileId) return
     try {
-      const url = await kieTenantApi.getFileDownloadUrl(wid, fileId)
+      const url = await fileDownloadMutation.mutateAsync({ fileId })
       if (!url) return
       const a = document.createElement('a')
       a.href = url
@@ -554,7 +569,7 @@ export default function Sora2ImageToVideoPage () {
   async function handlePreview (fileObj) {
     if (!wid || !fileObj?.id) return
     try {
-      const url = await kieTenantApi.getFileDownloadUrl(wid, fileObj.id)
+      const url = await fileDownloadMutation.mutateAsync({ fileId: fileObj.id })
       if (!url) return
       setPreview({
         url,
@@ -924,9 +939,9 @@ export default function Sora2ImageToVideoPage () {
             <button
               className="btn"
               type="submit"
-              disabled={submitting}
+              disabled={isCreating}
             >
-              {submitting ? '创建中…' : '创建任务'}
+              {isCreating ? '创建中…' : '创建任务'}
             </button>
           </div>
         </form>
@@ -934,9 +949,9 @@ export default function Sora2ImageToVideoPage () {
         {/* 右侧：当前任务 + 历史 */}
         <div>
           {/* 错误提示 */}
-          {(err || taskError) && (
+          {(creationError || taskError) && (
             <div className="alert alert--error" style={{ marginBottom: 12 }}>
-              {err || taskError?.message || '请求失败'}
+              {getErrorMessage(creationError) || getErrorMessage(taskError) || '请求失败'}
             </div>
           )}
 

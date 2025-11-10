@@ -1,5 +1,6 @@
 // src/features/platform/admin/pages/AdminList.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppSelector } from '../../../../app/hooks'
 import {
   listPlatformAdmins,
@@ -14,55 +15,70 @@ export default function AdminList() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [size] = useState(20)
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(() => ['platform-admins', { q, page, size }], [q, page, size])
 
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [errMsg, setErrMsg] = useState('')
+  const {
+    data,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey,
+    queryFn: () => listPlatformAdmins({ q, page, size }),
+    keepPreviousData: true,
+  })
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
+  const [actionError, setActionError] = useState('')
 
-  async function load() {
-    setLoading(true)
-    setErrMsg('')
-    try {
-      const data = await listPlatformAdmins({ q, page, size })
-      setRows(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      setErrMsg(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [q, page, size])
+  const deleteMutation = useMutation({
+    mutationFn: deletePlatformAdmin,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-admins'] })
+    },
+    onError: (err) => {
+      setActionError(err?.response?.data?.detail || err?.message || '删除失败')
+    },
+  })
 
-  async function onDelete(r) {
-    if (!isOwner) return
-    if (!confirm(`确定删除平台管理员「${r.username} / ${r.email}」吗？`)) return
-    try {
-      await deletePlatformAdmin(r.id)
-      setRows(prev => prev.filter(x => x.id !== r.id))
-      setTotal(t => Math.max(0, t - 1))
-    } catch (e) {
-      setErrMsg(e?.response?.data?.detail || e?.message || '删除失败')
-    }
-  }
-
-  async function onRename(r) {
-    const val = prompt('请输入新的 Display Name（留空表示清除）：', r.display_name || '')
-    if (val === null) return
-    try {
-      await updatePlatformAdminDisplayName(r.id, val || null)
-      setRows(prev => prev.map(x => x.id === r.id ? { ...x, display_name: val || null } : x))
-    } catch (e) {
-      const status = e?.response?.status
+  const renameMutation = useMutation({
+    mutationFn: ({ id, displayName }) => updatePlatformAdminDisplayName(id, displayName),
+    onSuccess: () => {
+      setActionError('')
+      queryClient.invalidateQueries({ queryKey: ['platform-admins'] })
+    },
+    onError: (err) => {
+      const status = err?.response?.status
       const msg = (status === 404 || status === 405)
         ? '后端暂未实现 PATCH/PUT 接口：/api/v1/platform/admin/admins/{user_id}'
-        : (e?.message || '修改失败')
-      alert(msg)
-    }
+        : (err?.message || '修改失败')
+      setActionError(msg)
+    },
+  })
+
+  const rows = useMemo(() => data?.items ?? [], [data])
+  const total = data?.total ?? 0
+  const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
+
+  const onDelete = async (r) => {
+    if (!isOwner) return
+    if (!confirm(`确定删除平台管理员「${r.username} / ${r.email}」吗？`)) return
+    setActionError('')
+    await deleteMutation.mutateAsync(r.id)
   }
+
+  const onRename = async (r) => {
+    const val = prompt('请输入新的 Display Name（留空表示清除）：', r.display_name || '')
+    if (val === null) return
+    setActionError('')
+    await renameMutation.mutateAsync({ id: r.id, displayName: val || null })
+  }
+
+  const loading = isLoading || isFetching
+  const deletingId = deleteMutation.isPending ? deleteMutation.variables : null
+  const renamingId = renameMutation.isPending ? renameMutation.variables?.id : null
+  const queryErrorMessage = error instanceof Error ? error.message : (error?.message || '')
+  const hasError = actionError || queryErrorMessage
 
   return (
     <div className="card card--elevated">
@@ -79,7 +95,7 @@ export default function AdminList() {
         </div>
       </div>
 
-      {errMsg && <div className="alert alert--error" style={{marginBottom:10}}>{errMsg}</div>}
+      {hasError && <div className="alert alert--error" style={{marginBottom:10}}>{actionError || queryErrorMessage}</div>}
 
       {/* ❗ 包上 .table-wrap，移除 overflow:hidden */}
       <div className="table-wrap" style={{border:'1px solid var(--border)', borderRadius:12}}>
@@ -109,10 +125,23 @@ export default function AdminList() {
                 <Td>{r.display_name || <span className="small-muted">（未设置）</span>}</Td>
                 <Td><RoleBadge role={r.role} /></Td>
                 <Td>
-                  <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                    <button className="btn ghost" onClick={() => onRename(r)}>修改名称</button>
+                    <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                    <button
+                      className="btn ghost"
+                      onClick={() => onRename(r)}
+                      disabled={renamingId === r.id}
+                    >
+                      {renamingId === r.id ? '保存中…' : '修改名称'}
+                    </button>
                     {isOwner && r.role !== 'owner' && (
-                      <button className="btn" style={{background:'#ef4444'}} onClick={() => onDelete(r)}>删除</button>
+                      <button
+                        className="btn"
+                        style={{background:'#ef4444'}}
+                        onClick={() => onDelete(r)}
+                        disabled={deletingId === r.id}
+                      >
+                        {deletingId === r.id ? '删除中…' : '删除'}
+                      </button>
                     )}
                   </div>
                 </Td>

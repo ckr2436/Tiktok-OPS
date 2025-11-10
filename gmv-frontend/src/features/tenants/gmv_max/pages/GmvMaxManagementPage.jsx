@@ -1,5 +1,12 @@
 // src/features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 
 import FormField from '../../../../components/ui/FormField.jsx';
@@ -205,11 +212,7 @@ function SummaryPanel({ summary }) {
         </div>
       </div>
       <div className="summary-grid">
-        {[
-          { key: 'bc', label: 'Business Centers' },
-          { key: 'advertisers', label: 'Advertisers' },
-          { key: 'stores', label: 'Stores' },
-        ].map((section) => {
+        {SUMMARY_SECTIONS.map((section) => {
           const data = summary?.[section.key] || {};
           return (
             <div key={section.key} className="summary-card">
@@ -227,6 +230,8 @@ function SummaryPanel({ summary }) {
   );
 }
 
+const DEFAULT_PRODUCTS_STATE = { items: [], total: 0, page: 1, pageSize: 10 };
+
 /** ---------------------------
  * 页面组件
  * --------------------------- */
@@ -235,53 +240,42 @@ export default function GmvMaxManagementPage() {
   const provider = useMemo(() => normProvider(), []);
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  /** URL <-> 状态 同步 */
   const qs = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const urlAuthId = qs.get('authId') || '';
   const urlBcId = qs.get('bcId') || '';
   const urlAdvId = qs.get('advertiserId') || '';
   const urlStoreId = qs.get('storeId') || '';
 
-  const [bindings, setBindings] = useState([]);
-  const [bindingsLoading, setBindingsLoading] = useState(false);
   const [selectedAuthId, setSelectedAuthId] = useState(urlAuthId || '');
   const [configVersion, setConfigVersion] = useState(0);
-
   const [form, setForm] = useState({
     ...DEFAULT_FORM,
     bcId: urlBcId || DEFAULT_FORM.bcId,
     advertiserId: urlAdvId || DEFAULT_FORM.advertiserId,
     storeId: urlStoreId || DEFAULT_FORM.storeId,
   });
-  const formRef = useRef(DEFAULT_FORM);
+  const formRef = useRef(form);
 
-  const [loadingConfig, setLoadingConfig] = useState(false);
-  const [bindingConfig, setBindingConfig] = useState(null);
-
-  const [businessCenters, setBusinessCenters] = useState([]);
-  const [allAdvertisers, setAllAdvertisers] = useState([]);
-  const [visibleAdvertisers, setVisibleAdvertisers] = useState([]);
-  const [advertisersLoading, setAdvertisersLoading] = useState(false);
-  const [storesByAdvertiser, setStoresByAdvertiser] = useState({});
-  const [loadingStores, setLoadingStores] = useState(false);
-
-  const [productsState, setProductsState] = useState({ items: [], total: 0, page: 1, pageSize: 10 });
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [optionsEtag, setOptionsEtag] = useState(null);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-
-  const [refreshingOptions, setRefreshingOptions] = useState(false);
-  const [triggeringSync, setTriggeringSync] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [metaSummary, setMetaSummary] = useState(null);
   const [syncRunStatus, setSyncRunStatus] = useState(null);
+  const [productsSnapshot, setProductsSnapshot] = useState(DEFAULT_PRODUCTS_STATE);
+  const [productsRequestKey, setProductsRequestKey] = useState(0);
+  const productsRequestRef = useRef(0);
+  const [refreshingOptions, setRefreshingOptions] = useState(false);
+  const [syncRunId, setSyncRunId] = useState(null);
+  const [syncRunToken, setSyncRunToken] = useState(0);
 
-  // 让 ref 时刻反映最新 form
+  const optionsRefreshRef = useRef(false);
+  const optionsEtagRef = useRef(null);
+  const syncRunTimerRef = useRef(null);
+
   useEffect(() => { formRef.current = form; }, [form]);
+  useEffect(() => { productsRequestRef.current = productsRequestKey; }, [productsRequestKey]);
+  useEffect(() => () => { if (syncRunTimerRef.current) clearTimeout(syncRunTimerRef.current); }, []);
 
-  // URL 同步（把关键 scope 写回到地址栏，便于刷新/分享）
   const syncUrl = useCallback((next) => {
     const sp = new URLSearchParams(location.search);
     const { authId, bcId, advertiserId, storeId } = next;
@@ -293,34 +287,31 @@ export default function GmvMaxManagementPage() {
     navigate({ pathname: location.pathname, search: sp.toString() }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
-  /** 绑定列表 */
+  const bindingsQuery = useQuery({
+    queryKey: ['gmv-max', wid, 'bindings'],
+    queryFn: () => listBindings(wid),
+    enabled: !!wid,
+    select: (items) => (Array.isArray(items) ? items : []),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法获取绑定列表') });
+    },
+  });
+  const bindings = wid ? (bindingsQuery.data || []) : [];
+  const bindingsLoading = bindingsQuery.isLoading;
+
   useEffect(() => {
     if (!wid) {
-      setBindings([]); setSelectedAuthId(''); return;
-    }
-    let ignore = false;
-    setBindingsLoading(true);
-    setFeedback(null);
-    listBindings(wid)
-      .then((items) => { if (!ignore) setBindings(Array.isArray(items) ? items : []); })
-      .catch((error) => { if (!ignore) { setBindings([]); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法获取绑定列表') }); } })
-      .finally(() => { if (!ignore) setBindingsLoading(false); });
-    return () => { ignore = true; };
-  }, [wid]);
-
-  /** 绑定选中逻辑（默认选第一个；优先 URL / LS） */
-  useEffect(() => {
-    if (!bindings?.length) {
       setSelectedAuthId('');
       setMetaSummary(null);
-      setForm(DEFAULT_FORM);
-      setBusinessCenters([]);
-      setAllAdvertisers([]);
-      setVisibleAdvertisers([]);
-      setAdvertisersLoading(false);
-      setStoresByAdvertiser({});
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-      setOptionsEtag(null);
+      setSyncRunStatus(null);
+      setProductsSnapshot(DEFAULT_PRODUCTS_STATE);
+      return;
+    }
+    if (!bindings.length) {
+      setSelectedAuthId('');
+      setMetaSummary(null);
+      setSyncRunStatus(null);
+      setProductsSnapshot(DEFAULT_PRODUCTS_STATE);
       return;
     }
     setSelectedAuthId((prev) => {
@@ -333,22 +324,20 @@ export default function GmvMaxManagementPage() {
     });
   }, [bindings, urlAuthId, wid]);
 
-  /** 切换绑定后，恢复 scope（优先 URL -> LS -> 服务端配置） */
   useEffect(() => {
     setMetaSummary(null);
-    setBindingConfig(null);
-    setBusinessCenters([]);
-    setAllAdvertisers([]);
-    setVisibleAdvertisers([]);
-    setAdvertisersLoading(false);
-    setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    setOptionsEtag(null);
     setSyncRunStatus(null);
+    setProductsSnapshot(DEFAULT_PRODUCTS_STATE);
+    setProductsRequestKey(0);
+    setFeedback(null);
+    optionsEtagRef.current = null;
+    optionsRefreshRef.current = false;
 
-    if (!wid || !selectedAuthId) return;
+    if (!wid || !selectedAuthId) {
+      setForm(DEFAULT_FORM);
+      return;
+    }
 
-    // 1) URL 有值 -> 用 URL
     if (urlBcId || urlAdvId || urlStoreId) {
       setForm((prev) => ({
         ...prev,
@@ -359,7 +348,6 @@ export default function GmvMaxManagementPage() {
       return;
     }
 
-    // 2) LS 有值
     const saved = readScopeFromLS(wid);
     if (saved?.authId && String(saved.authId) === String(selectedAuthId)) {
       setForm((prev) => ({
@@ -367,409 +355,211 @@ export default function GmvMaxManagementPage() {
         bcId: saved.bcId || '',
         advertiserId: saved.advertiserId || '',
         storeId: saved.storeId || '',
+        autoSyncProducts: prev.autoSyncProducts,
       }));
       return;
     }
+    setForm((prev) => ({ ...prev, bcId: prev.bcId || '', advertiserId: prev.advertiserId || '', storeId: prev.storeId || '' }));
+  }, [selectedAuthId, wid, urlBcId, urlAdvId, urlStoreId]);
 
-    // 3) fallback: 服务端配置
-    // 留给下面的 fetchBindingConfig useEffect 去做
-  }, [selectedAuthId]); // eslint-disable-line
+  const bindingConfigQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'config', configVersion],
+    queryFn: () => fetchBindingConfig(wid, provider, selectedAuthId),
+    enabled: !!(wid && selectedAuthId),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 配置') });
+    },
+  });
+  const bindingConfig = bindingConfigQuery.data || null;
+  const loadingConfig = bindingConfigQuery.isLoading;
 
-  /** 拉取 GMV 元数据 + TikTok 元数据 */
   useEffect(() => {
-    if (!wid || !selectedAuthId) {
-      setOptionsEtag(null);
-      setOptionsLoading(false);
-      return;
-    }
-    let ignore = false;
-    const controller = new AbortController();
-    let pending = 2;
-    setOptionsLoading(true);
-    const finish = () => { if (!ignore && --pending <= 0) setOptionsLoading(false); };
+    if (!bindingConfig) return;
+    setForm((prev) => ({
+      ...prev,
+      bcId: prev.bcId || (bindingConfig?.bc_id ?? ''),
+      advertiserId: prev.advertiserId || (bindingConfig?.advertiser_id ?? ''),
+      storeId: prev.storeId || (bindingConfig?.store_id ?? ''),
+      autoSyncProducts: Boolean(bindingConfig?.auto_sync_products),
+    }));
+  }, [bindingConfig]);
 
-    fetchGmvOptions(wid, provider, selectedAuthId, { signal: controller.signal })
-      .then(({ status, data, etag }) => {
-        if (ignore) return;
-        if (status === 200 && data) {
-          const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
-          setMetaSummary(summary || null);
-          setOptionsEtag(etag || null);
-          if (refreshStatus === 'timeout' && refreshKey) {
-            setFeedback({ type: 'info', text: `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` });
+  const optionsQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'options'],
+    enabled: !!(wid && selectedAuthId),
+    queryFn: ({ signal }) => fetchGmvOptions(wid, provider, selectedAuthId, {
+      refresh: optionsRefreshRef.current,
+      etag: optionsEtagRef.current,
+      signal,
+    }),
+    onSuccess: ({ status, data, etag }) => {
+      if (status === 200 && data) {
+        const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
+        setMetaSummary(summary || null);
+        if (optionsRefreshRef.current) {
+          if (refreshStatus === 'timeout') {
+            setFeedback({ type: 'info', text: refreshKey ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` : '已触发刷新，稍后再试。' });
+          } else {
+            setFeedback({ type: 'success', text: refreshKey ? `已刷新最新可选项（幂等键 ${refreshKey}）。` : '已刷新最新可选项。' });
           }
-        } else if (status === 304) {
-          setOptionsEtag((prev) => etag || prev || null);
         }
-      })
-      .catch((error) => {
-        if (!ignore) { setOptionsEtag(null); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 选项') }); }
-      })
-      .finally(finish);
-
-    Promise.resolve()
-      .then(async () => {
-        const [bcResponse, advertiserResponse] = await Promise.all([
-          fetchBusinessCenters(wid, provider, selectedAuthId),
-          fetchAdvertisers(wid, provider, selectedAuthId),
-        ]);
-        if (ignore) return;
-        setBusinessCenters(Array.isArray(bcResponse?.items) ? bcResponse.items : []);
-        const advItems = Array.isArray(advertiserResponse?.items) ? advertiserResponse.items : [];
-        setAllAdvertisers(advItems);
-        // 如果当前 bcId 为空，默认允许全部 advertiser 先展示
-        setVisibleAdvertisers((prev) => (formRef.current?.bcId ? prev : advItems));
-      })
-      .catch((error) => {
-        if (!ignore) {
-          setBusinessCenters([]); setAllAdvertisers([]); setVisibleAdvertisers([]); setStoresByAdvertiser({});
-          setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 TikTok 元数据') });
-        }
-      })
-      .finally(finish);
-
-    return () => { ignore = true; controller.abort(); };
-  }, [wid, provider, selectedAuthId]);
-
-  /** 绑定配置（用于初次 scope 回填） */
-  useEffect(() => {
-    if (!wid || !selectedAuthId) { setLoadingConfig(false); return; }
-    let ignore = false;
-    setLoadingConfig(true);
-    (async () => {
-      try {
-        const config = await fetchBindingConfig(wid, provider, selectedAuthId);
-        if (ignore) return;
-        setBindingConfig(config || null);
-
-        // 若 URL/LS 都没有，采用后端配置
-        setForm((prev) => ({
-          ...prev,
-          bcId: prev.bcId || (config?.bc_id ?? ''),
-          advertiserId: prev.advertiserId || (config?.advertiser_id ?? ''),
-          storeId: prev.storeId || (config?.store_id ?? ''),
-          autoSyncProducts: Boolean(config?.auto_sync_products),
-        }));
-      } catch (error) {
-        if (!ignore) { setBindingConfig(null); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 配置') }); }
-      } finally {
-        if (!ignore) setLoadingConfig(false);
+      } else if (status === 304 && optionsRefreshRef.current) {
+        setFeedback({ type: 'info', text: '元数据未发生变化。' });
       }
-    })();
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, configVersion]);
+      if (etag) optionsEtagRef.current = etag;
+    },
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 GMV Max 选项') });
+    },
+    onSettled: () => {
+      optionsRefreshRef.current = false;
+      setRefreshingOptions(false);
+    },
+  });
+  const optionsLoading = optionsQuery.isLoading;
 
-  /** 变更 BC -> 过滤 advertiser 与清空后续 */
+  const businessCentersQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'business-centers'],
+    queryFn: () => fetchBusinessCenters(wid, provider, selectedAuthId),
+    enabled: !!(wid && selectedAuthId),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 TikTok 元数据') });
+    },
+  });
+  const businessCenters = businessCentersQuery.data || [];
+
+  const allAdvertisersQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'advertisers', 'all'],
+    queryFn: () => fetchAdvertisers(wid, provider, selectedAuthId),
+    enabled: !!(wid && selectedAuthId),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Advertiser 列表') });
+    },
+  });
+  const allAdvertisers = allAdvertisersQuery.data || [];
+
+  const filteredAdvertisersQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'advertisers', form.bcId || 'all'],
+    queryFn: () => fetchAdvertisers(
+      wid,
+      provider,
+      selectedAuthId,
+      form.bcId ? { owner_bc_id: form.bcId } : {},
+    ),
+    enabled: !!(wid && selectedAuthId && form.bcId),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Advertiser 列表') });
+    },
+  });
+
+  const visibleAdvertisers = form.bcId ? (filteredAdvertisersQuery.data || []) : allAdvertisers;
+  const advertisersLoading = form.bcId ? filteredAdvertisersQuery.isFetching : allAdvertisersQuery.isFetching;
+
   useEffect(() => {
-    if (!wid || !selectedAuthId) { setAdvertisersLoading(false); return; }
-    let ignore = false;
-    setAdvertisersLoading(true);
-    const params = form.bcId ? { owner_bc_id: form.bcId } : {};
-    fetchAdvertisers(wid, provider, selectedAuthId, params)
-      .then((response) => {
-        if (ignore) return;
-        const items = Array.isArray(response?.items) ? response.items : [];
-        setVisibleAdvertisers(items);
-        setStoresByAdvertiser((prev) => {
-          if (!form.bcId) return prev;
-          const allowed = new Set(items.map((item) => String(item?.advertiser_id || '')));
-          const next = {};
-          Object.entries(prev || {}).forEach(([advId, stores]) => {
-            if (allowed.has(String(advId))) next[advId] = stores;
-          });
-          return next;
-        });
-      })
-      .catch((error) => {
-        if (!ignore) { setVisibleAdvertisers([]); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Advertiser 列表') }); }
-      })
-      .finally(() => { if (!ignore) setAdvertisersLoading(false); });
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, form.bcId]);
+    if (!form.advertiserId) return;
+    const allowed = visibleAdvertisers.some((item) => String(item?.advertiser_id || '') === String(form.advertiserId));
+    if (!allowed) {
+      setForm((prev) => ({ ...prev, advertiserId: '', storeId: '' }));
+    }
+  }, [visibleAdvertisers, form.advertiserId]);
 
-  /** 拉取 Store（按 Advertiser） */
+  const storesQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'stores', form.advertiserId || '', form.bcId || ''],
+    queryFn: ({ signal }) => fetchStores(
+      wid,
+      provider,
+      selectedAuthId,
+      form.advertiserId,
+      { owner_bc_id: form.bcId || undefined },
+      { signal },
+    ),
+    enabled: !!(wid && selectedAuthId && form.advertiserId),
+    select: (response) => (Array.isArray(response?.items) ? response.items : []),
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Store 列表') });
+    },
+  });
+  const stores = storesQuery.data || [];
+  const loadingStores = storesQuery.isFetching;
+
   useEffect(() => {
-    if (!wid || !selectedAuthId || !form.advertiserId) { setLoadingStores(false); return; }
-    const existing = storesByAdvertiser[form.advertiserId];
-    if (existing) {
-      const hasSelected = existing.some((item) => String(item?.store_id || '') === String(form.storeId));
-      if (!hasSelected && form.storeId) {
-        setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
-      }
-      return;
+    if (!form.storeId) return;
+    const hasSelected = stores.some((item) => String(item?.store_id || '') === String(form.storeId));
+    if (!hasSelected) {
+      setForm((prev) => ({ ...prev, storeId: '' }));
     }
-    let ignore = false;
-    setLoadingStores(true);
-    fetchStores(wid, provider, selectedAuthId, form.advertiserId, { owner_bc_id: form.bcId || undefined })
-      .then((response) => {
-        if (ignore) return;
-        const storeItems = Array.isArray(response?.items) ? response.items : [];
-        setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: storeItems }));
-        if (!storeItems.some((item) => String(item?.store_id || '') === String(form.storeId))) {
-          setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
-        }
-      })
-      .catch((error) => {
-        if (!ignore) { setStoresByAdvertiser((prev) => ({ ...prev, [form.advertiserId]: [] })); setFeedback({ type: 'error', text: extractErrorMessage(error, '无法加载 Store 列表') }); }
-      })
-      .finally(() => { if (!ignore) setLoadingStores(false); });
-    return () => { ignore = true; };
-  }, [wid, provider, selectedAuthId, form.advertiserId, form.storeId, storesByAdvertiser]);
+  }, [stores, form.storeId]);
 
-  /** ---------- 事件处理：scope 变更 + URL/LS 同步 ---------- */
-  function handleBindingChange(evt) {
-    const v = evt.target.value || '';
-    setSelectedAuthId(v);
-    saveScopeToLS({ wid, authId: v, bcId: '', advertiserId: '', storeId: '' });
-    syncUrl({ authId: v, bcId: '', advertiserId: '', storeId: '' });
-    // 尝试恢复已缓存的产品（此时 storeId 为空，不恢复列表）
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-  }
-  function handleBcChange(evt) {
-    const value = evt.target.value || '';
-    const next = { ...form, bcId: value, advertiserId: '', storeId: '' };
-    setForm(next);
-    setStoresByAdvertiser({});
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-  }
-  function handleAdvertiserChange(evt) {
-    const value = evt.target.value || '';
-    const next = { ...form, advertiserId: value, storeId: '' };
-    setForm(next);
-    setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-  }
-  function handleStoreChange(evt) {
-    const value = evt.target.value || '';
-    const next = { ...form, storeId: value };
-    setForm(next);
-
-    // 命中缓存则立即展示，无需点击“拉取”
-    if (value) {
-      const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: value });
-      if (cached) setProductsState(cached);
-      else setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    } else {
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
-    }
-
-    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-  }
-  function handleAutoSyncToggle(evt) {
-    const checked = evt.target.checked;
-    const next = { ...form, autoSyncProducts: checked };
-    setForm(next);
-    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
-  }
-
-  /** 进入页面/切换 scope 时：若当前 store 命中缓存，直接恢复 */
   useEffect(() => {
     if (!wid || !selectedAuthId || !form.storeId) return;
     const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId });
-    if (cached) setProductsState(cached);
-  }, [wid, selectedAuthId]); // storeId 已在 handleStoreChange 里处理
+    if (cached) setProductsSnapshot(cached);
+    else setProductsSnapshot(DEFAULT_PRODUCTS_STATE);
+    setProductsRequestKey(0);
+  }, [wid, selectedAuthId, form.storeId]);
 
-  /** 刷新元数据 */
-  async function handleRefresh() {
-    if (!wid || !selectedAuthId) return;
-    setRefreshingOptions(true);
-    try {
-      const { status, data, etag } = await fetchGmvOptions(wid, provider, selectedAuthId, { refresh: true, etag: optionsEtag });
-      if (status === 304) {
-        setFeedback({ type: 'info', text: '元数据未发生变化。' });
-        if (etag) setOptionsEtag(etag);
-      } else if (data) {
-        const { refresh: refreshStatus, idempotency_key: refreshKey, summary } = data || {};
-        setMetaSummary(summary || null);
-        if (etag) setOptionsEtag(etag);
-        if (refreshStatus === 'timeout') {
-          setFeedback({ type: 'info', text: refreshKey ? `已触发刷新，稍后再试（幂等键 ${refreshKey}）。` : '已触发刷新，稍后再试。' });
-        } else {
-          setFeedback({ type: 'success', text: refreshKey ? `已刷新最新可选项（幂等键 ${refreshKey}）。` : '已刷新最新可选项。' });
-        }
-      }
-      try {
-        const [bcRes, advRes] = await Promise.all([
-          fetchBusinessCenters(wid, provider, selectedAuthId),
-          fetchAdvertisers(wid, provider, selectedAuthId),
-        ]);
-        setBusinessCenters(Array.isArray(bcRes?.items) ? bcRes.items : []);
-        const advItems = Array.isArray(advRes?.items) ? advRes.items : [];
-        setAllAdvertisers(advItems);
-        setVisibleAdvertisers((prev) => (formRef.current?.bcId ? prev : advItems));
-      } catch (e) {
-        setFeedback({ type: 'error', text: extractErrorMessage(e, '刷新成功，但更新 TikTok 元数据失败') });
-      }
-    } catch (error) {
-      setFeedback({ type: 'error', text: extractErrorMessage(error, '刷新失败，请稍后重试') });
-    } finally {
-      setRefreshingOptions(false);
-    }
-  }
-
-  /** 保存激活组合 */
-  async function handleSave(evt) {
-    evt.preventDefault();
-    if (!wid || !selectedAuthId) return;
-    if (!form.bcId || !form.advertiserId || !form.storeId) {
-      setFeedback({ type: 'error', text: '请选择 Business Center、Advertiser 与 Store 后再保存。' });
-      return;
-    }
-    setSaving(true);
-    try {
-      await saveBindingConfig(wid, provider, selectedAuthId, {
-        bc_id: form.bcId,
-        advertiser_id: form.advertiserId,
-        store_id: form.storeId,
-        auto_sync_products: !!form.autoSyncProducts,
-      });
-      setFeedback({ type: 'success', text: '已保存激活组合。' });
-      setConfigVersion((prev) => prev + 1);
-    } catch (error) {
-      setFeedback({ type: 'error', text: extractErrorMessage(error, '保存失败，请检查选择是否一致') });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  /** 手动触发同步 */
-  async function handleProductSync() {
-    if (!wid || !selectedAuthId) return;
-    if (!form.bcId || !form.advertiserId || !form.storeId) {
-      setFeedback({ type: 'error', text: '请选择完整的组合后再同步。' });
-      return;
-    }
-    setTriggeringSync(true);
-    setSyncRunStatus({ state: 'triggering', message: '正在触发 GMV Max 商品同步…' });
-    try {
-      const idempotencyKey = `sync-gmvmax-${Date.now()}`;
-      const payload = {
-        advertiserId: form.advertiserId,
-        storeId: form.storeId,
-        bcId: form.bcId,
-        eligibility: 'gmv_max',
-        mode: 'full',
-        idempotency_key: idempotencyKey,
-      };
-      const response = await triggerProductSync(wid, provider, selectedAuthId, payload);
-      const runId = response?.run_id;
-      const responseIdem = response?.idempotency_key || idempotencyKey;
-
-      if (runId) {
-        setSyncRunStatus({ state: 'triggered', message: `同步任务已提交（运行 #${runId}），正在查询状态…`, runId });
-      } else {
-        setSyncRunStatus({ state: 'triggered', message: '同步任务已提交。' });
-      }
-      setFeedback({ type: 'success', text: responseIdem ? `已触发 GMV Max 商品同步（幂等键 ${responseIdem}）。` : '已触发 GMV Max 商品同步。' });
-
-      if (runId) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        try {
-          const run = await fetchSyncRun(wid, provider, selectedAuthId, runId);
-          const described = describeRunStatus(run);
-          setSyncRunStatus({ ...described, runId, run });
-          if (described.state === 'failed') setFeedback({ type: 'error', text: described.detail || described.message });
-          else if (described.state === 'succeeded') { setFeedback({ type: 'success', text: described.message }); setConfigVersion((prev) => prev + 1); }
-          else setFeedback({ type: 'success', text: described.message });
-        } catch (statusError) {
-          const fallbackMessage = '已提交同步任务，但暂未获取最新状态。';
-          const statusMessage = extractErrorMessage(statusError, fallbackMessage);
-          setSyncRunStatus({
-            state: 'pending',
-            message: `同步任务已提交（运行 #${runId}），暂未获取最新状态。`,
-            detail: statusMessage && statusMessage !== fallbackMessage ? statusMessage : null,
-            runId,
-          });
-        }
-      } else if (response?.status === 'succeeded') {
-        setConfigVersion((prev) => prev + 1);
-      }
-    } catch (error) {
-      let text;
-      if (error?.status === 409) text = '同步进行中，请稍后再试。';
-      else if (error?.status === 429) text = '同步过于频繁，请稍后再试。';
-      else text = extractErrorMessage(error, '同步失败，请稍后再试。');
-      setFeedback({ type: 'error', text });
-      setSyncRunStatus({ state: 'error', message: text });
-    } finally {
-      setTriggeringSync(false);
-    }
-  }
-
-  /** 拉取商品：带 AbortController，结束后写入缓存 */
-  const productsAbortRef = useRef(null);
-  async function handlePullProducts() {
-    if (!wid || !selectedAuthId) return;
-    if (!form.storeId) {
-      setFeedback({ type: 'error', text: '请选择 Store 后再拉取商品。' });
-      return;
-    }
-    // 取消旧请求
-    if (productsAbortRef.current) productsAbortRef.current.abort();
-    const controller = new AbortController();
-    productsAbortRef.current = controller;
-
-    setLoadingProducts(true);
-    try {
-      const data = await fetchProducts(
-        wid, provider, selectedAuthId, form.storeId,
-        {}, { signal: controller.signal }
-      );
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
-      const page = Number.isFinite(Number(data?.page)) ? Number(data.page) : 1;
-      const pageSizeRaw = data?.page_size ?? data?.pageSize;
+  const productsQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'products', form.storeId || '', productsRequestKey],
+    queryFn: ({ signal }) => fetchProducts(
+      wid,
+      provider,
+      selectedAuthId,
+      form.storeId,
+      {},
+      { signal },
+    ),
+    enabled: !!(wid && selectedAuthId && form.storeId && productsRequestKey > 0),
+    select: (response) => {
+      const items = Array.isArray(response?.items) ? response.items : [];
+      const total = Number.isFinite(Number(response?.total)) ? Number(response.total) : items.length;
+      const page = Number.isFinite(Number(response?.page)) ? Number(response.page) : 1;
+      const pageSizeRaw = response?.page_size ?? response?.pageSize;
       const pageSize = Number.isFinite(Number(pageSizeRaw)) ? Number(pageSizeRaw) : items.length || 10;
-
-      const next = { items, total, page, pageSize };
-      setProductsState(next);
-      // ✅ 写入缓存
-      saveProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId, productsState: next });
-
-      if (total === 0 || items.length === 0) setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
-      else {
-        const previewCount = Math.min(items.length, 10);
-        setFeedback({ type: 'success', text: `已拉取 ${total} 条 GMV Max 商品（展示前 ${previewCount} 条）。` });
+      return { items, total, page, pageSize };
+    },
+    onSuccess: (data) => {
+      setProductsSnapshot(data);
+      saveProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId, productsState: data });
+      if (productsRequestRef.current > 0) {
+        if (!data.total || data.items.length === 0) setFeedback({ type: 'info', text: '未找到 GMV Max 商品。' });
+        else {
+          const previewCount = Math.min(data.items.length, 10);
+          setFeedback({ type: 'success', text: `已拉取 ${data.total} 条 GMV Max 商品（展示前 ${previewCount} 条）。` });
+        }
       }
-    } catch (error) {
-      if (error?.name === 'AbortError') return; // 被取消，不提示
-      setProductsState({ items: [], total: 0, page: 1, pageSize: 10 });
+    },
+    onError: (error) => {
+      if (error?.name === 'AbortError') return;
+      setProductsSnapshot(DEFAULT_PRODUCTS_STATE);
       setFeedback({ type: 'error', text: extractErrorMessage(error, '拉取 GMV Max 商品失败，请稍后重试') });
-    } finally {
-      setLoadingProducts(false);
-      productsAbortRef.current = null;
+    },
+  });
+  const loadingProducts = productsQuery.isFetching;
+
+  const storesByAdvertiser = useMemo(() => {
+    const entries = queryClient.getQueriesData({ queryKey: ['gmv-max', wid, selectedAuthId, 'stores'] });
+    const map = {};
+    entries.forEach(([key, value]) => {
+      const advertiserKey = key?.[4];
+      if (!advertiserKey) return;
+      const list = Array.isArray(value) ? value : [];
+      map[String(advertiserKey)] = list;
+    });
+    if (form.advertiserId && !map[String(form.advertiserId)]) {
+      map[String(form.advertiserId)] = stores;
     }
-  }
+    return map;
+  }, [queryClient, wid, selectedAuthId, stores, form.advertiserId]);
 
-  /** 禁用状态 */
-  const disableRefresh = !selectedAuthId || refreshingOptions || optionsLoading;
-  const disableSave =
-    !selectedAuthId || saving || optionsLoading || advertisersLoading || loadingStores
-    || !form.bcId || !form.advertiserId || !form.storeId;
-  const disableManualSync =
-    !selectedAuthId || triggeringSync || optionsLoading || advertisersLoading || loadingStores
-    || !form.bcId || !form.advertiserId || !form.storeId;
-  const disablePullProducts =
-    !selectedAuthId || optionsLoading || advertisersLoading || !form.storeId || loadingProducts || loadingStores;
-
-  const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
-  const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
-  const lastAutoSyncedAt = formatTimestamp(bindingConfig?.last_auto_synced_at);
-  const lastAutoSummaryText = formatSyncSummaryText(bindingConfig?.last_auto_sync_summary);
-
-  const hasBindings = bindings.length > 0;
-
-  /** 选项数据构建（保持你现状） */
   const optionsData = useMemo(() => {
     const safeBc = Array.isArray(businessCenters) ? businessCenters : [];
     const safeAdvertisers = Array.isArray(visibleAdvertisers) ? visibleAdvertisers : [];
     const safeAllAdvertisers = Array.isArray(allAdvertisers) ? allAdvertisers : safeAdvertisers;
     const storeGroups = Object.values(storesByAdvertiser || {});
-    const stores = storeGroups.flat().filter(Boolean);
+    const allStores = storeGroups.flat().filter(Boolean);
     const bcLinks = {};
     safeAllAdvertisers.forEach((item) => {
       const bcId = item?.bc_id ? String(item.bc_id) : '';
@@ -788,7 +578,7 @@ export default function GmvMaxManagementPage() {
       bcs: safeBc,
       advertisers: safeAdvertisers,
       allAdvertisers: safeAllAdvertisers,
-      stores,
+      stores: allStores,
       links: { bc_to_advertisers: bcLinks, advertiser_to_stores: advertiserStoreLinks },
     };
   }, [businessCenters, visibleAdvertisers, allAdvertisers, storesByAdvertiser]);
@@ -797,9 +587,198 @@ export default function GmvMaxManagementPage() {
   const advertiserOptions = useMemo(() => buildAdvertiserOptions(optionsData, form.bcId, form.advertiserId), [optionsData, form.bcId, form.advertiserId]);
   const storeOptions = useMemo(() => buildStoreOptions(optionsData, form.advertiserId, form.storeId, form.bcId), [optionsData, form.advertiserId, form.storeId, form.bcId]);
 
-  /** ---------------------------
-   * 渲染
-   * --------------------------- */
+  function handleBindingChange(evt) {
+    const authId = evt.target.value;
+    setSelectedAuthId(authId);
+    syncUrl({ authId, bcId: '', advertiserId: '', storeId: '' });
+    saveScopeToLS({ wid, authId, bcId: '', advertiserId: '', storeId: '' });
+  }
+  function handleBcChange(evt) {
+    const value = evt.target.value;
+    const next = { ...form, bcId: value, advertiserId: '', storeId: '' };
+    setForm(next);
+    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+  }
+  function handleAdvertiserChange(evt) {
+    const value = evt.target.value;
+    const next = { ...form, advertiserId: value, storeId: '' };
+    setForm(next);
+    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+  }
+  function handleStoreChange(evt) {
+    const value = evt.target.value;
+    const next = { ...form, storeId: value };
+    setForm(next);
+    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+    syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+  }
+  function handleAutoSyncToggle(evt) {
+    const checked = evt.target.checked;
+    const next = { ...form, autoSyncProducts: checked };
+    setForm(next);
+    saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
+  }
+
+  const handleRefresh = useCallback(async () => {
+    if (!wid || !selectedAuthId) return;
+    optionsRefreshRef.current = true;
+    setRefreshingOptions(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gmv-max', wid, selectedAuthId, 'options'] }),
+        queryClient.invalidateQueries({ queryKey: ['gmv-max', wid, selectedAuthId, 'business-centers'] }),
+        queryClient.invalidateQueries({ queryKey: ['gmv-max', wid, selectedAuthId, 'advertisers'] }),
+      ]);
+    } catch (error) {
+      setRefreshingOptions(false);
+      optionsRefreshRef.current = false;
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '刷新失败，请稍后重试') });
+    }
+  }, [queryClient, selectedAuthId, wid]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload) => saveBindingConfig(wid, provider, selectedAuthId, payload),
+    onSuccess: () => {
+      setFeedback({ type: 'success', text: '已保存激活组合。' });
+      setConfigVersion((prev) => prev + 1);
+      queryClient.invalidateQueries({ queryKey: ['gmv-max', wid, selectedAuthId, 'config'] });
+    },
+    onError: (error) => {
+      setFeedback({ type: 'error', text: extractErrorMessage(error, '保存失败，请检查选择是否一致') });
+    },
+  });
+  const saving = saveMutation.isPending;
+
+  async function handleSave(evt) {
+    evt.preventDefault();
+    if (!wid || !selectedAuthId) return;
+    if (!form.bcId || !form.advertiserId || !form.storeId) {
+      setFeedback({ type: 'error', text: '请选择 Business Center、Advertiser 与 Store 后再保存。' });
+      return;
+    }
+    try {
+      await saveMutation.mutateAsync({
+        bc_id: form.bcId,
+        advertiser_id: form.advertiserId,
+        store_id: form.storeId,
+        auto_sync_products: !!form.autoSyncProducts,
+      });
+    } catch (_) {
+      /* handled via onError */
+    }
+  }
+
+  const triggerSyncMutation = useMutation({
+    mutationFn: (payload) => triggerProductSync(wid, provider, selectedAuthId, payload),
+    onError: (error) => {
+      let text;
+      if (error?.status === 409) text = '同步进行中，请稍后再试。';
+      else if (error?.status === 429) text = '同步过于频繁，请稍后再试。';
+      else text = extractErrorMessage(error, '同步失败，请稍后再试。');
+      setFeedback({ type: 'error', text });
+      setSyncRunStatus({ state: 'error', message: text });
+    },
+  });
+  const triggeringSync = triggerSyncMutation.isPending;
+
+  useEffect(() => {
+    if (!syncRunId) setSyncRunToken(0);
+  }, [syncRunId]);
+
+  const syncRunQuery = useQuery({
+    queryKey: ['gmv-max', wid, selectedAuthId, 'sync-run', syncRunId || '', syncRunToken],
+    queryFn: ({ signal }) => fetchSyncRun(wid, provider, selectedAuthId, syncRunId, { signal }),
+    enabled: !!(wid && selectedAuthId && syncRunId && syncRunToken > 0),
+    retry: false,
+    onSuccess: (run) => {
+      const described = describeRunStatus(run);
+      setSyncRunStatus({ ...described, runId: syncRunId, run });
+      if (described.state === 'failed') setFeedback({ type: 'error', text: described.detail || described.message });
+      else if (described.state === 'succeeded') {
+        setFeedback({ type: 'success', text: described.message });
+        setConfigVersion((prev) => prev + 1);
+      } else setFeedback({ type: 'success', text: described.message });
+    },
+    onError: (error) => {
+      const fallbackMessage = '已提交同步任务，但暂未获取最新状态。';
+      const statusMessage = extractErrorMessage(error, fallbackMessage);
+      setSyncRunStatus({
+        state: 'pending',
+        message: syncRunId ? `同步任务已提交（运行 #${syncRunId}），暂未获取最新状态。` : fallbackMessage,
+        detail: statusMessage && statusMessage !== fallbackMessage ? statusMessage : null,
+        runId: syncRunId,
+      });
+    },
+  });
+
+  async function handleProductSync() {
+    if (!wid || !selectedAuthId) return;
+    if (!form.bcId || !form.advertiserId || !form.storeId) {
+      setFeedback({ type: 'error', text: '请选择完整的组合后再同步。' });
+      return;
+    }
+    const idempotencyKey = `sync-gmvmax-${Date.now()}`;
+    setSyncRunStatus({ state: 'triggering', message: '正在触发 GMV Max 商品同步…' });
+    let response;
+    try {
+      response = await triggerSyncMutation.mutateAsync({
+        advertiserId: form.advertiserId,
+        storeId: form.storeId,
+        bcId: form.bcId,
+        eligibility: 'gmv_max',
+        mode: 'full',
+        idempotency_key: idempotencyKey,
+      });
+    } catch (_) {
+      return;
+    }
+    if (!response) return;
+    const runId = response?.run_id;
+    const responseIdem = response?.idempotency_key || idempotencyKey;
+
+    if (runId) {
+      setSyncRunId(runId);
+      setSyncRunStatus({ state: 'triggered', message: `同步任务已提交（运行 #${runId}），正在查询状态…`, runId });
+      if (syncRunTimerRef.current) clearTimeout(syncRunTimerRef.current);
+      syncRunTimerRef.current = setTimeout(() => {
+        setSyncRunToken((prev) => prev + 1);
+      }, 1200);
+    } else {
+      setSyncRunId(null);
+      if (response?.status === 'succeeded') setConfigVersion((prev) => prev + 1);
+      setSyncRunStatus({ state: 'triggered', message: '同步任务已提交。' });
+    }
+    setFeedback({ type: 'success', text: responseIdem ? `已触发 GMV Max 商品同步（幂等键 ${responseIdem}）。` : '已触发 GMV Max 商品同步。' });
+  }
+
+  function handlePullProducts() {
+    if (!wid || !selectedAuthId) return;
+    if (!form.storeId) {
+      setFeedback({ type: 'error', text: '请选择 Store 后再拉取商品。' });
+      return;
+    }
+    setProductsRequestKey((prev) => prev + 1);
+  }
+
+  const disableRefresh = !selectedAuthId || refreshingOptions || optionsQuery.isFetching;
+  const disableSave =
+    !selectedAuthId || saving || optionsQuery.isFetching || advertisersLoading || loadingStores
+    || !form.bcId || !form.advertiserId || !form.storeId;
+  const disableManualSync =
+    !selectedAuthId || triggeringSync || optionsQuery.isFetching || advertisersLoading || loadingStores
+    || !form.bcId || !form.advertiserId || !form.storeId;
+  const disablePullProducts =
+    !selectedAuthId || optionsQuery.isFetching || advertisersLoading || !form.storeId || loadingProducts || loadingStores;
+
+  const lastManualSyncedAt = formatTimestamp(bindingConfig?.last_manual_synced_at);
+  const lastManualSummaryText = formatSyncSummaryText(bindingConfig?.last_manual_sync_summary);
+  const lastAutoSyncedAt = formatTimestamp(bindingConfig?.last_auto_synced_at);
+  const lastAutoSummaryText = formatSyncSummaryText(bindingConfig?.last_auto_sync_summary);
+
+  const hasBindings = bindings.length > 0;
+
   return (
     <div className="gmv-max-page">
       <div className="page-header">
@@ -843,7 +822,7 @@ export default function GmvMaxManagementPage() {
           </FormField>
 
           <FormField label="Advertiser">
-            <select className="form-input" value={form.advertiserId} onChange={handleAdvertiserChange} disabled={!selectedAuthId || optionsLoading || advertisersLoading}>
+            <select className="form-input" value={form.advertiserId} onChange={handleAdvertiserChange} disabled={!selectedAuthId || optionsQuery.isFetching || advertisersLoading}>
               <option value="">请选择 Advertiser</option>
               {advertiserOptions.map((item, idx) => {
                 const value = item?.advertiser_id ? String(item.advertiser_id) : '';
@@ -851,11 +830,11 @@ export default function GmvMaxManagementPage() {
                 return <option key={value || `missing-adv-${idx}`} value={value}>{label}</option>;
               })}
             </select>
-            {(optionsLoading || advertisersLoading) && <div className="small-muted">加载 Advertiser...</div>}
+            {(optionsQuery.isFetching || advertisersLoading) && <div className="small-muted">加载 Advertiser...</div>}
           </FormField>
 
           <FormField label="Store">
-            <select className="form-input" value={form.storeId} onChange={handleStoreChange} disabled={!selectedAuthId || !form.advertiserId || optionsLoading || loadingStores}>
+            <select className="form-input" value={form.storeId} onChange={handleStoreChange} disabled={!selectedAuthId || !form.advertiserId || optionsQuery.isFetching || loadingStores}>
               <option value="">请选择 Store</option>
               {storeOptions.map((item, idx) => {
                 const value = item?.store_id ? String(item.store_id) : '';
@@ -872,7 +851,7 @@ export default function GmvMaxManagementPage() {
                 return <option key={value || `missing-store-${idx}`} value={value}>{label}</option>;
               })}
             </select>
-            {(optionsLoading || loadingStores) && <div className="small-muted">加载 Store...</div>}
+            {(optionsQuery.isFetching || loadingStores) && <div className="small-muted">加载 Store...</div>}
           </FormField>
         </div>
 
@@ -913,18 +892,18 @@ export default function GmvMaxManagementPage() {
       <div className="card" style={{ display: 'grid', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <h3 style={{ margin: 0 }}>GMV Max 商品</h3>
-          <div className="small-muted">当前共 {productsState.total || 0} 条</div>
+          <div className="small-muted">当前共 {productsSnapshot.total || 0} 条</div>
         </div>
 
-        {productsState.items.length === 0 ? (
+        {productsSnapshot.items.length === 0 ? (
           <div className="small-muted">
             {loadingProducts ? '正在拉取 GMV Max 商品…' : (form.storeId ? '暂无缓存，请点击“拉取 GMV Max 商品”。' : '请选择 Store 并点击“拉取 GMV Max 商品”查看列表。')}
           </div>
         ) : (
           <div className="product-preview" style={{ display: 'grid', gap: '6px' }}>
-            <div className="small-muted">展示前 {Math.min(productsState.items.length, 10)} 条（共 {productsState.total} 条）</div>
+            <div className="small-muted">展示前 {Math.min(productsSnapshot.items.length, 10)} 条（共 {productsSnapshot.total} 条）</div>
             <ol className="product-preview__list" style={{ paddingLeft: '18px', margin: 0, display: 'grid', gap: '8px' }}>
-              {productsState.items.slice(0, 10).map((item, idx) => {
+              {productsSnapshot.items.slice(0, 10).map((item, idx) => {
                 const pid = item?.product_id ? String(item.product_id) : '';
                 const title = resolveProductTitle(item) || pid || `商品 ${idx + 1}`;
                 const status = item?.status ? String(item.status) : '';
@@ -952,4 +931,3 @@ export default function GmvMaxManagementPage() {
     </div>
   );
 }
-

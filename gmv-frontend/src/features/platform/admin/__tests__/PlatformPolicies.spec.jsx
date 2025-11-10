@@ -1,5 +1,6 @@
 import { describe, expect, beforeEach, vi, it } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -43,12 +44,21 @@ const policyFixtures = [
 ]
 
 function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
   return render(
-    <MemoryRouter initialEntries={["/"]}>
-      <Routes>
-        <Route path="/" element={<PlatformPolicies />} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<PlatformPolicies />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -145,7 +155,7 @@ describe('PlatformPolicies page', () => {
     renderPage()
     await waitFor(() => expect(listPolicies).toHaveBeenCalled())
 
-    const toggleButton = screen.getByRole('button', { name: '停用' })
+    const toggleButton = await screen.findByRole('button', { name: '停用' })
     await userEvent.click(toggleButton)
 
     await waitFor(() => expect(togglePolicy).toHaveBeenCalledWith(1, false))
@@ -158,7 +168,8 @@ describe('PlatformPolicies page', () => {
     renderPage()
     await waitFor(() => expect(listPolicies).toHaveBeenCalled())
 
-    await userEvent.click(screen.getByRole('button', { name: '测试' }))
+    const dryRunButton = await screen.findByRole('button', { name: '测试' })
+    await userEvent.click(dryRunButton)
     const modal = await screen.findByRole('dialog')
     await userEvent.clear(within(modal).getByLabelText('测试域名'))
     await userEvent.type(within(modal).getByLabelText('测试域名'), 'dryrun.example.com')

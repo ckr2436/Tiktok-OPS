@@ -1,5 +1,6 @@
 // src/features/tenants/users/pages/UserList.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import { listTenantUsers, getTenantMeta, updateTenantUser } from '../service'
@@ -29,43 +30,35 @@ export default function UserList() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [size] = useState(20)
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [err, setErr] = useState('')
-  const [companyName, setCompanyName] = useState(`公司 ${wid || ''}`)
+  const queryClient = useQueryClient()
 
+  const metaQuery = useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: Boolean(wid),
+  })
+
+  const usersQueryKey = ['tenant-users', wid, { q, page, size }]
+  const usersQuery = useQuery({
+    queryKey: usersQueryKey,
+    queryFn: () => listTenantUsers({ wid, q, page, size }),
+    enabled: Boolean(wid),
+    keepPreviousData: true,
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ userId, patch }) => updateTenantUser(wid, userId, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
+    },
+  })
+
+  const rows = Array.isArray(usersQuery.data?.items) ? usersQuery.data.items : []
+  const total = usersQuery.data?.total ?? 0
+  const loading = usersQuery.isLoading || usersQuery.isFetching
+  const err = usersQuery.error instanceof Error ? usersQuery.error.message : (usersQuery.error?.message || '')
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
-
-  useEffect(() => {
-    let abort = false
-    async function loadMeta() {
-      if (!wid) return
-      try {
-        const meta = await getTenantMeta(wid)
-        if (!abort && meta?.name) setCompanyName(meta.name)
-      } catch {
-        if (!abort) setCompanyName(`公司 ${wid}`)
-      }
-    }
-    loadMeta()
-    return () => { abort = true }
-  }, [wid])
-
-  async function load() {
-    if (!wid) return
-    setLoading(true); setErr('')
-    try {
-      const data = await listTenantUsers({ wid, q, page, size })
-      setRows(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      setErr(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [wid, q, page, size])
+  const companyName = metaQuery.data?.name || `公司 ${wid || ''}`
 
   function canToggleActive(t) {
     if (!t) return false
@@ -76,10 +69,11 @@ export default function UserList() {
   async function onToggleActive(target) {
     if (!canToggleActive(target)) return
     try {
-      const updated = await updateTenantUser(wid, target.id, { is_active: !target.is_active })
-      setRows(list => list.map(x => x.id === target.id ? { ...x, ...updated } : x))
+      await updateMutation.mutateAsync({ userId: target.id, patch: { is_active: !target.is_active } })
     } catch (e) { alert(e?.message || '切换状态失败') }
   }
+
+  const togglingId = updateMutation.isPending ? updateMutation.variables?.userId : null
 
   return (
     <div className="card card--elevated">
@@ -124,16 +118,20 @@ export default function UserList() {
               <tr><td colSpan={6} style={{padding:18, color:'var(--muted)'}}>暂无数据</td></tr>
             ) : rows.map(r => (
               <tr key={r.id} style={{borderTop:'1px solid var(--border)'}}>
-                <Td>{r.display_name || <span className="small-muted">（未设置）</span>}</Td>
-                <Td>{r.username || <span className="small-muted">（未设置）</span>}</Td>
-                <Td mono>{r.usercode}</Td>
-                <Td><RoleBadgeCN role={r.role} /></Td>
-                <Td>
-                  <div style={{display:'flex', alignItems:'center', gap:8}}>
-                    <Switch checked={!!r.is_active} disabled={!canToggleActive(r)} onToggle={() => onToggleActive(r)} />
+            <Td>{r.display_name || <span className="small-muted">（未设置）</span>}</Td>
+            <Td>{r.username || <span className="small-muted">（未设置）</span>}</Td>
+            <Td mono>{r.usercode}</Td>
+            <Td><RoleBadgeCN role={r.role} /></Td>
+            <Td>
+              <div style={{display:'flex', alignItems:'center', gap:8}}>
+                    <Switch
+                      checked={!!r.is_active}
+                      disabled={!canToggleActive(r) || togglingId === r.id}
+                      onToggle={() => onToggleActive(r)}
+                    />
                     <span className="small-muted">{r.is_active ? '启用' : '停用'}</span>
-                  </div>
-                </Td>
+              </div>
+            </Td>
                 <Td>
                   <div className="table-actions">
                     <Link className="btn sm ghost" to={`/tenants/${wid}/users/${r.id}`}>编辑</Link>

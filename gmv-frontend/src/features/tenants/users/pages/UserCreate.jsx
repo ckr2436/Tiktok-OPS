@@ -1,5 +1,6 @@
 // src/features/tenants/users/pages/UserCreate.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import FormField from '../../../../components/ui/FormField.jsx'
@@ -25,17 +26,12 @@ export default function UserCreate() {
   const { wid } = useParams()
   const { isOwner, isAdmin } = useMyRole()
 
-  const [metaName, setMetaName] = useState(`公司 ${wid || ''}`)
-  useEffect(() => {
-    let abort = false
-    ;(async () => {
-      try {
-        const m = await getTenantMeta(wid)
-        if (!abort && m?.name) setMetaName(m.name)
-      } catch {}
-    })()
-    return () => { abort = true }
-  }, [wid])
+  const queryClient = useQueryClient()
+  const metaQuery = useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: Boolean(wid),
+  })
 
   const noPerm = !(isOwner || isAdmin)
 
@@ -44,8 +40,14 @@ export default function UserCreate() {
   const [role, setRole] = useState('member')
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
+
+  const createMutation = useMutation({
+    mutationFn: (payload) => createTenantUser(wid, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
+    },
+  })
 
   useEffect(() => {
     if (!email || username) return
@@ -58,9 +60,9 @@ export default function UserCreate() {
   async function onSubmit(e) {
     e.preventDefault()
     if (noPerm || !canSubmit) return
-    setSubmitting(true); setErr('')
+    setErr('')
     try {
-      await createTenantUser(wid, {
+      await createMutation.mutateAsync({
         email, password, role,
         display_name: displayName || null,
         username: username || null,
@@ -70,15 +72,13 @@ export default function UserCreate() {
     } catch (e) {
       const code = e?.payload?.error?.code
       setErr(code === 'EMAIL_EXISTS' ? '该邮箱已存在，请更换' : (e?.message || '创建失败'))
-    } finally {
-      setSubmitting(false)
     }
   }
 
   return (
     <div className="card card--elevated" style={{maxWidth: 760}}>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-        <h3 style={{margin:0}}>新增成员（{metaName}）</h3>
+        <h3 style={{margin:0}}>新增成员（{metaQuery.data?.name || `公司 ${wid || ''}` }）</h3>
         <Link className="btn ghost" to={`/tenants/${wid}/users`}>返回列表</Link>
       </div>
 
@@ -109,7 +109,7 @@ export default function UserCreate() {
         </div>
 
         <div className="actions" style={{marginTop:12}}>
-          <button className="btn" disabled={noPerm || !canSubmit || submitting}>{submitting ? '创建中…' : '创建'}</button>
+          <button className="btn" disabled={noPerm || !canSubmit || createMutation.isPending}>{createMutation.isPending ? '创建中…' : '创建'}</button>
           <Link className="btn ghost" to={`/tenants/${wid}/users`}>取消</Link>
         </div>
       </form>

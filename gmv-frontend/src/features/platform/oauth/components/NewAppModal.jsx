@@ -1,5 +1,6 @@
 // src/features/platform/oauth/components/NewAppModal.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import Modal from '../../../../components/ui/Modal.jsx'
 import { upsertProviderApp } from '../../oauth/service.js'
 import { useAppSelector } from '../../../../app/hooks.js'
@@ -34,8 +35,25 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
   const [rotateSecret, setRotateSecret] = useState(false)
   const [clientSecret, setClientSecret] = useState('')
 
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: upsertProviderApp,
+    onSuccess: (data) => {
+      onSaved?.(data)
+      onClose?.()
+    },
+    onError: (err) => {
+      const api = err?.response?.data
+      const msg =
+        api?.detail?.message ||
+        api?.detail ||
+        api?.message ||
+        err?.message ||
+        '提交失败'
+      setError(msg)
+    },
+  })
 
   useEffect(() => {
     if (open) {
@@ -55,7 +73,6 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
         setRotateSecret(true) // 创建时必须填 secret，默认展开
         setClientSecret('')
       }
-      setSubmitting(false)
       setError('')
     }
   }, [open, isEdit, initial])
@@ -80,38 +97,23 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
 
   async function handleSubmit(e) {
     e?.preventDefault?.()
-    if (!canSubmit || submitting) return
-    setSubmitting(true)
+    if (!canSubmit || mutation.isPending) return
     setError('')
+    const payload = {
+      name,
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      is_enabled: enabled,
+    }
+    if (isEdit) {
+      payload.client_secret = rotateSecret ? clientSecret : null
+    } else {
+      payload.client_secret = clientSecret
+    }
     try {
-      const payload = {
-        name,
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        is_enabled: enabled,
-      }
-      if (isEdit) {
-        // 编辑：只有勾选了才携带 client_secret，否则置为 null 表示不变
-        payload.client_secret = rotateSecret ? clientSecret : null
-      } else {
-        // 创建：必须携带 client_secret
-        payload.client_secret = clientSecret
-      }
-
-      const data = await upsertProviderApp(payload)
-      onSaved?.(data)
-      onClose?.()
-    } catch (err) {
-      const api = err?.response?.data
-      const msg =
-        api?.detail?.message ||
-        api?.detail ||
-        api?.message ||
-        err?.message ||
-        '提交失败'
-      setError(msg)
-    } finally {
-      setSubmitting(false)
+      await mutation.mutateAsync(payload)
+    } catch {
+      // 错误已在 onError 中处理
     }
   }
 
@@ -133,7 +135,7 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
             required
             minLength={2}
             maxLength={128}
-            disabled={!canOperate || submitting}
+            disabled={!canOperate || mutation.isPending}
           />
         </Field>
 
@@ -146,7 +148,7 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
             required
             minLength={4}
             maxLength={128}
-            disabled={!canOperate || submitting /* 强烈建议编辑时不要允许修改 Client ID；如需允许，移除此禁用 */}
+            disabled={!canOperate || mutation.isPending /* 强烈建议编辑时不要允许修改 Client ID；如需允许，移除此禁用 */}
           />
         </Field>
 
@@ -159,12 +161,12 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
             required
             maxLength={512}
             inputMode="url"
-            disabled={!canOperate || submitting}
+            disabled={!canOperate || mutation.isPending}
           />
         </Field>
 
-        <label className="checkbox" style={{marginTop:2}}>
-          <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} disabled={!canOperate || submitting} />
+          <label className="checkbox" style={{marginTop:2}}>
+          <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} disabled={!canOperate || mutation.isPending} />
           <span>Enabled</span>
         </label>
 
@@ -172,7 +174,7 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
         {isEdit ? (
           <>
             <label className="checkbox" style={{marginTop:4}}>
-              <input type="checkbox" checked={rotateSecret} onChange={e=>setRotateSecret(e.target.checked)} disabled={!canOperate || submitting}/>
+              <input type="checkbox" checked={rotateSecret} onChange={e=>setRotateSecret(e.target.checked)} disabled={!canOperate || mutation.isPending}/>
               <span>更换 Client Secret</span>
             </label>
             {rotateSecret && (
@@ -187,7 +189,7 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
                   minLength={8}
                   maxLength={512}
                   autoComplete="new-password"
-                  disabled={!canOperate || submitting}
+                  disabled={!canOperate || mutation.isPending}
                 />
               </Field>
             )}
@@ -204,7 +206,7 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
               minLength={8}
               maxLength={512}
               autoComplete="new-password"
-              disabled={!canOperate || submitting}
+              disabled={!canOperate || mutation.isPending}
             />
           </Field>
         )}
@@ -212,9 +214,9 @@ export default function NewAppModal({ open, onClose, onSaved, mode = 'create', i
         {error && <div className="alert alert--error">{error}</div>}
 
         <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:8}}>
-          <button type="button" className="btn ghost" onClick={onClose} disabled={submitting}>取消</button>
-          <button type="submit" className="btn" disabled={!canSubmit || submitting}>
-            {submitting ? '提交中…' : (isEdit ? '保存修改' : '创建')}
+          <button type="button" className="btn ghost" onClick={onClose} disabled={mutation.isPending}>取消</button>
+          <button type="submit" className="btn" disabled={!canSubmit || mutation.isPending}>
+            {mutation.isPending ? '提交中…' : (isEdit ? '保存修改' : '创建')}
           </button>
         </div>
       </form>

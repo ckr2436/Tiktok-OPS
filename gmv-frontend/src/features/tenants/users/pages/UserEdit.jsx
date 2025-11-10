@@ -1,5 +1,6 @@
 // src/features/tenants/users/pages/UserEdit.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import FormField from '../../../../components/ui/FormField.jsx'
@@ -55,9 +56,6 @@ export default function UserEdit() {
   const { isOwner, isAdmin } = useMyRole()
 
   const [metaName, setMetaName] = useState(`公司 ${wid || ''}`)
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState('')
-
   const [id, setId] = useState(null)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('member')
@@ -65,7 +63,34 @@ export default function UserEdit() {
   const [username, setUsername] = useState('')
   const [isActive, setIsActive] = useState(true)
 
-  // 权限判断（只控制 UI 是否可点，真正权限后端再校验）
+  const queryClient = useQueryClient()
+
+  useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: Boolean(wid),
+    onSuccess: (meta) => {
+      if (meta?.name) setMetaName(meta.name)
+    },
+  })
+
+  const userQuery = useQuery({
+    queryKey: ['tenant-user', wid, uid],
+    queryFn: () => getTenantUser(wid, uid),
+    enabled: Boolean(wid && uid),
+  })
+
+  useEffect(() => {
+    const user = userQuery.data
+    if (!user) return
+    setId(user.id)
+    setEmail(user.email)
+    setRole(user.role)
+    setDisplayName(user.display_name || '')
+    setUsername(user.username || '')
+    setIsActive(!!user.is_active)
+  }, [userQuery.data])
+
   const canEdit = useMemo(
     () => role !== 'owner' && (isOwner || (isAdmin && role === 'member')),
     [isOwner, isAdmin, role],
@@ -81,67 +106,46 @@ export default function UserEdit() {
   const canDelete = canToggleActive
   const canResetPwd = canToggleActive
 
-  useEffect(() => {
-    let abort = false
-    ;(async () => {
-      try {
-        const m = await getTenantMeta(wid)
-        if (!abort && m?.name) setMetaName(m.name)
-      } catch {
-        // 忽略
-      }
-    })()
-    return () => {
-      abort = true
-    }
-  }, [wid])
-
-  useEffect(() => {
-    let abort = false
-    ;(async () => {
-      setLoading(true)
-      setErr('')
-      try {
-        const u = await getTenantUser(wid, uid)
-        if (abort) return
-        setId(u.id)
-        setEmail(u.email)
-        setRole(u.role)
-        setDisplayName(u.display_name || '')
-        setUsername(u.username || '')
-        setIsActive(!!u.is_active)
-      } catch (e) {
-        if (!abort) setErr(e?.message || '加载失败')
-      } finally {
-        if (!abort) setLoading(false)
-      }
-    })()
-    return () => {
-      abort = true
-    }
-  }, [wid, uid])
-
-  async function onSave() {
-    if (!id) return
-
-    // ★ 总是携带 role / is_active，后端自行校验权限并决定是否生效
-    const patch = {
-      display_name: displayName || null,
-      username: username || null,
-      role,              // 'admin' | 'member'
-      is_active: isActive,
-    }
-
-    try {
-      const updated = await updateTenantUser(wid, id, patch)
+  const updateMutation = useMutation({
+    mutationFn: (patch) => updateTenantUser(wid, id, patch),
+    onSuccess: (updated) => {
       setRole(updated.role)
       setDisplayName(updated.display_name || '')
       setUsername(updated.username || '')
       setIsActive(!!updated.is_active)
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
       alert('已保存')
-    } catch (e) {
+    },
+    onError: (e) => {
       alert(e?.message || '保存失败')
+    },
+  })
+
+  const resetMutation = useMutation({
+    mutationFn: (password) => resetTenantUserPassword(wid, id, password),
+    onSuccess: () => alert('密码已重置'),
+    onError: (e) => alert(e?.message || '重置失败'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTenantUser(wid, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-users', wid] })
+      alert('已删除')
+      nav(`/tenants/${wid}/users`, { replace: true })
+    },
+    onError: (e) => alert(e?.message || '删除失败'),
+  })
+
+  async function onSave() {
+    if (!id) return
+    const patch = {
+      display_name: displayName || null,
+      username: username || null,
+      role,
+      is_active: isActive,
     }
+    await updateMutation.mutateAsync(patch)
   }
 
   async function onResetPwd() {
@@ -149,25 +153,18 @@ export default function UserEdit() {
     const np = prompt('输入新密码（至少8位）：')
     if (np === null) return
     if (!np || np.length < 8) return alert('密码长度不足 8 位')
-    try {
-      await resetTenantUserPassword(wid, id, np)
-      alert('密码已重置')
-    } catch (e) {
-      alert(e?.message || '重置失败')
-    }
+    await resetMutation.mutateAsync(np)
   }
 
   async function onDelete() {
     if (!id || !canDelete) return
     if (!confirm(`确定删除成员「${username || email}」吗？`)) return
-    try {
-      await deleteTenantUser(wid, id)
-      alert('已删除')
-      nav(`/tenants/${wid}/users`, { replace: true })
-    } catch (e) {
-      alert(e?.message || '删除失败')
-    }
+    await deleteMutation.mutateAsync()
   }
+
+  const loadError = userQuery.error instanceof Error
+    ? userQuery.error
+    : (userQuery.error?.message ? new Error(userQuery.error.message) : null)
 
   return (
     <div className="card card--elevated" style={{ maxWidth: 760 }}>
@@ -185,13 +182,13 @@ export default function UserEdit() {
         </Link>
       </div>
 
-      {err && (
+      {loadError && (
         <div className="alert alert--error" style={{ marginBottom: 10 }}>
-          {err}
+          {loadError.message}
         </div>
       )}
 
-      {loading ? (
+      {userQuery.isLoading ? (
         <div className="card">加载中…</div>
       ) : (
         <>
@@ -201,11 +198,7 @@ export default function UserEdit() {
             </FormField>
 
             <FormField label="角色">
-              <RoleSeg
-                value={role}
-                onChange={setRole}
-                disabled={!canChangeRole}
-              />
+              <RoleSeg value={role} onChange={setRole} disabled={!canChangeRole} />
               {!canChangeRole && (
                 <div className="small-muted" style={{ marginTop: 6 }}>
                   仅 owner 可修改角色
@@ -236,45 +229,29 @@ export default function UserEdit() {
                 <Switch
                   checked={!!isActive}
                   disabled={!canToggleActive}
-                  onToggle={() => setIsActive(v => !v)}
+                  onToggle={() => canToggleActive && setIsActive(v => !v)}
                 />
-                <span className="small-muted">
-                  {isActive ? '启用' : '停用'}
-                </span>
+                <span className="small-muted">{isActive ? '启用' : '停用'}</span>
               </div>
             </FormField>
           </div>
 
-          <div
-            className="actions"
-            style={{
-              marginTop: 12,
-              display: 'flex',
-              gap: 8,
-              flexWrap: 'wrap',
-            }}
-          >
-            <button
-              className="btn"
-              onClick={onSave}
-              disabled={!canEdit && !canChangeRole && !canToggleActive}
-            >
-              保存
+          <div className="form__actions" style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="btn" onClick={onSave} disabled={!canEdit}>
+              {updateMutation.isPending ? '保存中…' : '保存'}
             </button>
-            {canResetPwd && (
-              <button className="btn ghost" onClick={onResetPwd}>
-                重置密码
-              </button>
-            )}
-            {canDelete && (
-              <button className="btn danger" onClick={onDelete}>
-                删除成员
-              </button>
-            )}
+            <button className="btn ghost" onClick={() => nav(`/tenants/${wid}/users`)}>
+              返回列表
+            </button>
+            <button className="btn ghost" onClick={onResetPwd} disabled={!canResetPwd}>
+              {resetMutation.isPending ? '重置中…' : '重置密码'}
+            </button>
+            <button className="btn danger" onClick={onDelete} disabled={!canDelete}>
+              {deleteMutation.isPending ? '删除中…' : '删除成员'}
+            </button>
           </div>
         </>
       )}
     </div>
   )
 }
-
