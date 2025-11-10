@@ -1258,27 +1258,6 @@ export default function GmvMaxManagementPage() {
               );
             })}
           </div>
-        ))}
-
-        {hasProductItems && productItems.length > productPreviewLimit && (
-          <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
-        )}
-        {productFilteredOut > 0 && productsQueryEnabled && (
-          <div className="small-muted">已自动过滤 {productFilteredOut} 条不可用商品。</div>
-        )}
-
-        {hasProductItems && productItems.length > productPreviewLimit && (
-          <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
-        )}
-        {productFilteredOut > 0 && productsQueryEnabled && (
-          <div className="small-muted">已自动过滤 {productFilteredOut} 条不可用商品。</div>
-        )}
-
-        {hasProductItems && productItems.length > productPreviewLimit && (
-          <div className="small-muted">已展示前 {productPreviewLimit} 条，可用总数 {productAvailableCount} 条。</div>
-        )}
-        {productFilteredOut > 0 && productsQueryEnabled && (
-          <div className="small-muted">已自动过滤 {productFilteredOut} 条不可用商品。</div>
         )}
 
         {hasProductItems && productItems.length > productPreviewLimit && (
