@@ -107,8 +107,21 @@ export async function hardDeleteBinding(wid, auth_id) {
 }
 
 /* ---------- 广告主相关（只读 + 设置主） ---------- */
-export async function advertisersOf(wid, auth_id) {
-  return apiGet(`${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}/advertisers`);
+export async function advertisersOf(
+  wid,
+  auth_id,
+  provider = 'tiktok-business',
+  params = {},
+  options = {}
+) {
+  const url = appendQuery(
+    `${accountsPrefix(wid, provider)}/${encodeURIComponent(auth_id)}/advertisers`,
+    params,
+  );
+  const data = await apiGet(url, options);
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data)) return data;
+  return [];
 }
 
 export async function setPrimary(wid, auth_id, advertiser_id) {
