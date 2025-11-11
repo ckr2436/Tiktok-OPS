@@ -81,6 +81,21 @@ def get_binding_config(db: Session, *, workspace_id: int, auth_id: int) -> Optio
         raise  # pragma: no cover - _handle_missing_table always raises
 
 
+def get_default_advertiser_for_auth(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+) -> Optional[str]:
+    """Return the advertiser_id configured for the given workspace/auth binding."""
+    row = get_binding_config(db, workspace_id=workspace_id, auth_id=auth_id)
+    if row and row.advertiser_id:
+        value = str(row.advertiser_id).strip()
+        if value:
+            return value
+    return None
+
+
 def _build_auto_options(
     *, bc_id: Optional[str], advertiser_id: Optional[str], store_id: Optional[str]
 ) -> Dict[str, Any]:

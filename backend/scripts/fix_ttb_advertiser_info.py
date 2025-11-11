@@ -31,8 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.data.db import get_db
 from app.data.models.ttb_entities import TTBAdvertiser, TTBBCAdvertiserLink
-from app.services.oauth_ttb import get_access_token_plain
-from app.services.ttb_api import TTBApiClient
+from app.services.ttb_client_factory import build_ttb_client
 from app.services.ttb_sync import TTBSyncService
 
 
@@ -102,8 +101,7 @@ async def _repair_account(
     advertiser_ids: Iterable[str],
     qps: float,
 ) -> dict:
-    token, _ = get_access_token_plain(session, int(auth_id))
-    client = TTBApiClient(access_token=token, qps=float(qps))
+    client = build_ttb_client(session, int(auth_id), qps=float(qps))
     service = TTBSyncService(session, client, workspace_id=workspace_id, auth_id=auth_id)
     try:
         stats = await service.repair_advertisers(advertiser_ids=advertiser_ids)
@@ -204,7 +202,7 @@ def _backfill_bc_from_links(
     return updated
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description="Repair TikTok Business advertisers missing name/timezone/bc_id by refetching advertiser info.",
     )
@@ -226,7 +224,7 @@ def main() -> None:
             return
 
         print(f"Found {len(targets)} account(s) with advertisers to repair.")
-        loop_results = asyncio.run(_run_repairs(session, targets, qps=args.qps))
+        loop_results = await _run_repairs(session, targets, qps=args.qps)
 
         repaired_accounts = 0
         repaired_advertisers = 0
@@ -252,4 +250,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

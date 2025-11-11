@@ -29,6 +29,53 @@ MIN_INTERVAL = int(getattr(settings, "SCHEDULE_MIN_INTERVAL_SECONDS", 60))
 DB_REFRESH_SECS = int(getattr(settings, "CELERY_BEAT_DB_REFRESH_SECS", 15))
 BATCH_LIMIT = 500  # 一次扫描的计划数量上限
 
+_GMVMAX_TASKS = {
+    "gmvmax.sync_campaigns",
+    "gmvmax.sync_metrics",
+    "gmvmax.apply_action",
+}
+
+
+def _isoformat(dt: datetime) -> str:
+    return dt.replace(microsecond=0).isoformat()
+
+
+def _build_gmvmax_kwargs(row: Schedule, idem: str, now_utc: datetime) -> dict:
+    params = dict(row.params_json or {})
+    kwargs = dict(params)
+    kwargs.setdefault("workspace_id", int(row.workspace_id))
+    kwargs.setdefault("schedule_id", int(row.id))
+    kwargs.setdefault("idempotency_key", idem)
+
+    task_name = row.task_name
+
+    if task_name == "gmvmax.sync_campaigns":
+        kwargs.setdefault("filters", params.get("filters") or {})
+
+    if task_name == "gmvmax.sync_metrics":
+        gran = str(kwargs.get("granularity") or "HOUR").upper()
+        kwargs["granularity"] = gran
+        if gran == "HOUR":
+            lookback_val = params.get("lookback_hours")
+            try:
+                lookback_hours = max(1, int(lookback_val))
+            except (TypeError, ValueError):
+                lookback_hours = 6
+            end_dt = now_utc
+            kwargs.setdefault("end_date", _isoformat(end_dt))
+            kwargs.setdefault("start_date", _isoformat(end_dt - timedelta(hours=lookback_hours)))
+        else:
+            lookback_val = params.get("lookback_days")
+            try:
+                lookback_days = max(1, int(lookback_val))
+            except (TypeError, ValueError):
+                lookback_days = 7
+            today = now_utc.date()
+            kwargs.setdefault("end_date", today.isoformat())
+            kwargs.setdefault("start_date", (today - timedelta(days=lookback_days)).isoformat())
+
+    return kwargs
+
 
 def _now_utc() -> datetime:
     # 统一返回「UTC aware」时间
@@ -287,12 +334,15 @@ class DBScheduler(Scheduler):
             return
 
         # 入队 Celery
-        payload = {
-            "workspace_id": int(row.workspace_id),
-            "schedule_id": int(row.id),
-            "idempotency_key": idem,
-            "params": row.params_json or {},
-        }
+        if row.task_name in _GMVMAX_TASKS:
+            payload = _build_gmvmax_kwargs(row, idem, now_utc)
+        else:
+            payload = {
+                "workspace_id": int(row.workspace_id),
+                "schedule_id": int(row.id),
+                "idempotency_key": idem,
+                "params": row.params_json or {},
+            }
         task_name = row.task_name  # 目录中的标准任务名
 
         # 选择队列：目录默认队列 > 全局默认

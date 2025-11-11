@@ -193,5 +193,163 @@ export async function fetchSyncRun(wid, provider, authId, runId, options = {}) {
   return apiGet(url, options);
 }
 
+export async function fetchGmvMaxCampaigns({
+  workspaceId,
+  authId,
+  advertiserId,
+  sync = false,
+}) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  if (advertiserId !== undefined && advertiserId !== null && advertiserId !== '') {
+    params.set('advertiser_id', String(advertiserId));
+  }
+  if (sync) {
+    params.set('sync', '1');
+  }
+  const qs = params.toString();
+  const url = qs ? `${base}/ttb/gmvmax/campaigns?${qs}` : `${base}/ttb/gmvmax/campaigns`;
+  return apiGet(url);
+}
+
+export async function fetchGmvMaxCampaignDetail({
+  workspaceId,
+  authId,
+  advertiserId,
+  campaignId,
+  refresh = false,
+}) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  if (advertiserId !== undefined && advertiserId !== null && advertiserId !== '') {
+    params.set('advertiser_id', String(advertiserId));
+  }
+  if (refresh) {
+    params.set('refresh', '1');
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}`;
+  return apiGet(url);
+}
+
+export async function fetchGmvMaxStrategy({ workspaceId, authId, campaignId }) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy`;
+  return apiGet(url);
+}
+
+export async function updateGmvMaxStrategy({ workspaceId, authId, campaignId, data }) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy`;
+  return apiPut(url, data);
+}
+
+export async function previewGmvMaxStrategy({ workspaceId, authId, campaignId }) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy/preview?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/strategy/preview`;
+  return apiGet(url);
+}
+
+export async function fetchGmvMaxMetrics({
+  workspaceId,
+  authId,
+  campaignId,
+  granularity = 'DAY',
+  start,
+  end,
+}) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (authId !== undefined && authId !== null && authId !== '') {
+    params.set('auth_id', String(authId));
+  }
+  if (granularity) {
+    params.set('granularity', granularity);
+  }
+  if (start) {
+    params.set('start', start);
+  }
+  if (end) {
+    params.set('end', end);
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/metrics?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/metrics`;
+  return apiGet(url);
+}
+
+export async function applyGmvMaxAction({
+  workspaceId,
+  authId,
+  advertiserId,
+  campaignId,
+  action,
+  payload = {},
+  reason,
+}) {
+  const base = tenantPrefix(workspaceId);
+  const url = `${base}/ttb/gmvmax/campaigns/actions`;
+  const body = {
+    auth_id: authId,
+    advertiser_id: advertiserId,
+    campaign_id: campaignId,
+    action,
+    reason,
+    ...payload,
+  };
+  return apiPost(url, body);
+}
+
+export async function fetchGmvMaxActions({
+  workspaceId,
+  campaignId,
+  limit = 50,
+  offset = 0,
+}) {
+  const base = tenantPrefix(workspaceId);
+  const params = new URLSearchParams();
+  if (limit !== undefined && limit !== null) {
+    params.set('limit', String(limit));
+  }
+  if (offset !== undefined && offset !== null) {
+    params.set('offset', String(offset));
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/actions?${qs}`
+    : `${base}/ttb/gmvmax/campaigns/${encodeURIComponent(campaignId)}/actions`;
+  return apiGet(url);
+}
+
 export { listBindings, normProvider };
 

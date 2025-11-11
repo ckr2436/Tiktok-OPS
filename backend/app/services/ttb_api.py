@@ -70,6 +70,23 @@ class TTBHttpError(Exception):
 _MAX_PAGE_SIZE = 50  # 官方上限
 
 
+def _remove_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _remove_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, (list, tuple, set)):
+        return [_remove_none(v) for v in value if v is not None]
+    return value
+
+
+def _clean_params_map(data: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned: Dict[str, Any] = {}
+    for key, value in data.items():
+        if value is None:
+            continue
+        cleaned[key] = _remove_none(value)
+    return cleaned
+
+
 def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
     try:
         n = int(x)
@@ -514,6 +531,395 @@ class TTBApiClient:
             extractor="products",
         ):
             yield it
+
+    # ---------- GMV Max ----------
+
+    async def list_gmvmax_stores(self, advertiser_id: str, **kwargs: Any) -> dict:
+        params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
+        params.update(kwargs)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/store/list/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def get_gmvmax_exclusive_auth(
+        self,
+        advertiser_id: str,
+        store_id: str,
+        store_authorized_bc_id: str,
+    ) -> dict:
+        params = _clean_params_map(
+            {
+                "advertiser_id": str(advertiser_id),
+                "store_id": str(store_id),
+                "store_authorized_bc_id": str(store_authorized_bc_id),
+            }
+        )
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/exclusive_authorization/get/",
+            params=params,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def create_gmvmax_exclusive_auth(
+        self,
+        advertiser_id: str,
+        store_id: str,
+        store_authorized_bc_id: str,
+    ) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        body = _remove_none(
+            {
+                "store_id": str(store_id),
+                "store_authorized_bc_id": str(store_authorized_bc_id),
+            }
+        )
+        payload = await self._request_json(
+            "POST",
+            "/gmv_max/exclusive_authorization/create/",
+            params=params,
+            json_body=body,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def list_gmvmax_identities(
+        self,
+        advertiser_id: str,
+        store_id: str,
+        store_authorized_bc_id: str,
+    ) -> dict:
+        params = _clean_params_map(
+            {
+                "advertiser_id": str(advertiser_id),
+                "store_id": str(store_id),
+                "store_authorized_bc_id": str(store_authorized_bc_id),
+            }
+        )
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/identity/get/",
+            params=params,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def list_gmvmax_videos(
+        self,
+        advertiser_id: str,
+        store_id: str,
+        spu_id_list: list[str] | None = None,
+        **filters: Any,
+    ) -> dict:
+        params: Dict[str, Any] = {
+            "advertiser_id": str(advertiser_id),
+            "store_id": str(store_id),
+        }
+        if spu_id_list is not None:
+            params["spu_id_list"] = [str(item) for item in spu_id_list if item is not None]
+        params.update(filters)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/video/get/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def recommend_gmvmax_bid(
+        self,
+        advertiser_id: str,
+        store_id: str,
+        shopping_ads_type: str,
+        optimization_goal: str,
+        item_group_ids: list[str],
+        identity_id: str | None = None,
+    ) -> dict:
+        params: Dict[str, Any] = {
+            "advertiser_id": str(advertiser_id),
+            "store_id": str(store_id),
+            "shopping_ads_type": shopping_ads_type,
+            "optimization_goal": optimization_goal,
+            "item_group_ids": [str(item) for item in item_group_ids if item is not None],
+            "identity_id": str(identity_id) if identity_id is not None else None,
+        }
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/bid/recommend/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def create_gmvmax_campaign(self, advertiser_id: str, body: dict) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/create/",
+            params=params,
+            json_body=_remove_none(dict(body or {})),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def update_gmvmax_campaign(self, advertiser_id: str, body: dict) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/update/",
+            params=params,
+            json_body=_remove_none(dict(body or {})),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def fetch_gmvmax_campaigns(self, advertiser_id: str, **filters: Any) -> dict:
+        params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
+        params.update(filters)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/campaign/get/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def iter_gmvmax_campaigns(
+        self,
+        advertiser_id: str,
+        **filters: Any,
+    ) -> AsyncIterator[dict]:
+        base_filters = dict(filters)
+        page_size_value = base_filters.pop("page_size", None)
+        cursor_value = base_filters.pop("cursor", None)
+        page_token_value = base_filters.pop("page_token", None)
+        page_value_raw = base_filters.pop("page", None)
+        if cursor_value is None and page_token_value is None:
+            if page_value_raw is None:
+                page_value = 1
+            else:
+                try:
+                    page_value = int(page_value_raw)
+                except (TypeError, ValueError):
+                    page_value = 1
+        else:
+            try:
+                page_value = int(page_value_raw) if page_value_raw is not None else None
+            except (TypeError, ValueError):
+                page_value = None
+        base_filters_clean = _clean_params_map(base_filters)
+
+        while True:
+            query: Dict[str, Any] = dict(base_filters_clean)
+            if page_size_value is not None:
+                query["page_size"] = page_size_value
+            if cursor_value is not None:
+                query["cursor"] = cursor_value
+            if page_token_value is not None:
+                query["page_token"] = page_token_value
+            if page_value is not None:
+                query["page"] = page_value
+
+            data = await self.fetch_gmvmax_campaigns(advertiser_id, **query)
+
+            items_list: list[dict] = []
+            page_info: Dict[str, Any] | None = None
+            if isinstance(data, dict):
+                for key in ("list", "campaign_list", "items", "campaigns"):
+                    value = data.get(key)
+                    if isinstance(value, list):
+                        items_list = [item for item in value if isinstance(item, dict)]
+                        if items_list:
+                            break
+                raw_page_info = data.get("page_info")
+                if isinstance(raw_page_info, dict):
+                    page_info = raw_page_info
+
+            for item in items_list:
+                yield item
+
+            if not items_list and not cursor_value and not page_token_value:
+                break
+
+            advanced = False
+            info_dict = page_info or {}
+            next_cursor = info_dict.get("cursor")
+            next_page_token = info_dict.get("page_token")
+            has_more_flags = info_dict.get("has_more") or info_dict.get("has_next") or info_dict.get("has_next_page")
+
+            if next_cursor:
+                if next_cursor != cursor_value:
+                    cursor_value = next_cursor
+                    page_token_value = None
+                    page_value = None
+                    advanced = True
+            elif next_page_token:
+                if next_page_token != page_token_value:
+                    page_token_value = next_page_token
+                    cursor_value = None
+                    page_value = None
+                    advanced = True
+            else:
+                current_page = info_dict.get("page")
+                total_page = info_dict.get("total_page")
+                try:
+                    current_page_int = int(current_page) if current_page is not None else None
+                except (TypeError, ValueError):
+                    current_page_int = None
+                try:
+                    total_page_int = int(total_page) if total_page is not None else None
+                except (TypeError, ValueError):
+                    total_page_int = None
+
+                if current_page_int is not None and total_page_int is not None and current_page_int < total_page_int:
+                    page_value = current_page_int + 1
+                    cursor_value = None
+                    page_token_value = None
+                    advanced = True
+                elif has_more_flags in (True, 1):
+                    next_page_number = (current_page_int or page_value or 1) + 1
+                    page_value = next_page_number
+                    cursor_value = None
+                    page_token_value = None
+                    advanced = True
+
+            if not advanced:
+                expected_size = None
+                if page_size_value is not None:
+                    try:
+                        expected_size = int(page_size_value)
+                    except (TypeError, ValueError):
+                        expected_size = None
+                if expected_size and len(items_list) == expected_size:
+                    page_value = (page_value or 1) + 1
+                    cursor_value = None
+                    page_token_value = None
+                    advanced = True
+
+            if not advanced:
+                break
+
+    async def get_gmvmax_campaign_info(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+    ) -> dict:
+        params = _clean_params_map(
+            {
+                "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id),
+            }
+        )
+        payload = await self._request_json(
+            "GET",
+            "/campaign/gmv_max/info/",
+            params=params,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def report_gmvmax(
+        self,
+        advertiser_id: str,
+        start_date: str,
+        end_date: str,
+        time_granularity: str = "HOUR",
+        metrics: list[str] | None = None,
+        **filters: Any,
+    ) -> dict:
+        params: Dict[str, Any] = {
+            "advertiser_id": str(advertiser_id),
+            "start_date": start_date,
+            "end_date": end_date,
+            "time_granularity": time_granularity,
+        }
+        if metrics is not None:
+            params["metrics"] = [str(metric) for metric in metrics if metric is not None]
+        params.update(filters)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/report/get/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def create_gmvmax_session(self, advertiser_id: str, body: dict) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/session/create/",
+            params=params,
+            json_body=_remove_none(dict(body or {})),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def update_gmvmax_session(self, advertiser_id: str, body: dict) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/session/update/",
+            params=params,
+            json_body=_remove_none(dict(body or {})),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def delete_gmvmax_session(self, advertiser_id: str, session_id: str) -> dict:
+        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
+        body = _remove_none({"session_id": str(session_id)})
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/session/delete/",
+            params=params,
+            json_body=body,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def get_gmvmax_session(
+        self,
+        advertiser_id: str,
+        session_id: str,
+    ) -> dict:
+        params = _clean_params_map(
+            {
+                "advertiser_id": str(advertiser_id),
+                "session_ids": [str(session_id)],
+            }
+        )
+        payload = await self._request_json(
+            "GET",
+            "/campaign/gmv_max/session/get/",
+            params=params,
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def list_gmvmax_sessions(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        **paging: Any,
+    ) -> dict:
+        params: Dict[str, Any] = {
+            "advertiser_id": str(advertiser_id),
+            "campaign_id": str(campaign_id),
+        }
+        params.update(paging)
+        payload = await self._request_json(
+            "GET",
+            "/campaign/gmv_max/session/list/",
+            params=_clean_params_map(params),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
 
 
 __all__ = ["TTBApiClient", "TTBApiError", "TTBHttpError", "TTBPaths"]

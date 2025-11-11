@@ -10,4 +10,5 @@ from __future__ import annotations
 # 注册已有与新增任务模块（导入即完成任务注册）
 from . import oauth_tasks  # noqa: F401
 from . import ttb_sync_tasks  # noqa: F401
+from . import ttb_gmvmax_tasks  # noqa: F401
 
