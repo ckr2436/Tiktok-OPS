@@ -61,15 +61,11 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP(6)"),
             server_onupdate=sa.text("CURRENT_TIMESTAMP(6)"),
         ),
+        sa.UniqueConstraint("name", name="uk_kie_key_name"),
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
 
-    op.create_unique_constraint(
-        "uk_kie_key_name",
-        "kie_api_keys",
-        ["name"],
-    )
     op.create_index(
         "idx_kie_key_active",
         "kie_api_keys",
@@ -144,15 +140,11 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP(6)"),
             server_onupdate=sa.text("CURRENT_TIMESTAMP(6)"),
         ),
+        sa.UniqueConstraint("task_id", name="uk_kie_task_task_id"),
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
 
-    op.create_unique_constraint(
-        "uk_kie_task_task_id",
-        "kie_api_tasks",
-        ["task_id"],
-    )
     op.create_index(
         "idx_kie_task_ws",
         "kie_api_tasks",
@@ -258,18 +250,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("idx_kie_file_task", table_name="kie_api_files")
-    op.drop_index("idx_kie_file_ws", table_name="kie_api_files")
+    # MySQL 8.x 不允许在仍被外键使用时直接 DROP INDEX，
+    # 所以这里先按依赖顺序直接删表，让数据库自动清理索引和外键。
     op.drop_table("kie_api_files")
 
     op.drop_index("idx_kie_task_state", table_name="kie_api_tasks")
     op.drop_index("idx_kie_task_key", table_name="kie_api_tasks")
     op.drop_index("idx_kie_task_ws", table_name="kie_api_tasks")
-    op.drop_constraint("uk_kie_task_task_id", "kie_api_tasks", type_="unique")
     op.drop_table("kie_api_tasks")
 
     op.drop_index("idx_kie_key_default", table_name="kie_api_keys")
     op.drop_index("idx_kie_key_active", table_name="kie_api_keys")
-    op.drop_constraint("uk_kie_key_name", "kie_api_keys", type_="unique")
     op.drop_table("kie_api_keys")
 

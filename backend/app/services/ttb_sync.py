@@ -51,6 +51,41 @@ def _clean_str(value: Any) -> str:
     return str(value)
 
 
+def _clean_nullable_str(value: Any) -> Optional[str]:
+    cleaned = _clean_str(value)
+    return cleaned or None
+
+
+def _to_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_boolish(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off"}:
+            return False
+    return None
+
+
 def _normalize_relation_type(value: Any, default: str = "UNKNOWN") -> str:
     if value is None:
         return default
@@ -693,6 +728,22 @@ def _upsert_product(
 
     # 价格：优先已有的 price，否则用 min_price / max_price 做一个代表值
     price_value = _pick(item, "price", "min_price", "max_price")
+    if isinstance(price_value, str) and not price_value.strip():
+        price_value = None
+
+    min_price_value = _pick(item, "min_price")
+    if isinstance(min_price_value, str) and not min_price_value.strip():
+        min_price_value = None
+
+    max_price_value = _pick(item, "max_price")
+    if isinstance(max_price_value, str) and not max_price_value.strip():
+        max_price_value = None
+
+    image_url = _clean_nullable_str(_pick(item, "image_url", "product_image_url"))
+    historical_sales = _to_int(_pick(item, "historical_sales"))
+    category_value = _clean_nullable_str(_pick(item, "category"))
+    gmv_status = _clean_nullable_str(_pick(item, "gmv_max_ads_status"))
+    running_custom_ads = _to_boolish(_pick(item, "is_running_custom_shop_ads"))
 
     values = dict(
         workspace_id=workspace_id,
@@ -706,6 +757,13 @@ def _upsert_product(
         price=price_value,
         # 官方返回里没有 stock，保持为 None 即可
         stock=_pick(item, "stock"),
+        image_url=image_url,
+        min_price=min_price_value,
+        max_price=max_price_value,
+        historical_sales=historical_sales,
+        category=category_value,
+        gmv_max_ads_status=gmv_status,
+        is_running_custom_shop_ads=running_custom_ads,
         # 当前版本的 /store/product/get/ 没有 create_time / update_time / version，
         # 保持兼容：如果以后返回了，就能自动吃到；现在为 None 不影响使用
         ext_created_time=_parse_dt(_pick(item, "create_time", "created_time")),
@@ -726,6 +784,13 @@ def _upsert_product(
             "currency",
             "price",
             "stock",
+            "image_url",
+            "min_price",
+            "max_price",
+            "historical_sales",
+            "category",
+            "gmv_max_ads_status",
+            "is_running_custom_shop_ads",
             "ext_created_time",
             "ext_updated_time",
             "sync_rev",

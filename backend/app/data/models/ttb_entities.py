@@ -239,6 +239,13 @@ class TTBProduct(Base):
     currency: Mapped[str | None] = mapped_column(String(8), default=None)
     price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
     stock: Mapped[int | None] = mapped_column(Integer, default=None)
+    image_url: Mapped[str | None] = mapped_column(String(1024), default=None)
+    min_price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    max_price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    historical_sales: Mapped[int | None] = mapped_column(Integer, default=None)
+    category: Mapped[str | None] = mapped_column(String(255), default=None)
+    gmv_max_ads_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    is_running_custom_shop_ads: Mapped[bool | None] = mapped_column(Boolean, default=None)
 
     ext_created_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
     ext_updated_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
