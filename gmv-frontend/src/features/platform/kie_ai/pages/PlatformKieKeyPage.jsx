@@ -39,6 +39,8 @@ function saveCreditCache(map) {
 
 export default function PlatformKieKeyPage() {
   const queryClient = useQueryClient()
+
+  // ---- 列表 & 默认余额 ----
   const keysQuery = useQuery({
     queryKey: ['platform', 'kie-keys'],
     queryFn: () => kiePlatformApi.listKeys(),
@@ -46,7 +48,10 @@ export default function PlatformKieKeyPage() {
   })
   const items = keysQuery.data ?? []
   const loading = keysQuery.isLoading
-  const errorMessage = keysQuery.error?.message || ''
+  const errorMessage =
+    keysQuery.error?.response?.data?.detail ||
+    keysQuery.error?.message ||
+    ''
 
   const defaultCreditQuery = useQuery({
     queryKey: ['platform', 'kie-default-credit'],
@@ -56,6 +61,7 @@ export default function PlatformKieKeyPage() {
   })
   const defaultCredit = defaultCreditQuery.data ?? null
 
+  // ---- UI 状态 ----
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null) // null = 新建
   const [form, setForm] = useState(emptyForm())
@@ -74,20 +80,46 @@ export default function PlatformKieKeyPage() {
     setCreditMap(next)
   }, [items])
 
-  const upsertKeyMutation = useMutation(({ id, payload }) => (
-    id ? kiePlatformApi.updateKey(id, payload) : kiePlatformApi.createKey(payload)
-  ))
-  const deactivateKeyMutation = useMutation((id) => kiePlatformApi.deactivateKey(id))
-  const updateKeyMutation = useMutation(({ id, payload }) => kiePlatformApi.updateKey(id, payload))
-  const checkCreditMutation = useMutation((id) => kiePlatformApi.getKeyCredit(id))
+  // ---- React Query mutations（v5 写法，必须带 mutationFn）----
 
-  const invalidateAll = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['platform', 'kie-keys'] }),
-    queryClient.invalidateQueries({ queryKey: ['platform', 'kie-default-credit'] }),
-  ])
+  // 新建 / 编辑 Key（合并成一个 mutation）
+  const upsertKeyMutation = useMutation({
+    mutationKey: ['platform', 'kie-keys', 'upsert'],
+    mutationFn: async ({ id, payload }) => {
+      if (id) {
+        return kiePlatformApi.updateKey(id, payload)
+      }
+      return kiePlatformApi.createKey(payload)
+    },
+  })
+
+  // 停用 Key
+  const deactivateKeyMutation = useMutation({
+    mutationKey: ['platform', 'kie-keys', 'deactivate'],
+    mutationFn: async (id) => kiePlatformApi.deactivateKey(id),
+  })
+
+  // 通用 PATCH 更新（启用 / 设为默认）
+  const updateKeyMutation = useMutation({
+    mutationKey: ['platform', 'kie-keys', 'update'],
+    mutationFn: async ({ id, payload }) => kiePlatformApi.updateKey(id, payload),
+  })
+
+  // 查询余额
+  const checkCreditMutation = useMutation({
+    mutationKey: ['platform', 'kie-keys', 'credit'],
+    mutationFn: async (id) => kiePlatformApi.getKeyCredit(id),
+  })
+
+  const invalidateAll = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['platform', 'kie-keys'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform', 'kie-default-credit'] }),
+    ])
 
   const isSaving = upsertKeyMutation.isPending
 
+  // ---- 弹窗操作 ----
   const openCreate = () => {
     setEditing(null)
     setForm(emptyForm())
@@ -144,7 +176,11 @@ export default function PlatformKieKeyPage() {
       await invalidateAll()
       setModalOpen(false)
     } catch (err) {
-      setSaveError(err?.message || '保存失败')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '保存失败'
+      setSaveError(msg)
     }
   }
 
@@ -154,27 +190,45 @@ export default function PlatformKieKeyPage() {
       await deactivateKeyMutation.mutateAsync(item.id)
       await invalidateAll()
     } catch (err) {
-      window.alert(err?.message || '停用失败')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '停用失败'
+      window.alert(msg)
     }
   }
 
   // 启用 key：走 PATCH，把 is_active 调回 true
   const handleActivate = async (item) => {
     try {
-      await updateKeyMutation.mutateAsync({ id: item.id, payload: { is_active: true } })
+      await updateKeyMutation.mutateAsync({
+        id: item.id,
+        payload: { is_active: true },
+      })
       await invalidateAll()
     } catch (err) {
-      window.alert(err?.message || '启用失败')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '启用失败'
+      window.alert(msg)
     }
   }
 
   // 设置为默认 key：走 PATCH is_default=true，后端会自动取消其他默认
   const handleSetDefault = async (item) => {
     try {
-      await updateKeyMutation.mutateAsync({ id: item.id, payload: { is_default: true } })
+      await updateKeyMutation.mutateAsync({
+        id: item.id,
+        payload: { is_default: true },
+      })
       await invalidateAll()
     } catch (err) {
-      window.alert(err?.message || '设置默认失败')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '设置默认失败'
+      window.alert(msg)
     }
   }
 
@@ -190,7 +244,11 @@ export default function PlatformKieKeyPage() {
         queryClient.setQueryData(['platform', 'kie-default-credit'], v)
       }
     } catch (err) {
-      window.alert(err?.message || '查询余额失败')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '查询余额失败'
+      window.alert(msg)
     }
   }
 
@@ -374,22 +432,22 @@ export default function PlatformKieKeyPage() {
           )}
 
           <div className="form__actions">
-              <button
-                type="button"
-                className="btn"
-                onClick={closeModal}
-                disabled={isSaving}
-              >
-                取消
-              </button>
-              <button
-                type="submit"
-                className="btn btn--primary"
-                disabled={isSaving}
-                style={{ marginLeft: 8 }}
-              >
-                {isSaving ? '保存中...' : '保存'}
-              </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={closeModal}
+              disabled={isSaving}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={isSaving}
+              style={{ marginLeft: 8 }}
+            >
+              {isSaving ? '保存中...' : '保存'}
+            </button>
           </div>
         </form>
       </Modal>

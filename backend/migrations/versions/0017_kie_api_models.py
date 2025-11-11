@@ -250,16 +250,26 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # MySQL 8.x 不允许在仍被外键使用时直接 DROP INDEX，
-    # 所以这里先按依赖顺序直接删表，让数据库自动清理索引和外键。
-    op.drop_table("kie_api_files")
+    """
+    安全降级：
+    - 只按依赖顺序 drop_table，交给 MySQL 自动清理索引和外键
+    - 先 drop 依赖方（files -> tasks），再 drop keys
+    """
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = set(inspector.get_table_names())
 
-    op.drop_index("idx_kie_task_state", table_name="kie_api_tasks")
-    op.drop_index("idx_kie_task_key", table_name="kie_api_tasks")
-    op.drop_index("idx_kie_task_ws", table_name="kie_api_tasks")
-    op.drop_table("kie_api_tasks")
+    # 1) 先删文件表（依赖 tasks、keys）
+    if "kie_api_files" in existing_tables:
+        op.drop_table("kie_api_files")
+        existing_tables = set(inspector.get_table_names())
 
-    op.drop_index("idx_kie_key_default", table_name="kie_api_keys")
-    op.drop_index("idx_kie_key_active", table_name="kie_api_keys")
-    op.drop_table("kie_api_keys")
+    # 2) 再删任务表（依赖 keys）
+    if "kie_api_tasks" in existing_tables:
+        op.drop_table("kie_api_tasks")
+        existing_tables = set(inspector.get_table_names())
+
+    # 3) 最后删 key 表
+    if "kie_api_keys" in existing_tables:
+        op.drop_table("kie_api_keys")
 

@@ -31,22 +31,48 @@ BATCH_LIMIT = 500  # 一次扫描的计划数量上限
 
 
 def _now_utc() -> datetime:
+    # 统一返回「UTC aware」时间
     return datetime.now(timezone.utc)
 
 
-def _idempotency_key(task_name: str, workspace_id: int, scheduled_for: datetime, params: dict | None) -> str:
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """
+    把任意 datetime 统一转成「UTC 的 naive datetime」（tzinfo=None）：
+
+    - 如果原本有 tzinfo，就先转成 UTC，再去掉 tzinfo；
+    - 如果原本没有 tzinfo，就直接当作 UTC。
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _idempotency_key(
+    task_name: str,
+    workspace_id: int,
+    scheduled_for: datetime,
+    params: dict | None,
+) -> str:
     base = f"{task_name}|{workspace_id}|{int(scheduled_for.timestamp())}|{params or ''}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()[:64]
 
 
 def _calc_next_fire(row: Schedule, start: datetime) -> datetime | None:
+    """
+    计算下次触发时间，返回的是「UTC aware」时间（tzinfo=UTC）。
+    """
     tz = ZoneInfo(row.timezone or "UTC")
+    # 这里用 aware → aware 的转换逻辑
     start_local = start.astimezone(tz)
 
     if row.schedule_type == "interval":
         if not row.interval_seconds or row.interval_seconds < MIN_INTERVAL:
             return None
-        return (start_local + timedelta(seconds=row.interval_seconds)).astimezone(timezone.utc)
+        return (start_local + timedelta(seconds=row.interval_seconds)).astimezone(
+            timezone.utc,
+        )
 
     if row.schedule_type == "crontab":
         if not row.crontab_expr:
@@ -174,7 +200,7 @@ class DBScheduler(Scheduler):
         mis_grace = int(row.misfire_grace_s or 0)
         jitter = int(row.jitter_s or 0)
 
-        # 计算“本次应触发的时刻”
+        # 计算“本次应触发的时刻”（fire_at 使用 aware UTC 或 DB 原值）
         if row.schedule_type == "oneoff":
             fire_at = row.oneoff_run_at
         else:
@@ -194,37 +220,70 @@ class DBScheduler(Scheduler):
         if not fire_at:
             # 不可触发，写 next 再走
             next_fire = _calc_next_fire(row, now_utc)
-            db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+            db.execute(
+                update(Schedule)
+                .where(Schedule.id == row.id)
+                .values(next_fire_at=next_fire),
+            )
+            return
+
+        # ---- 统一时间类型：全部转成「UTC naive」用于比较 ----
+        fire_at_cmp = _to_naive_utc(fire_at)
+        now_cmp = _to_naive_utc(now_utc)
+
+        if fire_at_cmp is None or now_cmp is None:
+            # 理论上不会发生，兜底防御
             return
 
         # 误触发判断（宕机补偿窗口）
-        if mis_grace > 0 and fire_at < (now_utc - timedelta(seconds=mis_grace)):
+        if mis_grace > 0 and fire_at_cmp < (
+            now_cmp - timedelta(seconds=mis_grace)
+        ):
             # 超过容忍窗口，跳过这个触发窗口，推进 next
             next_fire = _calc_next_fire(row, fire_at)
-            db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
-            self._append_run(db, row, fire_at, status="failed", reason="misfire_exceeded")
+            db.execute(
+                update(Schedule)
+                .where(Schedule.id == row.id)
+                .values(next_fire_at=next_fire),
+            )
+            self._append_run(
+                db,
+                row,
+                fire_at,
+                status="failed",
+                reason="misfire_exceeded",
+            )
             return
 
-        if fire_at > now_utc:
+        if fire_at_cmp > now_cmp:
             # 未到触发点，稍后再说
             return
 
         # 抖动（削峰）
         if jitter > 0:
             delay = random.randint(0, jitter)
-            fire_effective = now_utc + timedelta(seconds=delay)
+            fire_effective = now_cmp + timedelta(seconds=delay)
         else:
-            fire_effective = now_utc
+            fire_effective = now_cmp
 
-        # 幂等键
-        idem = _idempotency_key(row.task_name, int(row.workspace_id), fire_at, row.params_json)
+        # 幂等键（这里 scheduled_for 仍然用原始 fire_at，保留精度/时区信息）
+        idem = _idempotency_key(
+            row.task_name,
+            int(row.workspace_id),
+            fire_at,
+            row.params_json,
+        )
 
         # 幂等去重：避免重复入队
         if self._already_enqueued(db, row, idem):
             # 若 next_fire_at 还是过去时间，推进一下避免卡住
             if row.schedule_type != "oneoff":
                 next_fire = _calc_next_fire(row, fire_at)
-                db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+                db.execute(
+                    update(Schedule)
+                    .where(Schedule.id == row.id)
+                    .values(next_fire_at=next_fire),
+                )
             return
 
         # 入队 Celery
@@ -237,7 +296,11 @@ class DBScheduler(Scheduler):
         task_name = row.task_name  # 目录中的标准任务名
 
         # 选择队列：目录默认队列 > 全局默认
-        queue = (row.catalog.default_queue if getattr(row, "catalog", None) else None) or settings.CELERY_TASK_DEFAULT_QUEUE
+        queue = (
+            row.catalog.default_queue
+            if getattr(row, "catalog", None)
+            else None
+        ) or settings.CELERY_TASK_DEFAULT_QUEUE
 
         task_id = celery_uuid()
         r = celery_app.send_task(
@@ -246,21 +309,38 @@ class DBScheduler(Scheduler):
             kwargs=payload,
             queue=queue,
             task_id=task_id,
-            countdown=max(0, int((fire_effective - now_utc).total_seconds())),
+            countdown=max(
+                0,
+                int((fire_effective - now_cmp).total_seconds()),
+            ),
         )
 
         # 记录 run（并发下可能撞唯一约束，需兜底处理）
         try:
-            self._append_run(db, row, fire_at, status="enqueued", broker_msg_id=str(r.id), idem=idem)
+            self._append_run(
+                db,
+                row,
+                fire_at,
+                status="enqueued",
+                broker_msg_id=str(r.id),
+                idem=idem,
+            )
         except IntegrityError:
             db.rollback()
             # 已有同 (schedule_id, idempotency_key) 的 run 被并发创建；推进 next 即可
             if row.schedule_type != "oneoff":
                 next_fire = _calc_next_fire(row, fire_at)
-                db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+                db.execute(
+                    update(Schedule)
+                    .where(Schedule.id == row.id)
+                    .values(next_fire_at=next_fire),
+                )
             logger.info(
                 "duplicate schedule_run ignored (unique hit)",
-                extra={"schedule_id": int(row.id), "idempotency_key": idem},
+                extra={
+                    "schedule_id": int(row.id),
+                    "idempotency_key": idem,
+                },
             )
 
         # 推进 next_fire_at（interval/crontab）；oneoff 则清空并禁用
@@ -268,11 +348,18 @@ class DBScheduler(Scheduler):
             db.execute(
                 update(Schedule)
                 .where(Schedule.id == row.id)
-                .values(next_fire_at=None, enabled=False)  # oneoff 触发后自动停用
+                .values(
+                    next_fire_at=None,
+                    enabled=False,  # oneoff 触发后自动停用
+                ),
             )
         else:
             next_fire = _calc_next_fire(row, fire_at)
-            db.execute(update(Schedule).where(Schedule.id == row.id).values(next_fire_at=next_fire))
+            db.execute(
+                update(Schedule)
+                .where(Schedule.id == row.id)
+                .values(next_fire_at=next_fire),
+            )
 
     def _append_run(
         self,
@@ -295,7 +382,12 @@ class DBScheduler(Scheduler):
             error_code=reason,
             error_message=None,
             idempotency_key=idem
-            or _idempotency_key(row.task_name, int(row.workspace_id), scheduled_for, row.params_json),
+            or _idempotency_key(
+                row.task_name,
+                int(row.workspace_id),
+                scheduled_for,
+                row.params_json,
+            ),
         )
         db.add(run)
         # 让调用者决定何时 commit（上层有批量 commit）
