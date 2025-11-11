@@ -171,6 +171,303 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message, see Appendix-Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "age",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Age. Returned if you have input age in dimensions in your request. Within all and selected objects listed below, there are two fields that convey specific information. See the code example below for details. label : Age group label. It is of string data type. rate : Percentage of the label. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Age data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request"
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Age data of the audience you filtered for."
+        },
+        {
+          "name": "gender",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Gender. Returned if you have input gender in dimensions in your request. Within all and selected objects listed below, there are two fields that convey specific information. label : Gender label. It is of string data type. rate : Percentage of the label. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Gender data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Gender data of the audience you filtered for."
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Country. Returned if you have input country in dimensions in your request. Within all and selected objects listed below, there are two fields that convey specific information. label : Country name. It is of string data type. rate : Percentage of the country. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Country data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Country data of the audience you filtered for."
+        },
+        {
+          "name": "top_regions",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Country. Returned if you have input top_regions in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Region name. It is of string data type. rate : Percentage of the region. It is of the number data type. region_id : Region ID. It is of string data type. country_code : Country code. It is of string data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Region data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Region data of the audience you filtered for."
+        },
+        {
+          "name": "operating_system",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Operating system. Returned if you have input operating_system in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : This field is used to denote the operating system. It is of string data type. rate : This field is utilized to denote the percentage of the operating system. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Operating system data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request ."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Operating system data of the audience you filtered for."
+        },
+        {
+          "name": "operating_system_version",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Operating system version. Returned if you have input operating_system_version in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Operating system version. It is of string data type. rate : Percentage of the operating system version. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Operating system version data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Operating system version data of the audience you filtered for."
+        },
+        {
+          "name": "device_price",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Device price. Returned if you have input device_price in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Device price. It is of string data type. rate : Percentage of the device price. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Device price data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request ."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Device price data of the audience you filtered for."
+        },
+        {
+          "name": "top_interests",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Top interests. Returned if you have input top_interests in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Interest category label. It is of string data type. rate : Percentage of the interest category label. It is of the number data type. ad_interest_category : This field is used to denote the first-level interest category. It is of string data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of the audience you filtered for."
+        },
+        {
+          "name": "bottom_interests",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Bottom interests. Returned if you have input bottom_interests in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Interest category label. It is of string data type. rate : Percentage of the interest category label. It is of the number data type. ad_interest_category : This field is used to denote the first-level interest category. It is of string data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of the audience you filtered for."
+        },
+        {
+          "name": "ad_interest_categories",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Interest categories. Returned if you have input ad_interest_categories in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. label : Interest category label. It is of string data type. rate : Percentage of the interest category label. It is of the number data type. type : Level of the interest category. It is of string data type. Example: \"first\"."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request ."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category data of the audience you filtered for."
+        },
+        {
+          "name": "top_hashtags",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Top hashtags. Returned if you have input top_hashtags in dimensions in your request."
+        },
+        {
+          "name": "hashtag_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag ID."
+        },
+        {
+          "name": "hashtag_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag name."
+        },
+        {
+          "name": "count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of times the hashtag is used."
+        },
+        {
+          "name": "engagement",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Engagement metrics. Returned if you have input engagement in dimensions in your request. Within all and selected objects listed below, there are several fields that convey specific information. daily_sessions : Average number of app opens per user per day. It is of the number data type. daily_session_duration_in_minutes : Average number of minutes used per user per day. It is of the number data type. daily_video_views : Average number of video views per user per day. It is of the number data type. daily_comments : Average number of comments per user per day. It is of the number data type. daily_likes : Average number of likes per user per day. It is of the number data type. daily_shares : Average number of shares per user per day. It is of the number data type. total_video_uploads : Average uploads of selected/all users per day. It is of the number data type."
+        },
+        {
+          "name": "all",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Engagement data of all audience, that is, the audience for the selected locations. In certain scenarios, all will be returned as null. These include instances when: When your audience size is less than 1,000. When you specify custom_audience_id in your request."
+        },
+        {
+          "name": "selected",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Engagement data of the audience you filtered for."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"age\": {\n            \"all\": [\n                {\n                    \"label\": \"18-24\",\n                    \"rate\": 0.2258\n                },\n                {\n                    \"label\": \"25-34\",\n                    \"rate\": 0.3304\n                },\n                {\n                    \"label\": \"35-44\",\n                    \"rate\": 0.201\n                },\n                {\n                    \"label\": \"45-54\",\n                    \"rate\": 0.1327\n                },\n                {\n                    \"label\": \"≥55\",\n                    \"rate\": 0.1102\n                }\n            ],\n            \"selected\": [\n                {\n                    \"label\": \"25-34\",\n                    \"rate\": 0.5264\n                },\n                {\n                    \"label\": \"35-44\",\n                    \"rate\": 0.2073\n                },\n                {\n                    \"label\": \"45-54\",\n                    \"rate\": 0.136\n                },\n                {\n                    \"label\": \"≥55\",\n                    \"rate\": 0.1302\n                }\n            ]\n        }\n    }\n}"

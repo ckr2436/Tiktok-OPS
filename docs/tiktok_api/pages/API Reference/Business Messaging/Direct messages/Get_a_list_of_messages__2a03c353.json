@@ -41,6 +41,303 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "messages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Messages in the conversation."
+        },
+        {
+          "name": "sender",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok username of the message sender."
+        },
+        {
+          "name": "recipient",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok username of the message recipient."
+        },
+        {
+          "name": "conversation_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Conversation ID. Example: a1AbcBdeCfghDijkEF2b3+lmGn== ."
+        },
+        {
+          "name": "message_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Message ID. Example: a1AbcdefBCghDE2iFGjk3HIJ4l== ."
+        },
+        {
+          "name": "timestamp",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The time when the message was sent, in the format of an Epoch/Unix timestamp in milliseconds. Example: 1719447205701."
+        },
+        {
+          "name": "message_tag",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Additional information about the message."
+        },
+        {
+          "name": "source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The source of the message, indicating the platform from which the message was sent. Enum values: APP : TikTok mobile app. WEB : TikTok Web or TikTok Business Center. API : TikTok Business Messaging API. OTHERS : Other TikTok internal servers or tools, including automatic bots. UNKNOWN_SOURCE : Unknown source."
+        },
+        {
+          "name": "message_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the message. Enum values: TEXT : text. IMAGE : image. SHARE_POST : TikTok post. TEMPLATE : message template. OTHER : other message types, such as stickers."
+        },
+        {
+          "name": "auto_message_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of automatic message. Enum values: WELCOME_MESSAGE : welcome message. A welcome message is a message that is automatically sent to a user when they start a direct message conversation with you. SUGGESTED_QUESTION : suggested question. A suggested question is a frequently asked question displayed at the beginning of a chat. When the user selects a suggested question, the user will automatically receive the corresponding preset answer. AUTO_REPLY : keyword reply. A keyword reply is an automated response triggered by specific keywords in a message. Note : When the message is not an automatic message, this field will not be returned."
+        },
+        {
+          "name": "text",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when message_type is TEXT . Text information."
+        },
+        {
+          "name": "body",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Text content."
+        },
+        {
+          "name": "image",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when message_type is IMAGE . Image information."
+        },
+        {
+          "name": "media_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image ID."
+        },
+        {
+          "name": "share_post",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when message_type is SHARE_POST . Information about the post shared."
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link for the TikTok post. This URL can be used to embed the TikTok post in external websites or applications. If the privacy setting of the post is \"Friends\" or \"Only you\", the post will not be viewable through this link."
+        },
+        {
+          "name": "template",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when message_type is TEMPLATE . Details about the message template sent."
+        },
+        {
+          "name": "type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of message template. Enum values: QA_BUTTON_CARD : Q&A button card, a card showing a question and buttons that represent answers. When users click one of the buttons, the text content of the button will be sent to the conversation thread on behalf of the user as an answer to the pre-set question on the card. QA_LINK_CARD : Q&A text link card, a card showing a question and interactive text links that represent answers to the question. When users click one of the text links, the text content of the text link will be sent to the conversation thread on behalf of the user as an answer to the pre-set question on the card."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The pre-set question on the card."
+        },
+        {
+          "name": "buttons",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of buttons or text links that represent answers to the question on the card."
+        },
+        {
+          "name": "type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the button or text link. Enum value: REPLY : Reply button or reply text link. When users click the button or text link, the system will send the text content of the button or text link as a reply message on behalf of the user in the conversation."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The text content of the button or text link."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A self-defined ID for the button or text link. You can use this ID to distinguish between the buttons and text links."
+        },
+        {
+          "name": "from_user",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "User information of the sender."
+        },
+        {
+          "name": "role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The TikTok account type of the sender. Enum values: BUSINESS_ACCOUNT : Business Account. PERSONAL_ACCOUNT : Personal Account."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The identifier of the sender. When role is BUSINESS_ACCOUNT , this field is the same as the business_id , the application specific unique identifier for the TikTok Business Account. When role is PERSONAL_ACCOUNT , this field is the same as the unique_identifier , the globally unique identifier assigned to the TikTok Personal Account user in the conversation. This identifier remains consistent across different APIs, such as the Accounts comment listing endpoint , facilitating cross-referencing and integration."
+        },
+        {
+          "name": "to_user",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "User information of the receiver."
+        },
+        {
+          "name": "role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The TikTok account type of the receiver. Enum values: BUSINESS_ACCOUNT : Business Account. PERSONAL_ACCOUNT : Personal Account."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The identifier of the receiver. When role is BUSINESS_ACCOUNT , this field is the same as the business_id , the application specific unique identifier for the TikTok Business Account. When role is PERSONAL_ACCOUNT , this field is the same as the unique_identifier , the globally unique identifier assigned to the TikTok Personal Account user in the conversation. This identifier remains consistent across different APIs, such as the Accounts comment listing endpoint , facilitating cross-referencing and integration."
+        },
+        {
+          "name": "referenced_message_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the original message that is replied to."
+        },
+        {
+          "name": "referenced_message_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the original message that is replied to. When message_type is TEXT and referenced_message_id is returned, the object text represents the text reply to the original message. When message_type is OTHERS and referenced_message_id is returned, you won't be able to retrieve the content of the reply itself through API."
+        },
+        {
+          "name": "participants",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information of participants in the conversation."
+        },
+        {
+          "name": "role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The TikTok account type of the participant. Enum values: BUSINESS_ACCOUNT : Business Account. PERSONAL_ACCOUNT : Personal Account."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The identifier of the participant. When role is PERSONAL_ACCOUNT , this field is the same as the unique_identifier , the globally unique identifier assigned to the TikTok Personal Account user in the conversation. This identifier remains consistent across different APIs, such as the Accounts comment listing endpoint , facilitating cross-referencing and integration. When role is BUSINESS_ACCOUNT , this field is the same as the business_id , the application specific unique identifier for the TikTok Business Account."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The TikTok display name (nickname) of the participant."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for the TikTok profile image of the participant and needs to be re-acquired after expiration. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: https://p16-sign-sg.tiktokcdn.com/aweme/100x100/tos-alisg-avt-1234/5678a9b1c2d345ef6789123b4ghijkl5.jpeg?lk3s=a5d48078&nonce=56434&refresh_token=3b1a321962699a37d22f145bf20cf766& x-expires=1719579600 &x-signature=RTkvJazVm0fjkS%2FGfNHOuqIpla4%3D&shp=a5d48078&shcp=8aecc5ac"
+        },
+        {
+          "name": "is_follower",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Returned only when role is PERSONAL_ACCOUNT . Whether the Personal Account follows the Business Account in the conversation. Supported values: true , false ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n       \"participants\": [\n            {\n                \"id\": \"{{id}}\",\n                \"role\": \"BUSINESS_ACCOUNT\",\n                \"profile_image\": \"{{profile_image}}\",\n                \"display_name\": \"{{display_name}}\"\n            },\n            {\n                \"id\": \"{{id}}\",\n                \"role\": \"PERSONAL_ACCOUNT\",\n                \"profile_image\": \"{{profile_image}}\",\n                \"display_name\": \"{{display_name}}\",\n                \"is_follower\": true\n            }\n        ],\n        \"messages\": [\n            {\n                \"text\": {\n                    \"body\": \"Hello!', 'How are you?\"\n                },\n                \"sender\": \"abc_x_def\",\n                \"recipient\": \"abc.abc.test\",\n                \"message_id\": \"{{message_id}}\",\n                \"conversation_id\": \"{{conversation_id}}\",\n                \"timestamp\": 1705089513995,\n                \"message_type\": \"TEXT\",\n                \"from_user\": {\n                    \"id\": \"{{id}}\",\n                    \"role\": \"BUSINESS_ACCOUNT\"\n                },\n                \"to_user\": {\n                    \"id\": \"{{id}}\",\n                    \"role\": \"PERSONAL_ACCOUNT\"\n                }\n            },\n            {\n                \"text\": {\n                    \"body\": \"👍👍\"\n                },\n                \"sender\": \"abc.abc.test\",\n                \"recipient\": \"abc_x_def\",\n                \"message_id\": \"{{message_id}}\",\n                \"conversation_id\": \"{{conversation_id}}\",\n                \"timestamp\": 1705089491478,\n                \"message_type\": \"TEXT\",\n                \"from_user\": {\n                    \"id\": \"{{id}}\",\n                    \"role\": \"BUSINESS_ACCOUNT\"\n                },\n                \"to_user\": {\n                    \"id\": \"{{id}}\",\n                    \"role\": \"PERSONAL_ACCOUNT\"\n                }\n            }\n        ]\n    }\n}"

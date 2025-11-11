@@ -54,6 +54,100 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Partner list."
+        },
+        {
+          "name": "bc_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Partner name"
+        },
+        {
+          "name": "bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Partner ID"
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results"
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

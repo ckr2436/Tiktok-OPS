@@ -63,6 +63,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "business_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Application specific unique identifier for the TikTok Business Account."
+        },
+        {
+          "name": "operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the automatic message. Enum values: ENABLE : The automatic message is turned on. DISABLE : The automatic message is turned off. If you want to turn on or turn off an automatic message, use /business/message/auto_message/status/update/ ."
+        },
+        {
+          "name": "auto_messages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of automatic messages."
+        },
+        {
+          "name": "auto_message_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the automatic message."
+        },
+        {
+          "name": "auto_message_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of automatic message. Enum values: WELCOME_MESSAGE : welcome message. A welcome message is a message that is automatically sent to a user when they start a direct message conversation with you. SUGGESTED_QUESTION : suggested question. A suggested question is a frequently asked question displayed at the beginning of a chat. When the user selects a suggested question, the user will automatically receive the corresponding preset answer. CHAT_PROMPT : chat prompt. A chat prompt is an interactive button displayed above the input box. When users tap a chat prompt, the system will automatically generate a corresponding question for users to start the conversation."
+        },
+        {
+          "name": "audit_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The review status of the automatic message. Enum values: REVIEWING : The automatic message is pending review. APPROVED : The automatic message has been approved. REJECTED : The automatic message has been rejected. Note : If the audit_status of the automatic message is REJECTED , you cannot update the automatic message by using /business/message/auto_message/status/update/ . If audit_status of the message is REVIEWING , you need to wait for some time before rechecking the review status. The exact waiting time may vary depending on the content and other factors, but normally ranges from a few seconds to 2-3 hours."
+        },
+        {
+          "name": "welcome_message",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when auto_message_type is WELCOME_MESSAGE . Information about the welcome message."
+        },
+        {
+          "name": "content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The text of the welcome message. Note : If you enable the welcome message for a Business Account for the first time, the default welcome message will be: \"Hi there,\\nThanks for contacting {{display_name}}! Feel free to ask a question here or leave us a message and we'll get back to you shortly.\\n\\nThank you!\""
+        },
+        {
+          "name": "suggested_question",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when auto_message_type is SUGGESTED_QUESTION . Information about the suggested question."
+        },
+        {
+          "name": "question",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A frequently asked question to help users start a conversation."
+        },
+        {
+          "name": "answer",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The preset answer that will be automatically sent when a user selects the question."
+        },
+        {
+          "name": "chat_prompt",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when auto_message_type is CHAT_PROMPT . Information about the chat prompt."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the prompt button that is displayed above the input box."
+        },
+        {
+          "name": "content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The corresponding question for the prompt that the system automatically generates for users to start the conversation when users tap the chat prompt."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"operation_status\": \"ENABLE\",\n        \"auto_messages\": [\n            {\n                \"audit_status\": \"APPROVED\",\n                \"welcome_message\": {\n                    \"content\": \"{{content}}\"\n                },\n                \"auto_message_type\": \"WELCOME_MESSAGE\",\n                \"auto_message_id\": \"{{auto_message_id}}\"\n            }\n        ],\n        \"business_id\": \"{{business_id}}\"\n    }\n}"

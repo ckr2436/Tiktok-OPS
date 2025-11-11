@@ -75,6 +75,163 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the Creative Fatigue detection results."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the ad group that the ad ( ad_id ) belongs to."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the ad."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The date for which the values of the metrics are retrieved."
+        },
+        {
+          "name": "metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about data of the metrics on the date ( date )."
+        },
+        {
+          "name": "has_fatigue",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether Creative Fatigue is detected."
+        },
+        {
+          "name": "fatigue_index",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The \"Fatigue Index\" is a comprehensive metric that considers day-over-day changes in CPA, cost, the new users reach rate, and other performance metrics. A higher index value indicates a greater degree of fatigue."
+        },
+        {
+          "name": "dnu",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "DNU. The number of daily new users that the ad attracts."
+        },
+        {
+          "name": "dnu_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "DNU ratio. This metric is calculated by dividing the number of daily new users attracted by the ad on a specific date by the maximum number of daily new users that the ad attracted in the last 60 days."
+        },
+        {
+          "name": "spend",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total cost, which is the estimated total amount of money you've spent on the ad, in the default currency for the ad account."
+        },
+        {
+          "name": "cost_per_conversion",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "This metric returns actual value when the ad is within a non-iOS 14 Dedicated Campaign, and returns 0.0 when the ad is within an iOS 14 Dedicated Campaign. You can check whether a campaign is an iOS 14 Dedicated Campaign via the value of campaign_type returned by /campaign/get/ . CPA, which is the average amount of money spent on a conversion from the ad, in the default currency for the ad account. The total count is calculated based on the time each ad impression occurred."
+        },
+        {
+          "name": "skan_cost_per_conversion",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "This metric returns actual value when the ad is within an iOS 14 Dedicated Campaign, and returns 0.0 when the ad is within a non-iOS 14 Dedicated Campaign. You can check whether a campaign is an iOS 14 Dedicated Campaign via the value of campaign_type returned by /campaign/get/ . CPA (SKAN), the average amount of money spent on a conversion from the ad, in the default currency for the ad account. The total count is based on when the events are returned through the SKAdNetwork API. There may be a delay between the actual conversion time and when the conversion is reported."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"page_size\": 500,\n            \"total_page\": 1,\n            \"total_number\": 2,\n            \"page\": 1\n        },\n        \"list\": [\n            {\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"date\": \"2023-05-22\",\n                \"metrics\": {\n                    \"dnu\": 26832,\n                    \"has_fatigue\": false,\n                    \"skan_cost_per_conversion\": 0.0,\n                    \"cost_per_conversion\": 11.39,\n                    \"fatigue_index\": 0.43000000000000005,\n                    \"dnu_ratio\": 0.57,\n                    \"spend\": 125.24\n               },\n                \"ad_id\": \"{{ad_id}}\"\n            },\n            {\n                \"adgroup_id\": \"{{adgroup_id}}\",\n                \"date\": \"2023-05-23\",\n                \"metrics\": {\n                    \"dnu\": 32741,\n                    \"has_fatigue\": false,\n                    \"skan_cost_per_conversion\": 0.0,\n                    \"cost_per_conversion\": 13.65,\n                    \"fatigue_index\": 0.30000000000000004,\n                    \"dnu_ratio\": 0.7,\n                    \"spend\": 136.51\n                }\n                \"ad_id\": \"{{ad_id}}\"\n            }\n        ]\n    }\n}"

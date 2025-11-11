@@ -61,6 +61,93 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return Data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "interest_categories",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Interest category list. To determine the corresponding names for gaming-related interest category IDs, see Interest category ."
+        },
+        {
+          "name": "interest_category_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Interest category ID"
+        },
+        {
+          "name": "interest_category_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Interest category name"
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Level"
+        },
+        {
+          "name": "sub_category_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Subcategory ID list"
+        },
+        {
+          "name": "special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Special ad categories. Enum values: HOUSING : Ads for real estate listings, homeowners insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internship, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities. Note : If the returned value is empty( [] ), it means that the interest categories do not support any special ad categories."
+        },
+        {
+          "name": "placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Available placement for this interest category. Returning an empty list means unlimited. Please refer to Enumeration-Placement for details of enum values."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202206302233010102452460660B5E36E5\",\n    \"data\": {\n        \"interest_categories\": [\n            {\n                \"special_industries\": [\n                    \"HOUSING\",\n                    \"EMPLOYMENT\",\n                    \"CREDIT\"\n                ],\n                \"placements\": [],\n                \"interest_category_id\": \"10\",\n                \"level\": 1,\n                \"interest_category_name\": \"Education\",\n                \"sub_category_ids\": [\n                    \"10100\",\n                    \"10101\",\n                    \"10102\",\n                    \"10103\",\n                    \"10104\",\n                    \"10105\",\n                    \"10106\"\n                ]\n            },\n            {\n                \"special_industries\": [\n                    \"HOUSING\",\n                    \"EMPLOYMENT\",\n                    \"CREDIT\"\n                ],\n                \"placements\": [],\n                \"interest_category_id\": \"11\",\n                \"level\": 1,\n                \"interest_category_name\": \"Vehicles & Transportation\",\n                \"sub_category_ids\": [\n                    \"11100\",\n                    \"11101\",\n                    \"11102\",\n                    \"11103\",\n                    \"11104\",\n                    \"11105\",\n                    \"11106\",\n                    \"11107\",\n                    \"11108\",\n                    \"11109\",\n                    \"11111\",\n                    \"11112\"\n                ]\n            },\n            ...\n        ]\n    }\n}"

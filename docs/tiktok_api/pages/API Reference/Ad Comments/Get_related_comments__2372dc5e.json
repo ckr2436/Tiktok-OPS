@@ -68,6 +68,205 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For Details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For details, see Appendix-Return Code ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "comments",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of comments."
+        },
+        {
+          "name": "comment_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment ID."
+        },
+        {
+          "name": "content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment content."
+        },
+        {
+          "name": "comment_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment type. It can be COMMENT , which is an original comment, or REPLY , which is a reply to an original comment."
+        },
+        {
+          "name": "comment_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment status. Enum values: HIDDEN , PUBLIC ."
+        },
+        {
+          "name": "hit_blockedword",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment contains blocked words."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the comment is created."
+        },
+        {
+          "name": "user_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User who made the comment."
+        },
+        {
+          "name": "user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TikTok user who made the comment. Example: \"6123456789123456789\" ."
+        },
+        {
+          "name": "user_avatar_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL to the users' avatar."
+        },
+        {
+          "name": "tiktok_item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok video ID."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity type. CUSTOMIZED_USER (Customized User), TT_USER (TikTok Business Account User). For details about identities, see Identities ."
+        },
+        {
+          "name": "is_pinned",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment is pinned."
+        },
+        {
+          "name": "can_delete",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment can be deleted."
+        },
+        {
+          "name": "is_auth_ttba",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the user is linked to a TikTok Business Account."
+        },
+        {
+          "name": "is_auth_comment_manage_scope",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the user has the comment management permission."
+        },
+        {
+          "name": "reply_user_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the user who posted the original comment. Valid only for replies (second-level or lower comments). Returns null for first-level comments."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique ID of the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

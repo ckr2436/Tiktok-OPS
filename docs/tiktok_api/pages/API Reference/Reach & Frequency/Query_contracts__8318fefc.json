@@ -42,6 +42,79 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix - Return Codes"
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return messages. For details, see Appendix - Return Codes"
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "has_valid_contract",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether valid contracts can be found. Enum values: True , False . The correct contract start date and end date will be returned only when has_valid_contract = True , which means the specified included_date falls within the validity period of the Reach and Frequency contract or TikTok Pulse contract. If rf_campaign_type is not set as PULSE in the request, has_valid_contract is True when the specified included_date is a date within the Reach and Frequency contract validity period ( [start_date, end_date] ). If rf_campaign_type is set as PULSE in the request, has_valid_contract is True when the specified included_date is a date within the TikTok Pulse contract validity period ( [pulse_start_date, pulse_end_date] )."
+        },
+        {
+          "name": "pulse_start_date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Start date of TikTok Pulse contract. Returned when rf_campaign_type is set to PULSE in your request. Note : When you use /campaign/create/ to create an R&F campaign and set rf_campaign_type to PULSE , the schedule delivery time of your ad group ( [schedule_start_time, schedule_end_time] ) must fall on the intersection of [start_date, end_date] and [pulse_start_date, pulse_end_date] returned in this contract endpoint."
+        },
+        {
+          "name": "pulse_end_date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "End date of TikTok Pulse contract. Returned when rf_campaign_type is set to PULSE in your request. Note : When you use /campaign/create/ to create an R&F campaign and set rf_campaign_type to PULSE , the schedule delivery time of your ad group ( [schedule_start_time, schedule_end_time] ) must fall on the intersection of [start_date, end_date] and [pulse_start_date, pulse_end_date] returned in this contract endpoint."
+        },
+        {
+          "name": "start_date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Start date of Reach and Frequency contract."
+        },
+        {
+          "name": "end_date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "End date of Reach and Frequency contract."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

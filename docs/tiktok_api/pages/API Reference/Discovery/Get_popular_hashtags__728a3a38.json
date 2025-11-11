@@ -61,6 +61,170 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "filter_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Filtering information that is specified in your request. If you don't include the following parameters in the request, we will return the default values for them, which are date_range = 7DAY , country_code = US , industry_id = ALL , and category_name = ALL ."
+        },
+        {
+          "name": "date_range",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The timeframe in which the items have been popular. Enum values: 1DAY : last 1 day. 7DAY : last 7 days. 30DAY : last 30 days. 120DAY : last 120 days."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Location code. See Location code for the enum values. Example: DE ."
+        },
+        {
+          "name": "category_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the hashtag industry category. To learn about the enum values, see Hashtag industry category names . Example: FOOD_AND_BEVERAGE ."
+        },
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of popular hashtags."
+        },
+        {
+          "name": "hashtag_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag ID. Example: 4268426520694 ."
+        },
+        {
+          "name": "hashtag_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag name. Example: yummy ."
+        },
+        {
+          "name": "rank_position",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Current rank position of the hashtag among hashtags within the same category ( category_name ) or industry ( industry_id ) in the selected region ( country_code ). Example: 100 ."
+        },
+        {
+          "name": "rank_change",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The change in rank position compared to the rank in the last time period. A positive rank_change indicates an increase in rank. For example, if the rank position shifts from 5 to 1, rank_change will be 4 . A negative rank_change indicates a decrease in rank. For example, if the rank position shifts from 1 to 5, rank_change will be -4 . A rank_change of 0 indicates no changes in rank. A rank_change marked as NEW indicates that the hashtag was not present in the top 200 ranking list in the last time period."
+        },
+        {
+          "name": "views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag in the selected region and timeframe. Note : If you fail to specify country_code or date_range in your request, we will return data based on the default values for these two parameters, which are date_range = 7DAY or country_code = US . Example: 134333716."
+        },
+        {
+          "name": "views_global_lifetime",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag, globally and across their whole lifetime. Example: 91639649280."
+        },
+        {
+          "name": "posts",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of posts for related videos that feature this hashtag in the selected region and timeframe. Note : If you fail to specify country_code or date_range in your request, we will return data based on the default values for these two parameters, which are date_range = 7DAY or country_code = US . Example: 21856."
+        },
+        {
+          "name": "posts_global_lifetime",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of posts for related videos that feature this hashtag, globally and across their whole lifetime. Example: 7846729."
+        },
+        {
+          "name": "top_country_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The location codes of the top five locations in the world where this hashtag is most popular. To learn about the location that a location code represents, see Location code . Example: [\"US\", \"GB\", \"PH\", \"CA\", \"DE\"] ."
+        },
+        {
+          "name": "trending_history",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The historical ranking data for the hashtag, spanning up to the past 30 days.."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date, in the format of YYYY-MM-DD . Example: 2024-01-01 ."
+        },
+        {
+          "name": "rank_position_daily",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The rank position of the hashtag among hashtags across all categories or industries in the selected region ( country_code ) on the date. Example: 73 . Note : If the hashtag does not perform well compared to the last time period, the hashtag will not be considered a trending hashtag and the value of this field will be null."
+        },
+        {
+          "name": "views_daily",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag in the selected region ( country_code ) on the date. Example: 21215985. Note : If the daily views are less than 1,000, the value of this field will be null."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"posts\": 44585,\n                \"rank_change\": \"0\",\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"{{hashtag_name}}\",\n                \"views_global_lifetime\": 136840398711,\n                \"posts_global_lifetime\": 26055679,\n                \"rank_position\": \"1\",\n                \"views\": 836896026,\n                \"top_country_list\": [\n                    \"US\",\n                    \"TH\",\n                    \"ID\",\n                    \"VN\",\n                    \"PH\"\n                ],\n                 \"trending_history\": [\n                {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n                },\n                ...\n                {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n                },\n                {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n                }\n             ]\n            },\n            {\n                \"posts\": 148372,\n                \"rank_change\": \"0\",\n                \"hashtag_id\": \"{{hashtag_id}}\",\n                \"hashtag_name\": \"fashion\",\n                \"views_global_lifetime\": 303784465772,\n                \"posts_global_lifetime\": 39054276,\n                \"rank_position\": \"2\",\n                \"views\": 508388428,\n                \"top_country_list\": [\n                    \"US\",\n                    \"VN\",\n                    \"ID\",\n                    \"MX\",\n                    \"GB\"\n                ],\n                \"trending_history\": [\n                {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n                },\n                ...\n                {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n                },\n                {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n                }\n             ]\n            },\n            {\n            ...\n            }\n        ],\n        \"filter_info\": {\n            \"country_code\": \"US\",\n            \"date_range\": \"7DAY\",\n            \"category_name\": \"ALL\"\n        }\n    }\n}"

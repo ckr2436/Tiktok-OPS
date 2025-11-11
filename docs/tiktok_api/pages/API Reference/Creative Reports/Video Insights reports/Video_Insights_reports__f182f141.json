@@ -1,0 +1,332 @@
+{
+  "title": "Video Insights reports",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/report/get/",
+  "method": "GET",
+  "category_path": [
+    "Creative Reports",
+    "Video Insights reports"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "report_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Report type. Enum values: VIDEO_INSIGHT : a Video Insights report for one or more advertiser accounts."
+      },
+      {
+        "name": "advertiser_id Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either advertiser_id or advertiser_ids has to be set. The advertiser ID that you want to run reports for."
+      },
+      {
+        "name": "advertiser_ids Conditional",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Either advertiser_id or advertiser_ids has to be set. A list of advertiser IDs that you want to run reports for. Max size: 50. Note : You need to have access to all the corresponding ad accounts. To retrieve the ad accounts in a Business Center that you have access to, use /bc/asset/get/ . If the currencies of the ad accounts vary, the currency of the metrics will default to USD."
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date, closed interval, in the format of YYYY-MM-DD (UTC+0 time). Example: 2024-01-01 . The maximum query time range defined by start_date and end_date is 365 days."
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date closed interval, in the format of YYYY-MM-DD (UTC+0 time). Example: 2024-01-01 . The maximum query time range defined by start_date and end_date is 365 days."
+      },
+      {
+        "name": "metrics_fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The metrics that you want to retrieve data for. If this field is not passed, all the metrics supported in Video Insights reports will be returned by default. To find the supported metrics, see Supported metrics in Video Insights reports ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "material_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of video material IDs. Max size: 20. To obtain the material ID of a video, use /file/video/ad/search/ ."
+      },
+      {
+        "name": "material_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The video material name. Fuzzy search is supported."
+      },
+      {
+        "name": "tiktok_item_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "An ID list of TikTok Spark Ads posts that the video or videos were used to create. Max size: 20. To obtain TikTok post IDs, use /tt_video/info/ or /identity/video/get/ ."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A code list of locations where the videos were delivered. For enum values, see Appendix - Location code ."
+      },
+      {
+        "name": "creative_formats",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of creative formats. Enum values: VIDEO_16_9 : Video (16:9). VIDEO_1_1 : Video (1:1). VIDEO_9_16 : Video (9:16). OTHER : Other."
+      },
+      {
+        "name": "video_material_sources",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of video material sources. Enum values: UPLOADED_TO_TIKTOK_ADS_MANAGER : Uploaded to TikTok Ads Manager. UPLOADED_TO_CATALOG : Uploaded to Catalog. CREATIVE_TOOL_SMART_VIDEO : Creative Tool - Smart Video. CREATIVE_TOOL_QUICK_OPTIMIZATION : Creative Tool - Quick Optimization. CREATIVE_TOOL_VIDEO_TEMPLATE : Creative Tool - Video Template. CREATIVE_TOOL_SMART_VIDEO_SOUNDTRACK : Creative Tool - Smart Video Soundtrack. CREATIVE_TOOL_TIKTOK_VIDEO_EDITOR : Creative Tool - TikTok Video Editor. TIKTOK_CREATIVE_EXCHANGE : TikTok Creative Exchange. CATALOG_VIDEO_TEMPLATE : Catalog Video Template. DYNAMIC_VIDEO_EDITOR : Dynamic Video Editor. CREATIVE_CHALLENGE : Creative challenge. AUTOMATED_CREATIVE_OPTIMIZATION : Automated Creative Optimization. OTHER : Other. QUICK_GENERATION : Quick Generation. CREATIVE_CENTER_VIDEO_UPLOAD : Creative Center - Video upload. CREATIVE_CENTER_TIKTOK_VIDEO_EDITOR ：Creative Center - TikTok video editor. CREATIVE_CENTER_VIDEO_TEMPLATE ：Creative Center - Video template. DYNAMIC_SCENE ：Dynamic Scene. SMART_OPTIMIZATION_TOOL : Smart Optimization Tool."
+      },
+      {
+        "name": "placement",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of ad placements for the videos. Enum values: PLACEMENT_TIKTOK : TikTok. PLACEMENT_PANGLE : Pangle. PLACEMENT_GLOBAL_APP_BUNDLE : Global App Bundle."
+      },
+      {
+        "name": "identities",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Identity types that were used for the delivery of the videos. Enum values: SPARK_ADS : Spark Ads identities, including Authorized User, TikTok User, and TikTok Account User in Business Center identities. NON_SPARK_ADS : Non-Spark Ads identities, that is, Custom User identities. To learn more about identity types, see Identities ."
+      },
+      {
+        "name": "ad_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ad name. Fuzzy search is supported."
+      },
+      {
+        "name": "ad_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of ad IDs. Bulk query is supported. Max size: 20."
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ad group name. Fuzzy search is supported."
+      },
+      {
+        "name": "adgroup_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of ad group IDs. Max size: 20."
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The campaign name. Fuzzy search is supported."
+      },
+      {
+        "name": "campaign_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of campaign IDs. Max size: 20."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. The supported fields are listed in Supported metrics in Video Insights reports ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC , DESC . Default value: DESC ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current number of pages. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10. Value range: 1-1,000."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/creative/report/get/?report_type=VIDEO_INSIGHT&advertiser_id={{advertiser_id}}&start_date=2023-12-24&end_date=2024-01-23' \\\n--header 'Access-Token: {{Access-Token}}' \\"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Video insights data. Note : By default, only videos with a total cost ( spend ) greater than 0 will be included. Videos with no cost will be filtered out."
+        },
+        {
+          "name": "metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Metric data for the video. If metrics_fields is not passed in the request, all the metrics supported in Video Insights reports will be returned by default. To find the supported metrics, see Supported metrics in Video Insights reports . If metrics_fields is passed in the request, only the specified metrics supported will be returned."
+        },
+        {
+          "name": "info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Material information for the video."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video material ID."
+        },
+        {
+          "name": "material_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video material name."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time at which the video was created, in ISO-8601 format. Example: \"2024-01-01T00:00:01Z\"."
+        },
+        {
+          "name": "tiktok_item_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when the video ( material_id ) has been used to create Spark Ads. The ID list of the TikTok Spark Ads posts that are created using the video."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The code list of locations that the video ( material_id ) was delivered in. For enum values, see Appendix - Location code ."
+        },
+        {
+          "name": "video_material_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video material source. Enum values: UPLOADED_TO_TIKTOK_ADS_MANAGER : Uploaded to TikTok Ads Manager. UPLOADED_TO_CATALOG : Uploaded to Catalog. CREATIVE_TOOL_SMART_VIDEO : Creative Tool - Smart Video. CREATIVE_TOOL_QUICK_OPTIMIZATION : Creative Tool - Quick Optimization. CREATIVE_TOOL_VIDEO_TEMPLATE : Creative Tool - Video Template. CREATIVE_TOOL_SMART_VIDEO_SOUNDTRACK : Creative Tool - Smart Video Soundtrack. CREATIVE_TOOL_TIKTOK_VIDEO_EDITOR : Creative Tool - TikTok Video Editor. TIKTOK_CREATIVE_EXCHANGE : TikTok Creative Exchange. CATALOG_VIDEO_TEMPLATE : Catalog Video Template. DYNAMIC_VIDEO_EDITOR : Dynamic Video Editor. CREATIVE_CHALLENGE : Creative challenge. AUTOMATED_CREATIVE_OPTIMIZATION : Automated Creative Optimization. OTHER : Other. QUICK_GENERATION : Quick Generation. CREATIVE_CENTER_VIDEO_UPLOAD : Creative Center - Video upload. CREATIVE_CENTER_TIKTOK_VIDEO_EDITOR ：Creative Center - TikTok video editor. CREATIVE_CENTER_VIDEO_TEMPLATE ：Creative Center - Video template. DYNAMIC_SCENE ：Dynamic Scene. SMART_OPTIMIZATION_TOOL : Smart Optimization Tool. Note : If the material source of the video cannot be identified, the value of this field might be null."
+        },
+        {
+          "name": "placement",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The ad placements of the video. Enum values: PLACEMENT_TIKTOK : TikTok. PLACEMENT_PANGLE : Pangle. PLACEMENT_GLOBAL_APP_BUNDLE : Global App Bundle."
+        },
+        {
+          "name": "identity",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity type that was used for the delivery of the video. Enum values: SPARK_ADS : Spark Ads identities, including Authorized User, TikTok User, and TikTok Account User in Business Center identities. NON_SPARK_ADS : Non-Spark Ads identities, that is, Custom User identities. To learn more about identity types, see Identities ."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the currency in which the metric data in metrics is calculated. Example: USD. To learn about the currency that a currency code corresponds to, see Budget verification ratio and precision of each currency ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"metrics\": {\n                    \"impressions\": \"63727\",\n                    \"cpm\": \"10.27\",\n                    \"ctr\": \"0.38\",\n                    \"organic_video_views\": null,\n                    \"clicks\": \"243\",\n                    \"cpc\": \"2.69\",\n                    \"spend\": \"654.39\",\n                    \"conversion_rate_v2\": \"0.01\",\n                    \"conversion\": \"6\",\n                    \"cost_per_conversion\": \"109.07\"\n                },\n                \"info\": {\n                    \"material_name\": \"{{material_name}}\",\n                    \"identity\": \"NON_SPARK_ADS\",\n                    \"placement\": [\n                        \"PLACEMENT_TIKTOK\"\n                    ],\n                    \"video_material_source\": \"UPLOADED_TO_TIKTOK_ADS_MANAGER\",\n                    \"currency\": \"USD\",\n                    \"country_code\": [\n                        \"CA\",\n                        \"US\"\n                    ],\n                    \"create_time\": \"2024-01-11T07:42:46Z\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"impressions\": \"200626\",\n                    \"cpm\": \"4.62\",\n                    \"ctr\": \"1.36\",\n                    \"organic_video_views\": \"58242.0\",\n                    \"clicks\": \"2732\",\n                    \"cpc\": \"0.34\",\n                    \"spend\": \"927.25\",\n                    \"conversion_rate_v2\": \"0.01\",\n                    \"conversion\": \"17\",\n                    \"cost_per_conversion\": \"54.54\"\n                },\n                \"info\": {\n                    \"material_name\": \"{{material_name}}\",\n                    \"tiktok_item_ids\": [\n                        \"{{tiktok_item_id}}\"\n                    ],\n                    \"identity\": \"SPARK_ADS\",\n                    \"placement\": [\n                        \"PLACEMENT_TIKTOK\"\n                    ],\n                    \"video_material_source\": null,\n                    \"currency\": \"USD\",\n                    \"country_code\": [\n                        \"CA\",\n                        \"US\"\n                    ],\n                    \"create_time\": \"2023-09-25T08:47:43Z\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"total_page\": 1,\n            \"page_size\": 10,\n            \"page\": 1\n        }\n    }\n}"
+    }
+  }
+}

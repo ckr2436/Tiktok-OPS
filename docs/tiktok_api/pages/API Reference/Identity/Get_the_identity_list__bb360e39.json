@@ -75,6 +75,156 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "identity_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of identities."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity type."
+        },
+        {
+          "name": "identity_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+        },
+        {
+          "name": "can_push_video",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the BC_AUTH_TT or TT_USER identity can create or edit videos. Supported values: true , false ."
+        },
+        {
+          "name": "can_pull_video",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the BC_AUTH_TT or TT_USER identity can get all videos under the TikTok account. Supported values: true , false ."
+        },
+        {
+          "name": "can_use_live_ads",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the BC_AUTH_TT or TT_USER identity can access the live room. Supported values: true , false ."
+        },
+        {
+          "name": "can_manage_message",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the BC_AUTH_TT or TT_USER identity can manage direct messages. Supported values: true , false ."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Display name."
+        },
+        {
+          "name": "available_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Availability of the identity. Only valid for TT_USER and BC_AUTH_TT type of identities. Enum values: AVAILABLE , NO_VALID_BIND_ACCOUNT , SCOPE_UNAVAILABLE , IS_PRIVATE_ACCOUNT , NOT_BUSINESS_ACCOUNT ."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Profile image URL."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information. Note : Correct pagination info is available only when you have specified identity_type in the request."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of results on each page."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"total_number\": 1,\n            \"page_size\": 20,\n            \"total_page\": 1,\n            \"page\": 1\n        },\n        \"identity_list\": [\n            {\n                \"profile_image\": \"{{profile_image}}\",\n                \"identity_type\": \"TT_USER\",\n                \"identity_id\": \"{{identity_id}}\",\n                \"can_pull_video\": true,\n                \"display_name\": \"{{display_name}}\",\n                \"identity_authorized_bc_id\": null,\n                \"can_push_video\": true,\n                \"can_use_live_ads\": true,\n                \"can_manage_message\": true,\n                \"available_status\": \"AVAILABLE\"\n            }\n        ]\n    }\n}"

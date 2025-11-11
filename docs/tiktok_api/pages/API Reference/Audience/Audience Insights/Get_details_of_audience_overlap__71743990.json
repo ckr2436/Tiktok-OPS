@@ -48,6 +48,135 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message, see Appendix-Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data. Note : Audience sizes fewer than 1,000 will not be displayed."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "benchmark_audience",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Benchmark audience data."
+        },
+        {
+          "name": "audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience ID."
+        },
+        {
+          "name": "audience_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience name."
+        },
+        {
+          "name": "audience_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "int",
+          "description": "Audience size."
+        },
+        {
+          "name": "targetable_users_count_range",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The size range of users in the custom audience who have been active in the last 30 days and can be targeted."
+        },
+        {
+          "name": "comparison_audiences",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Comparison audience data. Returned if you have input comparison_custom_audience_ids in your request."
+        },
+        {
+          "name": "audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience ID."
+        },
+        {
+          "name": "audience_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience name."
+        },
+        {
+          "name": "audience_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "int",
+          "description": "Audience size."
+        },
+        {
+          "name": "targetable_users_count_range",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The size range of users in the custom audience who have been active in the last 30 days and can be targeted."
+        },
+        {
+          "name": "benchmark_overlap_rate",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The base percentage of users from the benchmark audience that are available in the comparison audience."
+        },
+        {
+          "name": "benchmark_overlap_rate_range",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The percentage range of users from the benchmark audience that are available in the comparison audience."
+        },
+        {
+          "name": "benchmark_overlap_count_range",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The size range of users from the benchmark audience that are available in the comparison audience."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

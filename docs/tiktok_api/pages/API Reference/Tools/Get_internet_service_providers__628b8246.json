@@ -54,6 +54,121 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "targeting_tag_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the targeting tags."
+        },
+        {
+          "name": "targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The targeting type that the targeting tag is used for. Enum values: ISP ( Internet Service Provider targeting)."
+        },
+        {
+          "name": "status_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the status of the targeting tag."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the targeting tag. Enum values: ENABLED (can be used for targeting), DISABLED (cannot be used for targeting)."
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The reason why the targeting tag cannot be used for targeting. Returned when status = DISABLED . Enum values: OFFLINE : The targeting tag is offline. NOT_SUPPORTED : The targeting tag is not offline but is not supported for the specified settings."
+        },
+        {
+          "name": "isp",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the targeting tag that is used for Internet service provider targeting."
+        },
+        {
+          "name": "isp_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Internet service provider that you can target."
+        },
+        {
+          "name": "location_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The location ID that the isp_id can be used together with. Only location IDs at the country or region level are supported."
+        },
+        {
+          "name": "region_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the region or country that the isp_id belongs to."
+        },
+        {
+          "name": "geo",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the targeting tag that is used for location targeting."
+        },
+        {
+          "name": "parent_tags",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about all the parent targeting tags."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"parent_tags\": [],\n        \"targeting_tag_list\": [\n            {\n                \"name\": \"Etisalat Misr\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00045\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Orange Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00081\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Telecom Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00098\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"Vodafone Egypt\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG00105\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            },\n            {\n                \"name\": \"other\",\n                \"targeting_type\": \"ISP\",\n                \"geo\": null,\n                \"status_info\": {\n                    \"status\": \"ENABLED\",\n                    \"reason\": null\n                },\n                \"isp\": {\n                    \"isp_id\": \"EG0\",\n                    \"location_id\": \"357994\",\n                    \"region_code\": \"EG\"\n                }\n            }\n        ]\n    }\n}"

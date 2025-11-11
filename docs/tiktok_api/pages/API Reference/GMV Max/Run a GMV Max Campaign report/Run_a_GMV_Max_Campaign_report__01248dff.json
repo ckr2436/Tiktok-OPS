@@ -1,0 +1,490 @@
+{
+  "title": "Run a GMV Max Campaign report",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/",
+  "method": "GET",
+  "category_path": [
+    "GMV Max",
+    "Run a GMV Max Campaign report"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "store_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of TikTok Shop IDs. Max size: 1. To obtain TikTok Shops that are available for GMV Max Campaigns, use /gmv_max/store/list/ and confirm that the returned is_gmv_max_available is true ."
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query start date (closed interval) in the format of YYYY-MM-DD . The date is based on the ad account time zone. Example: 2025-01-01 ."
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Query end date (closed interval) in the format of YYYY-MM-DD . The date is based on the ad account time zone. Example: 2025-02-01 . If you don't include stat_time_day or stat_time_hour in the value of the dimensions field, the time range defined by start_date and end_date can be up to 365 days. If you include stat_time_day in the value of the dimensions field to query daily breakdown data, the time range defined by start_date and end_date can be up to 30 days. If you include stat_time_hour in the value of the dimensions field to query hourly breakdown data, the time range defined by start_date and end_date can be up to one day."
+      },
+      {
+        "name": "metrics",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Metrics to query. To learn about the different types of metrics that you can query for all GMV Max Campaigns, for Product GMV Max Campaigns, or for LIVE GMV Max Campaigns, see Metrics in GMV Max Campaign reports ."
+      },
+      {
+        "name": "enable_total_metrics",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether to enable the total added-up data for your requested metrics. When enable_total_metrics is enabled, we will provide the aggregate data for all pages as you query different pages. Supported values: true , false . Default value: false ."
+      },
+      {
+        "name": "dimensions",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Dimension groupings. Enum values: advertiser_id : Group by advertiser ID. campaign_id : Group by campaign ID. stat_time_day : Group by day. stat_time_hour : Group by hour. item_group_id : Group by SPU ID. item_id : Group by post ID. room_id : Group by room ID. duration : Group by duration. For example, [\"campaign_id\", \"stat_time_day\"] indicates that both campaign_id and stat_time_day (days) are grouped. The available dimension groupings vary based on the type of metrics that you want to query. To learn about the available dimension groupings for your desired metrics type, see Metrics in GMV Max Campaign reports ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions. To learn about the available filters for your desired metrics type, see Metrics in GMV Max Campaign reports ."
+      },
+      {
+        "name": "gmv_max_promotion_types",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by the GMV Max Campaign type. Enum values: PRODUCT : Product GMV Max Campaign. LIVE : LIVE GMV Max Campaign."
+      },
+      {
+        "name": "campaign_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by a list of GMV Max Campaign IDs. Max size: 100."
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by a GMV Max Campaign name. Fuzzy match is supported."
+      },
+      {
+        "name": "campaign_statuses",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by campaign statuses. Enum values: STATUS_DELIVERY_OK : Active. STATUS_DISABLE : Inactive. STATUS_DELETE : Deleted."
+      },
+      {
+        "name": "item_group_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by a list of product SPU IDs. Max size: 100."
+      },
+      {
+        "name": "creative_types to-be-deprecated",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required when you filter one SPU ID using campaign_ids and item_group_ids . Not supported when you specify multiple IDs in the campaign_ids filter or item_group_ids filter or both, or specify multiple ID dimensions. Filter by creative types. Enum values: ADS_AND_ORGANIC : Ads and organic. This type contains all creatives that are authorized and in use for ads. The total gross revenue from videos in this type includes sales from both ads and organic videos. ORGANIC : Organic only. This type contains videos that are used in organic traffic only. The total gross revenue from videos in this type includes sales from organic videos only. REMOVED : Removed. This type contains automatically selected videos that have been manually removed from your campaign. Max size: 1."
+      },
+      {
+        "name": "creative_delivery_statuses",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "You can only use this filter when you specify multiple IDs in the campaign_ids filter or item_group_ids filter or both, or specify multiple ID dimensions. This filter cannot be used together with creative_types . Filter by creative statuses. Enum values: IN_QUEUE : In queue. Post is ready to be tested for its conversion-driving potential. LEARNING : Learning. Post is being tested for its conversion-driving potential. DELIVERING : Delivering. Post is being regularly promoted as part of your campaign. NOT_DELIVERYING : Not delivering. Post didn't show strong conversion potential during testing and will not be regularly promoted as part of your campaign. AUTHORIZATION_NEEDED : Authorization needed. This video hasn't been authorized for use in ads. You can authorize your own videos from your TikTok account or request authorization from other creators. This status will be updated here within 20 minutes of authorization. EXCLUDED : Excluded. Post was manually removed and will not be regularly promoted as part of your campaign. You can add this post back to your campaign at any time. UNAVAILABLE : Unavailable. Private videos, rejected videos, deleted videos, or videos from suspended TikTok accounts can't be used in ads. In some cases, you may observe cost from unavailable videos because videos that are rejected by TikTok’s content review process part-way through the campaign may still be delivered. REJECTED : Rejected. The video has been rejected by the content moderation team. If you've appealed a rejection, the video status will be \"rejected\" until the appeal has been reviewed. NOT_ACTIVE : Not active. This post has been deprioritized because it was uploaded more than 30 days ago and hasn't earned any gross revenue in the past 30 days."
+      },
+      {
+        "name": "search_word",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Filter by a search keyword, such as a video title, TikTok post ID, or TikTok account name. Fuzzy match is supported."
+      },
+      {
+        "name": "room_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Filter by a list of Livestream room IDs. Max size: 100."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting field. Not sorted by default. We recommend using a sorting field to ensure the results are sorted in a logical order. To find the available fields, see Supported sorting fields ."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC , DESC . Default value: DESC ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Current page number. Value range: ≥1. Default value: 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "integer",
+        "description": "Page size. Value range: 1-1,000. Default value: 10."
+      },
+      {
+        "name": "cost",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost"
+      },
+      {
+        "name": "net_cost",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Net cost"
+      },
+      {
+        "name": "orders",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Orders (SKU)"
+      },
+      {
+        "name": "cost_per_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost per order"
+      },
+      {
+        "name": "gross_revenue",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Gross revenue"
+      },
+      {
+        "name": "roi",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "ROI"
+      },
+      {
+        "name": "product_impressions",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Product ad impressions"
+      },
+      {
+        "name": "product_clicks",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Product ad clicks"
+      },
+      {
+        "name": "product_click_rate",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Product ad click rate"
+      },
+      {
+        "name": "ad_click_rate",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Ad click rate"
+      },
+      {
+        "name": "ad_conversion_rate",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Ad conversion rate"
+      },
+      {
+        "name": "ad_video_view_rate_2s",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "2-second ad video view rate"
+      },
+      {
+        "name": "ad_video_view_rate_6s",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "6-second ad video view rate"
+      },
+      {
+        "name": "ad_video_view_rate_p25",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "25% ad video view rate"
+      },
+      {
+        "name": "ad_video_view_rate_p50",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "50% ad video view rate"
+      },
+      {
+        "name": "ad_video_view_rate_p75",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "75% ad video view rate"
+      },
+      {
+        "name": "ad_video_view_rate_p100",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "100% ad video view rate"
+      },
+      {
+        "name": "cost",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost"
+      },
+      {
+        "name": "net_cost",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Net cost"
+      },
+      {
+        "name": "orders",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Orders"
+      },
+      {
+        "name": "cost_per_order",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost per order"
+      },
+      {
+        "name": "gross_revenue",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Gross revenue"
+      },
+      {
+        "name": "roi",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "ROI"
+      },
+      {
+        "name": "live_views",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "LIVE views"
+      },
+      {
+        "name": "cost_per_live_view",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost per LIVE view"
+      },
+      {
+        "name": "10_second_live_views",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "10-second LIVE views"
+      },
+      {
+        "name": "cost_per_10_second_live_view",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "Cost per 10-second LIVE view"
+      },
+      {
+        "name": "live_follows",
+        "required": false,
+        "type": "string",
+        "raw_type": "",
+        "description": "LIVE follows"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "total_metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when enable_total_metrics is set to true in the request. The total added-up data for your requested metrics."
+        },
+        {
+          "name": "{metric_name}",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned metrics, which are determined by the metrics field specified in your request."
+        },
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Data list."
+        },
+        {
+          "name": "dimensions",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "All requested dimension data."
+        },
+        {
+          "name": "{dimension_name}",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned dimensions, which are determined by the dimensions field specified in your request."
+        },
+        {
+          "name": "metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "All requested metric data."
+        },
+        {
+          "name": "{metric_name}",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned metrics, which are determined by the metrics field specified in your request."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": []
+  }
+}

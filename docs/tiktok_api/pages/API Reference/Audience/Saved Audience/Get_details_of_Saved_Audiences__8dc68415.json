@@ -41,6 +41,240 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Return codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "saved_audiences",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of Saved Audiences."
+        },
+        {
+          "name": "saved_audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Saved Audience ID."
+        },
+        {
+          "name": "saved_audience_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Saved Audience name."
+        },
+        {
+          "name": "location_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the locations that you want to target."
+        },
+        {
+          "name": "gender",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Your targeted gender. Enum values: GENDER_FEMALE , GENDER_MALE , GENDER_UNLIMITED"
+        },
+        {
+          "name": "age_groups",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Your targeted age groups. For enum values, see Enumeration - Targeting Age Group ."
+        },
+        {
+          "name": "languages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Codes of the languages that you want to target."
+        },
+        {
+          "name": "audience_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of audience IDs."
+        },
+        {
+          "name": "excluded_audience_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of audience IDs to be excluded."
+        },
+        {
+          "name": "interest_category_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Interest classification."
+        },
+        {
+          "name": "interest_keyword_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of interest keywords to target audience."
+        },
+        {
+          "name": "actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of action category objects."
+        },
+        {
+          "name": "action_category_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the action categories (behaviors) or hashtags that you want to target."
+        },
+        {
+          "name": "action_scene",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Where you can collect information about user actions. Enum values: VIDEO_RELATED , CREATOR_RELATED , HASHTAG_RELATED ."
+        },
+        {
+          "name": "action_period",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time period to include actions from. Enum values: 0 , 7 , 15 . If action_scene is CREATOR_RELATED or HASHTAG_RELATED , 0 will be used regardless of the value you pass in. 0 means that there is no definite timeframe to select actions from."
+        },
+        {
+          "name": "video_user_actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Video-related Actions. If action_scene is VIDEO_RELATED , the allowed values are: WATCHED_TO_END , LIKED , COMMENTED , SHARED . If action_scene is CREATOR_RELATED , the allowed values are: FOLLOWING , VIEW_HOMEPAGE . If action_scene is HASHTAG_RELATED , the allowed value is VIEW_HASHTAG ."
+        },
+        {
+          "name": "operating_systems",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Device operating systems. Enum values: ANDROID , IOS . Only one value is allowed."
+        },
+        {
+          "name": "min_android_version",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Minimum device Android version. For enum values, see Enumeration - Minimum Android Version ."
+        },
+        {
+          "name": "min_ios_version",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Minimum iOS version. For enum values, see Enumeration - Minimum iOS Version ."
+        },
+        {
+          "name": "device_model_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the device models."
+        },
+        {
+          "name": "network_types",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Device connection types. Default: unlimited . For enum values, see Enumeration - Connection Type ."
+        },
+        {
+          "name": "carrier_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Carriers."
+        },
+        {
+          "name": "device_price_ranges",
+          "required": false,
+          "type": "number",
+          "raw_type": "number[]",
+          "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important :The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging Size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

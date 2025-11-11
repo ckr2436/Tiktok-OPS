@@ -82,6 +82,520 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "advertiser_account_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Advertiser account balance list. Note : If the ad account belongs to a Business Center that has enabled Payment Portfolio, the following parameters will be for the Payment Portfolio rather than the ad account: account_balance valid_account_balance frozen_balance tax cash_balance valid_cash_balance transferable_amount"
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account ID."
+        },
+        {
+          "name": "advertiser_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account name."
+        },
+        {
+          "name": "advertiser_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account display status. Enum values： SHOW_ACCOUNT_STATUS_NOT_APPROVED : failed. SHOW_ACCOUNT_STATUS_APPROVED : passed. SHOW_ACCOUNT_STATUS_IN_REVIEW : under review. SHOW_ACCOUNT_STATUS_PUNISHED : punishment."
+        },
+        {
+          "name": "advertiser_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account type. Enum values： AUCTION (auction), RESERVATION (reservation)."
+        },
+        {
+          "name": "timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account time zone. For enum values, see Appendix-Time Zone ."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account currency. For enum values, see Appendix-Currency ."
+        },
+        {
+          "name": "account_open_days",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account opening days."
+        },
+        {
+          "name": "balance_reminder",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Balance hit the line, when the balance hit the line is yes, it means that you should add money to the main account of the advertisement."
+        },
+        {
+          "name": "company",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account company name."
+        },
+        {
+          "name": "contact_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account contact name."
+        },
+        {
+          "name": "contact_email",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account contact email."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser account opening time (UTC+0). Example: 2017-01-01 00:00:00 ."
+        },
+        {
+          "name": "first_recharge_amount Deprecated",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "First recharge amount, kept to two decimal places."
+        },
+        {
+          "name": "first_recharge_time Deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "First recharge time (UTC+0). Example: 2017-01-01 00:00:00 ."
+        },
+        {
+          "name": "latest_recharge_time Deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Last recharge time (UTC+0). Example: 2017-01-01 00:00:00 ."
+        },
+        {
+          "name": "recharge_amount Deprecated",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Recharge the total amount, kept to two decimal places."
+        },
+        {
+          "name": "recharge_count Deprecated",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of recharges."
+        },
+        {
+          "name": "account_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account total balance, kept to two decimal places."
+        },
+        {
+          "name": "valid_account_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account valid account balance, kept to two decimal places."
+        },
+        {
+          "name": "frozen_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account frozen balance, kept to two decimal places."
+        },
+        {
+          "name": "tax",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account taxes, kept to two decimal places. The default value is 0 ."
+        },
+        {
+          "name": "cash_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account cash balance, kept to two decimal places."
+        },
+        {
+          "name": "valid_cash_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account valid cash balance, kept to two decimal places."
+        },
+        {
+          "name": "grant_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account coupon/voucher balance, kept to two decimal places."
+        },
+        {
+          "name": "valid_grant_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Advertiser account valid coupon/voucher balance, kept to two decimal places."
+        },
+        {
+          "name": "payment_portfolio_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only for a Business Center that has enabled Payment Portfolio. The ID of the Payment Portfolio linked to the ad account."
+        },
+        {
+          "name": "payment_portfolio_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only for a Business Center that has enabled Payment Portfolio. The name of the Payment Portfolio linked to the ad account."
+        },
+        {
+          "name": "transferable_amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Amount that you can transfer from the advertiser account, based on the currency used in your advertiser account, and kept to two decimal places. Note : The transferable amount excludes the frozen balance ( frozen_balance ) and the deposit for ad delivery. Therefore, the transferable_amount might be lower than both valid_cash_balance and valid_account_balance . To ensure uninterrupted ad delivery, we recommend transferring an amount not greater than the transferable_amount . This field will only be returned when total_number is 1."
+        },
+        {
+          "name": "max_transferable_amount",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Details of the maximum amount that you can transfer from the ad account to the Business Center."
+        },
+        {
+          "name": "cash_amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The maximum cash amount that you can transfer from the ad account to the Business Center, based on the currency used in your advertiser account, and kept to two decimal places."
+        },
+        {
+          "name": "grant_amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The maximum voucher amount that you can transfer from the ad account to the Business Center, based on the currency used in your advertiser account, and kept to two decimal places."
+        },
+        {
+          "name": "balance_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Details of the balances for the ad account."
+        },
+        {
+          "name": "account_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total balance of the ad account, kept to two decimal places. Formula: account_balance = valid_account_balance + frozen_balance + tax ."
+        },
+        {
+          "name": "frozen_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The frozen balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "valid_account_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The available balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "tax",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The taxes of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "cash_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total cash balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "frozen_cash_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The frozen cash balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "cash_tax",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The cash taxes of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "valid_cash_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The available cash balance of the ad account, kept to two decimal places. Formula: valid_cash_balance = cash_balance - ( frozen_cash_balance + cash_tax )."
+        },
+        {
+          "name": "grant_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total voucher balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "valid_grant_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The available voucher balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "frozen_grant_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The frozen voucher balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "credit_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total credit balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "valid_credit_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The available credit balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "frozen_credit_balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The frozen credit balance of the ad account, kept to two decimal places."
+        },
+        {
+          "name": "budget_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Budget mode of the ad account. Enum values: UNLIMITED : No budget limit for the ad account. MONTHLY_BUDGET : The ad account consumes BC credit balance within the monthly budget. DAILY_BUDGET : The ad account consumes BC credit balance within the daily budget. CUSTOM_BUDGET : The ad account consumes BC credit balance within the one-time custom budget. Note : If the BC is in manual allocation mode, the returned value is always UNLIMITED . The default budget mode for each ad account is UNLIMITED unless you customize your budget mode."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "If budget_mode = MONTHLY_BUDGET , the monthly budget of the advertiser account will be returned. If budget_mode = DAILY_BUDGET , the daily budget of the advertiser account will be returned. If budget_mode = CUSTOM_BUDGET , the one-time custom budget of the advertiser account will be returned. If budget_mode = UNLIMITED , returns 0 ."
+        },
+        {
+          "name": "budget_cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "If budget_mode is MONTHLY_BUDGET , DAILY_BUDGET , or CUSTOM_BUDGET , spent budget of the ad account will be returned. If budget_mode = UNLIMITED , returns 0 ."
+        },
+        {
+          "name": "budget_remaining",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The remaining budget. Formula: budget_remaining = budget - budget_cost ."
+        },
+        {
+          "name": "budget_frequency_restriction",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Restrictions on the number of budget changes allowed for the current day. You can make up to 10 updates per day, including both budget mode and budget amount changes or only budget amount changes for the ad account."
+        },
+        {
+          "name": "total_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The maximum number of updates allowed. Example: 10."
+        },
+        {
+          "name": "used_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of updates that have been made. Example: 0."
+        },
+        {
+          "name": "remaining_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The remaining number of updates allowed. Example: 10."
+        },
+        {
+          "name": "effective_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the restriction starts, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "effective_end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the restriction ends, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2025-01-01 23:59:59 ."
+        },
+        {
+          "name": "budget_amount_restriction",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Restrictions on the minimum amount that can be changed for the budget."
+        },
+        {
+          "name": "minimum_amount",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The minimum amount that you can change for the budget. The amount is based on the budget that has been consumed during the budget period. The change amount should be equal to or greater than this value."
+        },
+        {
+          "name": "min_transferable_amount",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned only when page_size is set to 1 in the request. Details of the minimal amount that you can transfer to the ad account."
+        },
+        {
+          "name": "cash_amount",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The minimum cash amount that you can transfer to the ad account."
+        },
+        {
+          "name": "grant_amount",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The minimum voucher amount that you can transfer to the ad account."
+        },
+        {
+          "name": "credit_amount",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The minimum credit amount that you can transfer to the ad account."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"page_info\": {\n            \"page\": 1,\n            \"total_number\": 2,\n            \"page_size\": 5,\n            \"total_page\": 1\n        },\n        \"advertiser_account_list\": [\n            {\n                \"advertiser_type\": \"AUCTION\",\n                \"frozen_balance\": 0,\n                \"grant_balance\": 0,\n                \"account_open_days\": 282,\n                \"valid_cash_balance\": 0,\n                \"company\": \"tiktok\",\n                \"advertiser_id\": \"ADVERTISER_ID\",\n                \"latest_recharge_time\": null,\n                \"cash_balance\": 0,\n                \"timezone\": \"Etc/GMT-12\",\n                \"balance_reminder\": false,\n                \"create_time\": \"2021-11-02 02:15:32\",\n                \"first_recharge_amount\": 0,\n                \"contact_name\": \"CONTACT_NAME\",\n                \"account_balance\": 0,\n                \"valid_grant_balance\": 0,\n                \"recharge_amount\": 0,\n                \"valid_account_balance\": 0,\n                \"contact_email\": \"\"\n                \"recharge_count\": 0,\n                \"currency\": \"USD\",\n                \"advertiser_status\": null,\n                \"tax\": 0,\n                \"advertiser_name\": \"ADVERTISER_NAME\",\n                \"budget_mode\": \"UNLIMITED\",\n                \"budget\": 0,\n                \"budget_cost\": 0\n            }\n        ]\n    }\n}"

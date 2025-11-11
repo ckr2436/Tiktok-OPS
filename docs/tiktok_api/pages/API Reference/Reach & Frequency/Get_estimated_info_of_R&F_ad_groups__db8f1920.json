@@ -40,6 +40,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return messages. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "estimated_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Estimated information."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID."
+        },
+        {
+          "name": "base_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Basic information."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Total budget."
+        },
+        {
+          "name": "cpm",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Cost per mille."
+        },
+        {
+          "name": "impression",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total impressions, in the unit of 1,000 ."
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of people reached, in the unit of 1,000 ."
+        },
+        {
+          "name": "average_frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "impressions per capita = total impression/ number of people reached."
+        },
+        {
+          "name": "daily_cost",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Daily cost."
+        },
+        {
+          "name": "cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Cost for the day."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date."
+        },
+        {
+          "name": "frequency_per_person",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Distribution of impressions per capita."
+        },
+        {
+          "name": "frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Impressions per capita."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Percentage of current impressions to total impressions."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"estimated_info\": [\n            {\n                \"adgroup_id\": 123,\n                \"daily_cost\": [\n                    {\n                        \"date\": \"2020-08-07\",\n                        \"cost\": 3587.5169107559\n                    },\n                    {\n                        \"date\": \"2020-08-08\",\n                        \"cost\": 3565.1767601342\n                    }\n                ],\n                \"frequency_per_person\": [\n                    {\n                        \"percentage\": 0.28,\n                        \"frequency\": 1\n                    },\n                    {\n                        \"percentage\": 0.72,\n                        \"frequency\": 2\n                    }\n                ]\n            }\n        ]\n    }\n    \"request_id\": \"8ED342\"\n}"

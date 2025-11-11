@@ -75,6 +75,135 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Member information."
+        },
+        {
+          "name": "user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User ID."
+        },
+        {
+          "name": "user_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User name."
+        },
+        {
+          "name": "user_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Basic roles within Business Center."
+        },
+        {
+          "name": "relation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User's relation to the Business Center. If the invitation to join the Business Center is still pending, or has been accepted."
+        },
+        {
+          "name": "user_email",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User email address. Note : To protect the personal information of members, some email addresses are masked by default. For instance, an email address of user@example.com will be returned as u**r@example.com . You can apply for an allowlist to access the unmasked email addresses of all members. Accessing unmasked email addresses of all members within your Business Center is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+        },
+        {
+          "name": "ext_user_role",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Advanced role of the user in the Business Center other than basic role."
+        },
+        {
+          "name": "finance_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User finance role. Enum values: MANAGER , ANALYST ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"user_id\": null,\n                \"ext_user_role\": {\n                    \"finance_role\": null\n                },\n                \"relation_status\": \"BOUND\",\n                \"user_name\": null,\n                \"user_role\": \"ADMIN\",\n                \"user_email\": \"{{user_email}}\"\n            },\n            {\n                \"user_id\": null,\n                \"ext_user_role\": {\n                    \"finance_role\": null\n                },\n                \"relation_status\": \"PENDING\",\n                \"user_name\": null,\n                \"user_role\": \"STANDARD\",\n                \"user_email\": \"{{user_email}}\"\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page\": 1,\n            \"page_size\": 20,\n            \"total_page\": 1\n        }\n    }\n}"

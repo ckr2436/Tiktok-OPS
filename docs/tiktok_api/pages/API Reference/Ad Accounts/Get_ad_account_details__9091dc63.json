@@ -40,6 +40,261 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Ad account (advertiser account) list."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID."
+        },
+        {
+          "name": "owner_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of a Business Center that the ad account belongs to. Note : This field will be returned only when the below requirements are both met: The user has obtained admin access to the owner Business Center (The Business Center that owns the ad account), and The user has obtained Admin/Operator/Analyst permission for the ad account from the owner Business Center, rather than a partner Business Center."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account status. For enum values, see Enumeration - Advertiser Status . Example: STATUS_ENABLE ."
+        },
+        {
+          "name": "role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account role. For enum values, , see Enumeration - Advertiser Role . Example: ROLE_ADVERTISER ."
+        },
+        {
+          "name": "rejection_reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Reason for rejection."
+        },
+        {
+          "name": "timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account time zone including GMT offset, or time zone name in the format of \"Region/City\" (based on the TZ database name conventions ). Example: Etc/GMT , Europe/London ."
+        },
+        {
+          "name": "display_timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time zone name in the format of \"Region/City\" (based on the TZ database name conventions . Example: Europe/London ."
+        },
+        {
+          "name": "company",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account's company name."
+        },
+        {
+          "name": "company_name_editable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the company name of the ad account can be updated via API. If the value of this field is true , you can use the company field in /advertiser/update/ to update the company name. For non-self-serve advertisers (advertisers directly managed by TikTok representatives), the value of this field will be false . If they want to update the company name, they need to contact their TikTok representatives."
+        },
+        {
+          "name": "industry",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account industry category code. For enum values, see Industries . Example: 290303 ."
+        },
+        {
+          "name": "address",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account address."
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The place of registration code of the ad account. Example: US ."
+        },
+        {
+          "name": "advertiser_account_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Type of the ad account. Enum values: RESERVATION (reservation ad account), AUCTION (auction ad account)."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Type of currency used by the ad account, in ISO 4217 code format. Example: EUR ."
+        },
+        {
+          "name": "contacter",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Contact name, in masked format. The name of the person responsible for this account. Example: Te********************nt ."
+        },
+        {
+          "name": "email",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account contact email, in masked format. Example: l***********@************* ."
+        },
+        {
+          "name": "cellphone_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Contact mobile number, in masked format."
+        },
+        {
+          "name": "telephone_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Fixed phone number, in masked format."
+        },
+        {
+          "name": "language",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the language used by the ad account. Example: en ."
+        },
+        {
+          "name": "license_no",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business license number."
+        },
+        {
+          "name": "license_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business license preview URL. The link is valid for an hour by default."
+        },
+        {
+          "name": "license_province to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The province where the license was issued."
+        },
+        {
+          "name": "license_city to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The city where the license was issued."
+        },
+        {
+          "name": "promotion_area to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The geographical area where the ad account's promotions are focused."
+        },
+        {
+          "name": "promotion_center_province to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The primary province for the ad account's promotional activities."
+        },
+        {
+          "name": "promotion_center_city to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The primary city for the ad account's promotional activities."
+        },
+        {
+          "name": "brand to-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The brand name of the ad account."
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Brand description."
+        },
+        {
+          "name": "balance",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Ad account available balance. The unit is related to the currency of the ad account. Example: 5325.43."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "datetime",
+          "description": "The time when the ad account was created, in the format of an Epoch/Unix timestamp in seconds. Example: 1510740064 ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"company\": \"{{company}}\",\n                \"address\": null,\n                \"status\": \"STATUS_ENABLE\",\n                \"contacter\": null,\n                \"license_province\": null,\n                \"license_city\": null,\n                \"currency\": \"USD\",\n                \"promotion_area\": \"0\",\n                \"promotion_center_city\": null,\n                \"cellphone_number\": null,\n                \"timezone\": \"Etc/GMT+8\",\n                \"description\": \"{{description}}\",\n                \"rejection_reason\": \"\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"license_no\": \"{{license_no}}\",\n                \"promotion_center_province\": null,\n                \"name\": \"{{name}}\",\n                \"industry\": \"{{industry}}\",\n                \"telephone_number\": null,\n                \"license_url\": \"{{license_url}}\",\n                \"role\": \"ROLE_CHILD_ADVERTISER\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"create_time\": {{create_time}},\n                \"owner_bc_id\": \"{{owner_bc_id}}\",\n                \"language\": \"zh\",\n                \"email\": null,\n                \"country\": \"CN\",\n                \"balance\": 0.0,\n                \"brand\": null,\n                \"display_timezone\": \"America/Los_Angeles\"\n            }\n        ]\n    }\n}"

@@ -62,6 +62,51 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "file_path",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique path to the file in the repository. Note : Only the same advertiser ID that was used to upload the audience file can later use the returned file_path to create the audience."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

@@ -114,6 +114,149 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of campaigns. The returned fields are generated based on the fields specified in the request. All fields are returned by default."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign ID."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign name."
+        },
+        {
+          "name": "operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ON/OFF status of campaign. Enum values: ENABLE : in the ON status. DISABLE : in the OFF status."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the campaign was created, in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the campaign was last modified, in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "objective_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertising objective. Enum value: PRODUCT_SALES (Product Sales)."
+        },
+        {
+          "name": "secondary_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Secondary status. For enum values, see Supported campaign secondary statuses for GMV Max Campaigns ."
+        },
+        {
+          "name": "roi_protection_compensation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ROI protection compensation status of the campaign. ROI protection is a feature that automatically issues ad credits when the return on investment (ROI) for your campaign falls below a certain threshold despite following GMV Max guidelines and best practices. To learn about the eligibility criteria for ROI protection and scenarios where the campaign is ineligible for ROI protection, see About ROI protection for GMV Max campaigns . Enum values: IN_EFFECT : ROI protection eligible. This campaign is eligible for an ad credit if your ads drive more than 20 conversions in 24 hours, but your ROI result is less than 90% of your target. To maintain campaign eligibility for ROI protection, don't edit your ROI, pause ad delivery, or enable max delivery. Campaign eligibility resets every 24 hours. NOT_ELIGIBLE : ROI protection ineligible. This campaign isn't eligible for an ad credit if the target ROI isn't met because its ROI has been edited, the campaign has been paused, max delivery is enabled, or there are issues with your shop, ad accounts, livestreams, or products. Campaign eligibility resets every 24 hours."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paging size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"objective_type\": \"PRODUCT_SALES\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"secondary_status\": \"CAMPAIGN_STATUS_DISABLE\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"operation_status\": \"DISABLE\"\n            },\n            {\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"objective_type\": \"PRODUCT_SALES\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"secondary_status\": \"CAMPAIGN_STATUS_DISABLE\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"operation_status\": \"DISABLE\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1,\n            \"total_number\": 2\n        }\n    }\n}"

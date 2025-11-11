@@ -61,6 +61,205 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "campaigns",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of TTO Creator Marketplace campaigns."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TTO Creator Marketplace campaign."
+        },
+        {
+          "name": "campaign_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the TTO Creator Marketplace campaign. Enum values: CAMPAIGN : A campaign with a campaign-level invite link . BRAND_LINK : A campaign with a brand-level invite link ."
+        },
+        {
+          "name": "brand_profile_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Brand Profile associated with the campaign."
+        },
+        {
+          "name": "brand_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Brand name."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign name."
+        },
+        {
+          "name": "handle_names",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The handle name list of TikTok creators that the campaign is for."
+        },
+        {
+          "name": "campaign_description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign description."
+        },
+        {
+          "name": "anchor_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the anchor that is associated with the campaign."
+        },
+        {
+          "name": "video_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of video IDs linked to the campaign."
+        },
+        {
+          "name": "advertiser_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of ad accounts that the campaign is associated with. When a creator's video is linked to the campaign, these ad accounts will automatically be granted Spark Ads authorization for the video."
+        },
+        {
+          "name": "spark_ads_requested_authorization_days",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The default Spark Ads authorization days for videos uploaded to the campaign. Enum values: 0, 7, 30, 60, 180, 365."
+        },
+        {
+          "name": "invite_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The invite link that is associated with the TTO Creator Marketplace campaign."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the campaign was created, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2024-01-01 00:00:01 ."
+        },
+        {
+          "name": "country_codes",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The list of country or region codes associated with the TTO Creator Marketplace campaign. This field represents the regions where the creators invited to the campaign are located. To learn about the values that might be returned for this field, see Location code . You can pass the field value to the Header parameter Country-Code in /tto/tcm/report/ to obtain video-level reports for a specific region for a TikTok One Creator Marketplace campaign. Example: CA ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "dm_info",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Direct messaging link information."
+        },
+        {
+          "name": "business_account_handle",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle (username) of the Business Account."
+        },
+        {
+          "name": "dm_allowed",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether direct messaging is allowed. Supported values: true (allowed), false (not allowed)."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"campaigns\": [\n            {\n                \"campaign_type\": \"CAMPAIGN\",\n                \"brand_name\": \"{{brand_name}}\",\n                \"campaign_description\": \"{{campaign_description}}\",\n                \"anchor_id\": null,\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"country_codes\": [\n                    \"US\"\n                ],\n                \"create_time\": \"2024-10-03 19:32:04\",\n                \"handle_names\": [\n                    \"{{handle_name}}\"\n                ],\n                \"invite_link\": \"https://www.tiktok.com/t/1111/\",\n                \"spark_ads_requested_authorization_days\": 0,\n                \"video_ids\": []\n            },\n            {\n                \"campaign_type\": \"CAMPAIGN\",\n                \"brand_name\": \"{{brand_name}}\",\n                \"campaign_description\": \"{{campaign_description}}\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"country_codes\": [\n                    \"US\"\n                ],\n                \"create_time\": \"2024-09-25 20:47:49\",\n                \"handle_names\": [\n                    \"{{handle_name}}\"\n                ],\n                \"invite_link\": \"https://www.tiktok.com/t/333333/\",\n                \"spark_ads_requested_authorization_days\": 0,\n                \"advertiser_ids\":[],\n                \"video_ids\": [\n                    \"{{video_id}}\"\n                ]\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 5,\n            \"total_number\": 2,\n            \"total_page\": 1\n        }\n    }\n}"

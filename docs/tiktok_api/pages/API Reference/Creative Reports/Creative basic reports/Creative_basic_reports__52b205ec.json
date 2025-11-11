@@ -1,0 +1,521 @@
+{
+  "title": "Creative basic reports",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/creative/report/get/",
+  "method": "GET",
+  "category_path": [
+    "Creative Reports",
+    "Creative basic reports"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request content type Accepted Value: \"application/json\" ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "material_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Material type. Enum values: VIDEO , IMAGE , INSTANT_PAGE ."
+      },
+      {
+        "name": "lifetime",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Use to specify whether to query all data. If so, you do not need to specify start_date and end_date . The default value is: False ."
+      },
+      {
+        "name": "start_date Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Start time, closed interval. Format such as: 2020-01-01 (advertiser time zone). This is mandatory when lifetime is set to false ."
+      },
+      {
+        "name": "end_date Conditional",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "End time, closed interval. Format such as: 2020-01-01 (advertiser time zone). This is mandatory when lifetime is set to false ."
+      },
+      {
+        "name": "info_fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Information you want to get about creatives. The default value is [ material_id , video_id , image_id , page_id ]. Allowed values: All data fields that are shown under info in the response."
+      },
+      {
+        "name": "metrics_fields",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The metrics or dimension data that you need. The default value is: [ impressions , spend ]. Value range: all fields under metrics in the response."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering criteria"
+      },
+      {
+        "name": "material_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Material ID. You can specify at most 10 material IDs to filter the results for."
+      },
+      {
+        "name": "material_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Material name. Fuzzy search is supported."
+      },
+      {
+        "name": "ad_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ad name. Fuzzy search is supported."
+      },
+      {
+        "name": "ad_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of ad IDs you want to filter by. Bulk query is supported."
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ad group name that you want to filter by. Fuzzy search is supported."
+      },
+      {
+        "name": "adgroup_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The list of ad groups that you want to filter by. Bulk query is supported"
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The name of the campaign that you want to filter by. Fuzzy search is supported"
+      },
+      {
+        "name": "campaign_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The list of campaigns that you want to filter by. Bulk query is supported."
+      },
+      {
+        "name": "country_code",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of location codes that you want to filter by. For enum values, see Appendix - Location code"
+      },
+      {
+        "name": "placement",
+        "required": false,
+        "type": "string",
+        "raw_type": "list",
+        "description": "List of ad placements that you want to filter by. For enum values, see Enumeration - Placement"
+      },
+      {
+        "name": "page_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Instant page IDs"
+      },
+      {
+        "name": "page_status",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Instant page status. Enum values: DRAFT , READY"
+      },
+      {
+        "name": "page_biz_type",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Instant page business type. Enum values: CUSTOM , APP_PROFILE , INSTANT_FORM"
+      },
+      {
+        "name": "page_template_type",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Instant page template type. When page_biz_type includes CUSTOM , the allowed values are CUSTOMIZED INTRODUCTION BRAND_SAFETY SALES_PRODUCT MOVIE_TRAILER When page_biz_type includes INSTANT_FORM , the enum values are NORMAL_FORM and ADVANCED_FORM ."
+      },
+      {
+        "name": "app_profile_country",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Codes of the country or location that the instant page is deployed to. Valid when instant_page_biz_type includes APP_PROFILE ."
+      },
+      {
+        "name": "app_profile_external_app_id",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "ID of the app that the instant page directs to. Valid when instant_page_biz_type includes APP_PROFILE"
+      },
+      {
+        "name": "customized_page_external_action",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Conversion events that are specific to tiktok instant pages. The enumeration values are found in: Appendix - Conversion events ."
+      },
+      {
+        "name": "spend",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Total Cost Range"
+      },
+      {
+        "name": "min",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Minimum value, open interval. Not filling means there is no minimum."
+      },
+      {
+        "name": "max",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Maximum value, open interval. \"No\" means no limit to the maximum value."
+      },
+      {
+        "name": "conversion",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The conversion value"
+      },
+      {
+        "name": "min",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "The minimum value. open interval. If not specified, there is no limit on the minimum value."
+      },
+      {
+        "name": "max",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "The maximum value. Open interval. If not specified, there is no limit on the maximum value."
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Field to sort by. Support sorting according to the creation time of the material and all the index data. Not sorted by default."
+      },
+      {
+        "name": "sort_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Sorting order. Enum values: ASC , DESC . Default value: DESC ."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current number of pages. Default value: 1, range: ≥ 1"
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 10, range: 1-1000"
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/creative/report/get/?advertiser_id={{advertiser_id}}&material_type=VIDEO&lifetime=false&start_date=2023-01-01&end_date=2023-08-01&info_fields=[\"material_id\", \"video_id\", \"image_id\",\"page_id\"]&metrics_fields=[\"spend\",\"impressions\",\"clicks\"]&page=1&page_size=10' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Report information"
+        },
+        {
+          "name": "info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Material information"
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID"
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID"
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image ID"
+        },
+        {
+          "name": "source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Source of material. For enum values, see Enumeration - Material Source ."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Country or location code. For enum values, see Appendix - Location code"
+        },
+        {
+          "name": "placement",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Placement. For enum values, see Enumeration - Placement"
+        },
+        {
+          "name": "num_ads",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of ads."
+        },
+        {
+          "name": "total_active_days",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total active days. An active day is a day that has spending ( spend > 0). This field only supports VIDEO type of material."
+        },
+        {
+          "name": "related_ad_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the related ads. This field only supports VIDEO type of material."
+        },
+        {
+          "name": "adgroup_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of related ad groups. This field only supports VIDEO type of material."
+        },
+        {
+          "name": "related_adgroup_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the related ad groups. This field only supports VIDEO type of material."
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Instant page ID"
+        },
+        {
+          "name": "page_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Instant page status. Enum values: DRAFT , READY"
+        },
+        {
+          "name": "page_biz_type",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Instant page business type. Enum values: CUSTOM , APP_PROFILE , INSTANT_FORM"
+        },
+        {
+          "name": "page_template_type",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Instant page template type. When page_biz_type includes CUSTOM , the allowed values are CUSTOMIZED INTRODUCTION BRAND_SAFETY SALES_PRODUCT MOVIE_TRAILER When page_biz_type includes INSTANT_FORM , the allowed values are NORMAL_FORM and ADVANCED_FORM ."
+        },
+        {
+          "name": "page_thumbnail",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Link to the page thumbnail"
+        },
+        {
+          "name": "app_profile_country",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Codes of the countries or locations that the instant page is deployed to. Valid when instant_page_biz_type includes APP_PROFILE ."
+        },
+        {
+          "name": "app_profile_external_app_id",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "ID of the app that the instant page directs to. Valid when instant_page_biz_type includes APP_PROFILE"
+        },
+        {
+          "name": "app_profile_icon",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "App icon"
+        },
+        {
+          "name": "customized_page_external_action",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Conversion events that are specific to customized instant pages"
+        },
+        {
+          "name": "metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Metrics data. Please see the Metrics table for details."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Paging information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "current page number"
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging Size"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number"
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"metrics\": {\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"clicks\": \"17\",\n                    \"impressions\": \"30\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"spend\": \"0\",\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"spend\": \"0\",\n                    \"clicks\": \"3\",\n                    \"impressions\": \"3\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\",\n                    \"spend\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"impressions\": \"11\",\n                    \"spend\": \"0\",\n                    \"clicks\": \"1\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            },\n            {\n                \"metrics\": {\n                    \"spend\": \"0\",\n                    \"clicks\": \"0\",\n                    \"impressions\": \"0\"\n                },\n                \"info\": {\n                    \"page_id\": null,\n                    \"image_id\": null,\n                    \"video_id\": \"{{video_id}}\",\n                    \"material_id\": \"{{material_id}}\"\n                }\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 560,\n            \"total_page\": 56,\n            \"page_size\": 10,\n            \"page\": 1\n        }\n    }\n}"
+    }
+  }
+}

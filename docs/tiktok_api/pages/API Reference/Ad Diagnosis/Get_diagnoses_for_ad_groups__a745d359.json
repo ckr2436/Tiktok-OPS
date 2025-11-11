@@ -54,6 +54,345 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "results",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of ad groups with the corresponding diagnoses."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID."
+        },
+        {
+          "name": "adgroup_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group name."
+        },
+        {
+          "name": "diagnosis",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Diagnosis for the ad group ."
+        },
+        {
+          "name": "diagnosis_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The date and time (UTC + 0 time) when the diagnosis was requested, in the format of \"YYYY-MM-DD HH:MM:SS\". Example: \"2024-01-01 00:00:01\"."
+        },
+        {
+          "name": "suggestions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Suggestions for the ad group."
+        },
+        {
+          "name": "creative",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Suggestions for creatives in the ad group. If no issues are detected for the creatives in the ad group, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "suggestion_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The date and time (UTC + 0 time) when the issue was detected and the suggestion was generated, in the format of \"YYYY-MM-DD HH:MM:SS\". Example: \"2024-01-01 00:00:01\"."
+        },
+        {
+          "name": "vid",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID. Example: v07033g50000c1irpg9l3c4i8hcdp7hg."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad ID. Example: 1700286510378002."
+        },
+        {
+          "name": "issue_suggestion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The suggestion for the issue. Enum values: NOBGM : The video lacks background music. You need to add background music to the video. You can use /creative/quick_optimization/create/ to create a Quick Optimization task for the video. VIDEO_LENGTH : The video duration is too short. Edit your video to increase its duration. You can use /creative/quick_optimization/create/ to create a Quick Optimization task for the video. VIDEO_RESOLUTION : The video resolution is too low. Replace the video with a higher resolution version."
+        },
+        {
+          "name": "suggestion_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Suggestion ID."
+        },
+        {
+          "name": "bid_and_budget",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Suggestions for the ad group regarding bidding and budget. If no issues are detected for the bidding and budget of the ad group, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "suggestion_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The date and time (UTC + 0 time) when the issue was detected and the suggestion was generated, in the format of \"YYYY-MM-DD HH:MM:SS\". Example: \"2024-01-01 00:00:01\"."
+        },
+        {
+          "name": "suggestion_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Suggestion ID."
+        },
+        {
+          "name": "issue_suggestion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The suggestion for the issue. Enum values: SUGGEST_BID : A new suggested bid will be provided SUGGEST_BUDGET : A suggested budget will be provided. NOBID_SWITCH : Switch to the Maximum Delivery bidding strategy. BUDGET_EDR : The Budget EDR (EDR) recommendations will be provided. To learn about EDR, see Estimated Delivery Results . BID_EDR : The Bid EDR recommendations will be provided."
+        },
+        {
+          "name": "bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned if issue_suggestion is SUGGEST_BID . Current bid value."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned if issue_suggestion is SUGGEST_BID , SUGGEST_BUDGET , or NOBID_SWITCH . Current budget."
+        },
+        {
+          "name": "suggest_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned if issue_suggestion is SUGGEST_BID . Suggested bid value."
+        },
+        {
+          "name": "suggest_budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned if issue_suggestion is SUGGEST_BUDGET or NOBID_SWITCH . Suggested budget value."
+        },
+        {
+          "name": "cost_floor",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned if issue_suggestion is SUGGEST_BID . Estimated minimum cost."
+        },
+        {
+          "name": "bid_edr_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "If issue_suggestion is not BID_EDR , the value of this field will be an empty list ( [] ). Bid EDR recommendations for the ad group. 9 sets of data for recommended bid raise ratios from -10% to 30% with a step of 5% and corresponding estimated results."
+        },
+        {
+          "name": "recommended_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Recommended bid. Adopt one suitable bid using /adgroup/update/ and pass the adopted bid price to conversion_bid_price within the same day (advertiser account time zone)."
+        },
+        {
+          "name": "bid_increase_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated bid increase ratio."
+        },
+        {
+          "name": "estimated_cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated cost."
+        },
+        {
+          "name": "cost_uplift",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated cost uplift."
+        },
+        {
+          "name": "cost_uplift_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated cost uplift ratio."
+        },
+        {
+          "name": "budget_edr_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "If issue_suggestion is not BUDGET_EDR , the value of this field will be an empty list ( [] ). Budget EDR recommendations for the ad group. 15 sets of data for recommended budget raise ratios from -20% to 50% with a step of 5%, and corresponding estimated results."
+        },
+        {
+          "name": "recommended_budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Recommended budget. Adopt one suitable budget using /adgroup/budget/update/ within the same day (advertiser account time zone)."
+        },
+        {
+          "name": "budget_increase_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated budget increase ratio."
+        },
+        {
+          "name": "estimated_conversion",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated conversion."
+        },
+        {
+          "name": "conversion_uplift",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated conversion uplift."
+        },
+        {
+          "name": "conversion_uplift_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated conversion uplift ratio."
+        },
+        {
+          "name": "cpa",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated CPA."
+        },
+        {
+          "name": "cpa_uplift",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated CPA uplift."
+        },
+        {
+          "name": "cpa_uplift_ratio",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated CPA uplift ratio."
+        },
+        {
+          "name": "impression",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Estimated impression."
+        },
+        {
+          "name": "event_track",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Suggestions for the ad group regarding event tracking. If no issues are detected for the event tracking of the ad group, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "suggestion_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The date and time (UTC + 0 time) when the issue was detected and the suggestion was generated, in the format of \"YYYY-MM-DD HH:MM:SS\". Example: \"2024-01-01 00:00:01\"."
+        },
+        {
+          "name": "suggestion_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Suggestion ID."
+        },
+        {
+          "name": "issue_suggestion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The suggestion for the issue. Enum values: PIXEL : This pixel had no activity in the last 7 days. Test your pixel settings."
+        },
+        {
+          "name": "pixel_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Pixel ID."
+        },
+        {
+          "name": "pixel_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Pixel code."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

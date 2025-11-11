@@ -40,6 +40,79 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TTO Creator Marketplace campaign."
+        },
+        {
+          "name": "spark_authorization_days",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The default Spark Ads authorization days for videos uploaded to the campaign. Enum values: 0, 7, 30, 60, 180, 365."
+        },
+        {
+          "name": "link_requests",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of linking requests that the creator has received."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the creator video that has been requested to be linked to the campaign."
+        },
+        {
+          "name": "link_request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the linking request. You can pass the ID to /tto/creator/link/request/confirm/ to approve or reject the linking request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"link_requests\": [\n            {\n                \"link_request_id\": \"{{link_request_id}}\",\n                \"video_id\": \"{{video_id}}\"\n            }\n        ],\n        \"spark_authorization_days\": 7\n    }\n}"

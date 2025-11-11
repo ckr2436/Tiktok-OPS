@@ -58,6 +58,128 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "lead_data",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The lead data. Note : The data within this object depends on the questions that you have set in the Instant Form or the questions collected in the direct message lead."
+        },
+        {
+          "name": "meta_data",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Metadata about the lead."
+        },
+        {
+          "name": "lead_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The source of the lead. Enum values: INSTANT_FORM : a lead generated through an Instant Form. DIRECT_MESSAGE : a lead generated from a direct message of the associated Business Account."
+        },
+        {
+          "name": "lead_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The lead ID."
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when lead_source is INSTANT_FORM . The page ID of the Instant Form."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The campaign ID."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The campaign name."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad group ID."
+        },
+        {
+          "name": "adgroup_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad group name."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad ID."
+        },
+        {
+          "name": "ad_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad name."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "dtring",
+          "description": "The time when the lead was created, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2025-01-01 00:00:01 ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"lead_data\": {\n            \"email\": \"{{email}}\"\n        },\n        \"meta_data\": {\n            \"ad_id\": \"{{ad_id}}\",\n            \"ad_name\": \"{{ad_name}}\",\n            \"adgroup_id\": \"{{adgroup_id}}\",\n            \"adgroup_name\": \"{{adgroup_name}}\",\n            \"campaign_id\": \"{{campaign_id}}\",\n            \"campaign_name\": \"{{campaign_name}}\",\n            \"create_time\": \"{{create_time}}\",\n            \"lead_id\": \"{{lead_id}}\",\n            \"lead_source\": \"INSTANT_FORM\",\n            \"page_id\": \"{{page_id}}\"\n        }\n    }\n}"

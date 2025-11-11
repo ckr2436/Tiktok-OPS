@@ -96,6 +96,114 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "changelog_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Change log information."
+        },
+        {
+          "name": "time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time of the activity, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "activity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Activity type. Enum values: USER : User. Changes mainly related to members and organization, including but not limited to the following scenarios: Invitation of a member to the Business Center Acceptance of the invitation to join the Business Center Removal of a member from the Business Center ACCOUNT : Account. Changes mainly related to creation and access management of ad accounts, including but not limited to the following scenarios: Creating an ad account Assigning a member access to an ad account Revoking a member's access to an ad account Sharing access to an ad account with a partner Revoking a partner's access to an ad account ASSET : Asset. Changes mainly related to assets, including but not limited to the following scenarios: Creating or deleting a catalog Requesting to add or approving the request to add a TikTok Shop Assigning a member access to an asset Revoking a member's access to an asset BUSINESS : Business. Changes mainly related to the Business Center, including but not limited to the following scenarios: Creating the Business Center Changing the setting of the Business Center, including name and company name"
+        },
+        {
+          "name": "operator_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The user ID of the operator."
+        },
+        {
+          "name": "activity_log",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Activity log details."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"changelog_list\": [\n            {\n                \"activity_type\": \"USER\",\n                \"activity_log\": \"{{activity_log}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"time\": \"{{time}}\"\n            },\n            {\n                \"activity_type\": \"ASSET\",\n                \"activity_log\": \"{{activity_log}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"time\": \"{{time}}\"\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page_size\": 50,\n            \"total_page\": 1,\n            \"page\": 1\n        }\n    }\n}"

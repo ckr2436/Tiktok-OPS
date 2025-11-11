@@ -40,6 +40,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "industry_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of creator industry labels, which can be used to obtain Branded Content creator rankings on TTO Creator Leaderboard. Creator industry labels are assigned to creators based on the commercial content they produce, including ad creatives and branded content on their TikTok accounts, and represent their commercial experience in certain industries."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the creator industry label."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the creator industry label."
+        },
+        {
+          "name": "content_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of content tag labels, which can be used to obtain Organic Content creator rankings on TTO Creator Leaderboard. Content tag labels are assigned to creators based on the main focus of the creator’s TikTok account, and represent the direction of the creator’s organic content."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the content tag label."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the content tag label."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"content_labels\": [\n            {\n                \"label_id\": \"11007001\",\n                \"label_name\": \"Fitness\"\n            },\n            {\n                \"label_id\": \"11009001\",\n                \"label_name\": \"Love & Romantic Relationships\"\n            },\n            {\n                \"label_id\": \"11009002\",\n                \"label_name\": \"Babies\"\n            },\n            {\n                \"label_id\": \"11014001\",\n                \"label_name\": \"Automobiles\"\n            },\n            {\n                \"label_id\": \"11010004\",\n                \"label_name\": \"Cooking & Recipes\"\n            },\n            {\n                \"label_id\": \"11011007\",\n                \"label_name\": \"Jobs & Careers\"\n            },\n            {\n                \"label_id\": \"11015001\",\n                \"label_name\": \"Tech Products & Tests\"\n            },\n            {\n                \"label_id\": \"11015003\",\n                \"label_name\": \"Business & Finance\"\n            },\n            {\n                \"label_id\": \"11001001\",\n                \"label_name\": \"Pet Tips & Care\"\n            },\n            {\n                \"label_id\": \"11003001\",\n                \"label_name\": \"Outfits\"\n            },\n            {\n                \"label_id\": \"11007004\",\n                \"label_name\": \"Traditional Sports\"\n            },\n            {\n                \"label_id\": \"11009003\",\n                \"label_name\": \"Family\"\n            },\n            {\n                \"label_id\": \"11013006\",\n                \"label_name\": \"Home & Garden\"\n            },\n            {\n                \"label_id\": \"11004003\",\n                \"label_name\": \"Music\"\n            },\n            {\n                \"label_id\": \"11004004\",\n                \"label_name\": \"Dance\"\n            },\n            {\n                \"label_id\": \"11008001\",\n                \"label_name\": \"Comedy\"\n            },\n            {\n                \"label_id\": \"11013005\",\n                \"label_name\": \"Travel\"\n            },\n            {\n                \"label_id\": \"11002002\",\n                \"label_name\": \"Beauty Tutorials & Tips\"\n            },\n            {\n                \"label_id\": \"11002006\",\n                \"label_name\": \"Hair Design & Care\"\n            },\n            {\n                \"label_id\": \"11004001\",\n                \"label_name\": \"Movies & TV\"\n            },\n            {\n                \"label_id\": \"11005001\",\n                \"label_name\": \"Video Games\"\n            }\n        ],\n        \"industry_labels\": [\n            {\n                \"label_id\": \"16000000000\",\n                \"label_name\": \"Appliances\"\n            },\n            {\n                \"label_id\": \"18000000000\",\n                \"label_name\": \"Household Products\"\n            },\n            {\n                \"label_id\": \"22000000000\",\n                \"label_name\": \"Apparel & Accessories\"\n            },\n            {\n                \"label_id\": \"15000000000\",\n                \"label_name\": \"Tech & Electronics\"\n            },\n            {\n                \"label_id\": \"14000000000\",\n                \"label_name\": \"Beauty & Personal Care\"\n            },\n            {\n                \"label_id\": \"21000000000\",\n                \"label_name\": \"Home Improvement\"\n            },\n            {\n                \"label_id\": \"25000000000\",\n                \"label_name\": \"Games\"\n            },\n            {\n                \"label_id\": \"28000000000\",\n                \"label_name\": \"Sports & Outdoor\"\n            },\n            {\n                \"label_id\": \"11000000000\",\n                \"label_name\": \"Vehicle & Transportation\"\n            }\n        ]\n    }\n}"

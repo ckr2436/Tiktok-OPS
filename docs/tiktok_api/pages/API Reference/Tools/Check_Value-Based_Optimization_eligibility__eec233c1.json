@@ -145,6 +145,128 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "vo_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of VBO for Web or VBO IAP for App for the settings in the request. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any value. INSUFFICIENT_EVENTS : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated enough events. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but you are not allowlisted to use the allowlist-only feature specified through the settings."
+        },
+        {
+          "name": "vo_min",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Cost Cap bidding strategy for the settings in the request when VBO for Web or VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any value. INSUFFICIENT_EVENTS : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated enough events. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but you are not allowlisted to use the allowlist-only feature specified through the settings. Note : The Cost Cap bidding strategy is no longer supported for VBO. Therefore, the value of this field is always NOT_SUPPORT ."
+        },
+        {
+          "name": "vo_min_roas",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the bidding strategy Minimum ROAS for the settings in the request when VBO for Web or VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any value. INSUFFICIENT_EVENTS : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated enough events. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but you are not allowlisted to use the allowlist-only feature specified through the settings."
+        },
+        {
+          "name": "vo_highest_value",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the bidding strategy Highest Value for the settings in the request when VBO for Web or VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated any value. INSUFFICIENT_EVENTS : Not eligible because the pixel ( pixel_id ) or App ( app_id ) has not accumulated enough events. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but you are not allowlisted to use the allowlist-only feature specified through the settings."
+        },
+        {
+          "name": "vo_iaa_min_roas",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 7 bidding strategy Minimum ROAS (Day 7 ROAS) for the settings in the request when VBO IAA for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not met the unlocking criteria for the feature."
+        },
+        {
+          "name": "vo_iaa_highest_value",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 7 bidding strategy Highest Value (Day 7 Highest Value) for the settings in the request when VBO IAA for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not met the unlocking criteria for the feature."
+        },
+        {
+          "name": "vo_iaa_min_roas_zero_day",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 0 bidding strategy Minimum ROAS (Day 0 ROAS) for the settings in the request when VBO IAA for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the advertiser ( advertiser_id ) has not been allowlisted for day 0 bidding of VBO IAA."
+        },
+        {
+          "name": "vo_iaa_highest_value_zero_day",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 0 bidding strategy Highest Value (Day 0 Highest Value) for the settings in the request when VBO IAA for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the advertiser ( advertiser_id ) has not been allowlisted for day 0 bidding of VBO IAA."
+        },
+        {
+          "name": "roas_status_day7",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 7 bidding strategy Minimum ROAS (Day 7 ROAS) for the settings in the request when VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not been allowlisted for day 7 bidding of VBO IAP."
+        },
+        {
+          "name": "highest_value_status_day7",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 7 bidding strategy Highest Value (Day 7 Highest Value) for the settings in the request when VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not been allowlisted for day 7 bidding of VBO IAP."
+        },
+        {
+          "name": "roas_status_day0",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 0 bidding strategy Minimum ROAS (Day 7 ROAS) for the settings in the request when VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not been allowlisted for day 0 bidding of VBO IAP."
+        },
+        {
+          "name": "highest_value_status_day0",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Day 0 bidding strategy Highest Value (Day 7 Highest Value) for the settings in the request when VBO IAP for App is enabled. Enum values: QUALIFIED : Eligible. NO_EVENT : Not eligible because the App ( app_id ) has not accumulated any event. NO_VALUE : Not eligible because the App ( app_id ) has not accumulated any events with a conversion value greater than 0. INSUFFICIENT_EVENTS : Not eligible because the App ( app_id ) has not accumulated enough events with a conversion value greater than 0. NOT_SUPPORT : Not eligible for any of the following reasons: The settings are not supported. The settings are supported, but the App ( app_id ) has not been allowlisted for day 0 bidding of VBO IAP."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"vo_highest_value\": \"QUALIFIED\",\n        \"vo_min_roas\": \"QUALIFIED\",\n        \"vo_status\": \"QUALIFIED\",\n        \"vo_min\": \"NOT_SUPPORT\",\n        \"vo_iaa_highest_value\": \"NOT_SUPPORT\",\n        \"vo_iaa_min_roas\": \"NOT_SUPPORT\",\n        \"vo_iaa_highest_value_zero_day\": \"NOT_SUPPORT\",\n        \"vo_iaa_min_roas_zero_day\": \"NOT_SUPPORT\"\n    }\n}"

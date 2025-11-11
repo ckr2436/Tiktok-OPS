@@ -40,6 +40,107 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID."
+        },
+        {
+          "name": "auth_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the authorization. Enum values: WAITING : The creator has not rejected or approved your request for authorization. The creator will receive a notification on their TikTok app regarding your request and can approve or reject it through the System Notification page within the app. Even if the creator has enabled \"Ad authorization\" in the \"Branded content and ad\" settings, the auth_status will remain WAITING until the creator approves your request. However, in this case, you can receive an auth_code that can be used to grant video authorization to an advertiser account. REJECTED : The creator has rejected your request for authorization. ACCEPTED : The creator has approved your request for authorization."
+        },
+        {
+          "name": "auth_status_updated_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when auth_status was last updated. For example, when auth_status changed from WAITING to ACCEPTED ."
+        },
+        {
+          "name": "num_remaining_request",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned only for videos linked to TTCM orders. The number of times left for you to request Spark Ads authorization. You have 30 times left at most to request authorization before the request is approved or rejected."
+        },
+        {
+          "name": "requested_authorization_days",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The validity period (in days) that you request for spark ads authorization or the new validity period you want to update for the approved authorization. Enum values: 7 , 30 , 60 , 365 . Default value: 30 . Note : The actual validity period ( auth_code_end_time - auth_code_start_time ) can be different from the validity period you request, because the creator can choose any validity period ( 7 ， 30 ， 60 ， 365 ) when approving the request."
+        },
+        {
+          "name": "auth_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when auth_status is ACCEPTED . Authorization code to boost the video in the order."
+        },
+        {
+          "name": "auth_code_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when auth_status is ACCEPTED . The UTC+0 date and time when the authorization code becomes valid."
+        },
+        {
+          "name": "auth_code_end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when auth_status is ACCEPTED . UTC+0 date and time when the authorization code expires."
+        },
+        {
+          "name": "auth_code_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when auth_status is ACCEPTED . The status of the authorization code. Enum values: NOT_USED : The authorization code has been generated but has not been used yet. IN_USE : The authorization code has been generated and is in use now. EXPIRED : The authorization code has been generated and has expired. DELETED : The authorization code has been deleted."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auth_status\": \"WAITING\",\n        \"auth_status_updated_time\": \"{{auth_status_updated_time}}\",\n        \"requested_authorization_days\": 30,\n        \"video_id\": \"{{video_id}}\"\n    }\n}"

@@ -47,6 +47,261 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of audience details."
+        },
+        {
+          "name": "audience_details",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Audience data."
+        },
+        {
+          "name": "audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience ID."
+        },
+        {
+          "name": "msg",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Information about audience status."
+        },
+        {
+          "name": "audience_sub_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience sub type, indicating the type of ads that the audience can be used. Enum values: NORMAL : Normal audience. It can be used in non-R&F ads. REACH_FREQUENCY : Audience for Reach & Frequency. It can only be used in R&F ads."
+        },
+        {
+          "name": "error_msg",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Error information when creating or modifying an audience."
+        },
+        {
+          "name": "is_valid",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Audience availability. An audience becomes available after it has been processed. An audience becomes invalid after it is expired."
+        },
+        {
+          "name": "is_expiring",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether an audience is expiring. When an audience is expiring, it will expire in less than 60 days."
+        },
+        {
+          "name": "expired_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the audience expires, in the format of \"YYYY-MM-DD HH:MM:SS\"."
+        },
+        {
+          "name": "rule",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If this audience is an engagement audience, app activity audience or website traffic audience, this is the creation rule for it."
+        },
+        {
+          "name": "is_auto_refresh",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "If this audience is an engagement audience / app activity audience or website traffic audience, this indicates whether the audience refreshes daily."
+        },
+        {
+          "name": "shared",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether this audience is shared with others. Enum values: True , False ."
+        },
+        {
+          "name": "is_creator",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether this advertiser is the owner of the audience. Enum values: true , false . You can use shared and is_creator to check audience ownership and shared status. The rules are as follows: 1. shared = true and is_creator = true : The advertiser is the owner and the audience is shared to others. 2. shared = true and is_creator = false : The advertiser is NOT the owner and the audience is shared by others. 3. shared = false and is_creator = true : The advertiser is the owner and the audience has not been shared to others."
+        },
+        {
+          "name": "owner_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID of the audience creator. If is_creator = true , owner_id will be advertiser_id that you specified in the request. If is_creator = false , owner_id will be the ID of the advertiser that created the audience."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the audience was created, in the format of \"YYYY-MM-DD HH:MM:SS\"."
+        },
+        {
+          "name": "type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience type. Enum values: Customer File Audience ( Customer File Audience ). Engagement Audience ( Engagement Audience ). App Activity Audience ( App Activity Audience ). Website Audience ( Website Traffic Audience ). Lookalike Audience ( Lookalike Audience ). Lead Generation ( Lead Generation Audience ) Rule Business Account ( Business Account Audience ) Rule ad shop ( Shop Activity Audience ) Partner (Partner Audience) Challenge (Challenge Audience) Preferred Population (Premium Audience) Note : Currently, Partner Audience, Challenge Audience and Premium Audience cannot be created through the API."
+        },
+        {
+          "name": "cover_num",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "TikTok coverage, or number of matched users on TikTok."
+        },
+        {
+          "name": "calculate_type Conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Encryption type. For enum values, see Enumeration - Encryption Type ."
+        },
+        {
+          "name": "lookalike_spec",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Lookalike audience-specific information. Returned only when the audience is a lookalike audience."
+        },
+        {
+          "name": "source_audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Source (seed) audience ID."
+        },
+        {
+          "name": "include_source",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to include the source audience in the new lookalike audience."
+        },
+        {
+          "name": "mobile_os",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Device operating systems. Enum values support ALL for both ANDROID and IOS . See Enumeration-Audience Management-Lookalike System for details."
+        },
+        {
+          "name": "placements",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The apps where you want to deliver your ads. Enum values: TikTok , TopBuzz & BuzzVideo , Pangle . See Enumeration - Audience Management-Lookalike Placement for details."
+        },
+        {
+          "name": "location_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the locations that you want to target. For enum values, see Enumeration-Lookalike Locations ."
+        },
+        {
+          "name": "audience_size",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Size of lookalike audience. Enum values: NARROW , BALANCED and BROAD ."
+        },
+        {
+          "name": "audience_history",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of audience modification history."
+        },
+        {
+          "name": "action",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification made. To learn about the meaning of the values, see \"Mapping between action value and operation via /dmp/custom_audience/update/\" section below."
+        },
+        {
+          "name": "action_detail",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification result."
+        },
+        {
+          "name": "editor",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Operator used. If modification was made through the TikTok API for Business, the value is \"open_api\"."
+        },
+        {
+          "name": "msg",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If the operation is partial success, the information will be shown here."
+        },
+        {
+          "name": "opt_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The operation time. Formats such as：2019-04-14 06:52:56."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"123\",\n    \"data\": {\n        \"list\": [\n            {\n                \"audience_history\": [\n                    {\n                        \"msg\": null,\n                        \"action_detail\": \"6489086\",\n                        \"editor\": \"open_api\",\n                        \"opt_time\": \"2022-05-26 14:12:12\",\n                        \"action\": \"create\"\n                    }\n                ],\n                \"audience_details\": {\n                    \"audience_id\": \"123\",\n                    \"is_expiring\": false,\n                    \"is_auto_refresh\": false,\n                    \"is_creator\": true,\n                    \"expired_time\": \"2023-09-07 18:34:20\",\n                    \"is_valid\": true,\n                    \"shared\": true,\n                    \"create_time\": \"2022-05-26 14:12:12\",\n                    \"msg\": null,\n                    \"error_msg\": null,\n                    \"type\": \"Lookalike Audience\",\n                    \"audience_sub_type\": \"NORMAL\",\n                    \"calculate_type\": null,\n                    \"cover_num\": 6489086,\n                    \"name\": \"CUSTOM_AUDIENCE_NAME\",\n                    \"rule\": \"{\\\"inclusions\\\": null, \\\"exclusions\\\": null}\",\n                    \"owner_id\": \"{{owner_id}}\",\n                     \"lookalike_spec\": null\n                }\n            }\n        ]\n    }\n}"

@@ -61,6 +61,93 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "videos",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "A list of up to 100 TikTok video posts with their Spark Ads recommendation results."
+        },
+        {
+          "name": "recommendation_level",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The recommendation level, which indicates the suitability of the video post for Spark Ads. Enum values: HIGH : Highly recommended. MEDIUM : Moderately recommended. LOW : Not recommended."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the TikTok video post. You can pass the value of this field to tiktok_item_id in /ad/create/ to create Spark Ads. To learn more about Spark Ads, see Create Spark Ads . Example: 6995316737801538821 . Updated in: Real-time"
+        },
+        {
+          "name": "creator_handle",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle name of the creator who uploaded the video post. Updated in: Real-time"
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link for this TikTok video post. Example: https://www.tiktok.com/static/profile-video?id=7202758233486822657&hide_author=1&utm_campaign=tt4d_open_api&utm_source=7220548562860376066 . Updated in: Real-time"
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for the video post thumbnail. You need to re-acquire the URL after it expires. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/75dec21d63500917fb6ec8bc59415156~c5_300x300.jpeg?x-expires=1614099600&x-signature=PmK%2BWs3LzSzRL2tYs%2FZx7EjG3Gk%3D . Updated in: Real-time"
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the video post was published, in the format of an Epoch/Unix timestamp in seconds (UTC time). Example: 1628461703 . Updated in: Real-time"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"videos\": [\n            {\n                \"create_time\": \"{{create_time}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"handle_name\": \"{{handle_name}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"recommendation_level\": \"HIGH\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            ...,\n            {\n                \"create_time\": \"{{create_time}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"handle_name\": \"{{handle_name}}\",\n                \"item_id\": \"{{item_id}}\",\n                \"recommendation_level\": \"LOW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            }\n        ]\n    }\n}"

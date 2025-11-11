@@ -47,6 +47,100 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "stores",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the available stores under the ad account."
+        },
+        {
+          "name": "store_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the Business Center that is authorized to access the store ( store_id ). One store may be accessed by more than one Business Center."
+        },
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the TikTok Shop. See Create Video Shopping Ads with products from TikTok Shopping-Create an ad group to learn about how to use store_id to create Shopping Ads"
+        },
+        {
+          "name": "store_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Store type. Enum values: TIKTOK_SHOP (TikTok Shop)."
+        },
+        {
+          "name": "store_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Store name."
+        },
+        {
+          "name": "store_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when the store_type of the store is TIKTOK_SHOP . The shop code of the first-party store (TikTok Shop)."
+        },
+        {
+          "name": "catalog_id To-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the catalog that is bound to the store. One catalog can be bound to only one store."
+        },
+        {
+          "name": "targeting_region_codes",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Region codes that the store can be used to target. See Appendix-Location code to find out what the region codes stand for."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"stores\": [\n            {\n                \"tiktok_account_binding_status\": null,\n                \"store_id\": \"{{store_id}}\",\n                \"store_type\": \"TIKTOK_SHOP\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"store_authorized_bc_id\": \"{{store_authorized_bc_id}}\",\n                \"store_name\": \"{{store_name}}\",\n                \"store_code\": \"{{store_code}}\",\n                \"targeting_region_codes\": [\n                    \"ID\"\n                ]\n            }\n        ]\n    }\n}"

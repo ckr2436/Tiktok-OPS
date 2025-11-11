@@ -922,6 +922,1136 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID"
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign ID"
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the campaign that the ad group belongs to."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID"
+        },
+        {
+          "name": "adgroup_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group Name"
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time at which the ad group was created, in the format of \"YYYY-MM-DD HH:MM:SS\" . Example: \"2023-01-01 00:00:01\" ."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time at which the ad group was modified, in the format of \"YYYY-MM-DD HH:MM:SS\" . Example: \"2023-01-01 00:00:01\" ."
+        },
+        {
+          "name": "shopping_ads_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when objective_type at the campaign level is PRODUCT_SALES . Shopping ads type. Enum values: VIDEO : Video Shopping Ads. LIVE : Live Shopping Ads. PRODUCT_SHOPPING_ADS : Product Shopping Ads. CATALOG_LISTING_ADS : Catalog Listing Ads. UNSET : Unset."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when shopping_ads_type is VIDEO and product_source is SHOWCASE or shopping_ads_type is LIVE . Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when shopping_ads_type is VIDEO and product_source is SHOWCASE or shopping_ads_type is LIVE . Identity type. Enum values: AUTH_CODE (Authorized Post User), TT_USER (TikTok Business Account User), BC_AUTH_TT (the TikTok account that a Business Center is authorized to access). See Identities for details."
+        },
+        {
+          "name": "identity_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+        },
+        {
+          "name": "product_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned for Video Shopping Ads and Product Shopping Ads. Product source where you want to get products for promotion. Enum values: UNSET , CATALOG (Catalog) , STORE (TikTok Shop), SHOWCASE (TikTok Showcase)."
+        },
+        {
+          "name": "catalog_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned in any of the following scenarios: product_source is CATALOG or STORE . shopping_ads_type is LIVE and this field is specified in the request. Catalog ID. Note : Starting June 30th, 2024, catalog_id will no longer be returned for newly created Shopping Ads where product_source is STORE because the specified catalog_id will be ignored. Existing Shopping Ads where product_source is STORE will not be affected unless you update them. If you update the existing ad groups, the existing catalog_id , if present for the ad groups, will no longer be returned."
+        },
+        {
+          "name": "catalog_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned in any of the following scenarios: shopping_ads_type is VIDEO and product_source is CATALOG or STORE . shopping_ads_type is LIVE and this field is specified in the request. For catalogs in Business Center, this field returns the ID of the Business Center that a catalog belongs to. Note : Starting June 30th, 2024, catalog_authorized_bc_id will no longer be returned for newly created Shopping Ads where product_source is STORE because the specified catalog_authorized_bc_id will be ignored. Existing Shopping Ads where product_source is STORE will not be affected unless you update them. If you update the existing ad groups, the existing catalog_authorized_bc_id , if present for the ad groups, will no longer be returned."
+        },
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned in any of the following scenarios: shopping_ads_type is VIDEO and product_source is STORE . shopping_ads_type is PRODUCT_SHOPPING_ADS and product_source is STORE . shopping_ads_type is LIVE and this field is specified in the request. ID of the TikTok Shop."
+        },
+        {
+          "name": "store_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when store_id is passed. ID of the Business Center that is authorized to access the store ( store_id )."
+        },
+        {
+          "name": "promotion_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Promotion type (Optimization location). You can decide where you'd like to promote your products using this field. For value definitions, see Enumeration - Promotion Type ."
+        },
+        {
+          "name": "promotion_target_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The promotion type for Lead Generation objective. Enum values: INSTANT_PAGE ：Instant Form. To create a fast-loading in-app TikTok Instant Form to collect more leads. EXTERNAL_WEBSITE ：Website Form. To use a landing page that has the Website Form or the TikTok Instant Page that redirects to the website with the Website Form to collect more leads. UNSET ."
+        },
+        {
+          "name": "messaging_app_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of instant messaging app or customized URL to use in the Instant Messaging Ad Group. Enum values: MESSENGER : Messenger. WHATSAPP : WhatsApp. ZALO : Zalo. LINE : Line. IM_URL : Instant Messaging URL."
+        },
+        {
+          "name": "messaging_app_account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the instant messaging app account. When messaging_app_type is MESSENGER , this field represents the Facebook Page ID. When messaging_app_type is LINE , this field represents the LINE Business ID. When messaging_app_type is WHATSAPP , this field represents the WhatsApp phone number automatically populated based on the specified phone_region_code , phone_region_calling_code , and phone_number ."
+        },
+        {
+          "name": "phone_region_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The region code for the WhatsApp or Zalo phone number. Example: US ."
+        },
+        {
+          "name": "phone_region_calling_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The region calling code for the WhatsApp or Zalo phone number. Example: +1 ."
+        },
+        {
+          "name": "phone_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The WhatsApp or Zalo phone number."
+        },
+        {
+          "name": "promotion_website_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok Instant Page type in the ad group. Enum values: UNSET : To not use TikTok Instant Page. TIKTOK_NATIVE_PAGE : To use TikTok Instant Page."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The App ID of the app to promote. You can get app_id by using the /app/list/ endpoint."
+        },
+        {
+          "name": "app_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the promoted app. Enum values: APP_ANDROID (Android), APP_IOS (iOS)."
+        },
+        {
+          "name": "app_download_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "App download link."
+        },
+        {
+          "name": "pixel_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Pixel ID."
+        },
+        {
+          "name": "optimization_event",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Conversion event for the ad group. See Conversion events for more."
+        },
+        {
+          "name": "custom_conversion_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Custom Conversion used in the ad group."
+        },
+        {
+          "name": "app_config",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Returned when sales_destination is WEB_AND_APP at the campaign level. Details of the app or apps to promote."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The App ID of the app to promote."
+        },
+        {
+          "name": "deep_funnel_optimization_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of deep funnel optimization. With deep funnel optimization, you can select a secondary event alongside the primary optimization event, which can help improve campaign effectiveness. Enum values: ON : enabled. OFF : disabled."
+        },
+        {
+          "name": "deep_funnel_event_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when deep_funnel_optimization_status is ON . The event source type. Enum values: PIXEL : Pixel. OFFLINE : Offline Event Set. CRM : CRM Event Set."
+        },
+        {
+          "name": "deep_funnel_event_source_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when deep_funnel_optimization_status is ON . Event Source ID. When deep_funnel_event_source is PIXEL , this field represents a Pixel ID. When deep_funnel_event_source is OFFLINE , this field represents an Offline Event Set ID. When deep_funnel_event_source is CRM , this field represents a CRM Event Set ID."
+        },
+        {
+          "name": "deep_funnel_optimization_event",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when deep_funnel_optimization_status is ON . Deep funnel optimization event. Example: SHOPPING ."
+        },
+        {
+          "name": "placement_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The placement strategy that decides where your ads will be shown. Enum values: PLACEMENT_TYPE_AUTOMATIC (Automatic placement), PLACEMENT_TYPE_NORMAL (Select placement)."
+        },
+        {
+          "name": "placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The apps where you want to deliver your ads. For enum values, see Enumeration - Placement . Note : If placement_type of the ad group is PLACEMENT_TYPE_AUTOMATIC (Automatic placement), the placements supported for your advertising objective will be returned for this field. For instance, if the actual supported placement is TikTok only, the returned value for this field will be PLACEMENT_TIKTOK . However, if PLACEMENT_GLOBAL_APP_BUNDLE is supported for your objective, but you are not allowlisted for the Global App Bundle placement feature, PLACEMENT_GLOBAL_APP_BUNDLE will not be included in the returned value for this field. If placement_type of the ad group is PLACEMENT_TYPE_NORMAL (Select placement), the placements you specified through placements in the request will usually be returned for this field. The only exception is that if PLACEMENT_GLOBAL_APP_BUNDLE is specified through placements in the request, but you are not allowlisted for the Global App Bundle placement feature, PLACEMENT_GLOBAL_APP_BUNDLE will be filtered out from the returned value for this field. For instance, if you specify placements as [\"PLACEMENT_TIKTOK\", \"PLACEMENT_GLOBAL_APP_BUNDLE\"] in the request, but you are not allowlisted for Global App Bundle, the returned value for this field will be [\"PLACEMENT_TIKTOK\"] ."
+        },
+        {
+          "name": "tiktok_subplacements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The subplacements within TikTok for your ads, allowing you to choose where your ads will appear. Enum value: IN_FEED : In-feed. Ads will be placed in the For You feed and might also be placed in Profile Page and Following feeds. SEARCH_FEED : Search feed. TIKTOK_LITE : TikTok Lite, a streamlined version of TikTok that features a smaller app size and faster video loading speed. The TikTok Lite subplacement is currently available for Japan or South Korea as targeting locations. Note : If tiktok_subplacements is not specified when you create the ad group, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "search_result_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to include your ads in Search Ads, namely to show your ads to users when they search for your business on TikTok."
+        },
+        {
+          "name": "automated_keywords_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to enable automated keywords and let the system automatically generate keywords after you add ads. This expands high-quality traffic to improve performance. View high-performing automated keywords in reporting. Supported values: true , false ."
+        },
+        {
+          "name": "search_keywords",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Returned only for Search Ads Campaigns. A list of search keywords, that is, words or phrases that are used to match your ads with the terms people are searching for."
+        },
+        {
+          "name": "keyword",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The search keyword."
+        },
+        {
+          "name": "match_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The match type for the search keyword. Enum values: PRECISE_WORD : exact match. Your ads will only show for user search queries that exactly match these keywords. PHRASE_WORD : phrase match. Your ads will only show for these specific keywords if users search these keywords in the same order. BROAD_WORD : broad match. Your ads will show for user search queries for any of the words you have included, even if the words are in a different order."
+        },
+        {
+          "name": "keyword_bid_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The bid type for the keyword and match type combination. Enum values: FOLLOW_ADGROUP : To use the ad group level bid ( bid_price ) as the keyword_bid . CUSTOM : To customize the bid via keyword_bid ."
+        },
+        {
+          "name": "keyword_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The bid price for the keyword and match type combination."
+        },
+        {
+          "name": "audit_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The review status of the search keyword. Enum values: AUDITING : The keyword is under review. PASS : The keyword has passed review and can be delivered. REJECTED : The keyword failed to pass the review and cannot be delivered."
+        },
+        {
+          "name": "reject_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Returned only when audit_status is REJECTED . Details about the rejection."
+        },
+        {
+          "name": "forbidden_location",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The targeted region that failed the review. For enum values, see Appendix - Location codes ."
+        },
+        {
+          "name": "reject_reasons",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of rejection reasons."
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The rejection reason."
+        },
+        {
+          "name": "comment_disabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to allow comments on your ads on TikTok."
+        },
+        {
+          "name": "video_download_disabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether users can download your video ads on TikTok."
+        },
+        {
+          "name": "share_disabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether sharing to third-party platforms is disabled for ads in this ad group."
+        },
+        {
+          "name": "blocked_pangle_app_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Pangle app block list ID."
+        },
+        {
+          "name": "audience_rule",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Rules that specify your audience."
+        },
+        {
+          "name": "audience_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "App retargeting audience type. For enum values, see Enumeration - App Retargeting Audience Type ."
+        },
+        {
+          "name": "saved_audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when you have specified saved_audience_id in the request. Saved Audience ID."
+        },
+        {
+          "name": "auto_targeting_enabled To be deprecated",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to enable automated targeting."
+        },
+        {
+          "name": "shopping_ads_retargeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when shopping_ads_type is VIDEO and product_source is CATALOG . The retargeting type of shopping ads. Enum values: LAB1 : Retargeting audiences who viewed products or added products to cart but didn't purchase products. LAB2 : Retargeting audiences who added products to cart but didn't purchase products. LAB3 : Retargeting audiences using custom combination. OFF : No retargeting."
+        },
+        {
+          "name": "shopping_ads_retargeting_actions_days",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned when shopping_ads_retargeting_type is LAB1 or LAB2 . The valid time range for the specified audience action. Audiences who have completed the specified action within the time range will be retargeted by the shopping ads. Value range: 1, 2, 3, 7, 14, 30, 60, 90, 180."
+        },
+        {
+          "name": "included_custom_actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The custom action that you want to use as \"Include\" conditions for filtering out the shopping ads audiences to be retargeted."
+        },
+        {
+          "name": "code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The custom action used to filter out the audiences to be retargeted. Enum values: VIEW_PRODUCT : The audience viewed the product. ADD_TO_CART : The audience added the product to the cart. PURCHASE : The audience purchased the product."
+        },
+        {
+          "name": "days",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The time range used to filter out the audiences that completed the specified action. Value range: [1,180]."
+        },
+        {
+          "name": "excluded_custom_actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The custom action that you want to use as \"Exclude\" conditions for filtering out the shopping ads audiences to be retargeted."
+        },
+        {
+          "name": "code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The custom action used to filter out the audiences to be retargeted. Enum values: VIEW_PRODUCT : The audience viewed the product. ADD_TO_CART : The audience added the product to the cart. PURCHASE : The audience purchased the product."
+        },
+        {
+          "name": "days",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The time range used to filter out the audiences that didn't complete the specified action. Value range: [1,180]."
+        },
+        {
+          "name": "shopping_ads_retargeting_custom_audience_relation",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The logical relation between the Video Shopping Ads (VSA) retargeting audience specified by shopping_ads_retargeting_type and the custom audience specified by audience_ids . Enum values: OR : To combine the VSA retargeting audience and the custom audience to create the targeted audience. The targeted audience will consist of individuals who belong to either the VSA retargeting audience or the custom audience. AND : To intersect between the VSA retargeting audience and the custom audience to create the targeted audience. The targeted audience will consist of individuals who belong to both the VSA retargeting audience and the custom audience."
+        },
+        {
+          "name": "location_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the targeted locations. Use Get locations to get available locations."
+        },
+        {
+          "name": "zipcode_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Zip code IDs or postal code IDs of the targeted locations."
+        },
+        {
+          "name": "languages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Codes of the languages that you want to target. For the list of languages codes supported, see Enumeration - Language Code ."
+        },
+        {
+          "name": "gender",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Gender that you want to target. Enum values: GENDER_FEMALE , GENDER_MALE , GENDER_UNLIMITED"
+        },
+        {
+          "name": "age_groups",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Age groups you want to target. For enum values, see Enumeration - Age Group ."
+        },
+        {
+          "name": "spending_power",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Spending power that you want to target. Enum values: ALL , HIGH . If it is set to HIGH , you can target high spending users who typically spend more on purchases on TikTok ads than average users."
+        },
+        {
+          "name": "household_income",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Household income that you want to target. Enum values: TOP5 (Top 5% of ZIP codes), TOP10 (Top 10% of ZIP codes), TOP10_25 (Top 10% -25% of ZIP codes), TOP25_50 (Top 25% - 50% of ZIP codes)."
+        },
+        {
+          "name": "audience_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of audience IDs."
+        },
+        {
+          "name": "smart_audience_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether Smart audience is turned on. Enum values: true , false ."
+        },
+        {
+          "name": "excluded_audience_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of excluded audience ID."
+        },
+        {
+          "name": "interest_category_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of general interest keywords that you want to use to target audiences."
+        },
+        {
+          "name": "interest_keyword_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of additional interest keywords that you want to use to target audiences."
+        },
+        {
+          "name": "purchase_intention_keyword_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of purchase intention categories used to target audiences with an interest in purchases related to a content category."
+        },
+        {
+          "name": "actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of targeting behavioral category objects."
+        },
+        {
+          "name": "action_scene",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of user behavior that you want to target. Enum values: VIDEO_RELATED : Video interactions. CREATOR_RELATED : Creator interactions. HASHTAG_RELATED : Hashtag interactions."
+        },
+        {
+          "name": "action_period",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time period to include behaviors from."
+        },
+        {
+          "name": "video_user_actions",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The specific user interactions that you want to target for the user behavior type. If action_scene is VIDEO_RELATED , the allowed values are: WATCHED_TO_END , LIKED , COMMENTED , SHARED . If action_scene is CREATOR_RELATED , the allowed values are: FOLLOWING , VIEW_HOMEPAGE . If action_scene is HASHTAG_RELATED , the allowed value is VIEW_HASHTAG ."
+        },
+        {
+          "name": "action_category_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the video interactions categories, creator interactions categories, hashtags, or hashtag bundles that you want to use to target audiences."
+        },
+        {
+          "name": "smart_interest_behavior_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether Smart interests & behaviors is turned on. Enum values: true , false ."
+        },
+        {
+          "name": "included_pangle_audience_package_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the Pangle audiences that you want to include."
+        },
+        {
+          "name": "excluded_pangle_audience_package_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the Pangle audiences that you want to exclude."
+        },
+        {
+          "name": "operating_systems",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Device operating systems that you want to target. Enum values: ANDROID , IOS"
+        },
+        {
+          "name": "min_android_version",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Minimum Android version. For enum values, see Enumeration - Minimum Android Version ."
+        },
+        {
+          "name": "ios14_targeting",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The iOS devices that you want to target. Enum values: UNSET : Devices with iOS 14.4 or earlier versions. IOS14_MINUS : Devices with iOS 14.0 or earlier version that are not affected by the iOS 14 privacy update. IOS14_PLUS : Devices with iOS 14.5 or later versions. The iOS 14 privacy update has been enforced in this group of devices. This value is only supported for Dedicated Campaigns. ALL : Devices with iOS 14.5 or later versions. The iOS 14 privacy update has been enforced in this group of devices. This value is only supported for iOS App Retargeting ads and iOS retargeting Video Shopping Ads with product source as catalog and optimization location as App."
+        },
+        {
+          "name": "min_ios_version",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience minimum ios version. For enum values, see Enumeration - Minimum iOS Version ."
+        },
+        {
+          "name": "ios14_quota_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the campaign will be counted against the iOS 14 dedicated campaign quota. Enum values: OCCUPIED , UNOCCUPIED . For non-R&F campaigns, when ios14_targeting is IOS14_PLUS , this field is automatically set to OCCUPIED ."
+        },
+        {
+          "name": "device_model_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of device model IDs. For more details about device models, see Device Models ."
+        },
+        {
+          "name": "network_types",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Network types that you want to target. For enum values, see Enumeration - Connection Type ."
+        },
+        {
+          "name": "carrier_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Carriers that you want to target. For detailed information, see get carriers . A carrier is valid only when the in_use field for the carrier is true ."
+        },
+        {
+          "name": "isp_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the targeted Internet service providers."
+        },
+        {
+          "name": "device_price_ranges",
+          "required": false,
+          "type": "number",
+          "raw_type": "number[]",
+          "description": "Targeting device price range. 10000 means 1000+. The numbers must be in multiples of 50. Important : The upper limit you set will be added by 50 and the resulting new number will be used as the actual upper limit for device targeting. The actual upper limit is shown in the ad group settings in TikTok Ads Manager. If you set and get the price range of [0, 250], it actually means [0, 300]."
+        },
+        {
+          "name": "targeting_expansion To be deprecated",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Settings about targeting expansion"
+        },
+        {
+          "name": "expansion_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to enable targeting expansion"
+        },
+        {
+          "name": "expansion_types",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The target audience types that you want to expand"
+        },
+        {
+          "name": "contextual_tag_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Contextual tag IDs."
+        },
+        {
+          "name": "brand_safety_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Brand safety type. Enum values: NO_BRAND_SAFETY : To not use any brand safety solution. Full inventory, which means your ads may appear next to some content featuring mature themes. EXPANDED_INVENTORY : Use TikTok's brand safety solution. Expanded inventory means that your ads will appear next to content where most inappropriate content has been removed, and that does not contain mature themes. In the next API version, EXPANDED_INVENTORY will replace NO_BRAND_SAFETY and will be the default brand safety option. STANDARD_INVENTORY : Use TikTok's brand safety solution. Standard inventory means that ads will appear next to content that is appropriate for most brands. LIMITED_INVENTORY : Use TikTok's brand safety solution. Limited inventory means that your ads will not appear next to content that contains mature themes. THIRD_PARTY : Use a third-party brand safety solution. To get the countries and regions that your ads can be deployed to based on your brand safety settings, use the /tool/region/ endpoint."
+        },
+        {
+          "name": "brand_safety_partner",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Brand safety partner. Enum values: IAS , OPEN_SLATE (The partner is named DoubleVerify on TikTok Ads Manager because the partner has been acquired by DoubleVerify). To get the countries and regions that your ads can be deployed based on your brand safety settings, use the /tool/region/ endpoint. You need to pass in the brand safety type and brand safety partner."
+        },
+        {
+          "name": "inventory_filter_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Inventory filtering (filtering security videos, hides unsafe videos), valid only for the PLACEMENT_TIKTOK placement. Optional values are: true to filter, false not to filter."
+        },
+        {
+          "name": "category_exclusion_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Content exclusion category IDs."
+        },
+        {
+          "name": "vertical_sensitivity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Vertical sensitivity category ID."
+        },
+        {
+          "name": "budget_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Budget mode. If Campaign Budget Optimization is enabled, BUDGET_MODE_INFINITE will be returned. For more information about budget modes, see Budget ."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Ad budget. Returns 0.0 when Campaign Budget Optimization ( budget_optimize_on ) is on."
+        },
+        {
+          "name": "scheduled_budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Scheduled ad budget for next day. A value not equal to 0 means the scheduled budget is set and the value represents the budget; a value equals to 0 means the scheduled budget is not set."
+        },
+        {
+          "name": "schedule_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The schedule type can be either SCHEDULE_START_END or SCHEDULE_FROM_NOW . If you choose SCHEDULE_START_END , you need to specify a start time and an end time. If you choose SCHEDULE_FROM_NOW , you only need to specify a start time."
+        },
+        {
+          "name": "schedule_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "datetime",
+          "description": "Ad delivery start time (UTC+0). Format should be YYYY-MM-DD HH:MM:SS"
+        },
+        {
+          "name": "schedule_end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "datetime",
+          "description": "Ad delivery end time (UTC+0). Format should be YYYY-MM-DD HH:MM:SS"
+        },
+        {
+          "name": "delivery_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The strategy for sequencing and scheduling your ad delivery in a Reach & Frequency ad group. Enum values: STANDARD : Standard delivery. Your ads will be distributed evenly and are expected to achieve similar traffic size. SCHEDULE : Scheduled delivery. Set specific time periods to deliver each ad in. SEQUENCE : Sequenced delivery. Set a specific sequence to deliver your ads in. OPTIMIZE : Optimized delivery that delivers ads to achieve the best performance."
+        },
+        {
+          "name": "dayparting",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad delivery arrangement, in the format of a string that consists of 48 x 7 characters. Each character is mapped to a 30-minute timeframe from Monday to Sunday. Each character can be set to either 0 or 1. 1 represents delivery in the 30-minute timeframe, and 0 stands for non-delivery in the 30-minute timeframe. The first character is mapped to 0:01-0:30 of Monday; The second character is mapped to 0:31-1:00 of Monday, and the last character represents 23:31-0:00 Sunday. Note Not specified, all-0, or all-1 are considered as full-time delivery."
+        },
+        {
+          "name": "optimization_goal",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The measurable results that you'd like to drive your ads with. For enum values, see Enumeration - Optimization Goal ."
+        },
+        {
+          "name": "secondary_optimization_event",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary goal when optimization goal ( optimization_goal ) is Install ( INSTALL ) or Value ( VALUE ). For enum values, see Conversion events - Secondary-goal events ."
+        },
+        {
+          "name": "message_event_set_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the message event set to use in the Instant Messaging Ad Group. If the instant messaging app account, either the Messenger account specified via messaging_app_account_id or the WhatsApp account matched from the specified phone_region_code , phone_region_calling_code , and phone_number , in your ad group settings matches an existing event set, this field will be automatically populated with the unique message event set associated with the instant messaging app account you choose."
+        },
+        {
+          "name": "frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Frequency, together with frequency_schedule , controls how often people see your ad (only available for REACH ads). For example, frequency = 2 frequency_schedule = 3 means \"show ads no more than twice every 3 day\"."
+        },
+        {
+          "name": "frequency_schedule",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Fequency schedule, together with frequency , controls how often people see your ad (only available for REACH ads). See frequency fields for more."
+        },
+        {
+          "name": "bid_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Bidding strategy that determines how the system manages your cost per result, spends your budget, and how it delivers ads. See Enumeration - Bidding Strategy ."
+        },
+        {
+          "name": "bid_price",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Bid price. The average cost per result that you want to achieve (for Cost Cap bidding strategy)."
+        },
+        {
+          "name": "conversion_bid_price",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Where you can set a target cost per conversion for oCPM(Optimized Cost per Mille)."
+        },
+        {
+          "name": "deep_bid_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Bidding strategy for in-app events. For enum values and their descriptions, see Enumeration - Deep-level Bidding Strategy ."
+        },
+        {
+          "name": "roas_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "ROAS goal for Value Optimization."
+        },
+        {
+          "name": "vbo_window",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time window of the specified bidding strategy for VBO IAA (Value-Based Optimization for in-app advertising) or VBO IAP (Value-Based Optimization for in-app purchase). Enum values: SEVEN_DAYS : The first seven days (day 7). ZERO_DAY : The current day (day 0)."
+        },
+        {
+          "name": "bid_display_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "How you calculate and measure Cost per View."
+        },
+        {
+          "name": "deep_cpa_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Specify bid price in this field after you've chosen a bidding strategy for in-app events, for example VO_MIN ."
+        },
+        {
+          "name": "cpv_video_duration",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Optimized video playback duration Optional values include: SIX_SECONDS (video playback 6 seconds) and TWO_SECONDS (video playback 2 seconds)"
+        },
+        {
+          "name": "next_day_retention",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Day 2 retention ratio. Formula: next_day_retention = conversion_bid_price / deep_cpa_bid . Value range is (0,1]. Only valid when placements is PLACEMENT_PANGLE and secondary_optimization_event is NEXT_DAY_OPEN ."
+        },
+        {
+          "name": "click_attribution_window",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Click-through window for the ad group. This attribution window is the time between when a person clicks your ad and then takes an action. Enum values: OFF : Off. ONE_DAY : 1-day click. SEVEN_DAYS : 7-day click. FOURTEEN_DAYS : 14-day click. TWENTY_EIGHT_DAYS : 28-day click."
+        },
+        {
+          "name": "engaged_view_attribution_window",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Engaged view-through window for the ad group. This attribution window is the time after someone watches at least 6 seconds of your video ad that a conversion is counted. Enum values: ONE_DAY : 1-day engaged view. SEVEN_DAYS : 7-day engaged view."
+        },
+        {
+          "name": "view_attribution_window",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "View-through window for the ad group. This attribution window is the time between when a person views your ad and then takes an action. Enum values: OFF : Off. ONE_DAY : 1-day view. SEVEN_DAYS : 7-day view."
+        },
+        {
+          "name": "attribution_event_count",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Event count (Statistic type) for the ad group. The way that people's actions are counted after only viewing or clicking an ad. Enum values: UNSET : Unset. EVERY : Every. To count multiple events from someone as separate conversions. ONCE : Once. To count multiple events from someone as 1 conversion."
+        },
+        {
+          "name": "billing_event",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billing event. To learn about the enum values, see Enumerations - Billing Event ."
+        },
+        {
+          "name": "pacing",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "You can choose between PACING_MODE_SMOOTH and PACING_MODE_FAST . For PACING_MODE_SMOOTH , the budget is allocated evenly within the scheduled time. PACING_MODE_FAST would consume budget and produce results as soon as possible. When Campaign Budget Optimization ( budget_optimize_on ) is on, your setting will be ignored and it will be set as PACING_MODE_SMOOTH . Otherwise, this field is required."
+        },
+        {
+          "name": "operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Operation status. Enum values: ENABLE : The ad group is enabled (in 'ON' status). DISABLE : The ad group is disabled (in 'OFF' status). FROZEN : The ad group is terminated and cannot be enabled."
+        },
+        {
+          "name": "secondary_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group status See Enumeration - Ad group status for optional values."
+        },
+        {
+          "name": "statistic_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "conversion bid statistic type, bid for EVERYTIME (Each Purchase)/ NONE (Unique Purchase)"
+        },
+        {
+          "name": "is_hfss",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the promoted product is HFSS foods (foods that are high in fat, salt, or sugar)."
+        },
+        {
+          "name": "creative_material_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The strategy that your creatives will be delivered. Enum values: CUSTOM (custom)."
+        },
+        {
+          "name": "adgroup_app_profile_page_state",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the ad group is using App Profile Page. Enum values: INVALID , UNSET , ON , OFF ."
+        },
+        {
+          "name": "rf_purchased_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billing method of Reach & Frequency ad groups. For more details, see Enumeration - Reach & Frequency Buy Type . Note : The value of this field will always be null."
+        },
+        {
+          "name": "purchased_impression",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Impressions to be purchased. Note : The value of this field will always be null."
+        },
+        {
+          "name": "purchased_reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Purchased user reach. Note : The value of this field will always be null."
+        },
+        {
+          "name": "rf_estimated_cpr",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The estimated cost per mile reach. Note : The value of this field will always be null."
+        },
+        {
+          "name": "rf_estimated_frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The estimated show frequency. Note : The value of this field will always be null."
+        },
+        {
+          "name": "is_new_structure",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the campaign is a new structure"
+        },
+        {
+          "name": "skip_learning_phase",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to skip the learning stage."
+        },
+        {
+          "name": "conversion_window (deprecated)",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time frame when you would like a conversion to happen after a user clicks on or views your ad. Your ad delivery will be optimized using the conversion data during the time frame you select. This setting will not impact your attribution data. For enum values, ee Enumeration - Conversion Window ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Paging information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "current page number"
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total, the total number of eligible ad groups."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "total pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"frequency_schedule\": null,\n        \"schedule_type\": \"SCHEDULE_START_END\",\n        \"optimization_goal\": \"CLICK\",\n        \"conversion_window\": null,\n        \"adgroup_name\": \"{{adgroup_name}}\",\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"video_download_disabled\": false,\n        \"skip_learning_phase\": false,\n        \"interest_keyword_ids\": [],\n        \"audience_ids\": [],\n        \"deep_bid_type\": null,\n        \"feed_type\": null,\n        \"dayparting\": \"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n        \"network_types\": [],\n        \"adgroup_app_profile_page_state\": null,\n        \"excluded_audience_ids\": [],\n        \"ios14_quota_type\": \"UNOCCUPIED\",\n        \"bid_display_mode\": \"CPMV\",\n        \"billing_event\": \"CPC\",\n        \"modify_time\": \"{{modify_time}}\",\n        \"schedule_end_time\": \"{{schedule_end_time}}\",\n        \"pacing\": \"PACING_MODE_SMOOTH\",\n        \"app_type\": null,\n        \"age_groups\": null,\n        \"languages\": [],\n        \"interest_category_ids\": [],\n        \"promotion_type\": \"WEBSITE\",\n        \"rf_estimated_cpr\": null,\n        \"category_id\": \"0\",\n        \"auto_targeting_enabled\": false,\n        \"gender\": \"GENDER_UNLIMITED\",\n        \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n        \"purchased_reach\": null,\n        \"brand_safety_partner\": null,\n        \"delivery_mode\": null,\n        \"is_hfss\": false,\n        \"create_time\": \"{{create_time}}\",\n        \"adgroup_id\": \"{{adgroup_id}}\",\n        \"actions\": [],\n        \"frequency\": null,\n        \"schedule_infos\": null,\n        \"rf_purchased_type\": null,\n        \"conversion_bid_price\": 0,\n        \"creative_material_mode\": \"CUSTOM\",\n        \"rf_estimated_frequency\": null,\n        \"brand_safety_type\": \"NO_BRAND_SAFETY\",\n        \"scheduled_budget\": 0,\n        \"is_new_structure\": true,\n        \"placement_type\": \"PLACEMENT_TYPE_NORMAL\",\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"comment_disabled\": false,\n        \"operating_systems\": [\n            \"ANDROID\"\n        ],\n        \"schedule_start_time\": \"{{schedule_start_time}}\",\n        \"secondary_status\": \"ADGROUP_STATUS_CREATE\",\n        \"next_day_retention\": null,\n        \"bid_type\": \"BID_TYPE_NO_BID\",\n        \"keywords\": null,\n        \"inventory_filter_enabled\": false,\n        \"app_download_url\": null,\n        \"purchased_impression\": null,\n        \"location_ids\": [\n            \"{{location_id}}\"\n        ],\n        \"operation_status\": \"ENABLE\",\n        \"statistic_type\": null,\n        \"secondary_optimization_event\": null,\n        \"app_id\": null,\n        \"deep_cpa_bid\": 0,\n        \"optimization_event\": null,\n        \"placements\": [\n            \"PLACEMENT_TIKTOK\"\n        ],\n        \"device_price_ranges\": null,\n        \"share_disabled\": false,\n        \"bid_price\": 0,\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"search_result_enabled\": false,\n        \"budget\": {{budget}},\n        \"pixel_id\": null\n    }\n}"

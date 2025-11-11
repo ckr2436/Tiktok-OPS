@@ -62,6 +62,107 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "Date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Date and time (GMT) when the response was received. Example : Fri, 13 Aug 2021 08:04:42 GMT"
+      },
+      {
+        "name": "X-Tt-Logid",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the API request."
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": [
+          {
+            "name": "request_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the API request. Please record this field for all API requests. Important for issue reports and troubleshooting."
+          },
+          {
+            "name": "code",
+            "required": false,
+            "type": "integer",
+            "raw_type": "Integer",
+            "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+          },
+          {
+            "name": "message",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Response message. For details, see Appendix - Return Information ."
+          },
+          {
+            "name": "data",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Returned data."
+          },
+          {
+            "name": "comment_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the newly created reply. Example : 6990565363377392901"
+          },
+          {
+            "name": "parent_comment_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the comment to which the reply was created. Example : 6990565363377392901"
+          },
+          {
+            "name": "video_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the owned video the reply was created on. Example : 6990565363377392901"
+          },
+          {
+            "name": "user_id To-be-deprecated",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Developer application and TikTok account scoped unique identifier for the user that made the reply. Example : ce9b7be629b0447af777a0ad945783f61b7f790982b49fbda04a23b4722eaffe Note : This field will be deprecated in the next API version. We recommend using unique_identifier to identify the TikTok user because the identifier remains consistent across different APIs."
+          },
+          {
+            "name": "unique_identifier",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "A globally unique identifier assigned to each user commenting. This identifier remains consistent across different APIs, facilitating cross-referencing and integration. Example : +ABc1D2/E0fGhijklMNOrD34vDW/zDiZUNRH5Jyahue6OcA7b8ZpwnqXV9u1Uh+k"
+          },
+          {
+            "name": "create_time",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unix/Epoch date-time when the reply was created, in UTC timezone. Example : 1627617835"
+          },
+          {
+            "name": "text",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Text content of the reply. Example : \"This is a comment #comment 🙂\""
+          }
+        ]
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_id\": \"{{video_id}}\",\n        \"parent_comment_id\": \"{{parent_comment_id}}\",\n        \"comment_id\": \"{{comment_id}}\",\n        \"create_time\": \"1701334608\",\n        \"text\": \"{{text}}\",\n        \"user_id\": \"{{user_id}}\",\n        \"unique_identifier\": \"{{unique_identifier}}\"\n    }\n}"

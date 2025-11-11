@@ -201,6 +201,135 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "creators",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Discovered creators."
+        },
+        {
+          "name": "handle_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle name (username) of the creator."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name of the creator."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for profile photo of the creator. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Once the URL expires, you need to call /tto/tcm/creator/discover/ to obtain a new URL."
+        },
+        {
+          "name": "followers_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of followers of the creator."
+        },
+        {
+          "name": "following_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of accounts that the creator follows on TikTok."
+        },
+        {
+          "name": "likes_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of times people have liked the creator's videos."
+        },
+        {
+          "name": "videos_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of public videos posted by the creator."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"creators\": [\n            {\n                \"display_name\": \"{{display_name}}\",\n                \"followers_count\": 4419006,\n                \"following_count\": 428,\n                \"handle_name\": \"{{handle_name}}\",\n                \"likes_count\": 133618856,\n                \"profile_image\": \"{{profile_image}}\",\n                \"videos_count\": 606\n            },\n            {\n                \"display_name\": \"{{display_name}}\",\n                \"followers_count\": 2149447,\n                \"following_count\": 1309,\n                \"handle_name\": \"{{handle_name}}\",\n                \"likes_count\": 89181425,\n                \"profile_image\": \"{{profile_image}}\",\n                \"videos_count\": 1047\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 24,\n            \"total_number\": 1,\n            \"total_page\": 2\n        }\n    }\n}"

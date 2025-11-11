@@ -47,6 +47,359 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "auth_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the authorization."
+        },
+        {
+          "name": "auth_end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the authorization code expires (UTC+0), in the format of 2017-01-01 00:00:00."
+        },
+        {
+          "name": "auth_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the authorization code becomes valid (UTC+0), in the format of 2017-01-01 00:00:00."
+        },
+        {
+          "name": "item_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the Spark Ads post."
+        },
+        {
+          "name": "auth_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The authorization code for the Spark Ads post."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Spark Ads post."
+        },
+        {
+          "name": "item_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of Spark Ads post. Enum values: VIDEO : video post. CAROUSEL : photo post."
+        },
+        {
+          "name": "text",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The description of the Spark Ads post."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Spark Ads post. For enum values, see Enumerations-TikTok Post Item Status ."
+        },
+        {
+          "name": "carousel_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the photo post. Note : When item_type is VIDEO , the value of this field will be null."
+        },
+        {
+          "name": "image_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the images used in the photo post. The images are returned in the same order as they are shown in the photo post."
+        },
+        {
+          "name": "image_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the image. Validity period: 90 days."
+        },
+        {
+          "name": "image_height",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The height of the image, measured in pixels."
+        },
+        {
+          "name": "image_width",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The width of the image, measured in pixels."
+        },
+        {
+          "name": "music_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the music used in the photo post. Note : If the photo post is directly published in the TikTok App without music, the value of this field will be null."
+        },
+        {
+          "name": "music_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the music. Validity period: 90 days."
+        },
+        {
+          "name": "music_duration",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The duration of the music, in seconds."
+        },
+        {
+          "name": "stitch_original_item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If the post is a stitch from another post, the item ID of the original post."
+        },
+        {
+          "name": "duet_original_item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If the post is a duet from another post, the item ID of the original post."
+        },
+        {
+          "name": "is_multi_duet_stitch",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether this is a duet or stitch post that is created based on another duet or stitch post."
+        },
+        {
+          "name": "mentioned_item_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "If the post mentions another video, the item IDs of the original posts. Note: The post can only mention at most one video."
+        },
+        {
+          "name": "anchor_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object []",
+          "description": "Information about anchors in the post (video)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor ID."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor title."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor status. Enum values: CHECK_ING (anchor review in progress), CHECK_FAILED (anchor review failed), CHECK_SUCCESS (anchor review successful)."
+        },
+        {
+          "name": "product_regions",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Regions where the ad can be deployed."
+        },
+        {
+          "name": "url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Item URL."
+        },
+        {
+          "name": "spu_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when the post contains a product anchor link The SPU ID of the product that the post is associated with."
+        },
+        {
+          "name": "spu_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when the post contains a product anchor link The name of the product that the post is associated with."
+        },
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when the post contains a product anchor link The ID of the TikTok Shop that the product belongs to."
+        },
+        {
+          "name": "user_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the TikTok account."
+        },
+        {
+          "name": "tiktok_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The user name of the TikTok account."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity Type."
+        },
+        {
+          "name": "video_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the video post. Note : When item_type is CAROUSEL , the values for the parameters within the video_info object will be null."
+        },
+        {
+          "name": "bit_rate",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video bit rate, in bps."
+        },
+        {
+          "name": "duration",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The duration of the video, in seconds."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The size of the video, in bytes."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The width of the video."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The height of the video."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video name."
+        },
+        {
+          "name": "poster_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL to the video poster. It is valid for an hour. When it expires, you need to call the endpoint again to get a new URL."
+        },
+        {
+          "name": "preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The preview URL for the video. It is valid for an hour. When it expires, you need to call the endpoint again to get a new URL."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "MD5 for the video."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The unique log ID for the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auth_info\": {\n            \"auth_start_time\": \"2022-07-08 07:32:45\",\n            \"auth_end_time\": \"2022-08-07 07:32:44\"\n        },\n        \"video_info\": {\n            \"file_name\": \"\",\n            \"height\": 1280,\n            \"size\": 813340,\n            \"width\": 720,\n            \"signature\": \"{{signature}}\",\n            \"duration\": 1.881,\n            \"preview_url\": \"{{preview_url}}\",\n            \"poster_url\": \"{{poster_url}}\",\n            \"bit_rate\": {{bit_rate}},\n            \"video_id\": \"{{video_id}}\"\n        },\n        \"item_info\": {\n            \"stitch_original_item_id\": \"0\",\n            \"auth_code\": \"{{auth_code}}\",\n            \"item_id\": \"{{item_id}}\",\n            \"anchor_list\": null,\n            \"text\": \"\",\n            \"is_multi_duet_stitch\": false,\n            \"duet_original_item_id\": \"0\",\n            \"carousel_info\": null,\n            \"item_type\": \"VIDEO\"\n        },\n        \"user_info\": {\n            \"identity_type\": \"AUTH_CODE\",\n            \"tiktok_name\": \"{{tiktok_name}}\",\n            \"identity_id\": \"{{identity_id}}\"\n        }\n    }\n}"

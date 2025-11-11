@@ -79,6 +79,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TTO Creator Marketplace campaign."
+        },
+        {
+          "name": "brand_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Brand name."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign name."
+        },
+        {
+          "name": "handle_names",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The handle name list of TikTok creators that the campaign is for."
+        },
+        {
+          "name": "campaign_description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign description."
+        },
+        {
+          "name": "anchor_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the anchor that is associated with the campaign."
+        },
+        {
+          "name": "advertiser_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of ad accounts that the campaign is associated with. When a creator's video is linked to the campaign, these ad accounts will automatically be granted Spark Ads authorization for the video."
+        },
+        {
+          "name": "spark_ads_requested_authorization_days",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The default Spark Ads authorization days for videos uploaded to the campaign. Enum values: 0, 7, 30, 60, 180, 365."
+        },
+        {
+          "name": "invite_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The invite link that is associated with the TTO Creator Marketplace campaign. The invite link will not expire."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the campaign was created, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2024-01-01 00:00:01 ."
+        },
+        {
+          "name": "campaign_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the TTO Creator Marketplace campaign. Enum values: CAMPAIGN : A campaign with a campaign-level invite link . BRAND_LINK : A campaign with a brand-level invite link ."
+        },
+        {
+          "name": "brand_profile_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Brand Profile associated with the campaign."
+        },
+        {
+          "name": "country_codes",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned when at least one creator specified in the request parameter handle_names has been successfully invited to the campaign. The list of countries or region codes associated with the campaign. Example: [\"US\"] ."
+        },
+        {
+          "name": "failed_handle_names",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned when at least one creator specified in the request parameter handle_names failed to be invited to the campaign. The list of handles that failed to be added to the campaign. For example, if you provided [\"handle_name_1\",\"handle_name_2\"] in the request parameter handle_names and handle_name_1 was successfully added while handle_name_2 failed, the response will show handle_names as [\"handle_name_1\"] and failed_handle_names as [\"handle_name_2\"] ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"brand_name\": \"{{brand_name}}\",\n        \"campaign_description\": \"{{campaign_description}}\",\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"campaign_name\": \"{{campaign_name}}\",\n        \"campaign_type\": \"CAMPAIGN\",\n        \"create_time\": \"{{create_time}}\",\n        \"handle_names\": [\n            \"{{handle_names}}\",\n            \"{{handle_names}}\"\n        ],\n        \"invite_link\": \"{{invite_link}}\",\n        \"spark_ads_requested_authorization_days\": 0,\n        \"update_time\": \"{{update_time}}\"\n    }\n}"

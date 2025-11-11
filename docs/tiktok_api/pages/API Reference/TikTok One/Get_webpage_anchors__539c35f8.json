@@ -54,6 +54,240 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "anchors",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of anchors."
+        },
+        {
+          "name": "anchor_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the anchor."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the anchor. Enum value: DRAFT : The anchor is in draft mode. CREATED : The anchor has been created but has not been under review. IN_REVIEW : The anchor is under review. APPROVED : The anchor has passed review. REJECTED_BY_AUDIT : The anchor was rejected during the review."
+        },
+        {
+          "name": "anchor_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of anchor. Enum value: WEB_ANCHOR : Webpage anchor. A type of anchor through which you can display your website link above the creator's video description."
+        },
+        {
+          "name": "anchor_sub_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when anchor_type is WEB_ANCHOR . The specific type of webpage anchor. Enum value: DESTINATION : Web destination link. This type directs viewers to a web destination link that can be opened in TikTok. The anchor shows up both in the creator's video and the comment section. ECOMMERCE : E-commerce template. This type directs viewers to an internal landing page where brands can add a coupon link. The anchor shows up only in the creator's video comment section. ENTERTAINMENT : Entertainment template. This type directs viewers to an internal landing page where brands can add a video clip. The anchor shows up only in the creator's video comment section."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region. The app information from this country or region's app store will be used. This anchor won’t be available in other countries or regions. To learn about the country or region that the code represents, see Location code ."
+        },
+        {
+          "name": "call_to_action",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Anchor link information."
+        },
+        {
+          "name": "landing_page_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the page that the anchor will redirect viewers to. This page shows more information about your product or service."
+        },
+        {
+          "name": "ios_download_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The iOS download link where people can download your app. When anchor_type is WEB_ANCHOR , this field will be null."
+        },
+        {
+          "name": "ios_deep_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The iOS download deeplink where people can download your app. When anchor_type is WEB_ANCHOR , this field will be null."
+        },
+        {
+          "name": "android_download_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The Android download link where people can download your app. When anchor_type is WEB_ANCHOR , this field will be null."
+        },
+        {
+          "name": "android_deep_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The Android download deeplink where people can download your app. When anchor_type is WEB_ANCHOR , this field will be null."
+        },
+        {
+          "name": "anchor_title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The title of the anchor."
+        },
+        {
+          "name": "anchor_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the anchor."
+        },
+        {
+          "name": "anchor_sub_title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The title of the anchor, which is used to tell TikTok users what you're promoting about your product or service. When anchor_sub_type is DESTINATION , this field will be null."
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The thumbnail URL for the anchor."
+        },
+        {
+          "name": "coupon_link",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "This field returns a non-null value only when anchor_sub_type is ECOMMERCE . Information about the coupon link that redirects users to a page with more information about your campaign discount."
+        },
+        {
+          "name": "discount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Discount. For instance, a discount of 5 means 5% off."
+        },
+        {
+          "name": "coupon_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Coupon URL."
+        },
+        {
+          "name": "coupon_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Coupon code."
+        },
+        {
+          "name": "pixel_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the pixel that measures and analyzes campaign performance."
+        },
+        {
+          "name": "creator_preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The preview URL of the anchor and landing page that you can use for mobile phone preview purposes. The URL won't expire."
+        },
+        {
+          "name": "advertiser_preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The mobile preview URL of the anchor and landing page that you can use for desktop preview purposes. The URL won't expire. When anchor_sub_type is DESTINATION , this field will be null."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination Information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"anchors\": [\n            {\n                \"advertiser_preview_url\": \"{{advertiser_preview_url}}\",\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": \"{{anchor_sub_title}}\",\n                \"anchor_sub_type\": \"ENTERTAINMENT\",\n                \"anchor_title\": \"{{anchor_title}}\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"TW\",\n                \"coupon_link\": null,\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"pixel_id\": null,\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"advertiser_preview_url\": \"{{advertiser_preview_url}}\",\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": \"{{anchor_sub_title}}\",\n                \"anchor_sub_type\": \"ECOMMERCE\",\n                \"anchor_title\": \"{{anchor_title}}\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"US\",\n                \"coupon_link\": {\n                    \"coupon_code\": \"\",\n                    \"coupon_url\": \"\",\n                    \"discount\": 5\n                },\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            },\n            {\n                \"advertiser_preview_url\": null,\n                \"anchor_id\": \"{{anchor_id}}\",\n                \"anchor_name\": \"{{anchor_name}}\",\n                \"anchor_sub_title\": null,\n                \"anchor_sub_type\": \"DESTINATION\",\n                \"anchor_title\": \"Watch Now\",\n                \"anchor_type\": \"WEB_ANCHOR\",\n                \"call_to_action\": {\n                    \"android_deep_link\": null,\n                    \"android_download_link\": null,\n                    \"ios_deep_link\": null,\n                    \"ios_download_link\": null,\n                    \"landing_page_url\": \"{{landing_page_url}}\"\n                },\n                \"country_code\": \"CA\",\n                \"coupon_link\": null,\n                \"creator_preview_url\": \"{{creator_preview_url}}\",\n                \"pixel_id\": \"7258197703320944642\",\n                \"status\": \"IN_REVIEW\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 50,\n            \"total_number\": 3,\n            \"total_page\": 1\n        }\n    }\n}"

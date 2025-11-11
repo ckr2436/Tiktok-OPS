@@ -187,6 +187,317 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "X-Tt-Ads-Throttle",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A warning message to indicate the request's over limit issue. E. g. When the number of ad ids of queried advertiser account is more than 20,000: X-Tt-Ads-Throttle:\"Number of ad ids is equal or more than 20k, only return the top 20k id's results, sorting by create time desc order.\""
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": [
+          {
+            "name": "code",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+          },
+          {
+            "name": "message",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Response message. For details, see Appendix - Return Codes ."
+          },
+          {
+            "name": "data",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Return data."
+          },
+          {
+            "name": "total_metrics",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "The total added-up data for your requested metrics. Returned when you enable enable_total_metrics in the request."
+          },
+          {
+            "name": "campaign_name",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Auction Ads Campaign Name / Reservation Ads Group Name. Metrics that cannot be aggregated, such as campaign_name , will be returned as - ."
+          },
+          {
+            "name": "spend",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The total added-up data for spend."
+          },
+          {
+            "name": "impressions",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The total added-up data for impressions."
+          },
+          {
+            "name": "reach",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The total added-up data for reach."
+          },
+          {
+            "name": "{Other metrics}",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The total added-up data for other metrics."
+          },
+          {
+            "name": "list",
+            "required": false,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Data list."
+          },
+          {
+            "name": "dimensions",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "All requested dimension data."
+          },
+          {
+            "name": "advertiser_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Advertiser ID. Returns when dimensions contain advertiser_id ."
+          },
+          {
+            "name": "campaign_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Campaign ID. Returns when dimensions contain campaign_id ."
+          },
+          {
+            "name": "adgroup_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Ad Group ID. Returns when dimensions contain adgroup_id ."
+          },
+          {
+            "name": "ad_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Ad ID. Returns when dimensions contain ad_id ."
+          },
+          {
+            "name": "stat_time_day",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The time (days) when the reporting occurred. Returns when dimensions contain stat_time_day . Format: 2020-01-01 00:00:00 ."
+          },
+          {
+            "name": "stat_time_hour",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The time (hours) when the reporting occurred. Returns when dimensions contain stat_time_hour . Format: 2020-01-01 10:00:00 ."
+          },
+          {
+            "name": "ac",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Audience internet connection types. See Enumeration - Connection Type for details. Returns when dimensions contain ac ."
+          },
+          {
+            "name": "age",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Audience age group. See Enumeration - Age Group for details. Returns when dimensions contain age ."
+          },
+          {
+            "name": "country_code",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Audience country or region code. For enum values, see Appendix - Location code . Returns when dimensions contain country_code ."
+          },
+          {
+            "name": "interest_category",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Returns when dimensions contain interest_category . Old first-level interest category. Note : Old first-level interest categories will be deprecated in the next API version."
+          },
+          {
+            "name": "interest_category_v2",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Returns when dimensions contain interest_category . New first-level interest category. Use /tool/interest_category/ endpoint to get the complete list of interest categories."
+          },
+          {
+            "name": "gender",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Targeting gender. Enum values: FEMALE , MALE , NONE . Returns when dimensions contain gender ."
+          },
+          {
+            "name": "language",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Targeting language. See Enumeration - Languages for details. Returns when dimensions contain language ."
+          },
+          {
+            "name": "placement",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Placement. See Enumeration - Placement for details. Returns when dimensions contain placement ."
+          },
+          {
+            "name": "platform",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Targeting operating system. See Enumeration - Operating System for details. Returns when dimensions contain platform ."
+          },
+          {
+            "name": "contextual_tag",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Contextual tag. Returns when dimensions contain contextual_tag ."
+          },
+          {
+            "name": "metrics",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "All requested metric data."
+          },
+          {
+            "name": "campaign_name",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Auction Ads Campaign Name / Reservation Ads Group Name."
+          },
+          {
+            "name": "spend",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Total spend."
+          },
+          {
+            "name": "impressions",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Number of impression."
+          },
+          {
+            "name": "reach",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Number of reach."
+          },
+          {
+            "name": "{Other metrics}",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "For metrics supported in different report types, refer to the articles under Report types ."
+          },
+          {
+            "name": "advertiser_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Advertiser ID. Returned when you have specified advertiser_ids in your request."
+          },
+          {
+            "name": "timezone",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Your advertiser's timezone. Returned when you have specified advertiser_ids in your request."
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Your advertiser's currency. Returned when you have specified advertiser_ids in your request."
+          },
+          {
+            "name": "page_info",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Pagination information."
+          },
+          {
+            "name": "page",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Current page number."
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Page size."
+          },
+          {
+            "name": "total_number",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Total number of results."
+          },
+          {
+            "name": "total_page",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Total pages of results."
+          },
+          {
+            "name": "request_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The log ID of the request, which uniquely identifies a request."
+          }
+        ]
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

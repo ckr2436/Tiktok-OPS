@@ -47,5 +47,156 @@
       }
     ]
   },
-  "response": {}
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "posts",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of posts."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID."
+        },
+        {
+          "name": "caption",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video title."
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of likes of the video."
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of comments made to the video."
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of shares of the video."
+        },
+        {
+          "name": "video_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of views of the video. This is the number of times someone started playing your video. Replays will not be counted."
+        },
+        {
+          "name": "engagement_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of likes and comments and shares combined."
+        },
+        {
+          "name": "engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Calculated as engagement_count / video_views ."
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL to the video."
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL to the thumbnail of the video. The URL expires in 6 hours. The expiration time is included in the URL. Example: https://p16-sign-sg.tiktokcdn.com/tos-maliva-p-0068/1f9a445423844b82bd79317b42b9953f~c5_300x400.webp?x-expires=1614034800&x-signature=qChosOGafzBcTctPm9zYiF8Y2MA%3D ."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when this video is created."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creator's display name."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about returned data."
+        },
+        {
+          "name": "has_more",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Indicate if more videos are available."
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Value of the next cursor to request to get videos."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": []
+  }
 }

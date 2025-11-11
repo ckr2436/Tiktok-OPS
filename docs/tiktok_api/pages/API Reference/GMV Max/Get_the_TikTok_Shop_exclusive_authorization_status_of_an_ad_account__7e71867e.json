@@ -47,6 +47,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TikTok Shop."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the ad account."
+        },
+        {
+          "name": "authorization_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of exclusive authorization for the ad account to create GMV Max ads for the TikTok Shop. Enum values: EFFECTIVE : The ad account is currently granted exclusive GMV Max authorization. INEFFECTIVE : The ad account was granted exclusive GMV Max authorization but the authorization has been cancelled. UNAUTHORIZED : The ad account has never been granted GMV Max exclusive authorization."
+        },
+        {
+          "name": "advertiser_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the ad account. Note : When authorization_status is UNAUTHORIZED , this field is not returned."
+        },
+        {
+          "name": "advertiser_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the ad account. Enum values: STATUS_ENABLE : Approved. STATUS_CONFIRM_FAIL : Not approved. STATUS_PENDING_CONFIRM : In review. STATUS_LIMIT : Suspended. STATUS_CONTRACT_PENDING : Contract has not taken effect. STATUS_DISABLE : Disabled. STATUS_PENDING_CONFIRM_MODIFY : Modifications pending review. STATUS_PENDING_VERIFIED : Pending verification. STATUS_SELF_SERVICE_UNAUDITED : Pending verification of qualifications for the self-service account. STATUS_WAIT_FOR_BPM_AUDIT : Pending CRM system review. STATUS_CONFIRM_FAIL_END : CRM system review failed. STATUS_CONFIRM_MODIFY_FAIL : Review of modifications failed. Note : When authorization_status is UNAUTHORIZED , this field is not returned."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when an official TikTok account is set for the TikTok Shop. The ID of the identity associated with the official TikTok account for the TikTok Shop."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"advertiser_name\": \"{{advertiser_name}}\",\n        \"advertiser_status\": \"STATUS_ENABLE\",\n        \"authorization_status\": \"EFFECTIVE\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"store_id\": \"{{store_id}}\"\n    }\n}"

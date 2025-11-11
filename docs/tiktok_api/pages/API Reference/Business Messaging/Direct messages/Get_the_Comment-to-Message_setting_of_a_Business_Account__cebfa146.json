@@ -41,6 +41,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "business_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Application specific unique identifier for the TikTok Business Account."
+        },
+        {
+          "name": "direct_reply_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of direct reply. Enum value: COMMENT_TO_MESSAGE : Comment-to-Message. Once you enable this feature, the TikTok system will identify high-intent comments, enabling you to send customized replies to assist these users more effectively."
+        },
+        {
+          "name": "operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the direct reply type ( direct_reply_type ). Enum values: ENABLE : Enabled. DISABLE : Disabled. If you want to enable or disable this setting, use /business/message/direct_reply/update/ ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"business_id\": \"{{business_id}}\",\n        \"direct_reply_type\": \"COMMENT_TO_MESSAGE\",\n        \"operation_status\": \"ENABLE\"\n    }\n}"

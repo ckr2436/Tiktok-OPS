@@ -111,6 +111,177 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "store_products",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of products within the TikTok Shop."
+        },
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok Shop ID."
+        },
+        {
+          "name": "item_group_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "SPU ID of the product."
+        },
+        {
+          "name": "catalog_id Deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the catalog that the product ( item_group_id ) belongs to. Note : Starting June 30th, 2024, this field returns a null value."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The title of the product."
+        },
+        {
+          "name": "product_image_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the product image."
+        },
+        {
+          "name": "min_price",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The minimum price of the product. Note : If you specify one fixed price for the product, the values of min_price and max_price will be the same."
+        },
+        {
+          "name": "max_price",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The maximum price of the product. Note : If you specify one fixed price for the product, the values of min_price and max_price will be the same."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the currency in which the prices ( min_price and max_price ) are specified. To learn about the currency that a currency code corresponds to, see Budget verification ratio and precision of each currency ."
+        },
+        {
+          "name": "historical_sales",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The historical sales of the product, indicating the number of times the product has been sold."
+        },
+        {
+          "name": "category",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The category of the product."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the product. Enum values: AVAILABLE : The product is available for use in ads. NOT_AVAILABLE : The product is not available for use in ads."
+        },
+        {
+          "name": "gmv_max_ads_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when the filter field ad_creation_eligible is passed in the request. The status of the product in an enabled Product GMV Max Campaign. Enum values: OCCUPIED : The product is being promoted in an enabled Product GMV Max Campaign. UNOCCUPIED : The product is not being promoted in an enabled Product GMV Max Campaign. Note : If status is AVAILABLE and gmv_max_ads_status is UNOCCUPIED , the product can be used in a Product GMV Max Campaign."
+        },
+        {
+          "name": "is_running_custom_shop_ads",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Returned only when the filter field ad_creation_eligible is set to GMV_MAX in the request. Whether the product is being promoted in enabled Video Shopping Ads or Product Shopping Ads. Supported values: true , false . If is_running_custom_shop_ads is true , you can call /gmv_max/occupied_custom_shop_ads/list/ and set occupied_asset_type to SPU to find out the specific Video Shopping Ads or Product Shopping Ads that are using the product. To disable these ads, use /ad/status/update/ and set operation_status to DISABLE ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"page_info\": {\n            \"total_page\": 1,\n            \"page\": 1,\n            \"page_size\": 100,\n            \"total_number\": 2\n        },\n        \"store_products\": [\n            {\n                \"currency\": \"GBP\",\n                \"category\": \"Fashion Accessories > Eyewear > Glasses Cases & Accessories\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"max_price\": \"0.07\",\n                \"status\": \"AVAILABLE\",\n                \"title\": \"{{title}}\",\n                \"product_image_url\": \"{{product_image_url}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"item_group_id\": \"{{item_group_id}}\",\n                \"min_price\": \"0.07\",\n                \"historical_sales\": 18\n            },\n            {\n                \"currency\": \"GBP\",\n                \"category\": \"Womenswear & Underwear > Women's Tops > Vests\",\n                \"catalog_id\": \"{{catalog_id}}\",\n                \"max_price\": \"0.7\",\n                \"status\": \"NOT_AVAILABLE\",\n                \"title\": \"{{title}}\",\n                \"product_image_url\": \"{{product_image_url}}\",\n                \"store_id\": \"{{store_id}}\",\n                \"item_group_id\": \"{{item_group_id}}\",\n                \"min_price\": \"0.7\",\n                \"historical_sales\": 0\n            }\n        ]\n    }\n}"

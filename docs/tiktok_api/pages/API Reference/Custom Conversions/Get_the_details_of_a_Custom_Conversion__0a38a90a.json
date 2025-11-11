@@ -54,6 +54,121 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "custom_conversion_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Custom Conversion."
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The description of the Custom Conversion."
+        },
+        {
+          "name": "event_source_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Event source type. Enum values: PIXEL : Pixel. APP : App."
+        },
+        {
+          "name": "event_source_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Event source ID. When event_source_type is PIXEL , this field represents a Pixel ID. To obtain IDs of Pixels within your ad account, use /pixel/list/ and check the returned pixel_id . When event_source_type is APP , this field represents the app platform ID of a Self Attribution Network (SAN) App. To obtain app platform IDs of SAN Apps within your ad account, use /app/list/ . Confirm that the returned self_attribution_enabled for the App is true and check the returned app_platform_id ."
+        },
+        {
+          "name": "activity_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the Custom Conversion. Enum values: NO_RECENT_ACTIVITY : No recent activity. Activity received, but not in the past 7 days. ACTIVE : Active. Activity received in the past 7 days. WAITING_FOR_ACTIVITY : Inactive. No activity received in the past 90 days."
+        },
+        {
+          "name": "optimization_event",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The conversion event (standard event) associated with the Custom Conversion. For enum values, see List of values for optimization_event ."
+        },
+        {
+          "name": "rules",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Details of the conversion rules for the Custom Conversion. Only actions that meet these conditions will count as Custom Conversions."
+        },
+        {
+          "name": "operator",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Operator. When parameter is BRAND , CONTENT_CATEGORY , CONTENT_ID , CONTENT_NAME , CONTENT_TYPE , DESCRIPTION , EVENT_ID , SEARCH_STRING , STATUS , or URL , the enum values are: CONTAIN : Contains. NOT_CONTAIN : Does not contain. START_WITH : Starts with. EQUAL : Is equal to. NOT_EQUAL : Is not equal to. When parameter is NUM_ITEMS , PRICE , or VALUE , the enum values are: EQUAL : Is equal to. NOT_EQUAL : Is not equal to. LT : Is less than. GT : Is greater than. LTE : Is less than or equal to. GTE : Is greater than or equal to. When parameter is CURRENCY , the enum values are: EQUAL : Is equal to. NOT_EQUAL : Is not equal to."
+        },
+        {
+          "name": "values",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Values for the parameter. When parameter is BRAND , CONTENT_CATEGORY , CONTENT_ID , CONTENT_NAME , CONTENT_TYPE , DESCRIPTION , EVENT_ID , SEARCH_STRING , STATUS , URL , the field will be an array of strings, each with a maximum length of 100 characters and up to 100 entries. When parameter is NUM_ITEMS , the field will be an integer between 0 and 1,000,000,000. When parameter is PRICE , VALUE , the field will be a float kept to two decimal places, within the range from 0.00 to 1,000,000,000.00. When parameter is CURRENCY , the field will be an array of strings. To learn about the enum values, see List of currency values ."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the Custom Conversion was created, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "update_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the Custom Conversion was last updated, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2025-01-01 00:00:01 ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"activity_status\": \"WAITING_FOR_ACTIVITY\",\n        \"create_time\": \"{{create_time}}\",\n        \"custom_conversion_id\": \"{{custom_conversion_id}}\",\n        \"description\": \"{{description}}\",\n        \"event_source_id\": \"{{event_source_id}}\",\n        \"event_source_type\": \"PIXEL\",\n        \"name\": \"{{name}}\",\n        \"optimization_event\": \"SHOPPING\",\n        \"rules\": [\n            {\n                \"operator\": \"NOT_CONTAIN\",\n                \"parameter\": \"EVENT_ID\",\n                \"values\": [\n                    \"{{event_id}}\",\n                    \"{{event_id}}\"\n                ]\n            },\n            {\n                \"operator\": \"START_WITH\",\n                \"parameter\": \"DESCRIPTION\",\n                \"values\": [\n                    \"{{description_value}}\"\n                ]\n            }\n        ],\n        \"update_time\": \"{{update_time}}\"\n    }\n}"

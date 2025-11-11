@@ -47,6 +47,163 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return codes"
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Business Center list."
+        },
+        {
+          "name": "bc_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Business Center."
+        },
+        {
+          "name": "bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center ID."
+        },
+        {
+          "name": "company",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center Company Name."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center payment currency, the value range is shown in Appendix-Currency ."
+        },
+        {
+          "name": "registered_area",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center registration code, the value range is shown in Appendix-Location code ."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center status. Enum values： REVIEWING (under review), DENY (rejected), ENABLE (passed), PUNISH (disabled), see Enumeration-Business Center Status ."
+        },
+        {
+          "name": "timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time zone where the Business Center is located, the value range is shown in Appendix-Time Zone ."
+        },
+        {
+          "name": "type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center type. Enum values: NORMAL : Regular Business Center. DIRECT : Non-self-serve Direct Business Center. AGENCY : Non-self-serve Agency Business Center. SELF_SERVICE : Self-serve Direct Business Center. SELF_SERVICE_AGENCY : Self-serve Agency Business Center."
+        },
+        {
+          "name": "user_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center user type. Enum values: ADMIN (administrator), STANDARD (standard)."
+        },
+        {
+          "name": "ext_user_role",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Advanced role of the user in the Business Center orther than basic role, this is optional."
+        },
+        {
+          "name": "finance_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "User finance role. Enum values: MANAGER (Finance Manager), ANALYST (Finance Analyst)."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging Size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

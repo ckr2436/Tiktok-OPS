@@ -61,6 +61,93 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "access_token",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The short-term token for permission verification. The token expires in one day. If you want to renew a short-term access token, use /tt_user/oauth2/refresh_token/ with a refresh token obtained from /tt_user/oauth2/token/ . The refresh token remains valid for one year. If you want to revoke a short-term access token, use /tt_user/oauth2/revoke/ ."
+        },
+        {
+          "name": "token_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of token. Enum value: Bearer : Bearer token. Anyone in possession of the token can use it to access the associated resources."
+        },
+        {
+          "name": "scope",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The scope of permissions granted to the access token."
+        },
+        {
+          "name": "expires_in",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time remaining until the access token expires, measured in seconds."
+        },
+        {
+          "name": "refresh_token",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The refresh token, which can be used to renew the access token. The refresh token is valid for one year. Note : Retain this field for access_token renewal."
+        },
+        {
+          "name": "refresh_token_expires_in",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time remaining until the refresh token expires, measured in seconds."
+        },
+        {
+          "name": "open_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Application specific unique ID of the TikTok account."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"access_token\": \"{{access_token}}\",\n        \"expires_in\": 86400,\n        \"open_id\": \"{{open_id}}\",\n        \"refresh_token\": \"{{refresh_token}}\",\n        \"refresh_token_expires_in\": 31536000,\n        \"scope\": \"message.list.manage,video.list,video.insights,user.insights,user.info.basic,comment.list,biz.brand.insights,biz.spark.auth,tcm.order.update,comment.list.manage,video.upload,video.publish,biz.ads.recommend,user.account.type,biz.creator.info,user.info.username,message.list.send,user.info.profile,user.info.stats,message.list.read,biz.creator.insights\",\n        \"token_type\": \"Bearer\"\n    }\n}"

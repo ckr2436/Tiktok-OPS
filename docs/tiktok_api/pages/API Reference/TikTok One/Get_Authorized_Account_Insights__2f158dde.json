@@ -33,5 +33,708 @@
       }
     ]
   },
-  "response": {}
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "profile_image",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL of the creator avatar. The expiration information is included in the URL. Normally, a URL expires in two days. Example: https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/75dec21d63500917fb6ec8bc59415156~c5_300x300.jpeg?x-expires=1614099600&x-signature=PmK%2BWs3LzSzRL2tYs%2FZx7EjG3Gk%3D ."
+        },
+        {
+          "name": "display_name",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Name displayed in the creator's profile."
+        },
+        {
+          "name": "followers_count",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of followers of the TikTok creator account."
+        },
+        {
+          "name": "handle_name",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Handle name of the user."
+        },
+        {
+          "name": "bio",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The text that is displayed in the bio section of a TikTok creator's profile."
+        },
+        {
+          "name": "is_on_vacation",
+          "required": true,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the Creator has set the status to Vacation mode. Enum values: True - Creator has set the status to Vacation mode, and is not currently accepting order invitations. False - Creator is not on Vacation mode, and is currently accepting order invitations."
+        },
+        {
+          "name": "vacation_start_date",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Vacation start date."
+        },
+        {
+          "name": "vacation_end_date",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Vacation end date."
+        },
+        {
+          "name": "creator_rate",
+          "required": true,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Creator starting rate."
+        },
+        {
+          "name": "rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Amount of the rate."
+        },
+        {
+          "name": "currency",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Currency for the rate amount."
+        },
+        {
+          "name": "is_negotiable_type",
+          "required": true,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the Creator’s rate is negotiable. Enum values: True : You can negotiate the rate with the Creator, no matter the Creator has a starting rate or not. Note : If the Creator does not have a starting rate, then is_negotiable_type will be True , and the values of rate and currency will be empty. False : The Creator has a starting price, and the price is non-negotiable. Values of Rate and Currency will be returned."
+        },
+        {
+          "name": "location",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region where the creator is located, in ISO 3166-1 alpha-2 format."
+        },
+        {
+          "name": "topics",
+          "required": true,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The main topics of the creator's most recent 30 videos. To find out the allowed values for this field, refer to the section \" List of values for topics \" below."
+        },
+        {
+          "name": "creator_badges",
+          "required": true,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The current badges of the creator. Enum values: RESPONSIVE : Responsive. Creator responds to brands within 48 hours. EXPERIENCED : Experienced. Creator has completed their first campaign. PROFILE_COMPLETE : Profile completed. Creator has completed their full profile."
+        },
+        {
+          "name": "audience_countries",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Three countries or regions that have the largest audience size."
+        },
+        {
+          "name": "country",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Country or region name."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_genders",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience gender information."
+        },
+        {
+          "name": "gender",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: FEMALE , MALE , NONE ."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_ages",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience age distribution."
+        },
+        {
+          "name": "age",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Age group. Enum values: 18-24 , 25-34 , 35+ ."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_locales",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "For US creators, top 3 audience distributed states."
+        },
+        {
+          "name": "locale",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "US state (2-letter code). For details, see List of US state and territory abbreviation ."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_device",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience device information."
+        },
+        {
+          "name": "device",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: ios , android ."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_usage",
+          "required": true,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience TikTok usage."
+        },
+        {
+          "name": "usage",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the audience uses TikTok frequently. Enum values: Active (An audience is defined as Active if they have logged into the TikTok app within the last 30 days), Inactive ."
+        },
+        {
+          "name": "percentage",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Percentage."
+        },
+        {
+          "name": "average_views",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Average views is the number of times that the video is watched divided by the number of videos, averaged across the most recent 30 videos."
+        },
+        {
+          "name": "average_views_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the average number of views per video for the creator's most recent 30 videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's videos are among the top 1% of videos on TTCM for that particular topic in terms of average views."
+        },
+        {
+          "name": "six_seconds_views_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Six second views rate is the number of video views that last for at least 6 seconds divided by the total video views, averaged across the most recent 30 videos."
+        },
+        {
+          "name": "six_seconds_views_rate_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the six second views rate for the creator's most recent 30 videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's videos are among the top 1% of videos on TTCM for that particular topic in terms of six second views rate."
+        },
+        {
+          "name": "engagement_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Engagement rate is the number of post engagements (likes, shares, and comments) divided by the total video views, averaged across the most recent 30 videos."
+        },
+        {
+          "name": "engagement_rate_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the engagement rate for the creator's most recent 30 videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's videos are among the top 1% of videos on TTCM for that particular topic in terms of engagement rate."
+        },
+        {
+          "name": "engagements_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the average number of engagements for the creator's most recent 30 videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's videos are among the top 1% of videos on TTCM for that particular topic in terms of engagement count."
+        },
+        {
+          "name": "completion_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Completion rate is the number of times that a video plays to the end divided by the total video views, averaged across the most recent 30 videos."
+        },
+        {
+          "name": "completion_rate_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the video completion rate for the creator's most recent 30 videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's videos are among the top 1% of videos on TTCM for that particular topic in terms of video completion rate."
+        },
+        {
+          "name": "followers_growth_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Follower growth rate is the increase rate of follower count when compared against the follower count 30 days ago. Not available for new creators with no data 30 days ago."
+        },
+        {
+          "name": "followers_growth_rate_benchmark",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the follower growth rate, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator is among the top 1% of creators on TTCM for that particular topic in terms of follower growth rate."
+        },
+        {
+          "name": "average_likes",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average likes over the most recent 30 videos."
+        },
+        {
+          "name": "average_shares",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average shares over the most recent 30 videos."
+        },
+        {
+          "name": "average_comments",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average comments over the most recent 30 videos."
+        },
+        {
+          "name": "sponsored_video",
+          "required": true,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "avg_views_per_video",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average number of views per video for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "avg_views_per_video_benchmarking",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the average views for the creator's most recent 30 Branded Content videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's Branded Content videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's Branded Content videos are among the top 1% of Branded Content videos on TTCM for that particular topic in terms of average views."
+        },
+        {
+          "name": "avg_six_seconds_views_per_video",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The six seconds views rate per video for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "avg_six_seconds_views_per_video_benchmarking",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the six seconds views rate for the creator's most recent 30 Branded Content videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's Branded Content videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's Branded Content videos are among the top 1% of Branded Content videos on TTCM for that particular topic in terms of six seconds views rate."
+        },
+        {
+          "name": "video_completion_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The video completion rate for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "video_completion_rate_benchmarking",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the video completion rate for the creator's most recent 30 Branded Content videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's Branded Content videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's Branded Content videos are among the top 1% of Branded Content videos on TTCM for that particular topic in terms of video completion rate."
+        },
+        {
+          "name": "recent_videos_shares",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average shares for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "recent_videos_comments",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average comments on the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "recent_videos_engagements",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average engagements for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "recent_videos_engagements_benchmarking",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the average engagements for the creator's most recent 30 Branded Content videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's Branded Content videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's Branded Content videos are among the top 1% of Branded Content videos on TTCM for that particular topic in terms of average engagements."
+        },
+        {
+          "name": "engagement_rate",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The engagement rate for the creator's most recent 30 Branded Content videos."
+        },
+        {
+          "name": "engagement_rate_benchmarking",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The ranking of the engagement rate for the creator's most recent 30 Branded Content videos, compared to other TTCM creators with a similar number of followers and covering the same topic. If the creator's Branded Content videos cover multiple topics, the highest ranking among all topics will be displayed. For instance, a value of 1.0000 means the creator's Branded Content videos are among the top 1% of Branded Content videos on TTCM for that particular topic in terms of engagement rate."
+        },
+        {
+          "name": "recent_videos_likes",
+          "required": true,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average likes for the creator's most recent 30 Branded Content videos."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [
+      {
+        "title": "response_table_3",
+        "fields": [
+          {
+            "name": "profile_image",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "display_name",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "followers_count",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "handle_name",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "bio",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "is_on_vacation",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "vacation_start_date",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "vacation_end_date",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "creator_rate",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "location",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "topics",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "creator_badges",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_countries",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_genders",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_ages",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_locales",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_device",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_usage",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "average_views",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "average_views_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "six_seconds_views_rate",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "six_seconds_views_rate_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "engagement_rate",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "engagement_rate_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "engagements_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "completion_rate",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "completion_rate_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "followers_growth_rate",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "followers_growth_rate_benchmark",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "average_likes",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "average_shares",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "average_comments",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "sponsored_video",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          }
+        ]
+      }
+    ]
+  }
 }

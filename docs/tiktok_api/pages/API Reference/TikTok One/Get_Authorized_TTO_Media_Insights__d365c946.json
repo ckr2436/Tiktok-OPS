@@ -54,6 +54,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "posts",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of posts within the creator's TikTok account."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the video."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name (nickname) for the creator."
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for profile photo of the creator. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Validity period: around 7 days."
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link for this TikTok video. This URL can be used to embed the TikTok video in external websites or applications."
+        },
+        {
+          "name": "caption",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video description."
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Likes. Total number of likes on the video."
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Comments. Total number of comments on the video."
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Shares. Total number of times the video has been shared."
+        },
+        {
+          "name": "video_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video views. The number of times viewers watched your video."
+        },
+        {
+          "name": "favorites",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Favorites. The total number of times the video has been added to favorites."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the video was created, in the format of an Epoch/Unix timestamp in milliseconds. Example: 1749206540000 ."
+        },
+        {
+          "name": "has_more",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether an additional page of data is available. Supported values: true , false ."
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Timestamp cursor. The time value of the last item returned in milliseconds according to the current request. You need to use this cursor value in your subsequent request to get the remaining videos."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"cursor\": 1743739292000,\n        \"has_more\": false,\n        \"posts\": [\n            {\n                \"caption\": \"\",\n                \"comments\": 0,\n                \"create_time\": \"1749206540000\",\n                \"display_name\": \"{{display_name}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"favorites\": 0,\n                \"likes\": 0,\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"video_views\": 0\n            },\n            {\n                \"caption\": \"\",\n                \"comments\": 0,\n                \"create_time\": \"1743739292000\",\n                \"display_name\": \"{{display_name}}\",\n                \"embed_url\": \"{{embed_url}}\",\n                \"favorites\": 0,\n                \"likes\": 0,\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"video_id\": \"{{video_id}}\",\n                \"video_views\": 1\n            }\n        ]\n    }\n}"

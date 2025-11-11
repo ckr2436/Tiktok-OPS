@@ -359,6 +359,387 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": ""
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": ""
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": ""
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "media_info_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "material_operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "media_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": ""
+        },
+        {
+          "name": "image_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "web_uri",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "video_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": ""
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "aigc_disclosure_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "tiktok_item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "title_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "call_to_action_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "call_to_action",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "deeplink_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "deeplink",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "deeplink_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "display_name_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "app_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "landing_page_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "avatar_icon",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": ""
+        },
+        {
+          "name": "web_uri",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "page_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "card_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "card_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "landing_page_urls",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": ""
+        },
+        {
+          "name": "landing_page_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "common_material",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": ""
+        },
+        {
+          "name": "ad_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "call_to_action_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "creative_authorized",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": ""
+        },
+        {
+          "name": "playable_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "fallback_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "tracking_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": ""
+        },
+        {
+          "name": "impression_tracking_urls",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": ""
+        },
+        {
+          "name": "click_tracking_urls",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": ""
+        },
+        {
+          "name": "tracking_pixel_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "tracking_app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "tracking_offline_event_set_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": ""
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        },
+        {
+          "name": "is_smart_creative",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": ""
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": ""
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"call_to_action_list\": [],\n        \"deeplink_list\": [\n            {\n                \"deeplink_type\": \"NORMAL\",\n                \"deeplink\": \"\"\n            }\n        ],\n        \"media_info_list\": [\n            {\n                \"media_info\": {\n                    \"image_info\": [\n                        {\n                            \"web_uri\": \"{{web_uri}}\"\n                        }\n                    ],\n                    \"video_info\": {\n                        \"video_id\": \"{{video_id}}\"\n                    }\n                }\n            },\n            {\n                \"media_info\": {\n                    \"image_info\": [\n                        {\n                            \"web_uri\": \"{{web_uri}}\"\n                        }\n                    ],\n                    \"video_info\": {\n                        \"video_id\": \"{{video_id}}\"\n                    }\n                }\n            }\n        ],\n        \"advertiser_id\": \"{{advertiser_id}}\",\n        \"common_material\": {\n            \"fallback_type\": null,\n            \"tracking_info\": {\n                \"click_tracking_urls\": [],\n                \"tracking_app_id\": null,\n                \"tracking_offline_event_set_ids\": [\n                    \"{{tracking_offline_event_set_ids}}\",\n                    \"{{tracking_offline_event_set_ids}}\"\n                ],\n                \"impression_tracking_urls\": [],\n                \"vast_moat_enabled\": false,\n                \"tracking_pixel_id\": \"0\"\n            },\n            \"identity_type\": \"CUSTOMIZED_USER\",\n            \"is_smart_creative\": true,\n            \"creative_authorized\": false,\n            \"call_to_action_id\": \"{{call_to_action_id}}\",\n            \"playable_url\": \"\",\n            \"identity_id\": \"{{identity_id}}\",\n            \"ad_name\": null\n        },\n        \"card_list\": null,\n        \"avatar_icon_list\": [\n            {\n                \"avatar_icon\": {\n                    \"web_uri\": \"{{web_uri}}\"\n                }\n            }\n        ],\n        \"adgroup_id\": \"{{adgroup_id}}\",\n        \"display_name_list\": [\n            {\n                \"app_name\": \"\",\n                \"landing_page_name\": \"{{landing_page_name}}\"\n            }\n        ],\n        \"title_list\": [\n            {\n                \"material_operation_status\": \"ENABLE\",\n                \"title\": \"{{title}}\",\n                \"material_id\": \"{{material_id}}\"\n            }\n        ],\n        \"landing_page_urls\": [\n            {\n                \"landing_page_url\": \"{{landing_page_url}}\"\n            }\n        ],\n        \"page_list\": null\n    }\n}'"

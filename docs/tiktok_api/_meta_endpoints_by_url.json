@@ -380,5 +380,9 @@
   "https://business-api.tiktok.com/open_api/v1.3/file/video/ad/search/": "pages/API Reference/Video/Search_for_videos__7410c14d.json",
   "https://business-api.tiktok.com/open_api/v1.3/file/video/suggestcover/": "pages/API Reference/Video/Get_suggested_thumbnails_for_a_video__432d5c39.json",
   "https://business-api.tiktok.com/open_api/v1.3/creative/auto_message/create/": "pages/API Reference/Welcome Messages/Create_a_welcome_message_within_an_ad_account__000a2815.json",
-  "https://business-api.tiktok.com/open_api/v1.3/creative/auto_message/get/": "pages/API Reference/Welcome Messages/Get_welcome_messages_within_an_ad_account__548ea386.json"
+  "https://business-api.tiktok.com/open_api/v1.3/creative/auto_message/get/": "pages/API Reference/Welcome Messages/Get_welcome_messages_within_an_ad_account__548ea386.json",
+  "https://business-api.tiktok.com/open_api/v1.3/creative/report/get/": "pages/API Reference/Creative Reports/Video Insights reports/Video_Insights_reports__f182f141.json",
+  "https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/": "pages/API Reference/GMV Max/Run a GMV Max Campaign report/Run_a_GMV_Max_Campaign_report__01248dff.json",
+  "https://business-api.tiktok.com/open_api/v1.3/campaign/spc/report/get/": "pages/API Reference/Smart+/Run a Smart+ Campaign report/Run_a_Smart_Campaign_report__1282451b.json",
+  "https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/": "pages/API Reference/Spark Ads Recommendation/Create a campaign, an ad group, and a Spark Ad in one step/Create_a_campaign_an_ad_group_and_a_Spark_Ad_in_one_step__9ec7feb4.json"
 }

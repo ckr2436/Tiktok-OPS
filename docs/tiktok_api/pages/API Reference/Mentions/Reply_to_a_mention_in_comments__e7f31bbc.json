@@ -61,6 +61,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "comment_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the newly created reply. Example: 6990565363377392901 ."
+        },
+        {
+          "name": "parent_comment_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the comment to which the reply was created. Example: 6990565363377392901 ."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the video where the reply was created. Example: 6990565363377392901 ."
+        },
+        {
+          "name": "user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Developer application and TikTok account scoped unique identifier for the user that made the reply. Example: ce9b7be629b0447af777a0ad9455783f61b7f790982b49fbda04a23b4722eaffe ."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Unix/Epoch date-time when the reply was created, in UTC timezone. Example: 1627617835."
+        },
+        {
+          "name": "text",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Text content of the reply. Example: This is a comment #comment 🙂 ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_id\": \"{{video_id}}\",\n        \"parent_comment_id\": \"{{parent_comment_id}}\",\n        \"comment_id\": \"{{comment_id}}\",\n        \"create_time\": \"1701334608\",\n        \"text\": \"{{text}}\",\n        \"user_id\": \"{{user_id}}\"\n    }\n}"

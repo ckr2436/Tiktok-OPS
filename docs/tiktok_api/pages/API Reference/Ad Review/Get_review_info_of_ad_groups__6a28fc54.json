@@ -47,6 +47,394 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "ad_review_map",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The bi-dimensional structure for the review data at the ad level. The key for the first dimension is adgroup_id . The key for the second dimension is ad_id ."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad ID. Note : For Smart+ ad groups with a partial or complete review failure ( review_status within ad_group_review_map is PART_AVAILABLE or UNAVAILABLE ), the ad_id within ad_review_map does not represent a real ad ID and cannot be used with /ad/review_info/ to fetch ad-level review details. Instead, treat each ad_id as a material within the Smart+ Campaign. To understand review failures, examine the reject_info within ad_review_map returned by /adgroup/review_info/ . Afterwards, update the Smart+ Campaign accordingly via /campaign/spc/update/ ."
+        },
+        {
+          "name": "is_approved",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the ad has been approved or not."
+        },
+        {
+          "name": "review_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad review status. Enum values： ALL_AVAILABLE : The ad has been reviewed and can be delivered. PART_AVAILABLE : The ad has been reviewed and can only be delivered to some of the specified targeting countries. UNAVAILABLE : The ad has been reviewed and cannot be delivered."
+        },
+        {
+          "name": "appeal_status To-be-deprecated",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad appeal status. Note : The value of this field will always be null."
+        },
+        {
+          "name": "forbidden_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The placements that failed the review. For enum values, see Enumeration - Placement ."
+        },
+        {
+          "name": "forbidden_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Age groups that failed the review. For enum values, see Enumeration - Age Group ."
+        },
+        {
+          "name": "forbidden_locations",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The targeted regions that failed the review. For enum values, see Appendix - Location codes ."
+        },
+        {
+          "name": "forbidden_operation_systems",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The audience operating systems that failed the review. For enum values, see Enumeration - Operating Systems ."
+        },
+        {
+          "name": "last_audit_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Note : The value of this field will always be null. The last time when the ad was reviewed."
+        },
+        {
+          "name": "reject_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Details about the rejection."
+        },
+        {
+          "name": "suggestion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The review suggestion."
+        },
+        {
+          "name": "reasons",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of rejection reasons."
+        },
+        {
+          "name": "forbidden_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Age groups that failed the review. For enum values, see Enumeration - Age Group ."
+        },
+        {
+          "name": "forbidden_locations",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The targeted regions that failed the review. For enum values, see Appendix - Location codes ."
+        },
+        {
+          "name": "forbidden_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The placements that failed the review. For enum values, see Enumeration - Placement ."
+        },
+        {
+          "name": "content_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The content of the ad that has been reviewed."
+        },
+        {
+          "name": "image_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The image content."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the image that has been reviewed."
+        },
+        {
+          "name": "video_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The video content that has been reviewed."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the video that is being reviewed."
+        },
+        {
+          "name": "text_content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The text."
+        },
+        {
+          "name": "content_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the content that has been reviewed， Enum values： MODE_STRING ， MODE_IMAGE ， MODE_VIDEO , MODE_CAROUSEL_MUSIC (Music in the Carousel Ads)."
+        },
+        {
+          "name": "carousel_music_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned when content_type is MODE_CAROUSEL_MUSIC . The content of the music in the Carousel Ads that has been reviewed."
+        },
+        {
+          "name": "music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the piece of music used in the Carousel Ads."
+        },
+        {
+          "name": "ad_group_review_map",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The review data at the ad group level, organized by adgroup_id . The key for the first dimension is adgroup_id ."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID."
+        },
+        {
+          "name": "is_approved",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the ad group has been approved."
+        },
+        {
+          "name": "review_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ad group review status. Enum values: ALL_AVAILABLE : The ad group has been reviewed and all ads in the ad group can be delivered. PART_AVAILABLE : The ad group has been reviewed and only some of the ads in the ad group can be delivered. UNAVAILABLE : The ad group has been reviewed and all ads in the ad group cannot be delivered. Note : For Smart+ ad groups with a partial or complete review failure ( review_status within ad_group_review_map is PART_AVAILABLE or UNAVAILABLE ), the ad_id within ad_review_map does not represent a real ad ID and cannot be used with /ad/review_info/ to fetch ad-level review details. Instead, treat each ad_id as a material within the Smart+ Campaign. To understand review failures, examine the reject_info within ad_review_map returned by /adgroup/review_info/ . Afterwards, update the Smart+ Campaign accordingly via /campaign/spc/update/ ."
+        },
+        {
+          "name": "appeal_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group appeal status. For enum values, see Enumeration - Ad Group Review Appeal Status . To appeal the rejection of an ad group, call /adgroup/appeal/ . Then this field will be set to APPEALING (Appeal in progress)."
+        },
+        {
+          "name": "forbidden_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The placements that failed the review. For enum values, see Enumeration - Placement ."
+        },
+        {
+          "name": "forbidden_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The audience age ranges that failed the review. For enum values, see Enumeration - Age Groups ."
+        },
+        {
+          "name": "forbidden_locations",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The targeted locations that failed the review. For enum values, see Appendix - Location codes ."
+        },
+        {
+          "name": "forbidden_operation_systems",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The audience operating systems that failed the review. For enum values, see Enumeration - Operating System ."
+        },
+        {
+          "name": "last_audit_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Note : The value of this field will be the actual review time only when the ad group has been rejected. The last time when the ad group was reviewed (UTC+0), in the format of YYYY-MM-DD HH:MM:SS . Example: 2023-01-01 00:00:00 ."
+        },
+        {
+          "name": "contain_rejected_ads",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether ads in this ad group have been rejected."
+        },
+        {
+          "name": "reject_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Details about the rejection."
+        },
+        {
+          "name": "suggestion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The review suggestion."
+        },
+        {
+          "name": "reasons",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of rejection reasons"
+        },
+        {
+          "name": "forbidden_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Age groups that failed the review. For enum values, see Enumeration - Age Group ."
+        },
+        {
+          "name": "forbidden_locations",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The targeted regions that failed the review. For enum values, see Appendix - Location codes ."
+        },
+        {
+          "name": "forbidden_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The placements that failed the review. For enum values, see Enumeration - Placement ."
+        },
+        {
+          "name": "content_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The content of the ad that has been reviewed."
+        },
+        {
+          "name": "image_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The image content."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the image that has been reviewed."
+        },
+        {
+          "name": "video_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The video content that has been reviewed."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the video that is being reviewed."
+        },
+        {
+          "name": "text_content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The text."
+        },
+        {
+          "name": "content_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the content that has been reviewed， Enum values： MODE_STRING ， MODE_IMAGE ， MODE_VIDEO , MODE_CAROUSEL_MUSIC (Music in the Carousel Ads)."
+        },
+        {
+          "name": "carousel_music_content",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned when content_type is MODE_CAROUSEL_MUSIC . The content of the music in the Carousel Ads that has been reviewed."
+        },
+        {
+          "name": "music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the piece of music used in the Carousel Ads."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"ad_review_map\": {\n            \"adgroup_id\": {\n                \"ad_id\": {\n                    \"reject_info\": [\n                        {\n                            \"content_info\": {\n                                \"text_content\": null,\n                                \"content_type\": \"MODE_VIDEO\",\n                                \"image_content\": {\n                                    \"image_id\": \"tos-maliva-p-0000/0ba31ad4244c48d3a61e42ea3f91649e\"\n                                },\n                                \"video_content\": {\n                                    \"video_id\": \"video_id\",\n\n                                }\n                            },\n                            \"forbidden_locations\": [\n                                \"RU\"\n                            ],\n                            \"suggestion\": \"Please add background audio or modify the unclear audio. For more policy details, please check \\\" Ad Caption/Text, Image and Video\\\" in \\\"TikTok Advertising Policies - Ad Creatives\\\".\",\n                            \"reasons\": [\n                                \"The ad or video has no background audio or the background audio is incoherent/unclear. \"\n                            ]\n                        }\n                    ],\n                    \"is_approved\": true,\n                    \"last_audit_time\": 1596023135,\n                    \"forbidden_placements\": [\n                        \"PLACEMENT_HELO\",\n                        \"PLACEMENT_TIKTOK\",\n                        \"PLACEMENT_TOPBUZZ\"\n                    ],\n                    \"ad_id\": \"ad_id\",\n                    \"review_status\": \"PART_AVAILABLE\",\n                    \"appeal_status\": null,\n                    \"forbidden_locations\": [\n                        \"RU\"\n                    ],\n                    \"forbidden_operation_systems\": [\n                        \"IOS\"\n                    ],\n                    \"forbidden_ages\": [\n                    ]\n                }\n            }\n        },\n        \"ad_group_review_map\": {\n            \"adgroup_id\": {\n                \"reasons\": [\n                    \"some reason\"\n                ],\n                \"contains_rejected_ads\": true,\n                \"is_approved\": true,\n                \"forbidden_placements\": [\n                    \"PLACEMENT_TOPBUZZ\",\n                    \"PLACEMENT_HELO\",\n                    \"PLACEMENT_TIKTOK\"\n                ],\n                \"adgroup_id\": \"adgroup_id\",\n                \"review_status\": \"PART_AVAILABLE\",\n                \"appeal_status\": \"NOT_APPEALED\",\n                \"forbidden_locations\": [\n                    \"RU\"\n                ],\n                \"forbidden_operation_systems\": [\n                    \"IPHONE\"\n                ],\n                \"forbidden_ages\": [\n                ]\n            }\n        }\n    }\n}"

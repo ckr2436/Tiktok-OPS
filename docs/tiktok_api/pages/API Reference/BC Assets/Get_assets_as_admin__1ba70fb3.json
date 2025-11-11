@@ -82,6 +82,184 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of assets."
+        },
+        {
+          "name": "asset_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset type. Enum values: ADVERTISER : ad account (advertiser account). CATALOG : catalog. TIKTOK_SHOP : TikTok Shop. PIXEL : Pixel. LEAD : Leads. TT_ACCOUNT : TikTok account. This asset type corresponds to the identity type BC_AUTH_TT . Learn more from Identities ."
+        },
+        {
+          "name": "asset_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset ID. If asset_type is ADVERTISER , this field is the advertiser ID. If asset_type is CATALOG , this field is the catalog ID. If asset_type is TIKTOK_SHOP , this field is the TikTok Shop ID. If asset_type is PIXEL , this field is the Pixel ID. If asset_type is LEAD , this field is the form library ID. To obtain more details about form libraries that you have access to, use /page/library/get/ . If asset_type is TT_ACCOUNT , this field is the ID of a TikTok account in a Business Center."
+        },
+        {
+          "name": "asset_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset name."
+        },
+        {
+          "name": "relation_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the relation between the Business Center and the asset. Enum values: OWNER_BC : The asset is created and owned by the current Business Center. OWNER_PARTNER : The asset is owned by a partner Business Center. OWNER_INDIVIDUAL : The asset is owned by a user."
+        },
+        {
+          "name": "relation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Status of the relation between the Business Center account and the asset. Enum values: BOUND : The request to manage the asset has been approved by the owner. UNBOUND : The request to manage the asset was approved but has been cancelled by the owner. PENDING : The request to manage the asset is pending on the owner's approval. REJECTED : The request to manage the asset has been rejected by the owner. When asset_type is CATALOG , LEAD , or TT_ACCOUNT , the value of this field will be null."
+        },
+        {
+          "name": "advertiser_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser status. For enum values, see Enumeration - Advertiser Status ."
+        },
+        {
+          "name": "advertiser_account_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the ad account. Enum values: RESERVATION (reservation ad account), AUCTION (auction ad account)."
+        },
+        {
+          "name": "advertiser_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when asset_type is ADVERTISER . Business Center user's permissions to the ad account. Enum values: ADMIN : Admin. Manage ad account finances, settings, and permissions. Create and edit ad campaigns and view performance data. OPERATOR : Operator. Manage finances for ad accounts, create and edit ad campaigns, and view performance data. ANALYST : Analyst. View ads and performance data."
+        },
+        {
+          "name": "catalog_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when asset_type is CATALOG . Business Center user's permissions to the catalog. Enum values: ADMIN : Catalog management. Promote products both organically and in ads, and edit products and catalogs. AD_PROMOTE : Ad promotion. Create ads using product catalogs."
+        },
+        {
+          "name": "ad_creation_eligible",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when asset_type is CATALOG . Whether the catalog can be used in ads when it contains the number of available products required for the ad format. Enum values: NOT_AVAILABLE : The catalog cannot be used in ads. AVAILABLE : The catalog can be used in ads when it contains the number of available products required for the ad format."
+        },
+        {
+          "name": "store_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when asset_type is TIKTOK_SHOP . Business Center user's permission to the TikTok Shop. Enum values: AD_PROMOTION : Ad promotion. Create ads promoting products from this TikTok Shop."
+        },
+        {
+          "name": "pixel_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The pixel code. This field returns a non-null value when asset_type is PIXEL ."
+        },
+        {
+          "name": "tt_account_roles",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when asset_type is TT_ACCOUNT . Business Center user's permission to the TikTok account. Enum values: POST : Existing posts permissions, including accessing your own profile info, accessing your own public videos, and accessing your own ad-authorized videos. LIVE : LIVE video permissions (Only available in some regions), including accessing your own profile info and accessing LIVE videos. DIRECT_MESSAGE : Direct message permissions, including allowing everyone to send you a direct message and reading and managing direct messages in your inbox, in addition to messaging or interacting with other accounts on your behalf. This field returns a non-null value when asset_type is TT_ACCOUNT ."
+        },
+        {
+          "name": "owner_bc_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The owner Business Center of this asset. When asset_type is TT_ACCOUNT , the value of this field will be null."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"relation_status\": \"PENDING\",\n                \"asset_id\": \"{{asset_id}}\",\n                \"pixel_code\": null,\n                \"asset_name\": \"{{asset_name}}\",\n                \"advertiser_role\": \"ADMIN\",\n                \"relation_type\": \"OWNER_INDIVIDUAL\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"domain_status\": null,\n                \"owner_bc_name\": \"{{owner_bc_name}}\",\n                \"asset_type\": \"ADVERTISER\",\n                \"advertiser_status\": \"STATUS_ENABLE\",\n                \"tt_account_roles\": null\n            },\n            {\n                \"relation_status\": \"PENDING\",\n                \"asset_id\": \"{{asset_id}}\",\n                \"pixel_code\": null,\n                \"asset_name\": \"{{asset_name}}\",\n                \"advertiser_role\": \"ANALYST\",\n                \"relation_type\": \"OWNER_INDIVIDUAL\",\n                \"advertiser_account_type\": \"AUCTION\",\n                \"domain_status\": null,\n                \"owner_bc_name\": \"{{owner_bc_name}}\",\n                \"asset_type\": \"ADVERTISER\",\n                \"advertiser_status\": \"STATUS_LIMIT\",\n                \"tt_account_roles\": null\n            }\n        ],\n        \"page_info\": {\n            \"total_page\": 1,\n            \"page_size\": 50,\n            \"page\": 1,\n            \"total_number\": 2\n        }\n    }\n}"

@@ -41,6 +41,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The publishing status of the TikTok post. Enum values: PROCESSING_DOWNLOAD : The download of content from the URL is in progress. This status is only available when you publish the post using a file URL. PUBLISH_COMPLETE : The post has passed moderation and has been successfully published. FAILED : The publishing process failed due to an error. SEND_TO_USER_INBOX : The draft post has been successfully uploaded and the system has sent a corresponding notification to creator's inbox."
+        },
+        {
+          "name": "post_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when status is PUBLISH_COMPLETE and the posts are publicly viewable. The unique identifiers for the published TikTok posts. Note : Post IDs require up to three minutes of processing time. If post IDs are not immediately available in the initial response, retry after three minutes. You can use the IDs as the filter field video_ids in /business/video/list/ to obtain the detailed metrics for the posts."
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when status is FAILED . The reason for the publishing failure. Example: frame_rate_check_failed . To find out the detailed description for each reason, see Failure reasons ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"post_ids\": [\n            \"{{post_id}}\"\n        ],\n        \"status\": \"PUBLISH_COMPLETE\"\n    }\n}"
