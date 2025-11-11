@@ -12,7 +12,7 @@ const MAX_HISTORY_TOTAL = 500
 
 const DEFAULT_MODEL_ID = 'sora-2-image-to-video'
 
-function getLastTaskKey (wid, modelId) {
+function getLastTaskKey(wid, modelId) {
   return `${LAST_TASK_KEY_PREFIX}${wid ?? ''}_${modelId}`
 }
 
@@ -93,7 +93,7 @@ const MODEL_CONFIGS = [
   },
 ]
 
-function Badge ({ type = 'default', children }) {
+function Badge({ type = 'default', children }) {
   const colorMap = {
     waiting: '#999',
     running: '#0d6efd',
@@ -122,7 +122,7 @@ function Badge ({ type = 'default', children }) {
   )
 }
 
-function shouldPollByState (state) {
+function shouldPollByState(state) {
   if (!state) return true
   const s = String(state).toLowerCase()
 
@@ -150,14 +150,15 @@ function shouldPollByState (state) {
 }
 
 // 小工具：并发限制的批量执行（最多 concurrency 个 worker 同时跑）
-async function runWithConcurrency (items, concurrency, worker) {
+async function runWithConcurrency(items, concurrency, worker) {
   const results = new Array(items.length)
   const total = items.length
   const limit = Math.max(1, Math.min(concurrency, total))
 
   let index = 0
 
-  async function runner () {
+  async function runner() {
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const current = index
       if (current >= total) break
@@ -167,21 +168,21 @@ async function runWithConcurrency (items, concurrency, worker) {
   }
 
   const workers = []
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < limit; i += 1) {
     workers.push(runner())
   }
   await Promise.all(workers)
   return results
 }
 
-export default function Sora2ImageToVideoPage () {
+export default function Sora2ImageToVideoPage() {
   const { wid } = useParams()
   const queryClient = useQueryClient()
 
   const [modelId, setModelId] = useState(DEFAULT_MODEL_ID)
 
   const currentModel = useMemo(
-    () => MODEL_CONFIGS.find(m => m.id === modelId) || MODEL_CONFIGS[0],
+    () => MODEL_CONFIGS.find((m) => m.id === modelId) || MODEL_CONFIGS[0],
     [modelId],
   )
 
@@ -265,19 +266,35 @@ export default function Sora2ImageToVideoPage () {
     queryKey: ['sora2-task', wid, modelId, currentTaskId],
     queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
     enabled: !!wid && !!currentTaskId,
-    refetchInterval: query =>
+    refetchInterval: (query) =>
       shouldPollByState(query.state.data?.state) ? 8000 : false,
   })
 
+  // 如果后端返回 404（getTask → null），自动清理本地“当前任务”状态和缓存
+  useEffect(() => {
+    if (!currentTaskId) return
+    if (loadingTask) return
+    if (task !== null) return // null 表示 404；undefined 是还没拉到
+
+    setCurrentTaskId(null)
+    setPreview(null)
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(lastTaskKey)
+    }
+
+    queryClient.removeQueries({ queryKey: ['sora2-task', wid, modelId] })
+    queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
+  }, [currentTaskId, loadingTask, task, lastTaskKey, wid, modelId, queryClient])
+
   // ------- React Query：当前任务文件 -------
-  const {
-    data: files = [],
-  } = useQuery({
+  const { data: files = [] } = useQuery({
     queryKey: ['sora2-files', wid, modelId, currentTaskId],
     queryFn: () => kieTenantApi.listTaskFiles(wid, currentTaskId),
     enabled: !!wid && !!currentTaskId,
     refetchInterval: () => {
-      if (!task) return 8000
+      // ✅ 没有 task 的时候不再轮询 files，避免你说的“空仍然不停调用”
+      if (!task) return false
       return shouldPollByState(task.state) ? 8000 : false
     },
   })
@@ -318,7 +335,7 @@ export default function Sora2ImageToVideoPage () {
   }, [task])
 
   // -------- 上传文件相关 --------
-  function applyFile (f) {
+  function applyFile(f) {
     if (!f) {
       setFile(null)
       setFilePreview(null)
@@ -333,12 +350,12 @@ export default function Sora2ImageToVideoPage () {
     }
   }
 
-  function onFileInputChange (e) {
+  function onFileInputChange(e) {
     const f = e.target.files?.[0]
     applyFile(f || null)
   }
 
-  function onDrop (e) {
+  function onDrop(e) {
     e.preventDefault()
     setDragOver(false)
     const f = e.dataTransfer.files?.[0]
@@ -346,24 +363,25 @@ export default function Sora2ImageToVideoPage () {
   }
 
   // -------- Storyboard 分镜操作 --------
-  function addShot () {
-    setShots(list => [...list, { duration: 5, scene: '' }])
+  function addShot() {
+    setShots((list) => [...list, { duration: 5, scene: '' }])
   }
 
-  function updateShot (index, patch) {
-    setShots(list =>
+  function updateShot(index, patch) {
+    setShots((list) =>
       list.map((s, i) => (i === index ? { ...s, ...patch } : s)),
     )
   }
 
-  function removeShot (index) {
-    setShots(list => list.filter((_, i) => i !== index))
+  function removeShot(index) {
+    setShots((list) => list.filter((_, i) => i !== index))
   }
 
   // -------- 创建任务 --------
-  async function onSubmit (e) {
+  async function onSubmit(e) {
     e.preventDefault()
     if (!wid) {
+      // eslint-disable-next-line no-alert
       alert('缺少 workspace id')
       return
     }
@@ -374,10 +392,11 @@ export default function Sora2ImageToVideoPage () {
     if (kind === 'watermark') {
       const lines = (videoUrl || '')
         .split('\n')
-        .map(s => s.trim())
+        .map((s) => s.trim())
         .filter(Boolean)
 
       if (!lines.length) {
+        // eslint-disable-next-line no-alert
         alert('请至少输入一个 Sora 视频链接')
         return
       }
@@ -387,7 +406,7 @@ export default function Sora2ImageToVideoPage () {
 
       let created = 0
       let failed = 0
-      let lastTaskId = null
+      let lastCreatedTaskId = null
 
       try {
         await runWithConcurrency(lines, 10, async (urlStr, idx) => {
@@ -398,30 +417,33 @@ export default function Sora2ImageToVideoPage () {
             })
             const newTask = resp?.task || resp
             if (newTask?.id) {
-              lastTaskId = newTask.id
+              lastCreatedTaskId = newTask.id
               if (typeof window !== 'undefined') {
                 window.localStorage.setItem(lastTaskKey, String(newTask.id))
               }
             }
             created += 1
           } catch (err2) {
+            // eslint-disable-next-line no-console
             console.error('创建去水印任务失败', idx, err2)
             failed += 1
           }
         })
 
-        if (lastTaskId != null) {
-          setCurrentTaskId(lastTaskId)
+        if (lastCreatedTaskId != null) {
+          setCurrentTaskId(lastCreatedTaskId)
         }
 
         setPage(1)
         await refetchHistory()
-        if (lastTaskId != null) {
+        if (lastCreatedTaskId != null) {
           await refetchTask()
         }
 
+        // eslint-disable-next-line no-alert
         alert(`去水印任务已创建：成功 ${created} 条，失败 ${failed} 条`)
       } catch (e2) {
+        // eslint-disable-next-line no-console
         console.error(e2)
         setErr(e2?.message || '创建任务失败')
       } finally {
@@ -434,32 +456,34 @@ export default function Sora2ImageToVideoPage () {
     // 其他模型：单任务
     if (currentModel.hasPrompt) {
       if (!prompt.trim()) {
+        // eslint-disable-next-line no-alert
         alert('请输入提示词')
         return
       }
     }
 
     if (currentModel.hasImageUpload && kind !== 'storyboard' && !file) {
+      // eslint-disable-next-line no-alert
       alert('请先选择一张图片')
       return
     }
 
     if (kind === 'storyboard') {
       const validShots = shots
-        .filter(s => s && s.scene && s.scene.trim())
-        .map(s => ({
+        .filter((s) => s && s.scene && s.scene.trim())
+        .map((s) => ({
           Scene: s.scene.trim(),
           duration: Number(s.duration) || 1,
         }))
       if (!validShots.length) {
+        // eslint-disable-next-line no-alert
         alert('请至少填写一个分镜场景')
         return
       }
-    } else {
-      if (!nFrames || Number.isNaN(Number(nFrames))) {
-        alert('请选择视频时长')
-        return
-      }
+    } else if (!nFrames || Number.isNaN(Number(nFrames))) {
+      // eslint-disable-next-line no-alert
+      alert('请选择视频时长')
+      return
     }
 
     setSubmitting(true)
@@ -470,7 +494,9 @@ export default function Sora2ImageToVideoPage () {
         prompt: prompt.slice(0, MAX_PROMPT_LEN),
         aspect_ratio: kind === 'watermark' ? undefined : aspectRatio,
         n_frames: kind === 'watermark' ? undefined : nFrames,
-        remove_watermark: currentModel.hasWatermarkToggle ? removeWatermark : undefined,
+        remove_watermark: currentModel.hasWatermarkToggle
+          ? removeWatermark
+          : undefined,
         size: currentModel.hasSize ? size : undefined,
         image: currentModel.hasImageUpload ? file : undefined,
         video_url: undefined,
@@ -479,8 +505,8 @@ export default function Sora2ImageToVideoPage () {
 
       if (kind === 'storyboard') {
         payload.shots = shots
-          .filter(s => s && s.scene && s.scene.trim())
-          .map(s => ({
+          .filter((s) => s && s.scene && s.scene.trim())
+          .map((s) => ({
             Scene: s.scene.trim(),
             duration: Number(s.duration) || 1,
           }))
@@ -503,8 +529,10 @@ export default function Sora2ImageToVideoPage () {
       await refetchTask()
       await refetchHistory()
 
+      // eslint-disable-next-line no-alert
       alert('任务已创建')
     } catch (e2) {
+      // eslint-disable-next-line no-console
       console.error(e2)
       setErr(e2?.message || '创建任务失败')
     } finally {
@@ -513,14 +541,14 @@ export default function Sora2ImageToVideoPage () {
   }
 
   // 手动刷新当前任务
-  async function onRefreshTask () {
+  async function onRefreshTask() {
     if (!currentTaskId) return
     await refetchTask()
     await refetchHistory()
   }
 
-  // 清除当前任务
-  function onClearTask () {
+  // 清除当前任务（不动历史）
+  function onClearTask() {
     setCurrentTaskId(null)
     setPreview(null)
     if (typeof window !== 'undefined') {
@@ -530,8 +558,41 @@ export default function Sora2ImageToVideoPage () {
     queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
   }
 
+  // 清空任务历史（会删除数据库记录）
+  async function onClearHistory() {
+    if (!wid || !historyTotal) return
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(
+      '确定要清空当前模型的任务记录吗？\n此操作会删除数据库中的任务及关联文件记录，且不可恢复。',
+    )
+    if (!ok) return
+
+    try {
+      await kieTenantApi.clearTasks(wid, { modelId })
+
+      // 清理前端状态
+      setCurrentTaskId(null)
+      setPreview(null)
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(lastTaskKey)
+      }
+      queryClient.removeQueries({ queryKey: ['sora2-task', wid, modelId] })
+      queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
+
+      setPage(1)
+      await refetchHistory()
+      // eslint-disable-next-line no-alert
+      alert('任务记录已清空')
+    } catch (e2) {
+      // eslint-disable-next-line no-console
+      console.error(e2)
+      // eslint-disable-next-line no-alert
+      alert(e2?.message || '清空任务记录失败')
+    }
+  }
+
   // 下载视频
-  async function handleDownload (fileId) {
+  async function handleDownload(fileId) {
     if (!wid || !fileId) return
     try {
       const url = await kieTenantApi.getFileDownloadUrl(wid, fileId)
@@ -545,13 +606,15 @@ export default function Sora2ImageToVideoPage () {
       a.click()
       document.body.removeChild(a)
     } catch (e2) {
+      // eslint-disable-next-line no-console
       console.error(e2)
+      // eslint-disable-next-line no-alert
       alert(e2?.message || '获取下载链接失败')
     }
   }
 
   // 预览视频
-  async function handlePreview (fileObj) {
+  async function handlePreview(fileObj) {
     if (!wid || !fileObj?.id) return
     try {
       const url = await kieTenantApi.getFileDownloadUrl(wid, fileObj.id)
@@ -562,19 +625,23 @@ export default function Sora2ImageToVideoPage () {
         mime: fileObj.mime_type || '',
       })
     } catch (e2) {
+      // eslint-disable-next-line no-console
       console.error(e2)
+      // eslint-disable-next-line no-alert
       alert(e2?.message || '获取预览链接失败')
     }
   }
 
-  function closePreview () {
+  function closePreview() {
     setPreview(null)
   }
 
   const promptCharsLeft = MAX_PROMPT_LEN - (prompt?.length || 0)
 
   const durationOptions =
-    currentModel.kind === 'storyboard' ? STORYBOARD_DURATION_OPTIONS : DURATION_OPTIONS
+    currentModel.kind === 'storyboard'
+      ? STORYBOARD_DURATION_OPTIONS
+      : DURATION_OPTIONS
 
   const pageTitle = (() => {
     switch (modelId) {
@@ -594,7 +661,7 @@ export default function Sora2ImageToVideoPage () {
         return 'Sora 2 视频'
     }
   })()
-  
+
   const pageIntro = (() => {
     switch (currentModel.kind) {
       case 'text':
@@ -625,7 +692,7 @@ export default function Sora2ImageToVideoPage () {
           marginBottom: 12,
         }}
       >
-        {MODEL_CONFIGS.map(m => (
+        {MODEL_CONFIGS.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -660,7 +727,7 @@ export default function Sora2ImageToVideoPage () {
                   <textarea
                     rows={8}
                     value={prompt}
-                    onChange={e => setPrompt(e.target.value)}
+                    onChange={(e) => setPrompt(e.target.value)}
                     maxLength={MAX_PROMPT_LEN}
                     placeholder="请详细描述你希望生成的视频内容、风格、镜头、时长等..."
                     style={{
@@ -695,8 +762,10 @@ export default function Sora2ImageToVideoPage () {
                 <textarea
                   rows={6}
                   value={videoUrl}
-                  onChange={e => setVideoUrl(e.target.value)}
-                  placeholder={'示例：\nhttps://sora.chatgpt.com/share/xxx\nhttps://sora.chatgpt.com/share/yyy'}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  placeholder={
+                    '示例：\nhttps://sora.chatgpt.com/share/xxx\nhttps://sora.chatgpt.com/share/yyy'
+                  }
                   style={{ width: '100%', resize: 'vertical' }}
                 />
                 <p className="small-muted" style={{ marginTop: 4 }}>
@@ -710,7 +779,7 @@ export default function Sora2ImageToVideoPage () {
           {currentModel.kind !== 'watermark' && (
             <FormField label="画面比例">
               <div style={{ display: 'inline-flex', gap: 8 }}>
-                {ASPECT_OPTIONS.map(opt => (
+                {ASPECT_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
@@ -725,11 +794,11 @@ export default function Sora2ImageToVideoPage () {
             </FormField>
           )}
 
-          {/* 视频时长（Storyboard 也用） */}
+          {/* 视频时长 */}
           {currentModel.kind !== 'watermark' && (
             <FormField label="视频时长">
               <div style={{ display: 'inline-flex', gap: 8 }}>
-                {durationOptions.map(opt => (
+                {durationOptions.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
@@ -814,10 +883,11 @@ export default function Sora2ImageToVideoPage () {
                         min="1"
                         step="0.5"
                         value={shot.duration}
-                        onChange={e =>
+                        onChange={(e) =>
                           updateShot(idx, {
                             duration: Number(e.target.value) || 1,
-                          })}
+                          })
+                        }
                         style={{
                           width: '100%',
                           padding: '4px 6px',
@@ -830,7 +900,7 @@ export default function Sora2ImageToVideoPage () {
                       <input
                         type="text"
                         value={shot.scene}
-                        onChange={e => updateShot(idx, { scene: e.target.value })}
+                        onChange={(e) => updateShot(idx, { scene: e.target.value })}
                         style={{
                           width: '100%',
                           padding: '4px 6px',
@@ -863,15 +933,15 @@ export default function Sora2ImageToVideoPage () {
             </div>
           )}
 
-          {/* 图片上传（图生视频 + storyboard） */}
+          {/* 图片上传 */}
           {currentModel.hasImageUpload && (
             <FormField label="源图片（PNG/JPG，≤ 20MB）">
               <div
-                onDragOver={e => {
+                onDragOver={(e) => {
                   e.preventDefault()
                   setDragOver(true)
                 }}
-                onDragLeave={e => {
+                onDragLeave={(e) => {
                   e.preventDefault()
                   setDragOver(false)
                 }}
@@ -921,11 +991,7 @@ export default function Sora2ImageToVideoPage () {
           )}
 
           <div style={{ marginTop: 8 }}>
-            <button
-              className="btn"
-              type="submit"
-              disabled={submitting}
-            >
+            <button className="btn" type="submit" disabled={submitting}>
               {submitting ? '创建中…' : '创建任务'}
             </button>
           </div>
@@ -954,10 +1020,18 @@ export default function Sora2ImageToVideoPage () {
               <div style={{ display: 'flex', gap: 8 }}>
                 {task?.id && (
                   <>
-                    <button className="btn ghost" type="button" onClick={onRefreshTask}>
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={onRefreshTask}
+                    >
                       刷新状态
                     </button>
-                    <button className="btn ghost" type="button" onClick={onClearTask}>
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={onClearTask}
+                    >
                       清除当前任务
                     </button>
                   </>
@@ -984,7 +1058,14 @@ export default function Sora2ImageToVideoPage () {
                     <strong>模型：</strong>
                     {task.model}
                   </div>
-                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
                     <strong>状态：</strong>
                     <Badge type={statusType}>
                       {(task.state || '').toString()}
@@ -1064,11 +1145,18 @@ export default function Sora2ImageToVideoPage () {
                   {files && files.length > 0 ? (
                     <ul style={{ marginTop: 6, paddingLeft: 18 }}>
                       {files
-                        .filter(f => f.kind === 'result')
-                        .map(f => (
+                        .filter((f) => f.kind === 'result')
+                        .map((f) => (
                           <li key={f.id} style={{ marginBottom: 6 }}>
                             <div>[结果文件]</div>
-                            <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                display: 'flex',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                              }}
+                            >
                               <button
                                 type="button"
                                 className="btn ghost"
@@ -1107,12 +1195,24 @@ export default function Sora2ImageToVideoPage () {
               }}
             >
               <h3 style={{ margin: 0 }}>任务记录</h3>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <label className="small-muted" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <label
+                  className="small-muted"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
                   每页
                   <select
                     value={pageSize}
-                    onChange={e => setPageSize(Number(e.target.value) || 10)}
+                    onChange={(e) =>
+                      setPageSize(Number(e.target.value) || 10)
+                    }
                     style={{
                       padding: '4px 8px',
                       borderRadius: 8,
@@ -1122,8 +1222,10 @@ export default function Sora2ImageToVideoPage () {
                       fontSize: 12,
                     }}
                   >
-                    {PAGE_SIZE_OPTIONS.map(sz => (
-                      <option key={sz} value={sz}>{sz}</option>
+                    {PAGE_SIZE_OPTIONS.map((sz) => (
+                      <option key={sz} value={sz}>
+                        {sz}
+                      </option>
                     ))}
                   </select>
                   条
@@ -1136,6 +1238,14 @@ export default function Sora2ImageToVideoPage () {
                 >
                   {historyLoading ? '刷新中…' : '刷新'}
                 </button>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={onClearHistory}
+                  disabled={historyLoading || !historyTotal}
+                >
+                  清空记录
+                </button>
               </div>
             </div>
 
@@ -1147,7 +1257,10 @@ export default function Sora2ImageToVideoPage () {
 
             {!historyLoading && history.length > 0 && (
               <>
-                <div className="table-wrapper" style={{ maxHeight: 260, overflow: 'auto' }}>
+                <div
+                  className="table-wrapper"
+                  style={{ maxHeight: 260, overflow: 'auto' }}
+                >
                   <table className="table">
                     <thead>
                       <tr>
@@ -1159,7 +1272,7 @@ export default function Sora2ImageToVideoPage () {
                       </tr>
                     </thead>
                     <tbody>
-                      {history.map(t => (
+                      {history.map((t) => (
                         <tr key={t.id}>
                           <td>{t.id}</td>
                           <td>
@@ -1168,10 +1281,26 @@ export default function Sora2ImageToVideoPage () {
                                 const s = (t.state || '').toLowerCase()
                                 if (!s) return 'default'
                                 if (s.includes('wait')) return 'waiting'
-                                if (s.includes('run') || s.includes('process')) return 'running'
-                                if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
+                                if (
+                                  s.includes('run') ||
+                                  s.includes('process')
+                                ) {
+                                  return 'running'
+                                }
+                                if (
+                                  s === 'success' ||
+                                  s === 'succeeded' ||
+                                  s === 'ok'
+                                ) {
+                                  return 'success'
+                                }
                                 if (s.includes('timeout')) return 'timeout'
-                                if (s.includes('fail') || s.includes('error')) return 'fail'
+                                if (
+                                  s.includes('fail') ||
+                                  s.includes('error')
+                                ) {
+                                  return 'fail'
+                                }
                                 return 'default'
                               })()}
                             >
@@ -1183,7 +1312,9 @@ export default function Sora2ImageToVideoPage () {
                             {t.prompt && t.prompt.length > 40 ? '…' : ''}
                           </td>
                           <td className="small-muted">
-                            {t.created_at ? new Date(t.created_at).toLocaleString() : ''}
+                            {t.created_at
+                              ? new Date(t.created_at).toLocaleString()
+                              : ''}
                           </td>
                           <td>
                             <button
@@ -1192,7 +1323,10 @@ export default function Sora2ImageToVideoPage () {
                               onClick={() => {
                                 setCurrentTaskId(t.id)
                                 if (typeof window !== 'undefined') {
-                                  window.localStorage.setItem(lastTaskKey, String(t.id))
+                                  window.localStorage.setItem(
+                                    lastTaskKey,
+                                    String(t.id),
+                                  )
                                 }
                               }}
                             >
@@ -1219,12 +1353,14 @@ export default function Sora2ImageToVideoPage () {
                   <span>
                     共 {historyTotal} 条记录（最多展示 {MAX_HISTORY_TOTAL} 条）
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                  >
                     <button
                       type="button"
                       className="btn ghost sm"
                       disabled={!canPrev}
-                      onClick={() => canPrev && setPage(p => p - 1)}
+                      onClick={() => canPrev && setPage((p) => p - 1)}
                     >
                       上一页
                     </button>
@@ -1235,7 +1371,7 @@ export default function Sora2ImageToVideoPage () {
                       type="button"
                       className="btn ghost sm"
                       disabled={!canNext}
-                      onClick={() => canNext && setPage(p => p + 1)}
+                      onClick={() => canNext && setPage((p) => p + 1)}
                     >
                       下一页
                     </button>
@@ -1256,12 +1392,16 @@ export default function Sora2ImageToVideoPage () {
         <div className="modal-backdrop" onClick={closePreview}>
           <div
             className="modal"
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             style={{ width: 'min(820px, 92vw)' }}
           >
             <div className="modal__header">
               <div className="modal__title">视频预览</div>
-              <button className="modal__close" type="button" onClick={closePreview}>
+              <button
+                className="modal__close"
+                type="button"
+                onClick={closePreview}
+              >
                 关闭
               </button>
             </div>

@@ -443,11 +443,7 @@ function SummaryPanel({ summary }) {
         </div>
       </div>
       <div className="summary-grid">
-        {[
-          { key: 'bc', label: 'Business Centers' },
-          { key: 'advertisers', label: 'Advertisers' },
-          { key: 'stores', label: 'Stores' },
-        ].map((section) => {
+        {SUMMARY_SECTIONS.map((section) => {
           const data = summary?.[section.key] || {};
           return (
             <div key={section.key} className="summary-card">
@@ -1056,18 +1052,37 @@ export default function GmvMaxManagementPage() {
 
   const hasBindings = bindings.length > 0;
   const productsData = productsQuery.data || null;
-  const productItems = Array.isArray(productsData?.items) ? productsData.items : [];
-  const productAvailableCount = Number.isFinite(Number(productsData?.availableCount))
+
+  // 第一层：后端 + normalize 已经过滤出的“可用商品”
+  const rawItems = Array.isArray(productsData?.items) ? productsData.items : [];
+  const rawAvailableCount = Number.isFinite(Number(productsData?.availableCount))
     ? Number(productsData.availableCount)
-    : productItems.length;
-  const productFilteredOut = Number.isFinite(Number(productsData?.filteredOut))
+    : rawItems.length;
+  const normalizedFilteredOut = Number.isFinite(Number(productsData?.filteredOut))
     ? Number(productsData.filteredOut)
     : 0;
+
+  // 第二层：前端再把 NOT_AVAILABLE / UNAVAILABLE / DISABLED / INACTIVE 这些状态的商品过滤掉
+  const productItems = rawItems.filter((item) => {
+    const text = (describeAvailabilityStatus(item) || '').toLowerCase();
+    if (!text) return true;
+    if (text.includes('not_available')) return false;
+    if (text.includes('unavailable')) return false;
+    if (text.includes('disabled')) return false;
+    if (text.includes('inactive')) return false;
+    return true;
+  });
+
+  const productAvailableCount = productItems.length;
+  const extraFiltered = Math.max(0, rawAvailableCount - productAvailableCount);
+  const productFilteredOut = normalizedFilteredOut + extraFiltered;
+
   const productTotalFromApi = Number.isFinite(Number(productsData?.totalFromApi))
     ? Number(productsData.totalFromApi)
     : (Number.isFinite(Number(productsData?.rawItemsCount))
       ? Number(productsData.rawItemsCount)
-      : productItems.length);
+      : rawItems.length);
+
   const productsLastUpdatedText = formatLocalTimeFromMillis(productsData?.receivedAt);
   const hasProductItems = productItems.length > 0;
   const productPreviewLimit = 24;
@@ -1206,21 +1221,21 @@ export default function GmvMaxManagementPage() {
         </FormField>
 
         <div className="gmv-actions">
-          <button className="btn ghost" type="button" onClick={handleRefresh} disabled={disableRefresh}>
+          <button className="btn ghost sm" type="button" onClick={handleRefresh} disabled={disableRefresh}>
             {refreshingOptions ? '刷新中…' : '刷新/同步'}
           </button>
-          <button className="btn" type="button" onClick={handleSave} disabled={disableSave}>
+          <button className="btn sm" type="button" onClick={handleSave} disabled={disableSave}>
             {saving ? '保存中…' : '保存激活组合'}
           </button>
           <button
-            className="btn"
+            className="btn sm"
             type="button"
             onClick={() => handlePullProducts(productsQuery.refetch)}
             disabled={disablePullProducts}
           >
             {productsRefetching ? '刷新中…' : '拉取 GMV Max 商品'}
           </button>
-          <button className="btn" type="button" onClick={handleProductSync} disabled={disableManualSync}>
+          <button className="btn sm" type="button" onClick={handleProductSync} disabled={disableManualSync}>
             {triggeringSync ? '同步中…' : '同步 GMV Max 商品'}
           </button>
         </div>
@@ -1243,10 +1258,11 @@ export default function GmvMaxManagementPage() {
           </div>
           <div className="gmv-products__actions">
             <button
-              className="btn ghost"
+              className="btn ghost sm"
               type="button"
               onClick={() => handlePullProducts(productsQuery.refetch)}
               disabled={disablePullProducts}
+              style={{ fontSize: 12, padding: '4px 8px' }}
             >
               {productsRefetching ? '刷新中…' : '刷新商品列表'}
             </button>
@@ -1266,7 +1282,15 @@ export default function GmvMaxManagementPage() {
         )}
 
         {productsQueryEnabled && hasProductItems && (
-          <div className="gmv-products__grid">
+          <div
+            className="gmv-products__grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 16,
+              alignItems: 'stretch',
+            }}
+          >
             {productVisibleItems.map((item, idx) => {
               const pid = item?.product_id ? String(item.product_id) : '';
               const title = resolveProductTitle(item) || pid || `商品 ${idx + 1}`;
@@ -1324,48 +1348,121 @@ export default function GmvMaxManagementPage() {
                 }
                 return null;
               })();
-              const stockDisplay = Number.isFinite(Number(item?.stock))
-                ? Number(item.stock)
-                : null;
+
               return (
                 <article
                   key={pid || itemGroupId || `product-${idx}`}
                   className={`gmv-product-card${occupied ? ' is-occupied' : ''}`}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 12,
+                    padding: 10,
+                    backgroundColor: 'var(--panel-2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 260,
+                  }}
                 >
-                  <div className="gmv-product-card__thumb">
+                  <div
+                    className="gmv-product-card__thumb"
+                    style={{
+                      width: '100%',
+                      height: 180,
+                      borderRadius: 10,
+                      backgroundColor: '#f9fafb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      marginBottom: 8,
+                    }}
+                  >
                     {imageUrl ? (
-                      <img src={imageUrl} alt={`${title} 主图`} loading="lazy" />
+                      <img
+                        src={imageUrl}
+                        alt={`${title} 主图`}
+                        loading="lazy"
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain',
+                          display: 'block',
+                        }}
+                      />
                     ) : (
-                      <span className="gmv-product-card__thumb--placeholder">无主图</span>
+                      <span
+                        className="gmv-product-card__thumb--placeholder"
+                        style={{ fontSize: 12, color: '#9ca3af' }}
+                      >
+                        无主图
+                      </span>
                     )}
                   </div>
-                  <div className="gmv-product-card__body">
-                    <div className="gmv-product-card__header">
-                      <div className="gmv-product-card__title">{title}</div>
-                      <div className="gmv-product-card__badges">
+                  <div className="gmv-product-card__body" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="gmv-product-card__header" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div
+                        className="gmv-product-card__title"
+                        title={title}
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 500,
+                          lineHeight: 1.4,
+                          maxHeight: '3.2em',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                        }}
+                      >
+                        {title}
+                      </div>
+                      <div
+                        className="gmv-product-card__badges"
+                        style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+                      >
                         <span
-                          className={`gmv-product-card__badge ${occupied
-                            ? 'gmv-product-card__badge--occupied'
-                            : 'gmv-product-card__badge--free'}`}
+                          className="gmv-product-card__badge"
+                          style={{
+                            fontSize: 11,
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            backgroundColor: occupied ? '#fee2e2' : '#dcfce7',
+                            color: occupied ? '#b91c1c' : '#166534',
+                            border: `1px solid ${occupied ? '#fecaca' : '#bbf7d0'}`,
+                            whiteSpace: 'nowrap',
+                          }}
                         >
-                          {gmvStatusLabel ? `GMV Max ${gmvStatusLabel}` : (occupied ? 'GMV Max 占用' : '未占用')}
+                          {gmvStatusLabel ? `GMV Max ${gmvStatusLabel}` : (occupied ? 'GMV Max 占用' : '未被 GMV Max 占用')}
                         </span>
                         {availabilityText && (
-                          <span className="gmv-product-card__badge gmv-product-card__badge--status">
+                          <span
+                            className="gmv-product-card__badge gmv-product-card__badge--status"
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              backgroundColor: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
                             {availabilityText}
                           </span>
                         )}
                       </div>
                     </div>
-                    <div className="gmv-product-card__meta">
+                    <div
+                      className="gmv-product-card__meta"
+                      style={{ fontSize: 12, color: '#4b5563', display: 'grid', gap: 2, marginTop: 4 }}
+                    >
                       <div>商品 ID：{pid || '-'}</div>
                       <div>Item Group：{itemGroupId || '-'}</div>
                       {priceText && <div>价格：{priceText}</div>}
-                      {gmvStatusLabel && <div>GMV Max 状态：{gmvStatusLabel}</div>}
                       {runningCustomAds !== null && (
                         <div>视频/商品广告：{runningCustomAds ? '正在投放' : '未投放'}</div>
                       )}
-                      {stockDisplay !== null && <div>库存：{stockDisplay}</div>}
                       {historicalSales !== null && <div>历史销量：{historicalSales}</div>}
                       {category && <div>类目：{category}</div>}
                       {updatedAt && <div>更新时间：{updatedAt}</div>}

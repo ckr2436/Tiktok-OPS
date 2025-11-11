@@ -80,6 +80,11 @@ class Sora2TaskListResponse(BaseModel):
     total: int
 
 
+class Sora2ClearTasksResponse(BaseModel):
+    deleted_tasks: int
+    deleted_files: int
+
+
 MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024  # 20MB
 ASPECT_RATIOS_ALLOWED: set[str] = {"portrait", "landscape"}
 DURATIONS_STD: set[int] = {10, 15}
@@ -208,7 +213,11 @@ def _validate_aspect_ratio(aspect_ratio: str) -> str:
     return ar
 
 
-def _validate_duration(n_frames: Optional[int], *, storyboard: bool = False) -> Optional[int]:
+def _validate_duration(
+    n_frames: Optional[int],
+    *,
+    storyboard: bool = False,
+) -> Optional[int]:
     if n_frames is None:
         return None
     try:
@@ -671,7 +680,7 @@ async def create_sora2_watermark_remover(
     return Sora2CreateResponse(task=task, upload_file=None)
 
 
-# ---------------------- 任务查询 & 文件下载 ----------------------
+# ---------------------- 任务查询 & 清理 & 文件下载 ----------------------
 
 
 @router.get(
@@ -714,6 +723,76 @@ async def list_sora2_tasks(
     )
 
     return Sora2TaskListResponse(items=items, total=total)
+
+
+@router.delete(
+    "/tasks",
+    response_model=Sora2ClearTasksResponse,
+)
+async def clear_sora2_tasks(
+    workspace_id: int,
+    model: Optional[str] = None,
+    state: Optional[str] = None,
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    """
+    清空本 workspace 的 Sora2 任务记录（以及关联的 KieFile），默认按当前模型。
+
+    - DELETE /tenants/{wid}/kie-ai/sora2/tasks?model=sora-2-image-to-video
+    - 可选按 state 再过滤一层
+    """
+    q_tasks = db.query(KieTask).filter(KieTask.workspace_id == int(workspace_id))
+
+    if model:
+        q_tasks = q_tasks.filter(KieTask.model == model)
+
+    if state:
+        q_tasks = q_tasks.filter(KieTask.state == state)
+
+    task_ids = [
+        tid for (tid,) in q_tasks.with_entities(KieTask.id).all()
+    ]
+
+    if not task_ids:
+        return Sora2ClearTasksResponse(deleted_tasks=0, deleted_files=0)
+
+    deleted_files = (
+        db.query(KieFile)
+        .filter(
+            KieFile.workspace_id == int(workspace_id),
+            KieFile.task_id.in_(task_ids),
+        )
+        .delete(synchronize_session=False)
+    )
+
+    deleted_tasks = (
+        db.query(KieTask)
+        .filter(
+            KieTask.workspace_id == int(workspace_id),
+            KieTask.id.in_(task_ids),
+        )
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+
+    logger.info(
+        "Cleared Sora2 tasks",
+        extra={
+            "workspace_id": int(workspace_id),
+            "model": model,
+            "state": state,
+            "deleted_tasks": deleted_tasks,
+            "deleted_files": deleted_files,
+            "actor_user_id": int(me.id),
+        },
+    )
+
+    return Sora2ClearTasksResponse(
+        deleted_tasks=deleted_tasks,
+        deleted_files=deleted_files,
+    )
 
 
 @router.get(
@@ -786,37 +865,6 @@ async def list_task_files(
     )
     return files
 
-
-@router.get(
-    "/files/{file_id}/download-url",
-    response_model=str,
-)
-async def get_file_download_url(
-    workspace_id: int,
-    file_id: int,
-    _: SessionUser = Depends(require_tenant_member),
-    db: Session = Depends(get_db),
-):
-    """
-    把 KIE 文件 URL 换成 20 分钟有效的下载 URL（仅返回字符串）。
-    目前前端已不直接使用这个接口，但先保留兼容。
-    """
-    file = (
-        db.query(KieFile)
-        .filter(
-            KieFile.id == int(file_id),
-            KieFile.workspace_id == int(workspace_id),
-        )
-        .one_or_none()
-    )
-    if file is None:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    url = await refresh_download_url_for_file(
-        db,
-        file=file,
-    )
-    return url
 
 @router.get(
     "/files/{file_id}/download-url",
