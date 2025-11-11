@@ -219,6 +219,13 @@ class ProductItem(BaseModel):
     currency: Optional[str]
     price: Optional[float]
     stock: Optional[int]
+    image_url: Optional[str]
+    min_price: Optional[float]
+    max_price: Optional[float]
+    historical_sales: Optional[int]
+    category: Optional[str]
+    gmv_max_ads_status: Optional[str]
+    is_running_custom_shop_ads: Optional[bool]
     ext_created_time: Optional[str]
     ext_updated_time: Optional[str]
     raw: Optional[Dict[str, Any]]
@@ -753,6 +760,11 @@ def _extract_product_price_range(row: TTBProduct) -> Optional[str]:
         if cleaned:
             return cleaned
 
+    low = _to_decimal(getattr(row, "min_price", None))
+    high = _to_decimal(getattr(row, "max_price", None))
+    if low is not None or high is not None:
+        return _format_price_range(currency, low, high)
+
     low = None
     high = None
     for key in ("min_price", "minPrice", "price", "sale_price", "salePrice"):
@@ -796,6 +808,17 @@ def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
         "currency": _as_str(row.currency),
         "price": float(row.price) if row.price is not None else None,
         "stock": int(row.stock) if row.stock is not None else None,
+        "image_url": _normalize_nullable_str(getattr(row, "image_url", None)),
+        "min_price": float(row.min_price) if row.min_price is not None else None,
+        "max_price": float(row.max_price) if row.max_price is not None else None,
+        "historical_sales": int(row.historical_sales) if row.historical_sales is not None else None,
+        "category": _normalize_nullable_str(getattr(row, "category", None)),
+        "gmv_max_ads_status": _normalize_nullable_str(getattr(row, "gmv_max_ads_status", None)),
+        "is_running_custom_shop_ads": (
+            bool(row.is_running_custom_shop_ads)
+            if row.is_running_custom_shop_ads is not None
+            else None
+        ),
         "ext_created_time": row.ext_created_time.isoformat() if row.ext_created_time else None,
         "ext_updated_time": row.ext_updated_time.isoformat() if row.ext_updated_time else None,
         "raw": row.raw_json,

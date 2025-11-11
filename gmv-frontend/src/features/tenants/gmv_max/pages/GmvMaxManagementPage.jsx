@@ -243,6 +243,7 @@ function isProductAvailable(item) {
   if (item.inventory?.available !== undefined) return Boolean(item.inventory.available);
 
   const statusCandidates = [
+    item.gmv_max_ads_status,
     item.availability_status,
     item.availability,
     item.status,
@@ -282,6 +283,20 @@ function describeAvailabilityStatus(item) {
 function isOccupiedByGmvMax(item) {
   if (!item || typeof item !== 'object') return false;
 
+  const statusFromFields = [
+    item.gmv_max_ads_status,
+    item.gmvMaxAdsStatus,
+    item.raw?.gmv_max_ads_status,
+    item.raw?.gmvMaxAdsStatus,
+  ];
+  for (const status of statusFromFields) {
+    if (typeof status !== 'string') continue;
+    const normalized = status.trim().toLowerCase();
+    if (!normalized) continue;
+    if (normalized === 'occupied') return true;
+    if (normalized === 'unoccupied') return false;
+  }
+
   const booleanCandidates = [
     item.is_gmv_max_bound,
     item.gmv_max_bound,
@@ -313,6 +328,26 @@ function isOccupiedByGmvMax(item) {
   return false;
 }
 
+function describeGmvMaxAdsStatus(item) {
+  if (!item || typeof item !== 'object') return '';
+  const candidates = [
+    item.gmv_max_ads_status,
+    item.gmvMaxAdsStatus,
+    item.raw?.gmv_max_ads_status,
+    item.raw?.gmvMaxAdsStatus,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.trim();
+    if (!normalized) continue;
+    const lower = normalized.toLowerCase();
+    if (lower === 'occupied') return '占用';
+    if (lower === 'unoccupied') return '未占用';
+    return normalized;
+  }
+  return '';
+}
+
 function extractProductImage(item) {
   if (!item || typeof item !== 'object') return '';
   const candidates = [];
@@ -322,6 +357,7 @@ function extractProductImage(item) {
     else if (typeof value === 'object' && value.url && typeof value.url === 'string' && value.url.trim()) candidates.push(value.url.trim());
   };
 
+  push(item.product_image_url || item.productImageUrl);
   push(item.image_url || item.imageUrl || item.image);
   if (Array.isArray(item.images)) item.images.forEach(push);
   if (Array.isArray(item.image_list)) item.image_list.forEach(push);
@@ -782,15 +818,46 @@ export default function GmvMaxManagementPage() {
   }, [form.bcId, visibleAdvertisers]);
 
   useEffect(() => {
-    if (!form.advertiserId || !Array.isArray(stores)) return;
+    if (!selectedAuthId || !form.advertiserId || !Array.isArray(stores)) return;
     setStoresByAdvertiser((prev) => ({
       ...prev,
       [form.advertiserId]: stores,
     }));
+
+    if (!form.storeId) {
+      const firstStore = stores.find((item) => item && (item.store_id || item.storeId));
+      if (firstStore) {
+        const nextStoreId = String(firstStore.store_id ?? firstStore.storeId ?? '').trim();
+        if (nextStoreId) {
+          const nextScope = {
+            ...form,
+            storeId: nextStoreId,
+          };
+          setForm((prev) => (prev.advertiserId === form.advertiserId && !prev.storeId
+            ? { ...prev, storeId: nextStoreId }
+            : prev));
+          productsAnnouncementRef.current = true;
+          saveScopeToLS({
+            wid,
+            authId: selectedAuthId,
+            bcId: nextScope.bcId,
+            advertiserId: nextScope.advertiserId,
+            storeId: nextScope.storeId,
+          });
+          syncUrl({
+            authId: selectedAuthId,
+            bcId: nextScope.bcId,
+            advertiserId: nextScope.advertiserId,
+            storeId: nextScope.storeId,
+          });
+        }
+      }
+    }
+
     if (form.storeId && !stores.some((item) => String(item?.store_id || '') === String(form.storeId))) {
       setForm((prev) => (prev.advertiserId === form.advertiserId ? { ...prev, storeId: '' } : prev));
     }
-  }, [form.advertiserId, form.storeId, stores]);
+  }, [form.advertiserId, form.storeId, selectedAuthId, stores, syncUrl, wid]);
 
   /** ---------- 事件处理：scope 变更 + URL/LS 同步 ---------- */
   function handleBindingChange(evt) {
@@ -1207,16 +1274,59 @@ export default function GmvMaxManagementPage() {
               const itemGroupId = resolveItemGroupId(item);
               const availabilityText = describeAvailabilityStatus(item);
               const occupied = isOccupiedByGmvMax(item);
+              const gmvStatusLabel = describeGmvMaxAdsStatus(item);
               const updatedAt = formatTimestamp(
                 item?.updated_time
                 || item?.ext_updated_time
                 || item?.last_updated_time
                 || item?.last_update_time,
               );
+              const currency = typeof item?.currency === 'string' ? item.currency.trim() : '';
+              const normalizePrice = (value) => {
+                if (value === null || value === undefined) return null;
+                const num = Number(value);
+                if (Number.isFinite(num)) return num.toFixed(2);
+                const str = String(value).trim();
+                return str || null;
+              };
+              const minPriceText = normalizePrice(item?.min_price);
+              const maxPriceText = normalizePrice(item?.max_price);
+              const singlePriceText = normalizePrice(item?.price);
               const priceText = item?.price_range
                 || item?.price?.display
                 || item?.price?.text
-                || (item?.min_price && item?.max_price ? `${item.min_price} ~ ${item.max_price}` : null);
+                || (minPriceText && maxPriceText
+                  ? `${currency ? `${currency} ` : ''}${minPriceText} ~ ${maxPriceText}`
+                  : minPriceText
+                    ? `${currency ? `${currency} ` : ''}${minPriceText}`
+                    : maxPriceText
+                      ? `${currency ? `${currency} ` : ''}${maxPriceText}`
+                      : (singlePriceText ? `${currency ? `${currency} ` : ''}${singlePriceText}` : null));
+              const historicalSales = Number.isFinite(Number(item?.historical_sales))
+                ? Number(item.historical_sales)
+                : null;
+              const category = typeof item?.category === 'string' && item.category.trim()
+                ? item.category.trim()
+                : '';
+              const runningCustomAds = (() => {
+                const raw = item?.is_running_custom_shop_ads;
+                if (raw === undefined || raw === null) return null;
+                if (typeof raw === 'boolean') return raw;
+                if (typeof raw === 'number') {
+                  if (Number.isNaN(raw)) return null;
+                  return raw === 1;
+                }
+                if (typeof raw === 'string') {
+                  const normalized = raw.trim().toLowerCase();
+                  if (!normalized) return null;
+                  if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+                  if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+                }
+                return null;
+              })();
+              const stockDisplay = Number.isFinite(Number(item?.stock))
+                ? Number(item.stock)
+                : null;
               return (
                 <article
                   key={pid || itemGroupId || `product-${idx}`}
@@ -1238,7 +1348,7 @@ export default function GmvMaxManagementPage() {
                             ? 'gmv-product-card__badge--occupied'
                             : 'gmv-product-card__badge--free'}`}
                         >
-                          {occupied ? 'GMV Max 占用' : '未占用'}
+                          {gmvStatusLabel ? `GMV Max ${gmvStatusLabel}` : (occupied ? 'GMV Max 占用' : '未占用')}
                         </span>
                         {availabilityText && (
                           <span className="gmv-product-card__badge gmv-product-card__badge--status">
@@ -1251,6 +1361,13 @@ export default function GmvMaxManagementPage() {
                       <div>商品 ID：{pid || '-'}</div>
                       <div>Item Group：{itemGroupId || '-'}</div>
                       {priceText && <div>价格：{priceText}</div>}
+                      {gmvStatusLabel && <div>GMV Max 状态：{gmvStatusLabel}</div>}
+                      {runningCustomAds !== null && (
+                        <div>视频/商品广告：{runningCustomAds ? '正在投放' : '未投放'}</div>
+                      )}
+                      {stockDisplay !== null && <div>库存：{stockDisplay}</div>}
+                      {historicalSales !== null && <div>历史销量：{historicalSales}</div>}
+                      {category && <div>类目：{category}</div>}
                       {updatedAt && <div>更新时间：{updatedAt}</div>}
                     </div>
                   </div>
