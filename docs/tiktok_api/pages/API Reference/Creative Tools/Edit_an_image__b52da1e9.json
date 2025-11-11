@@ -63,6 +63,128 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image ID that is used to create ads."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID."
+        },
+        {
+          "name": "displayable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether it can be displayed on the platform."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image width."
+        },
+        {
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image format."
+        },
+        {
+          "name": "image_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image URL, valid for an hour and needs to be re-acquired after expiration."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image height."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "MD5 of Picture."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image size, in Bytes."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image name."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creation time. UTC time, format: 2020-06-10T07:39:14Z"
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification time. UTC time, format: 2020-06-10T07:39:14Z"
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

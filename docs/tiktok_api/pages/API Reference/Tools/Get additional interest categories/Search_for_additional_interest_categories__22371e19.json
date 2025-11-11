@@ -76,6 +76,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "recommended_keywords",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of additional interest categories."
+        },
+        {
+          "name": "input_keyword",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when keywords is included in the request and contains more than one keyword. The specific seed keyword for which the additional interest category is generated. For instance, if the additional interest category \"Tester\" is generated for the seed keyword \"test\", the returned input_keyword will be \"test\" , and keyword will be \"Tester\" ."
+        },
+        {
+          "name": "keyword",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Additional interest category."
+        },
+        {
+          "name": "keyword_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the additional interest category."
+        },
+        {
+          "name": "language",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Language of the additional interest category. Enum values: fr , id , it , ja , ms , ar , vi , en , ru , es , th , tr , hi , zh , de , ko ."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the additional interest category will be effective. Enum values: EFFECTIVE : effective. An additional interest category is effective if using it can reach a reasonable number of people. INEFFECTIVE : ineffective. An additional interest category is ineffective if the estimated audience size is too small. Note : Only effective additional interest categories can be used in ad groups to target audiences."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202207011538040102452421060C18B592\",\n    \"data\": {\n        \"recommended_keywords\": [\n            {\n                \"status\": \"EFFECTIVE\",\n                \"language\": \"1\",\n                \"keyword\": \"Testament\",\n                \"keyword_id\": \"1915651459\"\n            },\n            {\n                \"status\": \"EFFECTIVE\",\n                \"language\": \"1\",\n                \"keyword\": \"Tester\",\n                \"keyword_id\": \"1916254642\"\n            },\n            {\n                \"status\": \"EFFECTIVE\",\n                \"language\": \"1\",\n                \"keyword\": \"Brain test\",\n                \"keyword_id\": \"2027741302\"\n            },\n            {\n                \"status\": \"EFFECTIVE\",\n                \"language\": \"1\",\n                \"keyword\": \"Test\",\n                \"keyword_id\": \"2027749623\"\n            },\n            {\n                \"status\": \"EFFECTIVE\",\n                \"language\": \"1\",\n                \"keyword\": \"Test drive\",\n                \"keyword_id\": \"2027768725\"\n            },\n            ...\n        ]\n    }\n}"

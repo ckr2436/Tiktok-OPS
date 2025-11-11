@@ -61,6 +61,156 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of automatic messages within the ad account."
+        },
+        {
+          "name": "auto_message_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the automatic message."
+        },
+        {
+          "name": "auto_message_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of automatic message to greet people with when they start a conversation with you. Enum value: WELCOME_MESSAGE : welcome message. A welcome message is a message that is automatically sent to welcome people to the conversation after they tap on your ad."
+        },
+        {
+          "name": "welcome_message",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Information about the welcome message."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the welcome message. You can use the name to distinguish between different welcome messages within the welcome message library of your ad account."
+        },
+        {
+          "name": "content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The greeting within the welcome message. Example: Hi, thanks for contacting us. How can we help you?"
+        },
+        {
+          "name": "suggested_questions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of suggested questions for customers to tap. A suggested question is a frequently asked question displayed at the beginning of a chat. When the user selects a suggested question, the user will automatically receive the corresponding preset answer.Suggested questions."
+        },
+        {
+          "name": "question",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A frequently asked question to help users start a conversation."
+        },
+        {
+          "name": "answer",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The preset answer that will be automatically sent when a user selects the question."
+        },
+        {
+          "name": "audit_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The review status of the automatic message. Enum values: AUDITING : The automatic message is pending review. PASS : The automatic message has been approved. REJECTED : The automatic message has been rejected."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the automatic message was created, in the format of YYYY-MM-DD HH:MM:SS (UTC+0). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information. Note : If auto_message_id is specified in the request, page_info will not be returned."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"auto_message_list\": [\n            {\n                \"audit_status\": \"PASS\",\n                \"auto_message_id\": \"{{auto_message_id}}\",\n                \"auto_message_type\": \"WELCOME_MESSAGE\",\n                \"create_time\": \"{{create_time}}\",\n                \"welcome_message\": {\n                    \"content\": \"{{content}}\",\n                    \"suggested_questions\": [\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        },\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        },\n                        {\n                            \"answer\": \"{{answer}}\",\n                            \"question\": \"{{question}}\"\n                        }\n                    ],\n                    \"title\": \"{{title}}\"\n                }\n            }\n        ]\n    }\n}"

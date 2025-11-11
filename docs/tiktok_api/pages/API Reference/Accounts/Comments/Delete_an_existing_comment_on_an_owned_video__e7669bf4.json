@@ -48,6 +48,58 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "Date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Date and time (GMT) when the response was received. Example : Fri, 13 Aug 2021 08:04:42 GMT"
+      },
+      {
+        "name": "X-Tt-Logid",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the API request."
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": [
+          {
+            "name": "request_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the API request. Please record this field for all API requests. Important for issue reports and troubleshooting."
+          },
+          {
+            "name": "code",
+            "required": false,
+            "type": "integer",
+            "raw_type": "Integer",
+            "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+          },
+          {
+            "name": "message",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Response message. For details, see Appendix - Return Information ."
+          },
+          {
+            "name": "data",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Returned data. Empty object ( {} ) for successful actions."
+          }
+        ]
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

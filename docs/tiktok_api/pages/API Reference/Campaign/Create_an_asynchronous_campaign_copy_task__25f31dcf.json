@@ -661,6 +661,72 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "task_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the asynchronous campaign copy task. To check the results of the task, use /campaign/copy/task/check/ . If errors occur ( adgroup_error_list is not empty), task ID will not be generated, and the value of this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "adgroup_error_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The errors encountered during the process of copying specific ad groups. If no errors occur, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the ad group that fails to be copied."
+        },
+        {
+          "name": "error_message",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The error encountered during the process of copying the ad group ( adgroup_id )."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n  \"code\": 0,\n  \"message\": \"OK\",\n  \"request_id\": \"{{request_id}}\",\n  \"data\": {\n      \"task_id\": \"{{task_id}}\",\n      \"adgroup_error_list\": []\n  }\n}"

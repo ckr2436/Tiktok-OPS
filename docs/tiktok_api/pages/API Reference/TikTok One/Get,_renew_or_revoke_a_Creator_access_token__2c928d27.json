@@ -61,6 +61,248 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "access_token",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The short-term token for permission verification. The token expires in one day."
+        },
+        {
+          "name": "token_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of token. Enum value: Bearer : Bearer token. Anyone in possession of the token can use it to access the associated resources."
+        },
+        {
+          "name": "scope",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The scope of permissions granted to the access token."
+        },
+        {
+          "name": "expires_in",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time remaining until the access token expires, measured in seconds."
+        },
+        {
+          "name": "refresh_token",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The refresh token, which can be used to renew the access token. The refresh token is valid for one year. Note : Retain this field for access_token renewal."
+        },
+        {
+          "name": "refresh_token_expires_in",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The time remaining until the refresh token expires, measured in seconds."
+        },
+        {
+          "name": "open_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Application specific unique ID of the TikTok account."
+        }
+      ],
+      "list": {
+        "item_fields": [
+          {
+            "name": "Content-Type",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Request message type Allowed format: \"application/json\""
+          }
+        ]
+      }
+    },
+    "other_tables": [
+      {
+        "title": "Request message type Allowed format: \"application/json\"",
+        "fields": [
+          {
+            "name": "client_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "ID of your developer app. To find the App ID , navigate to My Apps > App Detail > Basic Information ."
+          },
+          {
+            "name": "client_secret",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Secret of your developer app. To find the Secret , navigate to My Apps > App Detail > Basic Information ."
+          },
+          {
+            "name": "grant_type",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The way of generating the access token. The allowed enum value: refresh_token : To generate the access token by refresh token."
+          },
+          {
+            "name": "refresh_token",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Refresh token to renew an existing access token. You can obtain the refresh token in the response of /tt_user/oauth2/token/ endpoint when you generate an access token."
+          }
+        ]
+      },
+      {
+        "title": "Response",
+        "fields": [
+          {
+            "name": "code",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+          },
+          {
+            "name": "message",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Response message. For details, see Appendix - Return Codes ."
+          },
+          {
+            "name": "data",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Returned data."
+          },
+          {
+            "name": "access_token",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The short-term token for permission verification. The token expires in one day."
+          },
+          {
+            "name": "token_type",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The type of token. Enum value: Bearer : Bearer token. Anyone in possession of the token can use it to access the associated resources."
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The scope of permissions granted to the access token."
+          },
+          {
+            "name": "expires_in",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "The time remaining until the access token expires, measured in seconds."
+          },
+          {
+            "name": "refresh_token",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The refresh token, which can be used to renew the access token. The refresh token is valid for one year. Note : Retain this field for access_token renewal."
+          },
+          {
+            "name": "refresh_token_expires_in",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "The time remaining until the refresh token expires, measured in seconds."
+          },
+          {
+            "name": "open_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Application specific unique ID of the TikTok account."
+          }
+        ]
+      },
+      {
+        "title": "https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/revoke/",
+        "fields": [
+          {
+            "name": "Content-Type",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Request message type. Allowed format: application/json ."
+          }
+        ]
+      },
+      {
+        "title": "Request message type. Allowed format: application/json .",
+        "fields": [
+          {
+            "name": "client_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "ID of your developer application. To find the App ID , navigate to My Apps > App Detail > Basic Information ."
+          },
+          {
+            "name": "client_secret",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Secret of your developer application. To find the Secret , navigate to My Apps > App Detail > Basic Information ."
+          },
+          {
+            "name": "access_token",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The Creator access token that you want to revoke. You can either create a new access token via /tt_user/oauth2/token/ or obtain a renewed access token via /tt_user/oauth2/refresh_token/ ."
+          }
+        ]
+      }
+    ],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"

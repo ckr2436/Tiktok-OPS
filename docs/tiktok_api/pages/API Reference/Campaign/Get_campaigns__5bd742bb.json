@@ -194,6 +194,352 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data. The returned list is sorted by campaign ID ( campaign_id ) in reverse order by default."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of campaigns. The returned fields are generated based on the fields specified in the request parameters. All fields are returned by default."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign ID."
+        },
+        {
+          "name": "campaign_system_origin",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned for Promote campaigns only. Not returned for non-Promote campaigns. The origin (source) of the campaign. Enum values: PROMOTE : The campaign is a Promote campaign created through the TikTok mobile App. Only the following settings can be retrieved for a Promote campaign ( campaign_system_origin is PROMOTE ): advertiser_id campaign_id create_time campaign_name operation_status secondary_status"
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time at which the campaign was created."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time at which the campaign was modified."
+        },
+        {
+          "name": "objective_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertising objective. For enum values, see Enumeration-Advertising Objectives ."
+        },
+        {
+          "name": "app_promotion_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "App promotion type. Enum values: APP_INSTALL : App install. Get new users to install your app. APP_RETARGETING : App retargeting. Re-engage existing users to take action in your app. APP_PREREGISTRATION : App pre-registration. Get new users to pre-register before your app launches. APP_POSTS_PROMOTION : App posts promotion. Promote TikTok posts to increase app awareness and measure conversions. Note : Currently, creating App posts promotion campaigns via API is not supported. You can only update or retrieve such campaigns via API."
+        },
+        {
+          "name": "virtual_objective_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The new objective type. Enum value: SALES . Use this field to create a campaign with the Sales objective, the combined objective for Website Conversions and Product Sales objectives. Learn more about the Sales objective ."
+        },
+        {
+          "name": "sales_destination",
+          "required": true,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Sales destination, the destination where you want to drive your sales. Enum values: TIKTOK_SHOP : TikTok Shop. Drive sales on your TikTok Shop. WEBSITE : Website. Drive sales on your website. APP : App. Drive sales on your app (product catalog required). WEB_AND_APP : Website and app. Drive sales on both your website and your app."
+        },
+        {
+          "name": "is_search_campaign",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the campaign is a Search Ads Campaign. With Search Ads Campaigns, you can select keywords and serve ads within TikTok's search result page. Supported values: true , false ."
+        },
+        {
+          "name": "is_smart_performance_campaign",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the campaign is an automated campaign type. Supported values: true : The campaign is either a Smart+ Campaign or a Smart Performance Web Campaign. false : The campaign is a standard campaign type. Note : If is_smart_performance_campaign is true and objective_type is WEB_CONVERSIONS , you can confirm whether the web campaign is a Smart+ Web Campaign or Smart Performance Web Campaign by checking the returned spc_type from /campaign/spc/get/ ."
+        },
+        {
+          "name": "campaign_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign Type, indicates the campaign is a regular campaign or iOS 14 campaign. Enum values: REGULAR_CAMPAIGN , IOS14_CAMPAIGN ."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The Application ID of the promoted app. You can get app_id by using the /app/list/ endpoint."
+        },
+        {
+          "name": "is_advanced_dedicated_campaign",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the campaign is an Advanced Dedicated Campaign. Advanced Dedicated Campaigns leverage advanced delivery models that benefit from real-time signals. Enum values: true , false ."
+        },
+        {
+          "name": "disable_skan_campaign",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to disable SKAN (SKAdNetwork) attribution, Apple's conversion attribution solution for iOS campaigns. Enum values: true : To disable SKAN attribution. The campaign will not be bound by Dedicated Campaign quota limits and you will be able to retrieve Self Attribution Network (SAN) metrics for the campaign. However, you cannot retrieve SKAN reporting metrics for the campaign. Learn more about SAN integration . false : To enable SKAN attribution. The campaign will be bound by Dedicated Campaign quota limits and you will be able to retrieve SKAN metrics for the campaign."
+        },
+        {
+          "name": "bid_align_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The attribution type for the Dedicated Campaign. The type determines which attribution network the target CPA ( conversion_bid_price ) or ROAS ( roas_bid ) at the ad group level is based on. Enum values: SAN : SAN. SKAN : SKAN."
+        },
+        {
+          "name": "campaign_app_profile_page_state",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Indicates the status of App Profile Page. Enum values: INVALID , UNSET , ON , OFF ."
+        },
+        {
+          "name": "rf_campaign_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "When objective_type is specified as RF_REACH , this field specifies the specific Reservation campaign type. Enum values: STANDARD : Reach & Frequency campaign. PULSE : TikTok Pulse campaign. TOPVIEW : TopView campaign."
+        },
+        {
+          "name": "campaign_product_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when objective_type for the campaign is PRODUCT_SALES and the product source is configured for the campaign. Product source of the campaign. Enum values: CATALOG : Catalog. STORE : TikTok Shop, or TikTok Showcase."
+        },
+        {
+          "name": "catalog_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to use your catalog to automatically advertise relevant products or services to people based on their unique interests, intent and actions."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign name."
+        },
+        {
+          "name": "special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Special ad categories. Enum values: HOUSING : Ads for real estate listings, homeowners insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internship, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities. Note : Using special ad categories in Shopping Ads with campaign product source as Catalog and in Shopping Ads with campaign product source as non-Catalog are currently separate allowlist-only features. If you would like to access them, please contact your TikTok representative. This field is generally available to advertisers registered in America or Canada. Advertisers who are not registered in America or Canada but want to target these countries with special ad categories need to apply for an additional allowlist."
+        },
+        {
+          "name": "budget_optimize_on",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Returned only for campaigns with Campaign Budget Optimization (CBO) enabled. Whether CBO is enabled. Enum values: true (enabled). For details about CBO, see Campaign Budget Optimization . Note : For Smart+ Campaigns or Smart Performance Web Campaigns, the value of this field will be true because CBO is enabled by default for these campaigns."
+        },
+        {
+          "name": "bid_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Bidding strategy on the campaign level."
+        },
+        {
+          "name": "deep_bid_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Bidding strategy for in-app events. For enum values and their descriptions, see Enumeration - Deep-level Bidding Strategy ."
+        },
+        {
+          "name": "roas_bid",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "ROAS goal for Value Optimization."
+        },
+        {
+          "name": "optimization_goal",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Optimization goal."
+        },
+        {
+          "name": "budget_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Budget mode. Enum values: BUDGET_MODE_INFINITE : Unlimited budget. BUDGET_MODE_TOTAL : Lifetime budget. BUDGET_MODE_DAY : Daily budget. BUDGET_MODE_DYNAMIC_DAILY_BUDGET : Dynamic daily budget. It is the average daily budget over a week. Daily costs will not exceed 125% of the average daily budget. Weekly costs will not exceed the average daily budget * 7."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Campaign budget"
+        },
+        {
+          "name": "rta_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Realtime API (RTA) ID, the RTA strategy identifier."
+        },
+        {
+          "name": "rta_bid_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to use RTA bid. Supported values: true : enabled. false : not enabled."
+        },
+        {
+          "name": "rta_product_selection_enabled",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to use RTA to automatically select products. Enum values: true : enabled. false : not enabled."
+        },
+        {
+          "name": "operation_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Operation status. Enum values: ENABLE : The campaign is enabled (in 'ON' status). DISABLE : The campaign is disabled (in 'OFF' status)."
+        },
+        {
+          "name": "secondary_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign status (Secondary status). For enum values, see Enumeration- Campaign Status - Secondary Status . Note : This field is not returned in the sandbox environment because the campaign is not actually delivered."
+        },
+        {
+          "name": "postback_window_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The mode that determines which SKAN 4.0 postback you want to secure. Enum values: POSTBACK_WINDOW_MODE1 : This option secures the first postback, which corresponds to the 0-2 day attribution window. The data can take up to 4 days to return, and the campaign will wait for 4 days to release the campaign quota. POSTBACK_WINDOW_MODE2 : This mode secures the first two postbacks, which correspond to the 3-7 day attribution window. The data can take up to 13 days to return, and the campaign will wait for 13 days to release the campaign quota. POSTBACK_WINDOW_MODE3 : This mode secures all three postbacks, which correspond to the 8-35 day attribution window. The data can take up to 41 days to return, and the campaign will wait for 41 days to release the campaign quota. Note : If you have set up Mobile Measurement Partner (MMP) Tracking with Adjust , Airbridge , Appsflyer , Branch , Kochava , or Singular for your App and your MMP SDK version is updated to a SKAN 4.0 supported SDK, you can transition your App to SKAN 4.0 on Events Manager. To learn about how to set up MMP tracking for your App, see How to Set Up App Attribution in TikTok Ads Manager . To learn more about how to transition your App to SKAN 4.0, see About SKAN 4.0 and TikTok and How to transition to SKAN 4.0 ."
+        },
+        {
+          "name": "is_new_structure",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the campaign is a new structure (for the same campaign, the structure of campaign, ad groups and ads are the same)."
+        },
+        {
+          "name": "objective",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign type (application or landing page). Enum values: APP (application), LANDING_PAGE (Landing page)."
+        },
+        {
+          "name": "po_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "PO (purchase order) number. PO numbers are useful for invoice tracking and reconciliation. Learn more about PO numbers on monthly invoices ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"secondary_status\": \"CAMPAIGN_STATUS_ENABLE\",\n                \"advertiser_id\": \"{{advertiser_id}}\",\n                \"is_smart_performance_campaign\": false,\n                \"campaign_name\": \"{{campaign_name}}\",\n                \"is_new_structure\": true,\n                \"campaign_type\": \"REGULAR_CAMPAIGN\",\n                \"campaign_id\": \"{{campaign_id}}\",\n                \"roas_bid\": 0,\n                \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"operation_status\": \"ENABLE\",\n                \"objective\": \"LANDING_PAGE\",\n                \"objective_type\": \"TRAFFIC\",\n                \"budget\": {{budget}},\n                \"create_time\": \"{{create_time}}\",\n                \"deep_bid_type\": null\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_page\": 1,\n            \"total_number\": 1\n        }\n    }\n}"

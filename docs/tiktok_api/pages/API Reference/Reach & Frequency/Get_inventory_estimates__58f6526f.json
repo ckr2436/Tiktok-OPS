@@ -222,6 +222,233 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "default_result",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Estimated inventory result. If you have specified a fixed value for purchased_impression , budget or purchased_reach in request, depending on the fixed value you have specified, we will return the corresponding predicted values in the default_result object in the response. For example, if you set rf_purchased_type to FIXED_SHOW and specify a fixed value in purchased_impression , then based on the impressions you set, we will calculate and return the estimated values for budget , cpm , reach and average_frequency in default_result ."
+        },
+        {
+          "name": "base_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Basic information."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Total budget."
+        },
+        {
+          "name": "cpm",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "CPM (Cost per mille). Formula: cpm = budget / impression ."
+        },
+        {
+          "name": "impression",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total impressions, in the unit of 1,000 . For example, the value of 110 for this field represents 110,000 impressions."
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of users reached, in the unit of 1,000 . For example, the value of 110 for this field represents 110,000 users reached."
+        },
+        {
+          "name": "max_reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of total bookable reach based on the specified feed type, targeting settings and campaign duration, in the unit of 1,000 . For example, the value of 200 in this field represents an available inventory of 200,000 users."
+        },
+        {
+          "name": "average_frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Formula: impressions per person ( average_frequency ) = total impressions ( impression )/ numbers of users reached ( reach )."
+        },
+        {
+          "name": "daily_cost",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Daily spend."
+        },
+        {
+          "name": "cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Spend for the day."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date. Format: \"YYYY-MM-DD\" . Example: \"2024-01-01\" ."
+        },
+        {
+          "name": "frequency_per_person",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Distribution of impressions per person. Note : When the frequency cap determined by frequency and frequency_schedule in the request exceeds four times a day, the value for the frequency_per_person will remain unchanged."
+        },
+        {
+          "name": "frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Impressions per person."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The percentage of users for the frequency . For example, if frequency is 1 and percentage is 0.42304230423042305 , then around 42.3% users will be shown the ad once."
+        },
+        {
+          "name": "results",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Estimated inventory results for different budgets. In each result, the estimated impression, CPM, reach, frequency, daily cost, and frequency per person will be provided for the budget. The data structure for this object is the same as that of default_result ."
+        },
+        {
+          "name": "base_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Basic information."
+        },
+        {
+          "name": "budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Total budget."
+        },
+        {
+          "name": "cpm",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "CPM (Cost per mille). Formula: cpm = budget / impression ."
+        },
+        {
+          "name": "impression",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total impressions, in the unit of 1,000 . For example, the value of 110 for this field represents 110,000 impressions."
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of users reached, in the unit of 1,000 . For example, the value of 110 for this field represents 110,000 users reached."
+        },
+        {
+          "name": "average_frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Formula: impressions per person ( average_frequency ) = total impressions ( impression )/ numbers of users reached ( reach )."
+        },
+        {
+          "name": "daily_cost",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Daily spend."
+        },
+        {
+          "name": "cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Spend for the day."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date. Format: \"YYYY-MM-DD\" . Example: \"2024-01-01\" ."
+        },
+        {
+          "name": "frequency_per_person",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Distribution of impressions per person. Note : When the frequency cap determined by frequency and frequency_schedule in the request exceeds four times a day, the value for the frequency_per_person will remain unchanged."
+        },
+        {
+          "name": "frequency",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Impressions per person."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The percentage of users for the frequency. For example, if frequency is 1 and percentage is 0.42304230423042305 , then around 42.3% users will be shown the ad once."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"default_result\": {\n            \"daily_cost\": [\n                {\n                    \"date\": \"2020-08-07\",\n                    \"cost\": 3587.5169107559\n                },\n                {\n                    \"date\": \"2020-08-08\",\n                    \"cost\": 3565.1767601342\n                },\n                {\n                    \"date\": \"2020-08-09\",\n                    \"cost\": 3512.4961871912\n                },\n                {\n                    \"date\": \"2020-08-10\",\n                    \"cost\": 3537.1785786238\n                }\n            ],\n            \"frequency_per_person\": [\n                {\n                    \"percentage\": 0.28,\n                    \"frequency\": 1\n                },\n                {\n                    \"percentage\": 0.72,\n                    \"frequency\": 2\n                }\n            ],\n            \"base_info\": {\n                \"impression\": 5157,\n                \"average_frequency\": 1.72,\n                \"reach\": 2991,\n                \"max_reach\": 17291,\n                \"cpm\": 2.75,\n                \"budget\": 14202.37\n            }\n        },\n        \"results\": [\n            {\n                \"daily_cost\": [\n                    {\n                        \"date\": \"2020-08-07\",\n                        \"cost\": 163.09\n                    },\n                    {\n                        \"date\": \"2020-08-08\",\n                        \"cost\": 163.27\n                    },\n                    {\n                        \"date\": \"2020-08-09\",\n                        \"cost\": 168.63\n                    },\n                    {\n                        \"date\": \"2020-08-10\",\n                        \"cost\": 164.8\n                    }\n                ],\n                \"frequency_per_person\": [\n                    {\n                        \"percentage\": 0.2480487252,\n                        \"frequency\": 1\n                    },\n                    {\n                        \"percentage\": 0.7519512748,\n                        \"frequency\": 2\n                    }\n                ],\n                \"base_info\": {\n                    \"impression\": 418,\n                    \"average_frequency\": 1.75,\n                    \"reach\": 239,\n                    \"cpm\": 1.58,\n                    \"budget\": 659.8\n                }\n           }\n       ]\n   }"

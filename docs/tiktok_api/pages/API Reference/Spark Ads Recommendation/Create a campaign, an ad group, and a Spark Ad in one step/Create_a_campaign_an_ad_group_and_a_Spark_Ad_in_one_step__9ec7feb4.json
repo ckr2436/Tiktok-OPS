@@ -1,0 +1,303 @@
+{
+  "title": "Create a campaign, an ad group, and a Spark Ad in one step",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/",
+  "method": "POST",
+  "category_path": [
+    "Spark Ads Recommendation",
+    "Create a campaign, an ad group, and a Spark Ad in one step"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign name. Length limit: 512 characters. Emojis are not supported. Note : Each English letter counts as one character while each Chinese or Japanese word counts as two."
+      },
+      {
+        "name": "objective_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertising objective. Enum values: REACH : Reach. TRAFFIC : Traffic. VIDEO_VIEWS : Video views. ENGAGEMENT : Community interaction. For detailed descriptions of each objective, see Advertising objective ."
+      },
+      {
+        "name": "adgroup_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group name. Length limit: 512 characters. Emojis are not supported. Note : Each English letter counts as one character while each Chinese or Japanese word counts as two."
+      },
+      {
+        "name": "saved_audience_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Either saved_audience_id or location_ids is required. Saved Audience ID. Before using this field, call /dmp/saved_audience/create/ to create a Saved Audience and get the Saved Audience ID in response. To find out the detailed workflow and code examples, see Create a Saved Audience ."
+      },
+      {
+        "name": "location_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Either saved_audience_id or location_ids is required. Ignored when saved_audience_id is specified. IDs of the locations that you want to target. Max size: 3,000. To get the available locations and corresponding IDs based on your placement and objective, use /tool/targeting/search/ or /tool/region/ . To get the list of location IDs, see Location IDs ."
+      },
+      {
+        "name": "gender",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ignored when saved_audience_id is specified. Gender that you want to target. Enum values: GENDER_FEMALE GENDER_MALE GENDER_UNLIMITED"
+      },
+      {
+        "name": "age_groups",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Ignored when saved_audience_id is specified. Age groups you want to target. For enum values, see Enumeration - Age Group ."
+      },
+      {
+        "name": "budget_mode",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad group budget mode. Enum values: BUDGET_MODE_TOTAL : Lifetime budget. BUDGET_MODE_DAY : Daily budget. To learn about how to set budget modes, see Budget . Note : If this field is set to BUDGET_MODE_DAY , then schedule_type can be either SCHEDULE_START_END or SCHEDULE_FROM_NOW . If this field is set to BUDGET_MODE_TOTAL , then schedule_type must be SCHEDULE_START_END , which requires an end date ( schedule_end_time )."
+      },
+      {
+        "name": "budget",
+        "required": false,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Ad group budget. To learn about how to set budget modes, see Budget ."
+      },
+      {
+        "name": "schedule_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Schedule type. Enum values: SCHEDULE_START_END : To run the campaign between the scheduled start time and end time. You need to specify a start time and an end time. If budget_mode is BUDGET_MODE_TOTAL , this field must be set to SCHEDULE_START_END . SCHEDULE_FROM_NOW : To run the campaign continuously after the scheduled start time. You only need to specify a start time and the end time will be automatically set to 10 years later than the start time."
+      },
+      {
+        "name": "schedule_start_time",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Schedule start time (UTC+0), in the format of YYYY-MM-DD HH:MM:SS . The start time can be up to 12 hours earlier than the current time, but cannot be later than 2028-01-01 00:00:00 ."
+      },
+      {
+        "name": "schedule_end_time",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when schedule_type is SCHEDULE_START_END . Schedule end time (UTC+0), in the format of YYYY-MM-DD HH:MM:SS . The end time cannot be later than 2038-01-01 00:00:00 ."
+      },
+      {
+        "name": "optimization_goal",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The measurable results you'd like to drive with your ads. The available enum values vary by objective_type : When objective_type is REACH : REACH . When objective_type is TRAFFIC : CLICK or TRAFFIC_LANDING_PAGE_VIEW . When objective_type is VIDEO_VIEWS : ENGAGED_VIEW . When objective_type is ENGAGEMENT : FOLLOWERS or PAGE_VISIT . For detailed descriptions of each optimization goal, see Enumeration - Optimization Goal ."
+      },
+      {
+        "name": "frequency",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Required when objective_type is REACH . Frequency, the maximum number of times a user can see your ad within a given period. frequency and frequency_schedule define how often people see your ad. The following conditions should be both met: frequency range: 1–1,000. frequency_schedule : 1–30 (days). For instance, frequency = 2 and frequency_schedule = 3 ensure ads are shown no more than twice every three days."
+      },
+      {
+        "name": "frequency_schedule",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Required when objective_type is REACH . Frequency schedule, the duration (in days) over which the frequency cap is applied. frequency and frequency_schedule define how often people see your ad. The following conditions should be both met: frequency range: 1–1,000. frequency_schedule : 1–30 (days). For instance, frequency = 2 and frequency_schedule = 3 ensure ads are shown no more than twice every three days."
+      },
+      {
+        "name": "bid_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The bidding strategy for your ad group. Enum values: BID_TYPE_CUSTOM : Cost Cap. When optimization_goal is REACH , CLICK , PAGE_VISIT , or ENGAGED_VIEW and bid_type is BID_TYPE_CUSTOM , you need to specify bid_price simultaneously. When optimization_goal is TRAFFIC_LANDING_PAGE_VIEW , or FOLLOWERS and bid_type is BID_TYPE_CUSTOM , you need to specify conversion_bid_price simultaneously. BID_TYPE_NO_BID : Maximum Delivery. Default value: BID_TYPE_NO_BID ."
+      },
+      {
+        "name": "bid_price",
+        "required": true,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Required when the following conditions are both met: optimization_goal is REACH , CLICK , PAGE_VISIT , or ENGAGED_VIEW . bid_type is BID_TYPE_CUSTOM . The average cost per result that you want to achieve."
+      },
+      {
+        "name": "conversion_bid_price",
+        "required": true,
+        "type": "number",
+        "raw_type": "float",
+        "description": "Required when the following conditions are both met: optimization_goal is TRAFFIC_LANDING_PAGE_VIEW , or FOLLOWERS . bid_type is BID_TYPE_CUSTOM . The target cost per conversion for oCPM (Optimized Cost per Mille)."
+      },
+      {
+        "name": "ad_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Ad name. To make the ad name automatically generated, set this field to \"\" (empty string). The format of the auto-generated ad name is ad ID ( ad_id ). Length limit: 512 characters. Emojis are not supported. Note : Each English letter counts as one character while each Chinese or Japanese word counts as two."
+      },
+      {
+        "name": "identity_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: AUTH_CODE , TT_USER , BC_AUTH_TT . For details about identities, see Identities ."
+      },
+      {
+        "name": "identity_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_authorized_bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when identity_type is BC_AUTH_TT . ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+      },
+      {
+        "name": "tiktok_item_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok post to be used as a Spark Ad. To learn more about Spark Ads, see Create Spark Ads . To obtain the post ID, use /identity/video/get/ or /tt_video/info/ and check the returned item_id . Note : By using Spark Ads, you confirm that you have the rights to use the music in the videos for commercial purposes."
+      },
+      {
+        "name": "call_to_action",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required when optimization_goal is CLICK , TRAFFIC_LANDING_PAGE_VIEW , or PAGE_VISIT . Optional when optimization_goal is REACH or ENGAGED_VIEW . Call-to-action text. For enum values, see Enumeration - Call-to-Action ."
+      },
+      {
+        "name": "landing_page_url",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Required in any of the following conditions: optimization_goal is CLICK , TRAFFIC_LANDING_PAGE_VIEW , or PAGE_VISIT . optimization_goal is REACH or ENGAGED_VIEW and call_to_action is specified. Not supported when optimization_goal is FOLLOWERS or PAGE_VISIT . The landing page that users will be redirected to."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Create Reach ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"REACH\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"REACH\",\n    \"frequency\": {{frequency}},\n    \"frequency_schedule\": {{frequency_schedule}},\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"bid_price\": {{bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\",\n    \"call_to_action\": \"ORDER_NOW\",\n    \"landing_page_url\": \"{{landing_page_url}}\"\n}'"
+      },
+      {
+        "title": "Create Traffic ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"TRAFFIC\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"CLICK\",\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"bid_price\": {{bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\",\n    \"call_to_action\": \"ORDER_NOW\",\n    \"landing_page_url\": \"{{landing_page_url}}\"\n}'"
+      },
+      {
+        "title": "Create Traffic ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"TRAFFIC\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"TRAFFIC_LANDING_PAGE_VIEW\",\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"conversion_bid_price\": {{conversion_bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\",\n    \"call_to_action\": \"ORDER_NOW\",\n    \"landing_page_url\": \"{{landing_page_url}}\"\n}'"
+      },
+      {
+        "title": "Create Video Views ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"VIDEO_VIEWS\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"ENGAGED_VIEW\",\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"bid_price\": {{bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\",\n    \"call_to_action\": \"ORDER_NOW\",\n    \"landing_page_url\": \"{{landing_page_url}}\"\n}'"
+      },
+      {
+        "title": "Create Community Interaction ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"ENGAGEMENT\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"FOLLOWERS\",\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"conversion_bid_price\": {{conversion_bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\"\n}'"
+      },
+      {
+        "title": "Create Community Interaction ads",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/business/spark_ad/create/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_name\": \"{{campaign_name}}\",\n    \"objective_type\": \"ENGAGEMENT\",\n    \"adgroup_name\": \"{{adgroup_name}}\",\n    \"location_ids\": [\"6252001\"],\n    \"gender\": \"GENDER_UNLIMITED\",\n    \"age_groups\": [\"AGE_18_24\"],\n    \"budget_mode\": \"BUDGET_MODE_TOTAL\",\n    \"budget\": {{budget}},\n    \"schedule_type\": \"SCHEDULE_START_END\",\n    \"schedule_start_time\": \"{{schedule_start_time}}\",\n    \"schedule_end_time\": \"{{schedule_end_time}}\",\n    \"optimization_goal\": \"PAGE_VISIT\",\n    \"bid_type\": \"BID_TYPE_CUSTOM\",\n    \"bid_price\": {{bid_price}},\n    \"ad_name\": \"{{ad_name}}\",\n    \"identity_type\": \"TT_USER\",\n    \"identity_id\": \"{{identity_id}}\",\n    \"tiktok_item_id\": \"{{tiktok_item_id}}\",\n    \"call_to_action\": \"CONTACT_US\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the created campaign. To obtain the details of the campaign, use /campaign/get/ ."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the ad group created within the campaign. To obtain the details of the ad group, use /adgroup/get/ ."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Spark Ad created within the ad group. To obtain the details of the ad, use /ad/get/ ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"ad_id\": \"{{ad_id}}\",\n        \"adgroup_id\": \"{{adgroup_id}}\",\n        \"campaign_id\": \"{{campaign_id}}\"\n    }\n}"
+    }
+  }
+}

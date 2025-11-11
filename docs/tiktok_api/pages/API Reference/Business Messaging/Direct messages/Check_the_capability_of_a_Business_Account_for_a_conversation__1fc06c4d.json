@@ -55,6 +55,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "capability_infos",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The results regarding the queried capabilities for the Business Account."
+        },
+        {
+          "name": "capability_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The capability type. Enum value: IMAGE_SEND : The Business Account can send images and/or receive images in the specified conversation."
+        },
+        {
+          "name": "capability_result",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the Business Account has this capability. Supported values: true , false ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"capability_infos\": [\n            {\n                \"capability_result\": true,\n                \"capability_type\": \"IMAGE_SEND\"\n            }\n        ]\n    }\n}"

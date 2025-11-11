@@ -42,6 +42,401 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "rules",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of rules"
+        },
+        {
+          "name": "apply_objects",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Objects that you want to apply the rules to. Objects can be campaigns, ad groups, or ads."
+        },
+        {
+          "name": "dimesion",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Category of the object. Enum values: CAMPAIGN , ADGROUP , AD ."
+        },
+        {
+          "name": "dimension_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the objects"
+        },
+        {
+          "name": "pre_condition_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Conditions to filter out objects that you do not want to include. SELECTED : Only include those that are selected by IDs. ALL_ACTIVE_CAMPAIGN : Select all active campaigns. ALL_ACTIVE_AD_GROUP : Select all active ad groups. ALL_ACTIVE_AD : Select all active ads. ALL_ACTIVE_AD_GROUP_UNDER_SELECTED : Select all active ad groups under the selected campaign. ALL_ACTIVE_AD_UNDER_SELECTED : Select all active ads under selected dimensions ALL_INACTIVE_CAMPAIGN : Select all inactive campaigns. ALL_INACTIVE_AD_GROUP : Select all inactive ad groups ALL_INACTIVE_AD : Select all inactive ads. ALL_INACTIVE_AD_GROUP_UNDER_SELECTED : Select all inactive ad groups under the selected campaign. ALL_INACTIVE_AD_UNDER_SELECTED : Select all inactive ads under the selected campaign or ad group (specified by dimension and dimension_ids )"
+        },
+        {
+          "name": "bind_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Bind type of the rule. Enum values: BIND , UNBIND ."
+        },
+        {
+          "name": "conditions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Conditions"
+        },
+        {
+          "name": "subject_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Subjects that the condition will be based on. Enum values: COST DAILY_BUDGET_SPENDING_RATE LIFETIME_BUDGET_SPENDING_RATE IMPRESSION CLICK CONVERSION CONVERSION_SKAN CVR CVR_SKAN CPA CPM CPC CTR COST_PER_RESULT RESULT RESULT_RATE BID_STRATEGY OPTIMIZATION_GOAL OBJECTIVE NAME DAYS_SINCE_CREATION NO_CONDITION ROAS_PURCHASE ROAS_IMPRESSION_ADS ROAS_PURCHASE_SKAN ROAS_COMPLETE_PAYMENT ROAS_PURCHASES_ONSITE NOT_REAL_TIME_CPA NOT_REAL_TIME_CONVERSION NOT_REAL_TIME_CVR"
+        },
+        {
+          "name": "range_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time range for the condition. Enum values: TODAY YESTERDAY PAST_THREE_DAYS PAST_FIVE_DAYS PAST_SEVEN_DAYS LIFETIME"
+        },
+        {
+          "name": "match_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Operator to connect a condition with a value. Enum values: GT (greater than) LT (less than) BETWEEN MATCH CONTAINS NOT_CONTAINS START_WITH END_WITH STRING_EQUAL"
+        },
+        {
+          "name": "values",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Values for the condition."
+        },
+        {
+          "name": "calculation_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: ALL_OBJECTS OF_EACH_OBJECT"
+        },
+        {
+          "name": "action",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Actions to be taken when the condition is met"
+        },
+        {
+          "name": "subject_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Type of actions to take. Enum: TURN_ON , TURN_OFF , MESSAGE , DAILY_BUDGET , LIFERIME_BUDGET , BID"
+        },
+        {
+          "name": "action_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: INCREASE , DECREASE , ADJUST_TO"
+        },
+        {
+          "name": "value_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: EXACT , PERCENT"
+        },
+        {
+          "name": "value",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "When action_type is INCREASE or DECREASE , users can specify the maximum(if INCREASE ) or minimum(if DECREASE ) budget using use_limit and limit . When action_type is ADJUST_TO , no need to provide use_limit and limit ."
+        },
+        {
+          "name": "frequency_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Frequency settings. It can be used when the action subject_type is DAILY_BUDGET , LIFERIME_BUDGET , or BID"
+        },
+        {
+          "name": "type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum: ONLY_ONCE ONCE_IN_24_H ONCE_IN_48_H ONCE_IN_1_W CUSTOM"
+        },
+        {
+          "name": "custom_frequency_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Custom frequency type. Valid only when type is CUSTOM . Enum: N_MINTUE_Y_TIMES N_HOUR_Y_TIMES N_DAY_Y_TIMES"
+        },
+        {
+          "name": "time",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "It is the N in custom_frequency_type"
+        },
+        {
+          "name": "count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "It is the Y in custom_frequency_type"
+        },
+        {
+          "name": "notification",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Notification settings"
+        },
+        {
+          "name": "notification_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Notification type you need. Enum values: TASK_FINISH : Notification will be sent when the task is finished. This option is only for MESSAGE subject type. ANY_CHANGES : If the subject_type for the action is not MESSAGE but you still want to receive emails, use this option. NOT_NOTIFICATION : No notifications are needed."
+        },
+        {
+          "name": "email_setting",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Email notification settings"
+        },
+        {
+          "name": "notification_period",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Enum values: EVERY_TIME TIME_SCHEDULE : notifications will be sent together around a specified time."
+        },
+        {
+          "name": "email_exec_time",
+          "required": true,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Required when notification_period is TIME_SCHEDULE . Notification email sent time. For example, \"12:00\"."
+        },
+        {
+          "name": "no_result_notification",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "It will be set as false by default if not provided, meaning no notification will be sent if there is no result."
+        },
+        {
+          "name": "rule_exec_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Rule run settings"
+        },
+        {
+          "name": "exec_time_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "When the rule will be run. Enum values: PER_HALF_HOUR : the rule will be run every half hour. CUSTOM : the rule will be run at a customized time (specified in the exec_time field). HALF_HOUR_IN_SPECIFIC_TIME_PERIOD : the rule will be run every 30 minutes during specified time range on specifed days during the week SPECIFIC_TIME_ACCURATE_ONCE : the rule will be run only once at a customized time (specified in the exec_time field)."
+        },
+        {
+          "name": "exec_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If exec_time_type is set to CUSTOM or SPECIFIC_TIME_ACCURATE_ONCE , use this field to specify the exact time when the rule will be run. Format: \"HH:MM\" when exec_time_type is CUSTOM . For example: \"12:00\". \"YYYY-MM-DD HH:MM\" when exec_time_type is SPECIFIC_TIME_ACCURATE_ONCE . For example: \"2023-04-20 04:20\"."
+        },
+        {
+          "name": "time_period_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Valid when exec_time_type is HALF_HOUR_IN_SPECIFIC_TIME_PERIOD . It has start_time , end_time , date_type and num to specify the time period information."
+        },
+        {
+          "name": "num",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integers[]",
+          "description": "Each number in the list represents the day in the week or month. When date_type is WEEK , value range for this field is [1, 7], meaning Monday to Sunday. When date_type is MONTH , value range for this field is [1, 28], meaning 1st day to the 28th day of the month."
+        },
+        {
+          "name": "start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Start time of this time period. For example, \"12:00\"."
+        },
+        {
+          "name": "end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "End time of this time period. For example, \"12:00\"."
+        },
+        {
+          "name": "date_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Type of date. Enum values: DAY , WEEK , MONTH ."
+        },
+        {
+          "name": "last_check_result_summary",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the last rule run"
+        },
+        {
+          "name": "check_datetime",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date and time when the rule was checked, in UTC+0 time zone"
+        },
+        {
+          "name": "exec_datetime",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date and time when the rule was run, in UTC+0 time zone"
+        },
+        {
+          "name": "change_success",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Objects that have been changed"
+        },
+        {
+          "name": "no_change",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Objects that have not been changed"
+        },
+        {
+          "name": "change_fail",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Objects that failed to be changed"
+        },
+        {
+          "name": "task_exec_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Rule execution ID"
+        },
+        {
+          "name": "rule_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the rule"
+        },
+        {
+          "name": "rule_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Rule status. Enum values: ON : on. OFF : off. DELETED : deleted."
+        },
+        {
+          "name": "create_datetime",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date and time when the rule was created, in UTC+0 time zone"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

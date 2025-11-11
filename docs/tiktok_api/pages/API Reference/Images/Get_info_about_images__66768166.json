@@ -40,6 +40,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return Information ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the images."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image ID, used to create ads."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID."
+        },
+        {
+          "name": "is_carousel_usable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the source of the image is valid for Carousel Ads. Note : To use an image in Carousel Ads, you need to ensure: The value of this field is true , and The image meets the specifications requirements listed in Create Carousel Ads-Steps-Create an ad ."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image width."
+        },
+        {
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image format."
+        },
+        {
+          "name": "image_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image URL, valid for an hour and needs to be re-acquired after expiration."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image height."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "MD5 of picture."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Image size in bytes."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image name."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creation time. UTC time. Format: 2020-06-10T07:39:14Z."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification time. UTC time. Format: 2020-06-10T07:39:14Z."
+        },
+        {
+          "name": "displayable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether it can be displayed on the platform."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"is_carousel_usable\": true,\n                \"size\": 39779,\n                \"format\": \"jpeg\",\n                \"modify_time\": \"{{modify_time}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"displayable\": false,\n                \"width\": 750,\n                \"material_id\": \"{{material_id}}\",\n                \"image_url\": \"{{image_url}}\",\n                \"file_name\": \"{{file_name}}\",\n                \"image_id\": \"{{image_id}}\",\n                \"signature\": \"{{signature}}\",\n                \"height\": 422\n            }\n        ]\n    }\n}"

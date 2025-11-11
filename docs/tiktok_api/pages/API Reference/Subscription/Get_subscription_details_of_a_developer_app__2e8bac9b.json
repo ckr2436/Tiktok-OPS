@@ -53,6 +53,191 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "subscriptions",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Subscription information."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The App ID."
+        },
+        {
+          "name": "subscription_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The subscription ID"
+        },
+        {
+          "name": "subscribe_entity",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The object that you want to subscribe to. Enum values: AD_ACCOUNT_SUSPENSION : the suspension statuses of ad accounts. LEAD : leads. AD_GROUP : the review status of an ad group. AD : the review status of an ad. TCM_SPARK_ADS : the status of Spark Ads authorization for a video uploaded to a TCM Workflow 2.0 order. TCM_VIDEOS : the linking of a TikTok video to a TTO campaign. CREATIVE_FATIGUE : the fatigue status of an ad, ads within an ad group, or ads within an advertiser account."
+        },
+        {
+          "name": "callback_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The callback URL."
+        },
+        {
+          "name": "subscription_detail",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Details about the subscription."
+        },
+        {
+          "name": "bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "When subscribe_entity is AD_ACCOUNT_SUSPENSION , either bc_id or advertiser_ids is returned. Business Center ID. You are subscribed to the suspension statuses of all ad accounts owned by the Business Center."
+        },
+        {
+          "name": "advertiser_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "When subscribe_entity is AD_ACCOUNT_SUSPENSION , either bc_id or advertiser_ids is returned. A list of advertiser IDs. You are subscribed to the suspension statuses of these ad accounts, which can be owned by different Business Centers."
+        },
+        {
+          "name": "lead_source",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when subscribe_entity is LEAD . The source of the leads to subscribe to. Enum values: INSTANT_FORM : leads generated through Instant Forms. DIRECT_MESSAGE : leads generated from direct messages of the associated Business Account."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The advertiser ID"
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Instant Form that you want to subscribe to. Note : When lead_source is DIRECT_MESSAGE , this field will be null."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID"
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad ID"
+        },
+        {
+          "name": "tcm_account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when subscribe_entity is TCM_SPARK_ADS . TikTok Creator Marketplace account ID."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when subscribe_entity is TCM_SPARK_ADS . The ID of the video that is uploaded to a TCM Workflow 2.0 order."
+        },
+        {
+          "name": "tto_tcm_account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when subscribe_entity is TCM_VIDEOS . The ID of a TTO Creator Marketplace account."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of records."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

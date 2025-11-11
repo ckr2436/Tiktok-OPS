@@ -103,6 +103,212 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return Message, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Page list."
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Page ID."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Page status. Enum values: EDITED (draft), PUBLISHED (ready)."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The creation time of the page in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2024-01-01 00:00:00 ."
+        },
+        {
+          "name": "update_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time the page was last updated in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2024-01-01 00:00:00 ."
+        },
+        {
+          "name": "publish_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The publishing time of the page in the format of YYYY-MM-DD HH:MM:SS (UTC time). Example: 2024-01-01 00:00:00 ."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Title."
+        },
+        {
+          "name": "preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Preview link of the page. The link is generated after the page is ready, and will be empty when the page is only a draft."
+        },
+        {
+          "name": "thumbnail",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Page preview thumbnail image."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned for all App Profile Pages and TikTok Instant Pages where an App is specified. The ID of the App that is specified in the page. To filter App Profile Pages, set business_type to APP_PROFILE_PAGE or set business_types to [\"APP_PROFILE_PAGE\"] in the request."
+        },
+        {
+          "name": "has_cpp",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Returned only for TikTok Instant Pages. Whether the TikTok Instant Page contains Custom Product Page . Enum values: true , false . To filter TikTok Instant Pages, set business_type to TIKTOK_INSTANT_PAGE or set business_types to [\"TIKTOK_INSTANT_PAGE\"] in the request."
+        },
+        {
+          "name": "destination_urls",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned when your business_type is LEAD_GEN (Instant Form), APP_PROFILE_PAGE (App Profile Page), or TIKTOK_INSTANT_PAGE (Custom Page or Custom TikTok Instant Page). Destination URLs."
+        },
+        {
+          "name": "messaging_app_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of instant messaging app associated with the TikTok Instant Page. Enum values: MESSENGER : Messenger. WHATSAPP : WhatsApp. IM_URL : No instant messaging app is associated with the TikTok Instant Page."
+        },
+        {
+          "name": "messaging_app_account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the instant messaging app account associated with the TikTok Instant Page. When messaging_app_type is MESSENGER , this field represents the Facebook Page ID. When messaging_app_type is WHATSAPP , this field represents the WhatsApp phone number. When messaging_app_type is IM_URL , this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "transfer_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the page has been transferred to Business Center. Enum values: UNSET , TRANSFERRED"
+        },
+        {
+          "name": "template_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Page template ID."
+        },
+        {
+          "name": "user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the user who created the page."
+        },
+        {
+          "name": "is_associated",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether Storefront Page has been associated with some ad (Storefront Page cannot be reused, and each page can only be associated with one ad)."
+        },
+        {
+          "name": "duplicate_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Duplicate source page ID."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Log id of the request, uniquely identifying a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n  \"message\": \"OK\",\n  \"code\": 0,\n  \"data\": {\n    \"page_info\": {\n      \"total_number\": 1,\n      \"page\": 1,\n      \"page_size\": 10,\n      \"total_page\": 1\n    },\n    \"list\": [\n      {\n        \"status\": \"PUBLISHED\",\n        \"duplicate_id\": \"6854791294359699461\",\n        \"user_id\": \"6844401689412666374\",\n        \"title\": \"page_title\",\n        \"preview_url\": \"http://preview.page.url\",\n        \"thumbnail\": \"http://preview.page.thumbnail\",\n        \"create_time\": \"2022-06-02 15:06:32\",\n        \"update_time\": \"2022-06-02 15:06:33\",\n        \"publish_time\": \"2022-06-02 15:06:33\",\n        \"page_id\": \"6854821673904898054\",\n        \"template_id\": \"6852135057059610630\",\n        \"transfer_status\": \"UNSET\"\n      },\n    ]\n  },\n  \"request_id\": \"{{request_id}}\"\n}"

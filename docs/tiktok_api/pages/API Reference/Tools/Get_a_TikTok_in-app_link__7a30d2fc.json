@@ -47,6 +47,58 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "open_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok internal link."
+        },
+        {
+          "name": "supported_regions",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Countries and/or regions that the sticker (special effect) can be used. Returned when url_type is STICKER or STICKER_SHOOTER ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

@@ -40,6 +40,149 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "split_test_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Status of the split test. Enum values: UNKNOWN : The status of the split test is unavailable. NOT_STARTED : The split test has not started because the start_time of the split test has not arrived yet. IN_PROGRESS : The split test is running. REPORTING_GENERATING : The end_time of the split test has passed and a report is being generated. COMPLETED : The split test either ends automatically, or is manually stopped via /split_test/end/ . CANCELLED : The split test was canceled before the start_time . This enum value is only available for campaign level split test."
+        },
+        {
+          "name": "split_test_level",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Split test level. Enum values: ADGROUP (Ad group level split test.) CAMPAIGN (Campaign level split test.)"
+        },
+        {
+          "name": "object_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the two ad groups that are associated with the split test."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID."
+        },
+        {
+          "name": "adgroup_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group name."
+        },
+        {
+          "name": "optimization_goal",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Optimization goal of the ad group. For enum values, see Enumeration - Optimization Goal ."
+        },
+        {
+          "name": "cells",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Cell list of the split test."
+        },
+        {
+          "name": "object_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "List of campaign_id or adgroup_id in the cell that are associated with the split test."
+        },
+        {
+          "name": "test_variable",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Split test variable. Enum values: BIDDING_OPTIMIZATION : Set different optimization values for bidding & optimization fields to compare how optimization methods impact your ad performance. TARGTING : Set different targeting values at the ad group level for comparing how effective your ad groups are at reaching different audiences or demographics. CREATIVE : Set different creatives to compare how different creatives impact your ad performance. CUSTOM : Set multiple variables to compare how these variables impact your ad performance. This enum value is only available for campaign level split test."
+        },
+        {
+          "name": "key_metric",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The key metric when you created this split test. If no value is specified for this field, the following default values will be used: For ad group level split test, if both ad groups use REACH optimization goal, the default key metric will be COST_PER_REACH . Otherwise, the default key metric will be COST_PER_SHOW . For campaign level split test, the default key metric is UNSET ."
+        },
+        {
+          "name": "start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The start time of this split test, in the format of YYYY-MM-DD HH:MM:SS (ad account time zone). Example: 2022-01-01 00:00:00 ."
+        },
+        {
+          "name": "end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The end time of this split test, in the format of YYYY-MM-DD HH:MM:SS (ad account time zone). Example: 2022-01-01 00:00:00 ."
+        },
+        {
+          "name": "p_value_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Test result information."
+        },
+        {
+          "name": "metric",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Metric name. UNSET : Unset. CONVERT_RATE : CVR (Conversion rate). CLICK_THROUGH_RATE : Click through rate (CTR). COST_PER_SHOW : Cost per mille (CPM). COST_PER_CONVERT : Cost per conversion. COST_PER_REACH : Cost per reach. COST_PER_CLICK : Cost per click. COST_PER_FOCUSED_VIEW : Cost per focused view. FOCUSED_VIEW_RATE : Focused view rate. COMPLETE_PAYMENT_ROAS : Complete Payment ROAS. COST_PER_LANDING_PAGE_VIEW : Cost per landing page view. LANDING_PAGE_VIEW_RATE : Landing page view rate. CLICK : Click. REACH : Reach. SHOW : Impression. CONVERT : Conversion. COST : Cost."
+        },
+        {
+          "name": "p_value",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "P value of each metric. There will be a winning ad group or campaign when the p value <= 0.1."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"key_metric\": \"FOCUSED_VIEW_RATE\",\n        \"object_info\": [\n            {\n                \"optimization_goal\": \"FOCUSED_VIEW_RATE\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"adgroup_id\": \"{{adgroup_id}}\"\n            },\n            {\n                \"optimization_goal\": \"ENGAGED_VIEW_FIFTEEN\",\n                \"adgroup_name\": \"{{adgroup_name}}\",\n                \"adgroup_id\": \"{{adgroup_id}}\"\n            }\n        ],\n        \"start_time\": \"{{start_time}}\",\n        \"test_variable\": \"BIDDING_OPTIMIZATION\",\n        \"p_value_info\": [],\n        \"end_time\": \"{{end_time}}\",\n        \"split_test_status\": \"NOT_STARTED\"\n    }\n}"

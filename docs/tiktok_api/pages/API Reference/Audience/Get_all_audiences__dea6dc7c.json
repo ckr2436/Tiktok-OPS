@@ -54,6 +54,156 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message, see Appendix-Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of Audience."
+        },
+        {
+          "name": "shared",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether this audience is shared with others. Enum values: True , False ."
+        },
+        {
+          "name": "is_creator",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether this advertiser is the owner of the audience. Enum values: true , false . You can use shared and is_creator to check audience ownership and shared status. The rules are as follows: 1. shared = true and is_creator = true : The advertiser is the owner and the audience is shared to others. 2. shared = true and is_creator = false : The advertiser is NOT the owner and the audience is shared by others. 3. shared = false and is_creator = true : The advertiser is the owner and the audience has not been shared to others."
+        },
+        {
+          "name": "audience_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience ID."
+        },
+        {
+          "name": "cover_num",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Coverage, or number of matched users on TikTok."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the audience was created. GMT time."
+        },
+        {
+          "name": "is_valid",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Audience availability. An audience becomes available after it has been processed. An audience becomes invalid after it is expired."
+        },
+        {
+          "name": "is_expiring",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether an audience is expiring. When an audience is expiring, it will expire in less than 60 days."
+        },
+        {
+          "name": "expired_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the audience expires, in the format of \"YYYY-MM-DD HH:MM:SS\"."
+        },
+        {
+          "name": "audience_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Audience type. Enum values: Customer File Audience ( Customer File Audience ). Engagement Audience ( Engagement Audience ). App Activity Audience ( App Activity Audience ). Website Audience ( Website Traffic Audience ). Lookalike Audience ( Lookalike Audience ). Lead Generation ( Lead Generation Audience ) Rule Business Account ( Business Account Audience ) Rule ad shop ( Shop Activity Audience ) Partner (Partner Audience) Challenge (Challenge Audience) Preferred Population (Premium Audience) Note : Currently, Partner Audience, Challenge Audience and Premium Audience cannot be created through the API."
+        },
+        {
+          "name": "calculate_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Encryption type, only applies to customer file audience. For enum values, see Enumeration - Encryption Type ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Paging size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\nHTTPS/1.1 200 OK\n{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"123\",\n    \"data\": {\n        \"page_info\": {\n            \"page_size\": 10,\n            \"total_number\": 1,\n            \"page\": 1,\n            \"total_page\": 1\n        },\n        \"list\": [\n            {\n                \"cover_num\": 6489086,\n                \"is_valid\": false,\n                \"calculate_type\": null,\n                \"is_creator\": false,\n                \"audience_id\": \"123\",\n                \"name\": \"CUSTOM_AUDIENCE_NAME\",\n                \"is_expiring\": false,\n                \"create_time\": \"2022-05-26 22:12:12\",\n                \"audience_type\": \"Lookalike Audience\",\n                \"expired_time\": \"2023-09-08 02:34:20\",\n                \"shared\": true\n            }\n        ]\n    }\n}"

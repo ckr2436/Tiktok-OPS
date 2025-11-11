@@ -75,6 +75,709 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "tto_tcm_account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TikTok One Creator Marketplace account."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TikTok One Creator Marketplace campaign."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A country or region code that is associated with the TikTok One Creator Marketplace campaign."
+        },
+        {
+          "name": "campaign_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of the TTO Creator Marketplace campaign. Enum values: CAMPAIGN : A campaign with a campaign-level invite link . BRAND_LINK : A campaign with a brand-level invite link ."
+        },
+        {
+          "name": "campaign_channel_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The channel type where the campaign was created. Enum values: STANDARD_CAMPAIGN : A Standard Campaign created on the TikTok One platform. LITE_CAMPAIGN : A Lite Campaign created on the TikTok One platform. API_LITE_CAMPAIGN : A Lite Campaign created via the API."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page size."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of videos. Note : This number is country-specific and depends on the header parameter Country-Code . For example, if a campaign includes two videos in the US and one video in Canada, total_number will be 2 when Country-Code is set to US , and 1 when set to CA ."
+        },
+        {
+          "name": "videos",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of videos that have been linked to the TikTok One Creator Marketplace campaign."
+        },
+        {
+          "name": "video_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the video."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the video was published, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2024-01-01 00:00:01 ."
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link to the TikTok video. This URL can be used to embed the TikTok video in external websites or applications. Example: https://v77.tiktokcdn.com/{{embed_url}} ."
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for thumbnail of the video. Expiration date-time is included in the x-expires query param as Epoch/Unix time in seconds. Example: https://p16-sign-va.tiktokcdn.com/obj/tos-maliva-p-0068/12345678a12e3456a02017dcf822217e_1725607566?lk3s=c6b69ba0&nonce=51584&refresh_token=73f581ee21c7de32951926a0104f51a2&x-expires=1729173600&x-signature=vIBf8%2Bmp4%2FxXQpKrca1B5%2B%2FfpTU%3D&shp=c6b69ba0&shcp=- ."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The unique identifier for the video."
+        },
+        {
+          "name": "authorization_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The Spark Ads authorization code for the video."
+        },
+        {
+          "name": "creator_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the TikTok Creator."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name of the Creator."
+        },
+        {
+          "name": "handle_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle name of the Creator."
+        },
+        {
+          "name": "ad_clicks",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The number of clicks on your ads."
+        },
+        {
+          "name": "ad_conversions",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The number of times your ad achieved an outcome based on the objective and settings you selected. Note : This field is based on the selected campaign objective and settings."
+        },
+        {
+          "name": "ad_cost",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Ads cost. The estimated total amount of money you've spent on your campaign, ad group, or ad during its schedule. Updated in real time."
+        },
+        {
+          "name": "ad_cpa",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Cost per conversion. The average amount of money you've spent on a paid conversion. Updated in real time."
+        },
+        {
+          "name": "ad_cpc",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average amount of money you've spent on a paid click."
+        },
+        {
+          "name": "ad_cpm",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The average amount of money you've spent per 1,000 paid impressions."
+        },
+        {
+          "name": "ad_ctr",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "CTR (destination). The percentage of times people saw your ad and performed a click. Updated in real time."
+        },
+        {
+          "name": "ad_cvr",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Conversion rate (CVR). The percentage of conversions from all impressions on your ads. Updated in real time."
+        },
+        {
+          "name": "ad_impressions",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Impressions. The number of times your ads were on screen. Updated in real time."
+        },
+        {
+          "name": "video_views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total views. Total number of times the video has been watched. Updated in real time"
+        },
+        {
+          "name": "video_views_organic",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Organic video views. Total number of views acquired through organic delivery, and not through Spark Ads . Updated in real time"
+        },
+        {
+          "name": "video_views_paid",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paid views. Total number of views acquired through Spark Ads . Updated in real time"
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Reach (Unique viewers). Estimated number of unique users who viewed the video at least once. Updated daily"
+        },
+        {
+          "name": "engagement_count",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Engagement count. Total number of likes ( likes ), shares ( shares ), and comments ( comments ). Updated in real time"
+        },
+        {
+          "name": "engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Engagement rate, calculated as the engagement count ( engagement_count ) divided by the total number of views ( video_views ). Updated in real time"
+        },
+        {
+          "name": "engagement_rate_organic",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Organic engagement rate. The percentage of the audience who interacted with the campaign or video through organic delivery. It is calculated by dividing the number of organic interactions (likes, comments, and shares from non-paid views) by the total number of organic video views. Updated in real time"
+        },
+        {
+          "name": "engagement_rate_paid",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Paid engagement rate. The percentage of the audience who interacted with the campaign or video through Spark Ads. It is calculated by dividing the number of paid interactions (likes, comments, and shares from paid views) by the total number of paid video views. Updated in real time"
+        },
+        {
+          "name": "video_completion_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Video completion rate, calculated as total completed video views divided by the total number of views ( video_views ). Updated in real time for the first seven days after the post was created and then updated daily afterwards"
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Likes. Total number of likes associated with the video. Updated in real time"
+        },
+        {
+          "name": "likes_organic",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Organic likes. Total number of likes generated through non-paid (organic) delivery. Updated in real time"
+        },
+        {
+          "name": "likes_paid",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paid likes. Total number of likes generated through Spark Ads. Updated in real time"
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Comments. Total number of comments associated with the video. Updated in real time"
+        },
+        {
+          "name": "comments_organic",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Organic comments. Total number of comments generated through non-paid (organic) delivery. Updated in real time"
+        },
+        {
+          "name": "comments_paid",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paid comments. Total number of comments generated through Spark Ads. Updated in real time"
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Shares. Total number of shares associated with the video. Updated in real time"
+        },
+        {
+          "name": "shares_organic",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Organic shares. Total number of shares generated through non-paid (organic) delivery. Updated in real time"
+        },
+        {
+          "name": "shares_paid",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paid shares. Total number of shares generated through Spark Ads. Updated in real time"
+        },
+        {
+          "name": "total_play_time",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total play time, in seconds. Total amount of time users spend watching the video. Updated in real time for the first seven days after the post was created and then updated daily afterwards"
+        },
+        {
+          "name": "average_view_time",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Average view time, in seconds. Average amount of time users spend watching the video, calculated as the total play time ( total_play_time ) divided by views ( video_views ). Updated in real time for the first seven days after the post was created and then updated daily afterwards"
+        },
+        {
+          "name": "two_seconds_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "2-Second video views. Percentage of views that lasted more than two seconds, calculated as the number of views that lasted more than 2 seconds divided by views ( video_views ). Updated daily"
+        },
+        {
+          "name": "six_seconds_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "6-Second video views. Percentage of views that lasted more than six seconds, calculated as the number of views that lasted more than six seconds divided by views ( video_views ). Updated daily"
+        },
+        {
+          "name": "video_view_retention",
+          "required": false,
+          "type": "number",
+          "raw_type": "double[]",
+          "description": "A list of numbers indicating the video retention rate at each second. For instance, the value [1, 0.61, 0.27, 0.2, 0.16, 0.14, 0.11, 0.09, 0.08, 0.07, 0.07, 0.06, 0.05, 0.05, 0.05, 0.04, 0.04] indicates that during the first second, the video retention rate decreases from 100% to 61%. Updated in real time for the first seven days after the post was created and then updated daily afterwards"
+        },
+        {
+          "name": "video_views_by_source",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "View sources. Breakdown of how viewers were exposed to the video. Updated in real time for the first seven days after the post was created and then updated daily afterwards"
+        },
+        {
+          "name": "for_you",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from For You page."
+        },
+        {
+          "name": "hashtag",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from hashtag."
+        },
+        {
+          "name": "sound",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from sound."
+        },
+        {
+          "name": "personal_profile",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from personal profile."
+        },
+        {
+          "name": "search",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from search."
+        },
+        {
+          "name": "following",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from following."
+        },
+        {
+          "name": "other",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video views from other."
+        },
+        {
+          "name": "audience_genders_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Breakdown of male and female users among viewers. Updated daily"
+        },
+        {
+          "name": "gender",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Gender. Enum values: FEMALE : female. MALE : male. Note : This field might return null if the system cannot determine the gender."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_countries_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Distribution of video views by audience countries. Updated daily"
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Country or region code. Example: US ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_age_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Breakdown of viewers by age group. Updated daily"
+        },
+        {
+          "name": "age",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Age group. Enum values: 1 : 13-17. 2 : 18-24. 3 : 25-34. 4 : 35-44 5 : 45-54. 6 : 55+."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_device_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Breakdown of viewers by operating system. Updated daily"
+        },
+        {
+          "name": "device",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Device operating system. Enum values: android : Android. ios : iOS."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_locale_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Breakdown of viewers by state-level locales in the country or region. Only available for the US. Updated daily"
+        },
+        {
+          "name": "locale",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "State-level locale. For enum values, see Location IDs ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage. Total number of viewers in the state ( locale ) divided by the total number of viewers in the country or region."
+        },
+        {
+          "name": "audience_interest_distribution",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Breakdown of viewers by interest categories. Updated daily"
+        },
+        {
+          "name": "interest_tag",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the interest category. To learn about the corresponding interest category name for each interest category ID, see Mapping between interest category ID and name ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Percentage."
+        },
+        {
+          "name": "anchor_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the anchor that is associated with the campaign."
+        },
+        {
+          "name": "anchor_metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Anchor metrics."
+        },
+        {
+          "name": "anchor_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Anchor views. Total number of times the anchor has been viewed."
+        },
+        {
+          "name": "anchor_clicks",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Anchor clicks. Total number of clicks on the anchor."
+        },
+        {
+          "name": "anchor_unique_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Unique anchor views. The number of unique viewers who saw the anchor."
+        },
+        {
+          "name": "anchor_unique_clicks",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Unique anchor clicks. The number of times the anchor was clicked by distinct users."
+        },
+        {
+          "name": "daily_stats",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Daily statistics breakdown. **Note** : We won't fill in the missing metrics with any default value (such as 0), so if one metric is missing from one day, that means the data is not available."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date, in the format of YYYY-MM-DD (UTC+0 time)."
+        },
+        {
+          "name": "views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total views. Total number of times the video has been watched on the date."
+        },
+        {
+          "name": "video_views_organic",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Organic video views. Total number of views acquired through organic delivery, and not through Spark Ads on the date."
+        },
+        {
+          "name": "video_views_paid",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Paid views. Total number of views acquired through Spark Ads on the date."
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Reach (Unique viewers). Estimated number of unique users who viewed the video at least once on the date."
+        },
+        {
+          "name": "engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Engagement rate, calculated as the total number of likes ( likes ), shares ( shares ), and comments ( comments ) divided by the total number of views ( views ) on the date."
+        },
+        {
+          "name": "video_completion_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "double",
+          "description": "Video completion rate, calculated as total completed video views divided by the total number of views ( views ) on the date."
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Likes. Total number of likes associated with the video on the date."
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Comments. Total number of comments associated with the video on the date."
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Shares. Total number of shares associated with the video on the date."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"campaign_channel_type\": \"API_LITE_CAMPAIGN\",\n        \"campaign_id\": \"{{campaign_id}}\",\n        \"campaign_type\": \"CAMPAIGN\",\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 25,\n            \"total_number\": 1,\n            \"total_page\": 1\n        },\n        \"tto_tcm_account_id\": \"{{tto_tcm_account_id}}\",\n        \"videos\": [\n            {\n                \"ad_cost\": 0,\n                \"ad_cpa\": 0,\n                \"ad_ctr\": 0,\n                \"ad_cvr\": 0,\n                \"ad_impressions\": 0,\n                \"ad_roas\": 0,\n                \"anchor_id\": null,\n                \"anchor_metrics\": null,\n                \"audience_age_distribution\": [\n                    {\n                        \"age\": \"4\",\n                        \"percentage\": 0.625\n                    },\n                    {\n                        \"age\": \"3\",\n                        \"percentage\": 0.375\n                    }\n                ],\n                \"audience_countries_distribution\": [\n                    {\n                        \"country\": \"US\",\n                        \"percentage\": 0.7142857142857143\n                    },\n                    {\n                        \"country\": \"GB\",\n                        \"percentage\": 0.14285714285714285\n                    },\n                    {\n                        \"country\": \"SA\",\n                        \"percentage\": 0.14285714285714285\n                    }\n                ],\n                \"audience_device_distribution\": [\n                    {\n                        \"device\": \"ios\",\n                        \"percentage\": 1\n                    },\n                    {\n                        \"device\": \"android\",\n                        \"percentage\": 0\n                    }\n                ],\n                \"audience_genders_distribution\": [\n                    {\n                        \"gender\": \"MALE\",\n                        \"percentage\": 0.875\n                    },\n                    {\n                        \"gender\": \"FEMALE\",\n                        \"percentage\": 0.125\n                    }\n                ],\n                \"audience_interest_distribution\": [\n                    {\n                        \"interest_tag\": \"14\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"18\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"11\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"10\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"17\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"20\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"21\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"22\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"26\",\n                        \"percentage\": 0.047619047619047616\n                    },\n                    {\n                        \"interest_tag\": \"30\",\n                        \"percentage\": 0.047619047619047616\n                    }\n                ],\n                \"audience_locale_distribution\": null,\n                \"average_view_time\": 3.63,\n                \"comments\": 0,\n                \"comments_organic\": null,\n                \"comments_paid\": null,\n                \"creator_info\": {\n                    \"display_name\": \"{{display_name}}\",\n                    \"handle_name\": \"{{handle_name}}\"\n                },\n                \"daily_stats\": null,\n                \"engagement_count\": 0,\n                \"engagement_rate\": 0,\n                \"engagement_rate_organic\": null,\n                \"engagement_rate_paid\": null,\n                \"likes\": 0,\n                \"likes_organic\": null,\n                \"likes_paid\": null,\n                \"reach\": 6,\n                \"shares\": 0,\n                \"shares_organic\": null,\n                \"shares_paid\": null,\n                \"six_seconds_views\": 0.2222222222222222,\n                \"total_play_time\": 29,\n                \"two_seconds_views\": 0.6666666666666666,\n                \"video_completion_rate\": 0.5,\n                \"video_info\": {\n                    \"create_time\": \"{{create_time}}\",\n                    \"embed_url\": \"{{embed_url}}\",\n                    \"thumbnail_url\": \"{{thumbnail_url}}\",\n                    \"video_id\": \"{{video_id}}\"\n                },\n                \"video_view_retention\": [\n                    1,\n                    1,\n                    0.83,\n                    0.67,\n                    0.5\n                ],\n                \"video_views\": 6,\n                \"video_views_by_source\": [\n                    {\n                        \"source\": \"sound\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"hashtag\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"following\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"for_you\",\n                        \"video_views\": 0\n                    },\n                    {\n                        \"source\": \"search\",\n                        \"video_views\": 3\n                    },\n                    {\n                        \"source\": \"personal_profile\",\n                        \"video_views\": 3\n                    }\n                ],\n                \"video_views_organic\": 6,\n                \"video_views_paid\": null\n            }\n        ]\n    }\n}"

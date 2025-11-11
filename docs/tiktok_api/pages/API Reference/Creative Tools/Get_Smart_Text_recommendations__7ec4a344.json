@@ -79,6 +79,165 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For example, see Appendix - Return Codes ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For details, see Appendix-Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "generate_id Conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the generated text."
+        },
+        {
+          "name": "industry_id Conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the industry that has been specified or estimated."
+        },
+        {
+          "name": "language Conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The language that has been specified or estimated. Enum values: EN , JA , RU , VI ."
+        },
+        {
+          "name": "texts Conditional",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The text that is automatically generated."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The request log ID"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [
+      {
+        "title": "https://business-api.tiktok.com/open_api/v1.3/creative/smart_text/feedback/",
+        "fields": [
+          {
+            "name": "Access-Token",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Authorized access token. For details, see Authentication ."
+          }
+        ]
+      },
+      {
+        "title": "Authorized access token. For details, see Authentication .",
+        "fields": [
+          {
+            "name": "advertiser_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Advertiser ID"
+          },
+          {
+            "name": "adgroup_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Ad group ID"
+          },
+          {
+            "name": "generated_text_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The ID of the generated text."
+          },
+          {
+            "name": "selected_titles",
+            "required": false,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "The text that is used in ads. It can be blank if no text is selected."
+          },
+          {
+            "name": "generated_title",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The text generated from /creative/smart_text/generate/"
+          },
+          {
+            "name": "final_title",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The final title caption used in your ad. If you used the generated text from creative/smart_text/generate/ , then please enter the same text as in generated_title"
+          }
+        ]
+      },
+      {
+        "title": "Response",
+        "fields": [
+          {
+            "name": "message",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The response message. For example, see Appendix - Return Codes ."
+          },
+          {
+            "name": "code",
+            "required": false,
+            "type": "number",
+            "raw_type": "number",
+            "description": "The response code. For details, see Appendix-Return Codes ."
+          },
+          {
+            "name": "data",
+            "required": false,
+            "type": "object",
+            "raw_type": "object",
+            "description": "The returned data."
+          },
+          {
+            "name": "request_id",
+            "required": false,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The request log ID"
+          }
+        ]
+      }
+    ],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

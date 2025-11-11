@@ -82,6 +82,142 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "videos",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the mentioned posts."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the post. Example: 6995316737801538821 ."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unix/epoch date-time when the post was posted, in UTC timezone. Example: 1628461703 ."
+        },
+        {
+          "name": "video_link",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The generic URL of the post, in the format of https://www.tiktok.com/@/video/{item_id} . Example: https://www.tiktok.com/@/video/7231234123412341234 ."
+        },
+        {
+          "name": "caption",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Post description. Example: Nuki: me and me casa 🏠 #cat #kitten #britishshorthair ."
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of likes on the post. Example: 243."
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of comments on the post. Example: 10."
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of times the post has been shared. Example: 10."
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the post thumbnail. Validity period: 48 hours. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: https://p16-sign-sg.tiktokcdn.com/tos-maliva-p-0068/1f9a445423844b82bd79317b42b9953f~c5_300x400.webp?x-expires=1614034800&x-signature=qChosOGafzBcTctPm9zYiF8Y2MA%3D . Note : For TikTok photo posts, the value of this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "creator_handle_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle name of the creator who published the post."
+        },
+        {
+          "name": "views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of views the post has received. Note : If the number of views the post has received is less than 1,000, the value of this field will be null."
+        },
+        {
+          "name": "reach",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of unique viewers who viewed the post. Note : If the number of unique viewers who viewed the post is less than 1,000, the value of this field will be null."
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Cursor for the next page of results, to be passed in the cursor query parameter of the subsequent API request."
+        },
+        {
+          "name": "has_more",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether an additional page of data is available."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"has_more\": false,\n        \"cursor\": 100,\n        \"videos\": [\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"likes\": 50,\n                \"item_id\": \"{{item_id}}\",\n                \"create_time\": \"1689481495\",\n                \"shares\": 253,\n                \"comments\": 101,\n                \"caption\": \"{{caption}}\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"views\": 2000,\n                \"reach\": 2000,\n                \"creator_handle_name\": \"{{creator_handle_name}}\"\n            },\n            {\n                \"video_link\": \"{{video_link}}\",\n                \"likes\": 100,\n                \"item_id\": \"{{item_id}}\",\n                \"create_time\": \"1689481495\",\n                \"shares\": 53,\n                \"comments\": 151,\n                \"caption\": \"{{caption}}\",\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"views\": null,\n                \"reach\": null,\n                \"creator_handle_name\": \"{{creator_handle_name}}\"\n            }\n        ]\n    }\n}"

@@ -61,6 +61,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "campaign_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of modified campaign ids"
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The operation that was executed, optional values include: DELETE , DISABLE , ENABLE"
+        },
+        {
+          "name": "campaign_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the list of specified campaigns."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign ID."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The current status of the campaign ( campaign_id ). Enum values: DELETE (deleted), DISABLE (paused), ENABLE (enabled)."
+        },
+        {
+          "name": "postback_window_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The mode that determines which SKAN 4.0 postback you want to secure. Enum values: POSTBACK_WINDOW_MODE1 : This option secures the first postback, which corresponds to the 0-2 day attribution window. The data can take up to 4 days to return, and the campaign will wait for 4 days to release the campaign quota. POSTBACK_WINDOW_MODE2 : This mode secures the first two postbacks, which correspond to the 3-7 day attribution window. The data can take up to 13 days to return, and the campaign will wait for 13 days to release the campaign quota. POSTBACK_WINDOW_MODE3 : This mode secures all three postbacks, which correspond to the 8-35 day attribution window. The data can take up to 41 days to return, and the campaign will wait for 41 days to release the campaign quota."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

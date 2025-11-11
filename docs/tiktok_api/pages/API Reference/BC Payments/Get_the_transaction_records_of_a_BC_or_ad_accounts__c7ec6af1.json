@@ -118,6 +118,212 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "transaction_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of transaction records."
+        },
+        {
+          "name": "transaction_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Transaction ID, the unique identifier of the translation."
+        },
+        {
+          "name": "payment_portfolio_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the Payment Portfolio associated with the transaction. This field returns a non-null value only when transaction_level is PAYMENT_PORTFOLIO . Note : To manage the budget of a Payment Portfolio, use advertiser_budgets in /advertiser/update/ . The default budget_mode within advertiser_budgets will be CUSTOM ."
+        },
+        {
+          "name": "payment_portfolio_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the Payment Portfolio associated with the transaction. This field returns a non-null value only when transaction_level is PAYMENT_PORTFOLIO ."
+        },
+        {
+          "name": "account_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the ad account associated with the transaction. When transaction_level is set to BC in the request, the value of this field will be null."
+        },
+        {
+          "name": "account_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the ad account associated with the transaction. When transaction_level is set to BC in the request, the value of this field will be null."
+        },
+        {
+          "name": "bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center ID."
+        },
+        {
+          "name": "bc_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center name."
+        },
+        {
+          "name": "amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total amount of the transaction, which includes the subtotal and tax amount. For example, if the amount excluding tax is 50 USD and the tax is 5 USD, the total amount will be 55 USD. Example: 55."
+        },
+        {
+          "name": "subtotal",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The subtotal amount (the amount excluding taxes) of the transaction. Example: 50."
+        },
+        {
+          "name": "tax_amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The amount of tax included in the transaction. Example: 5."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The currency code in which the amounts ( amount , subtotal , and tax_amount ) are calculated. Example: USD ."
+        },
+        {
+          "name": "amount_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Amount type. Enum values: POSITIVE : This type represents that a positive amount is associated with the transaction, such as a balance addition. NEGATIVE : This type represents that a negative amount is associated with the transaction, such as an order creation payment. OTHER : This type represents that neither a positive amount nor a negative amount is associated with the transaction, such as a card verification refund."
+        },
+        {
+          "name": "transaction_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Transaction type. BILL_PAYMENT : Bill payment. ADD_BALANCE : Add balance. CANCELLATION : Cancellation. PROMOTION_ISSUED : Issued promotion, which indicates the issuance of ad credit. PROMOTION_EXPIRED : Expired promotion, which indicates the expiration of ad credit. INCREASE_BALANCE : Increase of balance. DECREASE_BALANCE : Decrease of balance. CARD_VERIFICATION : Card verification. CARD_VERIFICATION_REFUND : Card verification refund. ORDER_CREATION_PAYMENT : Order creation payment. ORDER_EDIT_PAYMENT : Order edit payment. RETURN_OF_REMAINING_BUDGET : Return of remaining budget. REFUND : Refund."
+        },
+        {
+          "name": "billing_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billing type. Enum values: CASH : cash. CREDIT : ad credit."
+        },
+        {
+          "name": "timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time zone where the transaction occurred, in the format of UTC±HH:MM . Example: \"UTC+07:00\" ."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the transaction record was generated, in the format of \"YYYY-MM-DD HH:MM:SS\" . Example: 2024-01-01 00:00:01"
+        },
+        {
+          "name": "invoice_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Invoice ID. To download the invoice synchronously, pass the invoice ID to /bc/invoice/download/ . To download the invoice asynchronously, pass the invoice ID to /bc/invoice/task/create/ ."
+        },
+        {
+          "name": "serial_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Invoice serial number."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"transaction_list\": [\n            {\n                \"transaction_id\": \"{{transaction_id}}\",\n                \"subtotal\": 280000,\n                \"amount_type\": \"NEGATIVE\",\n                \"billing_type\": \"CASH\",\n                \"serial_number\": \"\",\n                \"bc_name\": \"{{bc_name}}\",\n                \"tax_amount\": 0,\n                \"amount\": 280000,\n                \"transaction_type\": \"DECREASE_BALANCE\",\n                \"invoice_id\": \"\",\n                \"create_time\": \"{{create_time}}\",\n                \"account_name\": null,\n                \"bc_id\": \"{{bc_id}}\",\n                \"timezone\": \"UTC+07:00\",\n                \"currency\": \"VND\",\n                \"account_id\": null\n            },\n            {\n                \"transaction_id\": \"{{transaction_id}}\",\n                \"subtotal\": 280000,\n                \"amount_type\": \"POSITIVE\",\n                \"billing_type\": \"CASH\",\n                \"serial_number\": \"{{serial_number}}\",\n                \"bc_name\": \"Phụ kiện oto VIP\",\n                \"tax_amount\": 30249,\n                \"amount\": 310249,\n                \"transaction_type\": \"ADD_BALANCE\",\n                \"invoice_id\": \"{{invoice_id}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"account_name\": null,\n                \"bc_id\": \"{{bc_id}}\",\n                \"timezone\": \"UTC+07:00\",\n                \"currency\": \"VND\",\n                \"account_id\": null\n            }\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"total_page\": 1,\n            \"page_size\": 50,\n            \"page\": 1\n        }\n    }\n}"

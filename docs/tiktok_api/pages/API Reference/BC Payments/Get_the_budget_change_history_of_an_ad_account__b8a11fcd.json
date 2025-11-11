@@ -75,6 +75,149 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "changelog_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The budget change history details."
+        },
+        {
+          "name": "operation_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the budget change occurred, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "activity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Change type. Enum values: RESET : Reset the one-time budget consumption of the ad account to 0. BUDGET_MODE_UPDATE : Change the budget mode to monthly, daily, or one-time. INCREASE_BUDGET : Increase budget without changing budget mode. DECREASE_BUDGET : Decrease budget without changing budget mode. REMOVE_BUDGET : Change the budget mode to unlimited."
+        },
+        {
+          "name": "previous_budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The previous budget amount of the ad account before the change, kept to two decimal places."
+        },
+        {
+          "name": "previous_budget_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The previous budget mode of the ad account. Enum values: UNLIMITED : Unlimited budget. No budget limit for the ad account. MONTHLY_BUDGET : Monthly budget. The ad account consumes Business Center credit line within the monthly budget. DAILY_BUDGET : Daily budget. The ad account consumes Business Center credit line within the daily budget. CUSTOM_BUDGET : One-time budget (custom budget). The ad account consumes Business Center credit line within the one-time custom budget."
+        },
+        {
+          "name": "current_budget",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "The current budget amount of the ad account after the change, kept to two decimal places."
+        },
+        {
+          "name": "current_budget_mode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The current budget mode of the ad account. Enum values: UNLIMITED : Unlimited budget. No budget limit for the ad account. MONTHLY_BUDGET : Monthly budget. The ad account consumes Business Center credit line within the monthly budget. DAILY_BUDGET : Daily budget. The ad account consumes Business Center credit line within the daily budget. CUSTOM_BUDGET : One-time budget (custom budget). The ad account consumes Business Center credit line within the one-time custom budget."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The currency for the current budget, in ISO 4217 code format. Example: EUR ."
+        },
+        {
+          "name": "operator_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The user ID of the operator."
+        },
+        {
+          "name": "operator_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The user name of the operator."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total number of pages."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"changelog_list\": [\n            {\n                \"activity_type\": \"BUDGET_MODE_UPDATE\",\n                \"currency\": \"USD\",\n                \"current_budget\": \"{{current_budget}}\",\n                \"current_budget_mode\": \"DAILY_BUDGET\",\n                \"operation_time\": \"{{operation_time}}\",\n                \"operator_id\": \"{{operator_id}}\",\n                \"operator_name\": \"{{operator_name}}\",\n                \"previous_budget_mode\": \"UNLIMITED\"\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 10,\n            \"total_number\": 1,\n            \"total_page\": 1\n        }\n    }\n}"

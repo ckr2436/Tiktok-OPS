@@ -152,6 +152,184 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message, see Appendix-Return information ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "musics",
+          "required": false,
+          "type": "string",
+          "raw_type": "list",
+          "description": "Music data."
+        },
+        {
+          "name": "music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music ID."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID."
+        },
+        {
+          "name": "sources",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Music source. USER means the adveritser's uploaded music, and SYSTEM means the system music."
+        },
+        {
+          "name": "author",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only for music that can be used in Carousel Ads. Author of the piece of music."
+        },
+        {
+          "name": "liked",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Returned only for music that can be used in Carousel Ads. Whether the piece of music is added to the Liked list."
+        },
+        {
+          "name": "cover_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only for music that can be used in Carousel Ads. URL of the cover for the piece of music."
+        },
+        {
+          "name": "url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music link. Effective duration: 12h."
+        },
+        {
+          "name": "duration",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Video Duration (Seconds). Only returned for system music."
+        },
+        {
+          "name": "style",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music style. Only returned for system music."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music file MD5."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "File Name."
+        },
+        {
+          "name": "copyright",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Copyright information. Enum values: MUSIC_FORBID_VIDEO_ALLOW : Music is not allowed to download, but the generated video is allowed to download. MUSIC_FORBID_VIDEO_FORBID : Both music and the generated video are not allowed to download."
+        },
+        {
+          "name": "create_time conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creation time. Only returned for advertiser's music. UTC Time. Format: 2020-06-10 T07: 39: 14Z."
+        },
+        {
+          "name": "modify_time conditional",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modified time. Only returned for advertiser's music. Custom Soundtracks return this field, system music does not return this field. UTC Time. Format: 2020-06-10 T07: 39: 14Z."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"message\": \"OK\",\n    \"code\": 0,\n    \"data\": {\n        \"page_info\": {\n            \"total_number\": 1,\n            \"page\": 1,\n            \"page_size\": 1000,\n            \"total_page\": 1\n        },\n        \"musics\": [\n            {\n                \"style\": \"Teen\",\n                \"name\": \"Her World\",\n                \"copyright\": \"MUSIC_FORBID_VIDEO_ALLOW\",\n                \"url\": \"http://sf-tk-sg.ibytedtos.com/obj/cc-music-sg/6650280667860962050\",\n                \"file_name\": \"Her World\",\n                \"music_id\": \"6707429901383565318\",\n                \"material_id\": \"6707429901383565318\",\n                \"sources\": [\n                    \"SYSTEM\"\n                ],\n                \"signature\": \"bdb2ff10fb44bb38151c98bfee94de89\",\n                \"duration\": 127.5,\n            }\n        ]\n    },\n    \"request_id\": \"2020120606494801011517615607983119\"\n}"

@@ -35,6 +35,387 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For example, see Appendix-Return information ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For details, see Appendix-Return Code ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "creative_portfolio_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creative portfolio ID."
+        },
+        {
+          "name": "creative_portfolio_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creative portfolio type. Enum values: CTA : call-to-action text. CARD : card (Display Card). WEB_INFO_CARD : Website info card. DOWNLOAD_CARD : Download Card. INVENTORY_CARD : Inventory Card. PRODUCT_CARD : Product Card. PRODUCT_TILE : Product Tiles. STICKER : Countdown Sticker or Gift Code Sticker. PREMIUM_BADGE : Pop-up Showcase. GESTURE : Gesture. SUPER_LIKE : Superlike. A Superlike engages the audience with a surprise visual element after they like a video ad. With Superlke, heart-shaped and customized icons float across the screen when the audience likes or double-taps on the ads. Note : Website info cards can only be used for auction ads with the objective_type as WEB_CONVERSIONS or TRAFFIC (with promotion_type set to WEBSITE ). You can only use the Inventory Card portfolio in Automotive Ads for Inventory . Product Cards can only be used in Video Shopping Ads. Product Tiles can only be used in Video Shopping Ads with product source as catalog. Using a Product Tiles portfolio to create ads is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative. Countdown Sticker can only be used for auction ads with the advertising objective ( objective_type ) as Reach ( REACH ), Traffic ( TRAFFIC ), Video views( VIDEO_VIEW ), App promotion ( APP_PROMOTION ), Lead generation( LEAD_GENERATION ), Website conversions ( WEB_CONVERSIONS ), or Product sales ( PRODUCT_SALES ), as well as for R&F ( RF_REACH ) ads. Reminder Countdown Sticker ( sticker_type as REMINDER_COUNTDOWN or LIVE_REMINDER_COUNTDOWN ) is an allowlist-only feature for Traffic ( TRAFFIC ), App promotion ( APP_PROMOTION ), Website conversions ( WEB_CONVERSIONS ) ads. If you would like to access it for ads with these objectives, please contact your TikTok representative. Gift Code Sticker can only be used for auction ads with the advertising objective ( objective_type ) as Reach ( REACH ), Traffic ( TRAFFIC ), Video views( VIDEO_VIEW ), App promotion ( APP_PROMOTION ), Lead generation( LEAD_GENERATION ), Website conversions ( WEB_CONVERSIONS ), or Product sales ( PRODUCT_SALES ), as well as for R&F ads with the advertising objective( objective_type ) as Reach ( RF_REACH ). Gestures can only be used for auction ads with the objective_type (advertising objective) as REACH , TRAFFIC , VIDEO_VIEWS (with optimization_goal as ENGAGED_VIEW ), APP_PROMOTION , WEB_CONVERSIONS , as well as for R&F ads with the advertising objective ( objective_type ) as Reach ( RF_REACH ). Using Gesture portfolios in campaigns with the advertising objective APP_PROMOTION , TRAFFIC , or WEB_CONVERSIONS are currently separate allowlist-only features. If you would like to access them, please contact your TikTok representative. Superlikes can only be used for auction ads with the objective_type (advertising objective) as REACH , TRAFFIC , VIDEO_VIEWS (with optimization_goal as ENGAGED_VIEW ), ENGAGEMENT (with optimization_goal as PAGE_VISIT ), APP_PROMOTION , WEB_CONVERSIONS , as well as for R&F ads with the advertising objective ( objective_type ) as Reach ( RF_REACH ). Using Superlike portfolios in campaigns with the advertising objective APP_PROMOTION or TRAFFIC are currently separate allowlist-only features. If you would like to access them, please contact your TikTok representative."
+        },
+        {
+          "name": "portfolio_content",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The content of the creative portfolio."
+        },
+        {
+          "name": "asset_content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A call-to-action text. For example, \"Learn More\" ."
+        },
+        {
+          "name": "asset_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A list of CTAs. For example, [201781, 201535] ."
+        },
+        {
+          "name": "card_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Card type. Enum value: IMAGE (Display Card)."
+        },
+        {
+          "name": "gesture_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when creative_portfolio_type is GESTURE . Gesture type. Enum values: CLICK : Click Gesture. STRAIGHT_SLIDE : Straight Slide Gesture. CURVED_SLIDE : Curved Slide Gesture."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when creative_portfolio_type is CARD , WEB_INFO_CARD , INVENTORY_CARD , or SUPER_LIKE . Image ID."
+        },
+        {
+          "name": "pop_up_window_image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned in any of the following scenarios: creative_portfolio_type is GESTURE . creative_portfolio_type is SUPER_LIKE and a pop_up_window_image_id is specified during portfolio creation.. The gesture pop-up card in the Gesture or the ID of the pop-up window image in the Superlike. When creative_portfolio_type is GESTURE , this field represents the gesture pop-up card that will appear after the viewer follows the gesture. When creative_portfolio_type is SUPER_LIKE , this field represents the pop-up window that will appear after the Superlike finishes floating across the screen and will take the audience to the ad landing page when they click on it."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when creative_portfolio_type is WEB_INFO_CARD . The title of the card."
+        },
+        {
+          "name": "selling_points",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when creative_portfolio_type is WEB_INFO_CARD . The reasons why your products are worth buying."
+        },
+        {
+          "name": "content_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when creative_portfolio_type is WEB_INFO_CARD . The website URL of your landing page. Note : Specifying the content_url in a website info card via API is currently not supported. You can only retrieve the content_url of website info cards created via the TikTok Ads Manager. For website info cards created via API, the value of this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "thumbnail_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when creative_portfolio_type is DOWNLOAD_CARD , PRODUCT_CARD , PRODUCT_TILE , or PREMIUM_BADGE . Thumbnail ID."
+        },
+        {
+          "name": "call_to_action_text",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when creative_portfolio_type is GESTURE or PREMIUM_BADGE . Interactive guide text for the Gesture or Pop-out Showcase."
+        },
+        {
+          "name": "badge_show_time",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Returned when creative_portfolio_type is GESTURE or PREMIUM_BADGE . The time when the Gesture icon within the Gesture or the Premium Badge within the Pop-out Showcase will appear in your video, in seconds."
+        },
+        {
+          "name": "badge_position",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned when creative_portfolio_type is GESTURE or PREMIUM_BADGE . Information about the position of the Gesture icon within a Gesture or the Premium Badge within a Pop-out Showcase."
+        },
+        {
+          "name": "position_x",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Relative X-axis value of the top-left corner of the Gesture icon within a Gesture or the Premium Badge within a Pop-out Showcase."
+        },
+        {
+          "name": "position_y",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Relative Y-axis value of the top-left corner of the Gesture icon within a Gesture or the Premium Badge within a Pop-out Showcase."
+        },
+        {
+          "name": "angle",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned when badge_position is specified and any of the following conditions is met: creative_portfolio_type is GESTURE and gesture_type is STRAIGHT_SLIDE or CURVED_SLIDE . creative_portfolio_type is PREMIUM_BADGE . The angle of the Straight Slide Gesture or Curved Slide Gesture icon within a Gesture or the Premium Badge within a Pop-out Showcase."
+        },
+        {
+          "name": "badge_image_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned when creative_portfolio_type is PREMIUM_BADGE . Information about the badge image in the Pop-out Showcase."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the badge image in the Pop-out Showcase."
+        },
+        {
+          "name": "slide_length",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Returned when creative_portfolio_type is GESTURE and gesture_type is STRAIGHT_SLIDE . The length of the Straight Slide Gesture."
+        },
+        {
+          "name": "slide_dimension",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Returned when creative_portfolio_type is GESTURE and gesture_type is CURVED_SLIDE . The dimensions of the Curved Slide Gesture."
+        },
+        {
+          "name": "dimension_width",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The width of the Curved Slide Gesture."
+        },
+        {
+          "name": "dimension_height",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The height of the Curved Slide Gesture."
+        },
+        {
+          "name": "interactive_music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when creative_portfolio_type is GESTURE . The URL of the background music for the Gesture."
+        },
+        {
+          "name": "layouts",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned when creative_portfolio_type = DOWNLOAD_CARD . The layout type of the Download Card. Enum values: TYPE_1 : Type 1, showing app description in the Download Card. TYPE_2 : Type 2, not showing app description in the Download Card. When both TYPE_1 and TYPE_2 have been passed in this field, one Type 1 Download card and one Type 2 Download card will be created ."
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned in any of the following scenarios: creative_portfolio_type is DOWNLOAD_CARD and the value of layouts includes TYPE_1 . creative_portfolio_type is INVENTORY_CARD . Description of the app that you want to promote in the Download Card or text of the Inventory Card."
+        },
+        {
+          "name": "tags",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned when creative_portfolio_type = DOWNLOAD_CARD . Tags for the Download Card. Enum values: CATEGORIES ：Showing the category of the app you want to promote in the Download Card. FILESIZE ：Showing the file size of the app you want to promote in the Download Card. RATING ：Showing the rating of the app you want to promote in the Download Card. RANKING ：Showing the ranking of the app you want to promote in the Download Card. COMMENT_VOLUME ：Showing the number of comments for the app you want to promote in the Download Card."
+        },
+        {
+          "name": "category_label",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when creative_portfolio_type = DOWNLOAD_CARD and category_label is specified during card creation. Category name of the app you want to promote in the Download Card."
+        },
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned when creative_portfolio_type = DOWNLOAD_CARD . ID of the app that you want to promote in the Download Card. It's the App ID from Events Manager."
+        },
+        {
+          "name": "sticker_param",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Details of the Countdown Sticker or Gift Code Sticker you want to create. You can see an example of Countdown Sticker in Countdown Sticker and an example of Gift Code Sticker in Gift Code Sticker . Returned only when creative_portfolio_type = STICKER . Note : You can only create one Countdown Sticker or Gift Code Sticker at a time."
+        },
+        {
+          "name": "sticker_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Sticker type. Enum values: COUNTDOWN : A Countdown Sticker with no reminder. REMINDER_COUNTDOWN : A Countdown Sticker with reminder for a non-LIVE event. LIVE_REMINDER_COUNTDOWN : A Countdown Sticker with reminder for a LIVE event. GIFTCODE : A Gift Code Sticker that aims to gain new customers and engage existing customers by providing virtual gifts or coupon redemption codes."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Sticker title. For a Countdown Sticker, the maximum length is 54, in UTF-8 bytes, and the hashtag symbol (#) is not supported. For a Gift Code Sticker, the maximum length is 20 in UTF-8 bytes."
+        },
+        {
+          "name": "giftcode",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Gift code. This field is only applicable for Gift Code Stickers. The maximum length is 10 in UTF-8 bytes (10 letters and numbers)."
+        },
+        {
+          "name": "cutoff_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Countdown deadline (when sticker_type = COUNTDOWN or REMINDER_COUNTDOWN ) or LIVE start time (when sticker_type = LIVE_REMINDER_COUNTDOWN ) for the Countdown Sticker, in the format of \"2022-10-30 00:00:00\" (UTC+0 Time). Note : The time your pass in via this field is regarded as UTC+0 time by default and you cannot modify the default time zone."
+        },
+        {
+          "name": "color",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Background color of the sticker. For a Countdown Sticker, the supported enum values are ORANGE (orange), BLACK (black), RED (red), and BLUE (blue). For a Giftcode Sticker created through the API, only BLACK and BLUE will be returned. However, ORANGE and RED may be returned for a Gift Code Sticker created on TTAM when orange and red were supported for Gift Code Stickers."
+        },
+        {
+          "name": "display_angle",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Sticker display angle. Value range: [-180, +180] . +90 means to rotate the sticker clockwise by 90 degrees. Note : This field is not returned for a Gift Code Sticker created through the API. However, it may be returned for a Gift Code Sticker created on TTAM when the display_angle setting was supported for Gift Code Stickers."
+        },
+        {
+          "name": "predefined_placement",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If the portfolio is a Gift Code Sticker and the predefined placement of the sticker corresponds to an enum value in Predefined placements , this field returns x-axis and y-axis coordinates. If the portfolio is a Countdown Sticker and the predefined placement of the sticker corresponds to an enum value in Predefined placements , this field returns x-axis and y-axis coordinates, and size. For example: If the x-axis coordinate, y-axis coordinate and size of the Countdown Sticker are 196, 148, and 0.8, respectively, which corresponds to the enum value 196x148x0.8 in Predefined placements , this field will be returned as 196x148x0.8 . Note : If the sticker does not correspond to any enum value in Predefined placements , this field returns null ."
+        },
+        {
+          "name": "position_x",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The x-axis coordinate relative to the top-left corner of the screen."
+        },
+        {
+          "name": "position_y",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The y-axis coordinate relative to the top-left corner of the screen."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Sticker size by percentage. Enum values: 0.6 (60%), 0.7 (70%), 0.8 (80%), 0.9 (90%), 1 (100%), 1.1 (110%). Note : This field is not returned for a Gift Code Sticker created through the API. However, it may be returned for a Gift Code Sticker created on TTAM when the size setting was supported for Gift Code Stickers."
+        },
+        {
+          "name": "opacity",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Sticker opacity. Enum values: 0.7 , 0.8 , 0.9 , 1 . The lower the value, the more transparent the sticker will be. Note : This field is not returned for a Gift Code Sticker created through the API. However, it may be returned for a Gift Code Sticker created on TTAM when the opacity setting was supported for Gift Code Stickers."
+        },
+        {
+          "name": "reminder_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time set for the reminder. Returns value when sticker_type = REMINDER_COUNTDOWN or LIVE_REMINDER_COUNTDOWN . For non-LIVE stickers (when sticker_type = REMINDER_COUNTDOWN ), the enum values are: ONE_MINUTE_EARLIER : send the reminder one minute before the non-LIVE event. ONE_HOUR_EARLIER : send the reminder one hour before the non-LIVE event. ONE_DAY_EARLIER : send the reminder one day before the non-LIVE event. For LIVE stickers (when sticker_type = LIVE_REMINDER_COUNTDOWN ), the enum values are: ONE_MINUTE_AFTER : send the reminder one minute after the LIVE event starts. FIVE_MINUTES_AFTER : send the reminder five minutes after the LIVE event starts. TEN_MINUTES_AFTER : send the reminder ten minutes after the LIVE event starts."
+        },
+        {
+          "name": "landing_page_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The landing page URL you will be redirected to when you click the reminder after the countdown for an non-LIVE event ends. Returns value when sticker_type is REMINDER_COUNTDOWN ."
+        },
+        {
+          "name": "live_tiktok_user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok user ID of the LIVE event host. After specifying this field, you will be redirected to the host's LIVE room when you click the reminder for a LIVE event. Returns value when sticker_type is LIVE_REMINDER_COUNTDOWN ."
+        },
+        {
+          "name": "card_show_price",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether to show the price of products on the Product Card or not."
+        },
+        {
+          "name": "card_tags",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The product tags that are shown on the Product Card. Enum values: BRAND (Brand Name), DESC (Description)."
+        },
+        {
+          "name": "card_image_index",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Used to specify the image used in the Product Card or Product Tiles. The number set via this field is used as index to query the Image URLs you have passed through additional_image_urls in /catalog/product/upload/ . For instance, card_image_index = 1 means that you will use the image via the second image URL in additional_image_urls ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Request log ID"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

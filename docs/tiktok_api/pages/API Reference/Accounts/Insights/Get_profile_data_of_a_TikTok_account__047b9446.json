@@ -55,6 +55,484 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "Date",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Date and time (GMT) when the response was received. Example : Fri, 13 Aug 2021 08:04:42 GMT"
+      },
+      {
+        "name": "X-Tt-Logid",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique identifier for the API request."
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": [
+          {
+            "name": "request_id",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Unique identifier for the API request. Note : Please record this field for all API requests. Important for issue reports and troubleshooting."
+          },
+          {
+            "name": "code",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+          },
+          {
+            "name": "message",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Response message. For details, see Appendix - Return Codes ."
+          },
+          {
+            "name": "data",
+            "required": true,
+            "type": "object",
+            "raw_type": "object",
+            "description": "Return data"
+          },
+          {
+            "name": "is_business_account",
+            "required": true,
+            "type": "boolean",
+            "raw_type": "boolean",
+            "description": "Whether the TikTok account ( business_id ) is a TikTok Business Account. Enum values: true : The TikTok account is a TikTok Business Account. false : The TikTok account is a TikTok Personal Account."
+          },
+          {
+            "name": "profile_image",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Temporary URL for profile photo of the TikTok account. Expiration date-time included in x-expires query param as Epoch/Unix time in seconds. Example : https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/75dec21d63500917fb6ec8bc59415156~c5_300x300.jpeg?x-expires=1614099600&x-signature=PmK%2BWs3LzSzRL2tYs%2FZx7EjG3Gk%3D Updated in : Real-time"
+          },
+          {
+            "name": "username",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The username (handle) of the TikTok account. Example : la_flama_blanca Updated in : Real-time"
+          },
+          {
+            "name": "profile_deep_link",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The link to the profile page of the TikTok account. Example : https://vm.tiktok.com/ABcdEfghi/ Updated in : Real-time"
+          },
+          {
+            "name": "display_name",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The display name (nickname) for the TikTok account. Example : La Flama Blanca Updated in : Real-time"
+          },
+          {
+            "name": "bio_description",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The bio description of the TikTok account. Updated in : Real-time Note : If you have not set a bio for the TikTok account, the value of this field will be an empty string ( \"\" )."
+          },
+          {
+            "name": "is_verified",
+            "required": true,
+            "type": "boolean",
+            "raw_type": "boolean",
+            "description": "Whether TikTok has provided a verified badge to the TikTok account after confirming that it belongs to the user it represents. Supported values: true , false . Example : true Updated in : Real-time"
+          },
+          {
+            "name": "following_count",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "The lifetime number of accounts that the TikTok account is following. Example : 2 Updated in : Real-time"
+          },
+          {
+            "name": "followers_count",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "The total number of followers for the TikTok account. Example : 123 Updated in : Real-time"
+          },
+          {
+            "name": "total_likes",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Total likes. The total number of times people have liked your published videos. Example : 6 Updated in : Real-time"
+          },
+          {
+            "name": "videos_count",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "The lifetime number of public videos posted by the TikTok account. Example : 6 Updated in : Real-time"
+          },
+          {
+            "name": "metrics",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "All requested daily metrics. Note : Metrics data will only be returned for dates after the TikTok Account was created. There can be up to a 24-48 hour delay in metrics availability."
+          },
+          {
+            "name": "date",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The date for this set of daily metrics - in YYYY-MM-DD format - in UTC time zone. Example : 2021-08-12 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "video_views",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily video views. The daily number of times your videos have been viewed. Note : Counts when playback duration >0 and the playback is the first playback in an impression session. If the user swipes away from the ad then swipes back, it would be counted as 2 impressions. Therefore, a new video view will be counted again with the new impression session. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "unique_video_views",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily reached audience. The daily number of people who watched your published content at least once. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Business Accounts."
+          },
+          {
+            "name": "profile_views",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily profile views. The daily number of clicks on your profile from users. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "likes",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily likes. The daily number of times people have liked your published videos. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The likes count displayed in this field does not subtract unlikes (likes that are removed or withdrawn later). There may be a discrepancy between this value and the likes displayed on the Business Suite > Analytics page for Business Accounts. For example, if a post receives 30 likes and 10 unlikes: This field will show 30 likes. The Analytics page for Business Accounts will show 20 likes (30 likes - 10 unlikes)."
+          },
+          {
+            "name": "comments",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily comments. The daily number of times people have commented on your published videos. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "shares",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily shares. The daily number of times people have shared your published videos. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "phone_number_clicks",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily phone number clicks. The daily number of clicks collected on your phone number link in the selected date range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "lead_submissions",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily lead submissions. The daily number of leads (e.g. price quotes, newsletter subscriptions, etc.) collected from your consumers in the selected date range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "app_download_clicks",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily app download link clicks. The daily number of clicks collected on your app download link in the selected date range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "bio_link_clicks",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily bio link clicks. The daily number of clicks collected on your link-in-bio during the selected time range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "email_clicks",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily email clicks.. The daily number of clicks collected on the Email button on your profile during the selected time range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "address_clicks",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily address clicks. The daily number of clicks collected on the Address button on your profile during the selected time range. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Registered Business Accounts ."
+          },
+          {
+            "name": "daily_total_followers",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily net growth. The daily change in the number of followers. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Business Accounts"
+          },
+          {
+            "name": "daily_new_followers",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily new followers. The daily number of new followers you have gained. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Business Accounts"
+          },
+          {
+            "name": "daily_lost_followers",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily lost followers. The daily number of followers you have lost. Data source : Business Analytics. Example : 123 Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for Business Accounts"
+          },
+          {
+            "name": "followers_count",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "The total number of people who are following your account on the date. Data source : TikTok Studio. Example : 123 Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "audience_activity",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Hourly follower activity. The hourly breakdown of followers active on TikTok during the day in UTC+0 time zone. Note : The data for this metric is only available for Business Accounts with at least 100 followers. Data source : TikTok Studio. Example : [{\"hour\": \"0\", \"count\": 12}, {\"hour\": \"1\", \"count\": 18}, {\"hour\": \"2\", \"count\": 23}, {\"hour\": \"3\", \"count\": 28}, ...] Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "hour",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "The specific hour in the day."
+          },
+          {
+            "name": "count",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "The number of followers active on TikTok during the hour."
+          },
+          {
+            "name": "engaged_audience",
+            "required": true,
+            "type": "integer",
+            "raw_type": "integer",
+            "description": "Daily engaged audience. The daily number of people who engaged (liked, commented or shared) with at least one of your published content. Data source : Business Analytics. Note : The data for this metric is only available for Business Accounts."
+          },
+          {
+            "name": "audience_ages",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Follower age. The distribution of your followers by age. This demographic data is based on a number of factors, including information users provide in their profiles.. Updated in : T + 24-48 hrs (UTC time) Data source : TikTok Studio Note : The data for this metric is only available for TikTok accounts with at least 100 followers."
+          },
+          {
+            "name": "age",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Age group. Enum values: 18-24 , 25-34 , 35-44 , 45-54 , 55+ ."
+          },
+          {
+            "name": "percentage",
+            "required": true,
+            "type": "number",
+            "raw_type": "float",
+            "description": "Percentage of followers associated with the age group."
+          },
+          {
+            "name": "audience_genders",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Follower gender. The distribution of your followers by gender. This demographic data is based on a number of factors, including information users provide in their profiles. Note : The data for this metric is only available for TikTok accounts with at least 100 followers. Data source : TikTok Studio Example : [{gender: \"Female\", percentage: 0.7554470336505679}, {gender: \"Male\", percentage: 0.24455296634943213}, ...] Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "gender",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "Gender. Enum values: Female , Male , Other ."
+          },
+          {
+            "name": "percentage",
+            "required": true,
+            "type": "number",
+            "raw_type": "float",
+            "description": "Percentage of followers associated with the gender."
+          },
+          {
+            "name": "audience_countries",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Follower top countries or regions. The distribution of your followers by their location (countries or regions). This demographic data is based on a number of factors, including information users provide in their profiles. Data source : TikTok Studio Note : The data for this metric is only available for TikTok accounts with at least 100 followers. Example : [{country: \"US\", percentage: 0.7554470336505679}, {country: \"UK\", percentage: 0.24455296634943213}, ...] Updated in : T + 24-48 hrs (UTC time)"
+          },
+          {
+            "name": "country",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "ISO 3166-1 alpha-2 country or region code."
+          },
+          {
+            "name": "percentage",
+            "required": true,
+            "type": "number",
+            "raw_type": "float",
+            "description": "Percentage of followers registered from a specified country or region."
+          },
+          {
+            "name": "audience_cities",
+            "required": true,
+            "type": "array",
+            "raw_type": "object[]",
+            "description": "Follower top cities. The distribution of your followers by their cities. This demographic data is based on a number of factors, including information users provide in their profiles. Data source : TikTok Studio Updated in : T + 24-48 hrs (UTC time) Note : The data for this metric is only available for TikTok accounts with at least 100 followers."
+          },
+          {
+            "name": "city_name",
+            "required": true,
+            "type": "string",
+            "raw_type": "string",
+            "description": "City name."
+          },
+          {
+            "name": "percentage",
+            "required": true,
+            "type": "number",
+            "raw_type": "float",
+            "description": "Percentage of followers associated with the city."
+          }
+        ]
+      }
+    },
+    "other_tables": [
+      {
+        "title": "Field permission changelog",
+        "fields": [
+          {
+            "name": "is_business_account",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "username",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "display_name",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "profile_image",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "followers_count",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_countries",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "audience_genders",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.followers_count",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.profile_views",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.video_views",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.likes",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.comments",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.shares",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.audience_activity",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          },
+          {
+            "name": "metrics.date",
+            "required": false,
+            "type": "string",
+            "raw_type": "",
+            "description": ""
+          }
+        ]
+      }
+    ],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

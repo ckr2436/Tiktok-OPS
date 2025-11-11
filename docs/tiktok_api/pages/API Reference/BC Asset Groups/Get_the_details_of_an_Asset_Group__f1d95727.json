@@ -77,6 +77,142 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix-Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned Data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "asset_group",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Asset Group information."
+        },
+        {
+          "name": "asset_group_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset Group name."
+        },
+        {
+          "name": "asset_group_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset Group ID."
+        },
+        {
+          "name": "assets",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Asset information. Returned when query_entity is ASSET ."
+        },
+        {
+          "name": "asset_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset type."
+        },
+        {
+          "name": "asset_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset ID."
+        },
+        {
+          "name": "members",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Member information. Returned when query_entity is MEMBER ."
+        },
+        {
+          "name": "asset_roles",
+          "required": false,
+          "type": "string",
+          "raw_type": "map < string, string >",
+          "description": "The role that you have assigned to the member according to the asset type."
+        },
+        {
+          "name": "member_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Member ID."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number. Default value:1."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size. Default value: 10."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

@@ -61,6 +61,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "ad_group_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "A list of ad group IDs. Quantity: 1-100."
+        },
+        {
+          "name": "material_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Material IDs."
+        },
+        {
+          "name": "material_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Status of the material. Enum values: ENABLE (the material can be used), DISABLE (the material cannot be used)."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"material_ids\": [\n            \"{{material_id}}\"\n        ],\n        \"ad_group_id\": \"{{ad_group_id}}\",\n        \"material_status\": \"DISABLE\"\n    }\n}"

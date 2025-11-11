@@ -40,6 +40,14 @@
     ]
   },
   "response": {
+    "top_fields": [],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

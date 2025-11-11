@@ -40,6 +40,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "download_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL to download the file, valid for 1 hour. You can use the /report/task/download/ endpoint to query a new URL if the previous URL has expired."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the downloaded file."
+        },
+        {
+          "name": "output_format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Format of output. Enum values: CSV_DOWNLOAD , XLSX_DOWNLOAD ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": "Campaign ID,Campaign Name,Ad Group ID,Ad Group Name,Age,Gender,Cost,Impression,Click\n482,Test Campaign 1,578,Test Ad Group 1,13-17,female,107.56,29056,280\n482,Test Campaign 1,578,Test Ad Group 1,18-24,female,101.74,22992,203\n482,Test Campaign 1,578,Test Ad Group 1,13-17,male,58.78,17063,126\n482,Test Campaign 1,578,Test Ad Group 1,18-24,male,57.36,18467,115\n622,Test Campaign 2,765,Test Ad Group 2,18-24,male,32.9,267635,1172\n482,Test Campaign 1,578,Test Ad Group 1,25-34,female,25.97,8143,105\n810,Test Campaign 3,746,Test Ad Group 3,35-44,female,20.31,119359,3214\n···"

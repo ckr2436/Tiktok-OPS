@@ -96,6 +96,170 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of billing groups."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The Billing Group status. Enum values: VALID (valid), INVALID (invalid)."
+        },
+        {
+          "name": "billing_group_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billing group ID"
+        },
+        {
+          "name": "billing_group_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billing group name"
+        },
+        {
+          "name": "invoice_object_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Invoice object name"
+        },
+        {
+          "name": "is_primary",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "bool",
+          "description": "Whether it is the default billing group of the Business Center."
+        },
+        {
+          "name": "advertisers",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of advertiser accounts in this billing group"
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID"
+        },
+        {
+          "name": "advertiser_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser name"
+        },
+        {
+          "name": "billing_group_emails",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Emails of the billing group"
+        },
+        {
+          "name": "invoice_group_by",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "How the invoices in the billing groups are handled. Enum values: ACCOUNT : Invoices in this billing groups are combined. ADVERTISER : Invoices in this billing group are handled separately."
+        },
+        {
+          "name": "billed_to_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Billed-to parties shown on invoices. Enum values: ACCOUNT : Invoices are billed to agencies. ADVERTISER : Invoices are billed to advertisers."
+        },
+        {
+          "name": "billing_group_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The advertising type of all ad accounts in the billing group. This setting cannot be edited. Enum values: AUCTION , RESERVATION ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page Size"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results"
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

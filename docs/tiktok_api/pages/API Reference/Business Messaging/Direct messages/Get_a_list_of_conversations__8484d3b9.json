@@ -55,6 +55,156 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "conversations",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Conversation List."
+        },
+        {
+          "name": "conversation_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Conversation ID. Example: a1AbcBdeCfghDijkEF2b3+lmGn== ."
+        },
+        {
+          "name": "update_time",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The time of the last message in the conversation, in the format of an Epoch/Unix timestamp in milliseconds. Example: 1719447205701 ."
+        },
+        {
+          "name": "referral",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Referral information of the conversation."
+        },
+        {
+          "name": "ad",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Related referral ad information of the conversation, including all historical referral ads of the conversation."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the advertiser account that is associated with the ad."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad ID of the related ad. Example: 1234567891234567 ."
+        },
+        {
+          "name": "timestamp",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The time of the referral event, in the format of an Epoch/Unix timestamp in seconds. Example: 1714430514 ."
+        },
+        {
+          "name": "ad_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the related ad."
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link for the TikTok post used in the related ad. This URL can be used to embed the TikTok post in external websites or applications. If the privacy setting of the post is \"Friends\" or \"Only you\", the post will not be viewable through this link."
+        },
+        {
+          "name": "short_link",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the tiktok.me link. A tiktok.me link is a shareable TikTok shortlink that allows users to initiate a one-on-one conversation with a business in the TikTok App."
+        },
+        {
+          "name": "ref",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The referral parameter ( ref ) that is configured in the tiktok.me link, offering context about the conversation. You can incorporate the referral parameter in your tiktok.me link to monitor various links posted on different channels. This parameter is a URL-encoded string with a maximum length of 2,083 characters. Note : The ref parameter only supports alphanumeric characters and the special characters - , _ , and = ."
+        },
+        {
+          "name": "prefilled_message",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The prefilled message that is configured in the tiktok.me link."
+        },
+        {
+          "name": "prefilled_message_audit_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The audit status of the prefilled message. Enum values: REJECT : The message was rejected during the review. If prefilled_message_audit_status is REJECT , the prefilled_message will not be prefilled into the message input box. PASS : The message passed the review."
+        },
+        {
+          "name": "has_more",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether an additional page of conversations is available. Example: false ."
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Cursor for the next page of conversations, to be passed in the cursor parameter of the subsequent API request. Example: 13."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n  \"code\": 0,\n  \"message\": \"OK\",\n  \"request_id\": \"{{request_id}}\",\n  \"data\": {\n    \"conversations\": [\n           {\n                \"referral\": {},\n                \"update_time\": 1719447205701,\n                \"conversation_id\": \"{{conversation_id}}\"\n            },\n            {\n                \"referral\": {\n                    \"ad\": [\n                        {\n                            \"advertiser_id\": \"{{advertiser_id}}\",\n                            \"ad_id\": \"{{ad_id}}\",\n                            \"timestamp\": 1719389021,\n                            \"ad_name\": \"{{ad_name}}\",\n                            \"embed_url\": \"https://www.tiktok.com/player/v1/1234567891234567891?music_info=1&description=1&autoplay=1&loop=1&utm_campaign=tt4d_open_api&utm_source=dm\"\n                        }\n                    ]\n                },\n                \"update_time\": 1719389022512,\n                \"conversation_id\": \"{{conversation_id}}\"\n            },\n            {\n                \"referral\": {\n                    \"short_link\": [\n                        {\n                            \"ref\": \"{{ref}}\", \n                            \"prefilled_message\": \"{{message}}\",\n                            \"prefilled_message_audit_status\": \"PASS\"\n                        }\n                    ]\n                },\n                \"update_time\": 1719389022812,\n                \"conversation_id\": \"{{conversation_id}}\"\n            }\n    ],\n    \"has_more\": false,\n    \"cursor\": 3\n  }\n}"

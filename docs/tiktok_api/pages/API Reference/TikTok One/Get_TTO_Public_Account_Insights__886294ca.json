@@ -40,6 +40,177 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "handle_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The unique handle name of the creator."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name of the creator."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for profile photo of the creator. Validity period: around seven days. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Once the URL expires, you can call /tto/tcm/creator/public/ to obtain a new URL."
+        },
+        {
+          "name": "bio",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The bio description of the creator. Note : If the bio spans multiple lines, any line breaks within the bio will be represented as \\n in the field value."
+        },
+        {
+          "name": "followers_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of followers for the creator. Example: 100."
+        },
+        {
+          "name": "following_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of accounts that the creator is following. Example: 100."
+        },
+        {
+          "name": "videos_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of public videos posted by the creator. Example: 100."
+        },
+        {
+          "name": "likes_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of likes on public videos posted by the creator. Example: 100."
+        },
+        {
+          "name": "creator_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The unique ID of the creator. Example: 1234567891234567891 ."
+        },
+        {
+          "name": "median_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Median views. The middle value in the range of views across the creator's recent 30 videos, ranked lowest to highest, which showcases the typical video view count of their content."
+        },
+        {
+          "name": "engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Engagement rate. The percentage of people interacted with content across the creator's recent 30 videos. It's calculated by taking the total number of comments, likes, and shares divided by video views. Example: 0.13669180870056152."
+        },
+        {
+          "name": "creator_price",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The starting price of the creator. Example: 500."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The currency for the starting price, in ISO 4217 format. Example: USD ."
+        },
+        {
+          "name": "industry_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of creator industry labels, which can be used to obtain Branded Content creator rankings on TTO Creator Leaderboard. Creator industry labels are assigned to creators based on the commercial content they produce, including ad creatives and branded content on their TikTok accounts, and represent their commercial experience in certain industries. Each label_id can be used in /tto/tcm/rank/ to obtain a list of up to 100 US creators who rank highest for that label."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the creator industry label. Example: 20000000000 ."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the creator industry label. Example: Apps ."
+        },
+        {
+          "name": "content_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of content tag labels, which can be used to obtain Organic Content creator rankings on TTO Creator Leaderboard. Content tag labels are assigned to creators based on the main focus of the creator’s TikTok account, and represent the direction of the creator’s organic content. Each label_id can be used in /tto/tcm/rank/ to obtain a list of up to 100 US creators who rank highest for that label."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the content tag label. Example: 11005001007 ."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the content tag label. Example: Shooting Games ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"bio\": \"{{bio}}\",\n        \"content_labels\": [\n            {\n                \"label_id\": \"11005001007\",\n                \"label_name\": \"Shooting Games\"\n            }\n        ],\n        \"creator_id\": \"{{creator_id}}\",\n        \"creator_price\": 100,\n        \"currency\": \"USD\",\n        \"display_name\": \"{{display_name}}\",\n        \"engagement_rate\": 0.08472570776939392,\n        \"followers_count\": 4721794,\n        \"following_count\": 231,\n        \"handle_name\": \"{{handle_name}}\",\n        \"industry_labels\": [\n            {\n                \"label_id\": \"20000000000\",\n                \"label_name\": \"Apps\"\n            }\n        ],\n        \"likes_count\": 153119665,\n        \"median_views\": 426141,\n        \"profile_image\": \"{{profile_image}}\",\n        \"videos_count\": 1803\n    }\n}"

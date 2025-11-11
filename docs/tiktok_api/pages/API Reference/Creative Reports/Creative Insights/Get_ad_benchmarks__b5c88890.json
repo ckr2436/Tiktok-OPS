@@ -106,6 +106,149 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of error codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request"
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "compare_date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date when the comparison is performed"
+        },
+        {
+          "name": "list",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "List of results. Note : If an ad accumulates fewer than 1,000 impressions within the comparison window ( compare_time_window ), the benchmark metric data will be empty."
+        },
+        {
+          "name": "info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the subject to get benchmark data for"
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad ID"
+        },
+        {
+          "name": "location",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Two-letter country or region code"
+        },
+        {
+          "name": "placement",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Placement"
+        },
+        {
+          "name": "ad_category",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Level 2 interest category ID. For the list of categories, see Get interest categories . To determine the corresponding names for gaming-related interest category IDs, see Interest category ."
+        },
+        {
+          "name": "external_action",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "External action (conversion event) for the ad"
+        },
+        {
+          "name": "metrics",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Metrics and values"
+        },
+        {
+          "name": "metric_name",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The returned metrics, determined by the setting via metrics_fields in the request. After the metric name, you can see a number with one decimal place, in the value range of [0.0,1.0]. The number indicates how the current metric of the ad performs compared with other ads in terms of dimensions ( dimensions ) you specify in the request. For instance, \"video_watched_6s\": 0.6 means the \"video_watched_6s\" metric data of the ad outperforms about 60% of all ads in terms of specified dimensions. See the Supported metrics section for the supported metrics."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages"
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size. Default: 10"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

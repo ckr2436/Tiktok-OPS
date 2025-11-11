@@ -73,6 +73,72 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Task status. Enum values: CREATED , FAILED , RUNNING , SUCCEED"
+        },
+        {
+          "name": "task_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Task ID. You can pass in task_id in the request to poll the task status to check whether the task has been completed ( status = SUCCEED )."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when status is SUCCEED . File name of the lead file."
+        },
+        {
+          "name": "file_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when status is SUCCEED . File type of the lead file. Enum values: csv , zip ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"status\": \"RUNNING\",\n        \"task_id\": \"{{task_id}}\"\n    }\n}"

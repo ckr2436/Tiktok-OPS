@@ -69,6 +69,345 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "split_test_quota",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Split test quota information."
+        },
+        {
+          "name": "max_test_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Maximum test group number in one split-test. The value of this field will be 2 ."
+        },
+        {
+          "name": "available_test_group",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of split-test groups that you can launch now in this app."
+        },
+        {
+          "name": "used_test_group",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of split-test groups that have been launched."
+        },
+        {
+          "name": "releasing_test_group",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of split-test groups that are to be released."
+        },
+        {
+          "name": "used_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of quota that has been launched."
+        },
+        {
+          "name": "releasing_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of quota that is to be released."
+        },
+        {
+          "name": "campaign_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Campaign quota."
+        },
+        {
+          "name": "tiktok_campaign_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Campaign quota under the TikTok network. The placements under TikTok network are PLACEMENT_TIKTOK and PLACEMENT_GLOBAL_APP_BUNDLE ."
+        },
+        {
+          "name": "total_campaign_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Campaign quota under an app ID."
+        },
+        {
+          "name": "total_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total quota of active Dedicated Campaigns. The value of this field will be 15 or 25 . Note : Expanding the quota of active Dedicated Campaigns to 25 per ad network for an iOS app is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+        },
+        {
+          "name": "used_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "available_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that you can launch now."
+        },
+        {
+          "name": "used_campaign_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "campaign_quota_by_adv",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Campaign quota under each advertiser ID."
+        },
+        {
+          "name": "used_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID."
+        },
+        {
+          "name": "pangle_campaign_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Campaign quota under the Pangle network. The placement available for Pangle network is PLACEMENT_PANGLE ."
+        },
+        {
+          "name": "total_campaign_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Campaign quota under an app ID."
+        },
+        {
+          "name": "total_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total quota of active Dedicated Campaigns. The value of this field will be 15 or 25 . Note : Expanding the quota of active Dedicated Campaigns to 25 per ad network for an iOS app is currently an allowlist-only feature. If you would like to access it, please contact your TikTok representative."
+        },
+        {
+          "name": "used_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "available_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that you can launch now."
+        },
+        {
+          "name": "used_campaign_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "campaign_quota_by_adv",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Campaign quota under each advertiser ID."
+        },
+        {
+          "name": "used_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that have been launched."
+        },
+        {
+          "name": "releasing_campaign_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of Dedicated Campaigns that are to be released."
+        },
+        {
+          "name": "advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID."
+        },
+        {
+          "name": "adgroup_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Ad group quota under a Dedicated Campaign."
+        },
+        {
+          "name": "total_adgroup_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The quota of active ad groups. The value of this field will be 5 ."
+        },
+        {
+          "name": "used_adgroup_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of ad groups that have been launched."
+        },
+        {
+          "name": "available_adgroup_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of ad groups that you can launch now."
+        },
+        {
+          "name": "placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The allowed placements for ad groups. You cannot create ad groups with placements that are not listed here."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Campaign ID."
+        },
+        {
+          "name": "ad_quota_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Ad quota under an ad group within a SKAN 4.0 Dedicated Campaign. Note : If the specified ad group ( adgroup_id ) is not within a SKAN 4.0 Dedicated Campaign, the value of this field will be null. If you provide a SKAN 4.0 App ID ( app_id ) without specifying campaign_id and adgroup_id in the request, this field will represent the default ad quota for a regular SKAN 4.0 Dedicated Campaign (a SKAN 4.0 Dedicated Campaign where Smart+ Campaign, Automated Creative Optimization, and Smart Creative settings are not enabled). Example: \"ad_quota_info\": {\"available_ad_quota\": 9, \"total_ad_quota\": 9,\"adgroup_id\": \"0\",\"used_ad_quota\": 0} ."
+        },
+        {
+          "name": "total_ad_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The quota of active ads. For ad groups within regular SKAN 4.0 Dedicated Campaigns (SKAN 4.0 Dedicated Campaigns where Smart+ Campaign, Automated Creative Optimization, and Smart Creative settings are not enabled), the value of this field will be 9 ."
+        },
+        {
+          "name": "used_ad_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of ads that have been launched."
+        },
+        {
+          "name": "available_ad_quota",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The number of ads that you can launch now."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad group ID."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"ad_quota_info\": {\n            \"available_ad_quota\": 9,\n            \"total_ad_quota\": 9,\n            \"adgroup_id\": \"0\",\n            \"used_ad_quota\": 0\n        },\n        \"adgroup_quota_info\": {\n            \"campaign_id\": \"0\",\n            \"used_adgroup_quota\": 0,\n            \"placements\": [\n                \"PLACEMENT_PANGLE\",\n                \"PLACEMENT_GLOBAL_APP_BUNDLE\",\n                \"PLACEMENT_TIKTOK\"\n            ],\n            \"total_adgroup_quota\": 5,\n            \"available_adgroup_quota\": 5\n        },\n        \"split_test_quota\": {\n            \"max_test_number\": 2,\n            \"used_test_group\": 2,\n            \"releasing_test_group\": 0,\n            \"used_quota\": 4,\n            \"releasing_quota\": 0,\n            \"available_test_group\": 0\n        },\n        \"campaign_quota_info\": {\n            \"tiktok_campaign_quota_info\": {\n                \"campaign_quota_by_adv\": [],\n                \"total_campaign_quota_info\": {\n                    \"releasing_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"total_campaign_quota\": 20,\n                    \"releasing_campaign_quota\": 4,\n                    \"used_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"available_campaign_quota\": 15,\n                    \"used_campaign_quota\": 1\n                }\n            },\n            \"pangle_campaign_quota_info\": {\n                \"campaign_quota_by_adv\": [],\n                \"total_campaign_quota_info\": {\n                    \"releasing_campaign_ids\": [\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\",\n                        \"{{releasing_campaign_id}}\"\n                    ],\n                    \"total_campaign_quota\": 20,\n                    \"releasing_campaign_quota\": 3,\n                    \"used_campaign_ids\": [\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\",\n                        \"{{used_campaign_id}}\"\n                    ],\n                    \"available_campaign_quota\": 12,\n                    \"used_campaign_quota\": 5\n                }\n            }\n        }\n    }\n}"

@@ -40,6 +40,275 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for the profile photo of the creator. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Validity period: around seven days."
+        },
+        {
+          "name": "handle_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The username (handle) of the creator."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name (nickname) for the creator."
+        },
+        {
+          "name": "bio",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The bio description of the creator."
+        },
+        {
+          "name": "following_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of accounts that the creator is following."
+        },
+        {
+          "name": "followers_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of followers for the creator."
+        },
+        {
+          "name": "likes_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total likes. The total number of times people have liked the creator's published videos."
+        },
+        {
+          "name": "videos_count",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The total number of public videos posted by the creator."
+        },
+        {
+          "name": "creator_rate",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Creator starting rate."
+        },
+        {
+          "name": "rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Amount of the rate."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Currency for the rate amount, in ISO 4217 code format. Example: EUR ."
+        },
+        {
+          "name": "country_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region where the creator is located, in ISO 3166-1 alpha-2 format. Example: US ."
+        },
+        {
+          "name": "content_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of creator industry labels. Creator industry labels are assigned to creators based on the commercial content they produce, including ad creatives and branded content on their TikTok accounts, and represent their commercial experience in certain industries."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The ID of the creator industry label. Example: 11015001."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the creator industry label. Example: Tech Products & Tests ."
+        },
+        {
+          "name": "industry_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of content tag labels. Content tag labels are assigned to creators based on the main focus of the creator’s TikTok account, and represent the direction of the creator’s organic content."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The ID of the content tag label. Example: 23000000000."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the content tag label. Example: News & Entertainment ."
+        },
+        {
+          "name": "audience_countries",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Three countries or regions that have the largest audience size."
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Country or region name, in ISO 3166-1 alpha-2 format. Example: US ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_genders",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience gender information."
+        },
+        {
+          "name": "gender",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Gender. Enum values: Female , Male ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience age distribution."
+        },
+        {
+          "name": "age",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Age group. Enum values: 25-34 , 35-44 , 55+ , Other ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_devices",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience device information."
+        },
+        {
+          "name": "device",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Device. Enum values: APPLE : Apple. SAMSUNG : Samsung. XIAOMI : Xiaomi. OPPO : Oppo. MOTOROLA : Motorola. OTHER : Other."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        },
+        {
+          "name": "audience_usages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Audience TikTok usage."
+        },
+        {
+          "name": "usage",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Whether the audience uses TikTok frequently. Enum values: active : An audience is defined as active if they have logged into the TikTok app within the last 30 days. inactive : Inactive."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Percentage."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"audience_ages\": [\n            {\n                \"age\": \"25-34\",\n                \"percentage\": 0.375\n            },\n            {\n                \"age\": \"35-44\",\n                \"percentage\": 0.375\n            },\n            {\n                \"age\": \"Other\",\n                \"percentage\": 0.125\n            },\n            {\n                \"age\": \"55+\",\n                \"percentage\": 0.125\n            }\n        ],\n        \"audience_countries\": [\n            {\n                \"country\": \"US\",\n                \"percentage\": 0.5\n            },\n            {\n                \"country\": \"JP\",\n                \"percentage\": 0.375\n            },\n            {\n                \"country\": \"MY\",\n                \"percentage\": 0.125\n            }\n        ],\n        \"audience_devices\": [\n            {\n                \"device\": \"APPLE\",\n                \"percentage\": 0.7777777777777778\n            },\n            {\n                \"device\": \"SAMSUNG\",\n                \"percentage\": 0.1111111111111111\n            },\n            {\n                \"device\": \"XIAOMI\",\n                \"percentage\": 0.1111111111111111\n            },\n            {\n                \"device\": \"Other\",\n                \"percentage\": 0\n            }\n        ],\n        \"audience_genders\": [\n            {\n                \"gender\": \"Male\",\n                \"percentage\": 0.625\n            },\n            {\n                \"gender\": \"Female\",\n                \"percentage\": 0.375\n            }\n        ],\n        \"audience_usages\": [\n            {\n                \"percentage\": 0.875,\n                \"usage\": \"active\"\n            },\n            {\n                \"percentage\": 0.125,\n                \"usage\": \"inactive\"\n            }\n        ],\n        \"bio\": \"{{bio}}\",\n        \"content_labels\": [\n            {\n                \"label_id\": 11015001,\n                \"label_name\": \"Tech Products & Tests\"\n            }\n        ],\n        \"country_code\": \"US\",\n        \"creator_rate\": {\n            \"currency\": \"USD\",\n            \"rate\": 1000\n        },\n        \"display_name\": \"{{display_name}}\",\n        \"followers_count\": 8,\n        \"following_count\": 0,\n        \"handle_name\": \"{{handle_name}}\",\n        \"industry_labels\": [\n            {\n                \"label_id\": 23000000000,\n                \"label_name\": \"News & Entertainment\"\n            },\n            {\n                \"label_id\": 24000000000,\n                \"label_name\": \"Business Services\"\n            },\n            {\n                \"label_id\": 29000000000,\n                \"label_name\": \"Health\"\n            }\n        ],\n        \"likes_count\": 0,\n        \"profile_image\": \"{{profile_image}}\",\n        \"videos_count\": 3\n    }\n}"

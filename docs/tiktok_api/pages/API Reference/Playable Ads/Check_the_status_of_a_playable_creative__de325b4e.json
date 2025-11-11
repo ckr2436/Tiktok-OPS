@@ -40,6 +40,79 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return information ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "playable_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative ID."
+        },
+        {
+          "name": "playable_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative URL."
+        },
+        {
+          "name": "playable_orientation",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative direction. Enum values: BOTH , LANDSCAPE , PORTRAIT ."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative status. Enum values: AUDIT_FAIL , AUDIT_SUCCESS , VALIDATE_FAIL , VALIDATE_SUCCESS , VALIDATING ."
+        },
+        {
+          "name": "fail_message",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Verify the cause of failure."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

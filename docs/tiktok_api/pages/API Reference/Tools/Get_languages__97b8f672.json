@@ -33,6 +33,58 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "languages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Language list."
+        },
+        {
+          "name": "code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Language code. You can pass the value of this field to languages in /adgroup/create/ for language targeting. Example: en ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"20220630225329010245246039165DE9B4\",\n    \"data\": {\n        \"languages\": [\n            {\n                \"name\": \"Arabic\",\n                \"code\": \"ar\"\n            },\n            {\n                \"name\": \"Assamese\",\n                \"code\": \"as\"\n            },\n            {\n                \"name\": \"Haryanvi\",\n                \"code\": \"bgc\"\n            },\n            {\n                \"name\": \"Bihari\",\n                \"code\": \"bh\"\n            },\n            ...\n        ]\n    }\n}"

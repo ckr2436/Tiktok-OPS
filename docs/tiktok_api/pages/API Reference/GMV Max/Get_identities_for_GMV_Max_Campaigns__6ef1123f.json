@@ -47,6 +47,135 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "identity_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of identities associated with the TikTok Shop."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity type. Enum values: AUTH_CODE : Authorized User. This type of identity is created when you use the authorization code to access a TikTok account or a TikTok post. TT_USER : TikTok User. This type of identity is created when you bind your TikTok For Business account with your TikTok Business Account, or when you bind your TikTok For Business account with your regular TikTok account and then upgrade the account to Business Account. BC_AUTH_TT : TikTok Account User in Business Center. This type of identity is created when you add a TikTok account to your Business Center, and the TikTok account owner approves your request. TTS_TT : TikTok Account User for TikTok Shop. This type of identity is created when you set an official TikTok account for the TikTok Shop."
+        },
+        {
+          "name": "identity_authorized_bc_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when identity_type is BC_AUTH_TT . The ID of the Business Center that a TikTok Account User in Business Center identity is associated with."
+        },
+        {
+          "name": "identity_authorized_shop_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned for some BC_AUTH_TT identities. The ID of the TikTok Shop that the TikTok Account User in Business Center identity is associated with."
+        },
+        {
+          "name": "store_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when identity_type is TTS_TT . The ID of the TikTok Shop that a TikTok Account User for TikTok Shop identity is associated with."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary profile image URL for the TikTok account that is associated with the identity. Validity period: around 48 hours. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Once the URL expires, you need to call /gmv_max/identity/get/ to obtain a new URL."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name of the TikTok account that is associated with the identity."
+        },
+        {
+          "name": "user_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The username of the TikTok account that is associated with the identity."
+        },
+        {
+          "name": "is_running_custom_shop_ads",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "bool",
+          "description": "Whether the identity is being used in enabled Video Shopping Ads, Product Shopping Ads or Live Shopping Ads. Supported values: true , false ."
+        },
+        {
+          "name": "product_gmv_max_available",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the identity is available for use in Product GMV Max Campaigns. Supported values: true , false ."
+        },
+        {
+          "name": "live_gmv_max_available",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the identity is available for use in LIVE GMV Max Campaigns. Supported values: true , false ."
+        },
+        {
+          "name": "unavailable_reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when live_gmv_max_available is false . The reason why the identity is not available for LIVE GMV Max Campaigns. Enum values: OCCUPIED : The identity has been occupied by an enabled LIVE GMV Max Campaign. UNAUTHORIZED : The identity is not authorized for use in LIVE GMV Max Campaigns."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n  \"code\": 0,\n  \"message\": \"OK\",\n  \"request_id\": \"{{request_id}}\",\n  \"data\": {\n    \"identity_list\": [\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": true,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_authorized_bc_id\": \"{{identity_authorized_bc_id}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"BC_AUTH_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": true,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"OCCUPIED\",\n        \"user_name\": \"{{user_name}}\"\n      },\n      {\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"TTS_TT\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": false,\n        \"store_id\": \"{{store_id}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\"\n      },\n      {\n        \"display_name\": \"{{display_name}}\",\n        \"identity_id\": \"{{identity_id}}\",\n        \"identity_type\": \"TT_USER\",\n        \"is_running_custom_shop_ads\": false,\n        \"live_gmv_max_available\": false,\n        \"product_gmv_max_available\": false,\n        \"profile_image\": \"{{profile_image}}\",\n        \"unavailable_reason\": \"UNAUTHORIZED\",\n        \"user_name\": \"{{user_name}}\"\n      }\n    ]\n  }\n}"

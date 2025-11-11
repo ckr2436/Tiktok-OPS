@@ -125,6 +125,184 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "Returned data. For compatibility reasons, an array, instead of an object, is returned, and the array contains only one object. Note : Due to the latency between client and server, it is possible that only video_id is returned. In this case, you can wait for 30 seconds to five minutes and use the /file/video/ad/search/ endpoint to retrieve other data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "video_cover_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for video cover, valid for six hours and needs to be re-acquired after expiration. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: http://p16-sign-sg.tiktokcdn.com/v0201/b99a388e3709470be5c~tplv-noop.image?x-expires= 1671742348 &x-signature=FziJhvED9NDTDmPofv3I%3D ."
+        },
+        {
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video format."
+        },
+        {
+          "name": "preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video preview link, valid for six hours and needs to be re-acquired after expiration. To find out the expiration time of the preview link, see preview_url_expire_time ."
+        },
+        {
+          "name": "preview_url_expire_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The expiration time of the video preview link, in the format of YYYY-MM-DD HH:MM:SS (UTC+0)."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video name."
+        },
+        {
+          "name": "displayable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether it can be displayed on the platform."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video height."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video width."
+        },
+        {
+          "name": "bit_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Bit rate in bps."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creation time. UTC time. Format: 2020-06-10T07:39:14Z."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification time. UTC time. Format: 2020-06-10T07:39:14Z."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video file MD5."
+        },
+        {
+          "name": "duration",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Video duration, in seconds."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID, which can be used to create ads. Note : If you upload via video ID ( upload_type as UPLOAD_BY_VIDEO_ID ), the same video ID will be returned. If you upload via file , URL or file ID ( upload_type as UPLOAD_BY_FILE , UPLOAD_BY_URL or UPLOAD_BY_FILE_ID ), a new video ID ( video_id ) will be returned. If you upload the same video multiple times using any of these three methods, you'll obtain a new video ID for each upload."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video size, in bytes."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID"
+        },
+        {
+          "name": "allowed_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Available placements. Due to music copyright, some materials generated by creative tools can only be shown on TikTok. It won't pass when they are created on other placements. For enum values, see Enumerations-Ad Management-Placement . Note : The values PLACEMENT_TOPBUZZ and PLACEMENT_HELO for this field cannot be used for ad creation and will be deprecated in the next API version."
+        },
+        {
+          "name": "allow_download",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the video is downloadable. Due to the music copyright, some materials generated by creative tools are only allowed to preview. It is prohibited to download and disseminate them."
+        },
+        {
+          "name": "fix_task_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Returned only when you've set both flaw_detect and auto_fix_enabled to true in request, and video issues are detected. Fix task ID. To obtain the fixed video, you can use one of the following methods: Pass the value of this field to the task_id field in /video/fix/task/get/ . Retrieve the fixed video from /file/video/ad/search/ if you have set auto_bind_enabled to true in the request."
+        },
+        {
+          "name": "flaw_types",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when you've set both flaw_detect and auto_fix_enabled to true in request, and video issues are detected. Video issue types. Enum values: LOW_RESOLUTION : Video resolution is lower than 540x960 px, which doesn't meet our requirements. ILLEGAL_VIDEO_SIZE : The video size is not correct. Use the standard video size: Square (1:1) / Vertical (9:16) / Horizontal (16:9). NO_BGM ( deprecated ): The ad or video has no background audio, or the background audio is incoherent/unclear. BLACK_EDGE ( deprecated ) : A video image contains black bars, which affects user experience and is not allowed. ILLEGAL_DURATION ( deprecated ): Video length is either longer than 60s or shorter than 5s, which doesn't meet our requirements."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": [\n        {\n            \"fix_task_id\": \"{{fix_task_id}}\",\n            \"flaw_types\": [\n                \"LOW_RESOLUTION\"\n            ]\n        }\n    ]\n}"

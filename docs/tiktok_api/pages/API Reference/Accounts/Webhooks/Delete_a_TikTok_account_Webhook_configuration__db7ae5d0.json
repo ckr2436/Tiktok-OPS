@@ -59,6 +59,65 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "app_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of your developer application."
+        },
+        {
+          "name": "event_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of Webhook event configuration. Enum values: VIDEO : Post publishing events, which provide you with real-time updates on the status of content published via specific TikTok API endpoints. To learn more about the schema and sample payload of the events within this event category, see Post publishing events . COMMENT : comment update event, including the event comment.update . To learn more about the schema and sample payload of the event within this event category, see Comment update event ."
+        },
+        {
+          "name": "item_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Returned only when event_type is COMMENT and item_list is configured for the developer app ( app_id ). The IDs of the specific TikTok posts that you will still receive comment update event notifications for. For example, if you have previously configured the item_list as [\"{{item_id_1}}\",\"{{item_id_2}}\"] for your developer app and you set item_list to [\"{{item_id_1}}\"] in the request, the value of this field in the response will be [\"{{item_id_2}}\"] ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"app_id\": \"{{app_id}}\",\n        \"event_type\": \"VIDEO\"\n    }\n}"

@@ -75,6 +75,163 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of transaction records."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Transaction date."
+        },
+        {
+          "name": "amount",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Transaction amount."
+        },
+        {
+          "name": "timezone",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Timezone."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Currency used in the transaction."
+        },
+        {
+          "name": "funds_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Fund type."
+        },
+        {
+          "name": "invoice_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Invoice ID."
+        },
+        {
+          "name": "invoice_serial_number",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Invoice serial number"
+        },
+        {
+          "name": "transaction_summary",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Sum of transactions."
+        },
+        {
+          "name": "amount_charged",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total amount of money charged to the account."
+        },
+        {
+          "name": "amount_paid",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total amount of money transferred out."
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Currency."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

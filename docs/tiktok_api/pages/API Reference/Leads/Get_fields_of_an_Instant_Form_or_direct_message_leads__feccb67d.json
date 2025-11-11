@@ -58,6 +58,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "fields",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The fields of the Instant Form or direct message leads. Note : The data within this string array depends on the questions that you have set in the Instant Form or the questions collected in the direct message leads."
+        },
+        {
+          "name": "meta_data",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Metadata about the Instant Form or direct message leads."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the Instant Form was created or when the direct message lead was collected, in the format of YYYY-MM-DD HH:MM:SS (UTC+0 time). Example: 2025-01-01 00:00:01 ."
+        },
+        {
+          "name": "page_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The page ID of the Instant Form. When lead_source is DIRECT_MESSAGE in the request, this field will be \"0\" ."
+        },
+        {
+          "name": "page_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The page name of the Instant Form. When lead_source is DIRECT_MESSAGE in the request, this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "page_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the Instant Form. When lead_source is DIRECT_MESSAGE in the request, this field will be an empty string ( \"\" )."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"fields\": [\n            \"email\"\n        ],\n        \"meta_data\": {\n            \"create_time\": \"{{create_time}}\",\n            \"page_id\": \"{{page_id}}\",\n            \"page_name\": \"{{page_name}}\",\n            \"page_url\": \"{{page_url}}\"\n        }\n    }\n}"

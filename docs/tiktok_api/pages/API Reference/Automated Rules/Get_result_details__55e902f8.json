@@ -63,6 +63,107 @@
     "examples": []
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Unique ID of the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "result_details",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Result details."
+        },
+        {
+          "name": "rule_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Rule ID."
+        },
+        {
+          "name": "exec_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Rule execution ID."
+        },
+        {
+          "name": "action_subject_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Action type. Enum values: TURN_ON , TURN_OFF , MESSAGE ."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Action status. Enum values: SUCCESS , FAIL"
+        },
+        {
+          "name": "error_message",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "If the action failed, this field returns the error message."
+        },
+        {
+          "name": "object_dimension",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Category of the object. Enum values: CAMPAIGN , ADGROUP , AD ."
+        },
+        {
+          "name": "object_dimension_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Object ID."
+        },
+        {
+          "name": "object_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Object name."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

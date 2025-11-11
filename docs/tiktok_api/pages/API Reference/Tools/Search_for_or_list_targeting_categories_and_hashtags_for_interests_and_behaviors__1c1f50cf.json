@@ -75,6 +75,373 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "general_interest",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of general interest categories."
+        },
+        {
+          "name": "list_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of all available general interest categories. If search_keywords is specified and the value of sub_targeting_types includes GENERAL_INTEREST in the request, the value of this field will be null."
+        },
+        {
+          "name": "sub_targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary targeting type. Enum value: GENERAL_INTEREST (general interests)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the general interest category. You can pass this value to interest_category_ids when creating an ad group using /adgroup/create/ ."
+        },
+        {
+          "name": "supported_special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The special ad categories that the general interest category can be used together with. Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities."
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The level of the general interest category."
+        },
+        {
+          "name": "children_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the children general interest categories for the current category."
+        },
+        {
+          "name": "hashtag_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag type. This field will always be null because the hashtag type is for hashtag interactions scenarios only."
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of general interest categories that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"child\" . Value: An object array representing the generated general interest categories, following the structure of list_result . Example: [{\"sub_targeting_type\": \"GENERAL_INTEREST\", \"id\": \"10100\",\"name\": \"Early Childhood & Preschool Education\", \"supported_special_industries\": [\"HOUSING\", \"EMPLOYMENT\", \"CREDIT\"]\"children_ids\": null,\"level\": null, \"hashtag_type\": null}] . You can pass the value of id to interest_category_ids when creating an ad group using /adgroup/create/ ."
+        },
+        {
+          "name": "additional_interest",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of additional interest categories. If search_keywords is not passed in the request, the value of this field will be null."
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of additional interest categories that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"child\" . Value: An object array representing the generated additional interest categories, following the structure of list_result within the general_interest object. Note that the value of sub_targeting_type will always be ADDITIONAL_INTEREST . Example: [{\"sub_targeting_type\": \"ADDITIONAL_INTEREST\", \"id\": \"1915593069\",\"name\": \"Childhood\", \"supported_special_industries\": [],\"children_ids\": null,\"level\": null, \"hashtag_type\": null}] . You can pass the value of id to interest_keyword_ids when creating an ad group using /adgroup/create/ ."
+        },
+        {
+          "name": "purchase_intention",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of purchase intention categories."
+        },
+        {
+          "name": "list_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of all available purchase intention categories. If search_keywords is specified and the value of sub_targeting_types includes PURCHASE_INTENTION in the request, the value of this field will be null."
+        },
+        {
+          "name": "sub_targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary targeting type. Enum value: PURCHASE_INTENTION (purchase intention)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the purchase intention category. You can pass this value to purchase_intention_keyword_ids when creating an ad group using /adgroup/create/ ."
+        },
+        {
+          "name": "supported_special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The special ad categories that the purchase intention category can be used together with. Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities."
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The level of the purchase intention category."
+        },
+        {
+          "name": "children_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the children purchase intention categories for the current category."
+        },
+        {
+          "name": "hashtag_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag type. This field will always be null because the hashtag type is for hashtag interactions scenarios only."
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of purchase intention categories that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"child\" . Value: An object array representing the generated purchase intention categories, following the structure of list_result . Example: [{ \"sub_targeting_type\": \"PURCHASE_INTENTION\", \"id\": \"12109\",\"name\": \"Children's Apparel\", \"supported_special_industries\": [],\"children_ids\": null, \"level\": null, \"hashtag_type\": null}] . You can pass the value of id to purchase_intention_keyword_ids when creating an ad group using /adgroup/create/ ."
+        },
+        {
+          "name": "video_interaction",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of video interactions categories."
+        },
+        {
+          "name": "list_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of all available video interactions categories. If search_keywords is specified and the value of sub_targeting_types includes VIDEO_INTERACTION in the request, the value of this field will be null."
+        },
+        {
+          "name": "sub_targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary targeting type. Enum values: VIDEO_INTERACTION (video interactions)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the video interactions category. You can pass this value to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to VIDEO_RELATED ."
+        },
+        {
+          "name": "supported_special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The special ad categories that the video interactions category can be used together with. Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities."
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The level of the video interactions category."
+        },
+        {
+          "name": "children_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the children video interactions categories for the current category."
+        },
+        {
+          "name": "hashtag_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag type. This field will always be null because the hashtag type is for hashtag interactions scenarios only."
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of video interactions categories that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"fashion\" . Value: An object array representing the generated video interactions categories, following the structure of list_result . Example: [{\"sub_targeting_type\": \"VIDEO_INTERACTION\", \"id\": \"1612\",\"name\": \"Other Fashion\", \"supported_special_industries\": [\"HOUSING\",\"EMPLOYMENT\",\"CREDIT\"],\"children_ids\": null,\"level\": null, \"hashtag_type\": null}] . You can pass the value of id to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to VIDEO_RELATED ."
+        },
+        {
+          "name": "creator_interaction",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of creator interactions categories."
+        },
+        {
+          "name": "list_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of all available creator interactions categories. If search_keywords is specified and the value of sub_targeting_types includes CREATOR_INTERACTION in the request, the value of this field will be null."
+        },
+        {
+          "name": "sub_targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary targeting type. Enum value: CREATOR_INTERACTION (creator interactions)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the creator interactions category. You can pass this value to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to CREATOR_RELATED ."
+        },
+        {
+          "name": "supported_special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The special ad categories that the creator interactions category can be used together with. Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities."
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The level of the creator interactions category."
+        },
+        {
+          "name": "children_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the children creator interactions categories for the current category."
+        },
+        {
+          "name": "hashtag_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag type. This field will always be null because the hashtag type is for hashtag interactions scenarios only."
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of creator interactions categories that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"fashion\" . Value: An object array representing the generated creator interactions categories, following the structure of list_result . Example: [{\"sub_targeting_type\": \"CREATOR_INTERACTION\", \"id\": \"10\",\"name\": \"Fashion & Beauty\", \"supported_special_industries\": [\"HOUSING\",\"EMPLOYMENT\",\"CREDIT\"],\"children_ids\": null,\"level\": null, \"hashtag_type\": null}] . You can pass the value of id to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to CREATOR_RELATED ."
+        },
+        {
+          "name": "hashtag_interaction",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "The list of hashtags or hashtag bundles related to hashtag interactions. If the value of sub_targeting_types includes HASHTAG_INTERACTION in the request: When search_keywords is passed, only hashtags will be returned. When search_keywords is not passed, only hashtag bundles will be returned."
+        },
+        {
+          "name": "list_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of all available hashtag bundles. If search_keywords is specified and the value of sub_targeting_types includes HASHTAG_INTERACTION in the request, the value of this field will be null."
+        },
+        {
+          "name": "sub_targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The secondary targeting type. Enum values: HASHTAG_INTERACTION (hashtag interactions)."
+        },
+        {
+          "name": "id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the hashtag bundle. You can pass this value to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to HASHTAG_RELATED ."
+        },
+        {
+          "name": "supported_special_industries",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The special ad categories that the hashtag bundle can be used together with. Enum values: HOUSING : Ads for real estate listings, homeowners’ insurance, mortgage loans or other related opportunities. EMPLOYMENT : Ads for job offers, internships, professional certification programs or other related opportunities. CREDIT : Ads for credit card offers, auto loans, long-term financing or other related opportunities."
+        },
+        {
+          "name": "level",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The level of the hashtag bundle."
+        },
+        {
+          "name": "children_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The IDs of the children hashtag bundles for the current bundle."
+        },
+        {
+          "name": "hashtag_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag type. Enum value: HASHTAG_BUNDLE (A pre-defined bundle of related hashtags focused on a common theme or event. For example, the \"christmas\" hashtag bundle can be used to target seasonal hashtags related to Christmas.)"
+        },
+        {
+          "name": "search_result",
+          "required": false,
+          "type": "array",
+          "raw_type": "map(string<>object[])",
+          "description": "The list of hashtags that are generated based on the specified search_keywords . Key: A seed keyword in the search_keywords of the request. Example: \"child\" . Value: An object array representing the generated hashtags, following the structure of list_result . Note that the value of hashtag_type will always be HASHTAG (A standalone hashtag that can be used to target users interested in content associated with that specific hashtag). Example: [{\"sub_targeting_type\": \"HASHTAG_INTERACTION\", \"id\": \"67137517581\",\"name\": \"#childbirtheducation\", \"supported_special_industries\": [ ],\"children_ids\": null,\"level\": null, \"hashtag_type\": \"HASHTAG\"}], . You can pass the value of id to action_category_ids when creating an ad group using /adgroup/create/ and action_scene is set to HASHTAG_RELATED ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"video_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"1311100\",\n                    \"sub_targeting_type\": \"VIDEO_INTERACTION\",\n                    \"name\": \"Scenery & Plants\",\n                    \"children_ids\": [],\n                    \"level\": 3,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"general_interest\": {\n            \"list_result\": [\n                {\n                    \"id\": \"18110\",\n                    \"sub_targeting_type\": \"GENERAL_INTEREST\",\n                    \"name\": \"Cleaning Supplies\",\n                    \"children_ids\": [],\n                    \"level\": 2,\n                    \"supported_special_industries\": [],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"creator_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"11\",\n                    \"sub_targeting_type\": \"CREATOR_INTERACTION\",\n                    \"name\": \"DIY & Life Hacks\",\n                    \"children_ids\": [\n                        \"11001\"\n                    ],\n                    \"level\": 1,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"hashtag_interaction\": {\n            \"list_result\": [\n                {\n                    \"id\": \"11\",\n                    \"sub_targeting_type\": \"HASHTAG_INTERACTION\",\n                    \"name\": \"cybermonday\",\n                    \"children_ids\": [],\n                    \"level\": 1,\n                    \"supported_special_industries\": [],\n                    \"hashtag_type\": \"HASHTAG_BUNDLE\"\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"purchase_intention\": {\n            \"list_result\": [\n                {\n                    \"id\": \"26101\",\n                    \"sub_targeting_type\": \"PURCHASE_INTENTION\",\n                    \"name\": \"Photography\",\n                    \"children_ids\": [],\n                    \"level\": 2,\n                    \"supported_special_industries\": [\n                        \"HOUSING\",\n                        \"EMPLOYMENT\",\n                        \"CREDIT\"\n                    ],\n                    \"hashtag_type\": null\n                },\n                ...\n                ],\n            \"search_result\": null\n        },\n        \"additional_interest\": null\n    },\n    \"code\": 0\n}"

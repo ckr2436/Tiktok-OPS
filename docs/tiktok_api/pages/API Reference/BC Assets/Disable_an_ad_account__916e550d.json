@@ -47,6 +47,58 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "disabled_advertiser_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the ad accounts that have been successfully disabled."
+        },
+        {
+          "name": "failed_infos",
+          "required": false,
+          "type": "string",
+          "raw_type": "map",
+          "description": "Information about the ad accounts that have not been successfully disabled. Key: The ID of the ad account ( advertiser_id ) that has not been successfully disabled. Value: The reason or reasons why the attempt to disable the ad account failed. Enum values: DELIVERING : The ad account has ads that are being delivered within 3 days. UNPAID_BILL : The ad account has unpaid bills. SUSPENDED : The ad account is being suspended. UNFINISHED_TRANSFER : The ad account has unfinished transfers. AUTOPAY_UNBILLED : The ad account whose Payment Method is Automatic Payment has unbilled cost."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "",
       "body": ""

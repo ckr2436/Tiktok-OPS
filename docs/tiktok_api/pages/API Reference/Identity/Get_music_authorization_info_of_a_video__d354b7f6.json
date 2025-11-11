@@ -82,6 +82,128 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "music_authorization",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Music authorization information for TikTok posts."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok post ID."
+        },
+        {
+          "name": "music_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The aggregated authorization status for all the music in the TikTok post. Enum values: WITHOUT_SONG_ID , AUTHORIZATION_MISSING , WITH_FULL_AUTHORIZATION ."
+        },
+        {
+          "name": "authorization_infos",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Authorization information for each music."
+        },
+        {
+          "name": "music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Song ID."
+        },
+        {
+          "name": "author",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Performer."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Song title."
+        },
+        {
+          "name": "labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Labels (tags) for this song."
+        },
+        {
+          "name": "lyricist",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Lyricist."
+        },
+        {
+          "name": "composer",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music composer."
+        },
+        {
+          "name": "publisher",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music publisher."
+        },
+        {
+          "name": "authorization_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Authorization type. Enum values: NOT_AUTHORIZED , AUTHORIZED ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202208101819310102510031480D2B9AA4\",\n    \"data\": {\n        \"music_authorization\": [\n            {\n                \"music_status\": MUSIC_STATUS,\n                \"item_id\": \"ITEM_ID\",\n                \"authorization_infos\": [\n                    {\n                        \"title\": \"TITLE\",\n                        \"composer\":\" COMPOSER\",\n                        \"author\": \"AUTHOR,\n                        \"publisher\": PUBLISHER,\n                        \"lyricist\": \"LYRICIST\",\n                        \"labels\": [\"LABELS\"],\n                        \"authorization_type\": \"AUTHORIZED\",\n                        \"music_id\": \"MUSIC_ID\"\n                    }\n                ]\n            }\n        ]\n    }\n}"

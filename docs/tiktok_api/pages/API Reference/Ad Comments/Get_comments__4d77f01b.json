@@ -96,6 +96,289 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The return message. For Details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The return code. For details, see Appendix-Return Code ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "comments",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of comments."
+        },
+        {
+          "name": "comment_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment ID."
+        },
+        {
+          "name": "app",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "App ID."
+        },
+        {
+          "name": "content",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment content."
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of likes."
+        },
+        {
+          "name": "replies",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Number of replies."
+        },
+        {
+          "name": "comment_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment type. It can be COMMENT , which is an original comment, or REPLY , which is a reply to an original comment."
+        },
+        {
+          "name": "original_comment_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the original comment. A value will be returned only when comment_type is REPLY ."
+        },
+        {
+          "name": "comment_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Comment status. Enum values: HIDDEN , PUBLIC ."
+        },
+        {
+          "name": "hit_blockedword",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment contains blocked words."
+        },
+        {
+          "name": "ad_text",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad title."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the comment is created."
+        },
+        {
+          "name": "campaign_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the campaign that contains the ad that the comment is added to."
+        },
+        {
+          "name": "campaign_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Name of the campaign that contains the ad that the comment is added to."
+        },
+        {
+          "name": "adgroup_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the ad group that contains the ad that the comment is added to."
+        },
+        {
+          "name": "adgroup_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Name of the ad group that contains the ad that the comment is added to."
+        },
+        {
+          "name": "ad_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the ad that the comment is added to."
+        },
+        {
+          "name": "ad_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Name of the ad that the comment is added to."
+        },
+        {
+          "name": "tiktok_item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok video ID."
+        },
+        {
+          "name": "identity_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity ID."
+        },
+        {
+          "name": "identity_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Identity type. CUSTOMIZED_USER (Customized User), TT_USER (TikTok Business Account User). For details about identities, see Identities ."
+        },
+        {
+          "name": "is_pinned",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment is pinned."
+        },
+        {
+          "name": "can_delete",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the comment can be deleted."
+        },
+        {
+          "name": "is_auth_ttba",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the user is linked to a TikTok Business Account."
+        },
+        {
+          "name": "is_auth_comment_manage_scope",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the user has the comment management permission."
+        },
+        {
+          "name": "video_play_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video play URL."
+        },
+        {
+          "name": "video_cover_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video cover URL."
+        },
+        {
+          "name": "user_avatar_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL to the users' avatar."
+        },
+        {
+          "name": "user_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique user name."
+        },
+        {
+          "name": "user_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the TikTok user who made the comment. Example: \"6123456789123456789\" ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Page information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of pages."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique ID of the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"202105210639490102360430824C1AE673\",\n    \"data\": {\n        \"comments\": [\n            {\n                \"likes\": 0,\n                \"create_time\": \"2021-01-14 07:04:16 +0000 UTC\",\n                \"comment_type\": \"COMMENT\",\n                \"hit_blockedword\": false,\n                \"ad_text\": \"\",\n                \"campaign_name\": \"Bytedance_3006_JP_JA_IOS/AND_1123_dogfood\",\n                \"adgroup_name\": \"Ad Group20201123093958\",\n                \"ad_id\": \"1684147917059121\",\n                \"replies\": 0,\n                \"comment_status\": \"PUBLIC\",\n                \"original_comment_id\": null,\n                \"campaign_id\": \"1684147923311617\",\n                \"adgroup_id\": \"1684147923311633\",\n                \"ad_name\": \"Ad Name20201123094902\",\n                \"comment_id\": \"6917508027378253825\",\n                \"content\": \"Another creative\",\n                \"app\": null\n            },\n            {\n                \"likes\": 0,\n                \"create_time\": \"2021-01-14 05:54:24 +0000 UTC\",\n                \"comment_type\": \"REPLY\",\n                \"hit_blockedword\": false,\n                \"ad_text\": \"\",\n                \"campaign_name\": \"Bytedance_3006_JP_JA_IOS/AND_1123_dogfood\",\n                \"adgroup_name\": \"Ad Group20201123093958\",\n                \"ad_id\": \"1684147917057073\",\n                \"replies\": 0,\n                \"comment_status\": \"PUBLIC\",\n                \"original_comment_id\": \"6917441294860550145\",\n                \"campaign_id\": \"1684147923311617\",\n                \"adgroup_id\": \"1684147923311633\",\n                \"ad_name\": \"Creative award~~~\",\n                \"comment_id\": \"6917490050552823810\",\n                \"content\": \"hsbbdbd@user285\",\n                \"app\": null\n            },\n        ],\n        \"page_info\": {\n            \"total_number\": 2,\n            \"page_size\": 10,\n            \"page\": 1,\n            \"total_page\": 1\n        }\n    }\n}"

@@ -55,6 +55,86 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "url_property_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the URL property that is added and pending for ownership verification."
+        },
+        {
+          "name": "property_type",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Type of the URL property. Enum values： 1: Domain. 2: URL prefix."
+        },
+        {
+          "name": "url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An owned URL that is added and pending for ownership verification."
+        },
+        {
+          "name": "property_status",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Verification status of the URL property. Enum values: 0: Pending for verification."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Signature string to be used in the ownership verification process."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Signature file name to be used in the ownership verification process."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"url_property_info\": {\n            \"file_name\": \"{{file_name}}\",\n            \"property_status\": 0,\n            \"property_type\": {{property_type}},\n            \"signature\": \"{{signature}}\",\n            \"url\": \"{{url}}\"\n        }\n    }\n}"

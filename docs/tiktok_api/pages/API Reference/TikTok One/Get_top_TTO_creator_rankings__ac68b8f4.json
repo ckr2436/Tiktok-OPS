@@ -82,6 +82,233 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "creators",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of up to the top 100 creators, sorted by rank. Note : The actual number of returned creators may be less than 100, depending on the available data at the time of the query."
+        },
+        {
+          "name": "ranking_change",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The change in rank position for the creator compared to the rank in the last time period. A positive rank_change indicates an increase in rank. For example, if the rank position shifts from 5 to 1, rank_change will be +4 . A negative rank_change indicates a decrease in rank. For example, if the rank position shifts from 1 to 5, rank_change will be -4 . A rank_change of 0 indicates no changes in rank. A rank_change marked as N/A indicates that the creator was not present in the top ranking list in the last time period."
+        },
+        {
+          "name": "profile_image",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The temporary URL for the profile image of the creator, which needs to be re-acquired after expiration. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: https://p16-sign.tiktokcdn-us.com/obj/tos-useast5-avt-0123-tx/ab123456789d1234567ab54de76f0d3b?lk3s=429d27ce&nonce=42773&refresh_token=123a4ab1234567a1aa1a11a1aa11aa1a&x-expires=1732046400&x-signature=aa1Q11aa1Da1a1aVZO%1Fa1oADaL1%1D&shp=111d11ce&shcp=- ."
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region where the creator is located. Currently, the only supported enum value is US because the creator ranking data is only available for the United States."
+        },
+        {
+          "name": "handle",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The handle name of the creator."
+        },
+        {
+          "name": "display_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The display name of the creator."
+        },
+        {
+          "name": "industry_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of industry labels associated with the creator. Creator industry labels are assigned to creators based on the commercial content they produce, including ad creatives and branded content on their TikTok accounts, and represent their commercial experience in certain industries. Note : Creators who no longer have the queried label may still be returned in the results. This is because the label was associated with them at the time the rank was generated. However, these labels can change over time, so a creator might lose a label after the rank has been generated."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the creator industry label."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the creator industry label."
+        },
+        {
+          "name": "content_labels",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The list of content tag labels associated with the creator. Content tag labels are assigned to creators based on the main focus of the creator’s TikTok account, and represent the direction of the creator’s organic content. Note : Creators who no longer have the queried label may still be returned in the results. This is because the label was associated with them at the time the rank was generated. However, these labels can change over time, so a creator might lose a label after the rank has been generated."
+        },
+        {
+          "name": "label_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The ID of the content tag label."
+        },
+        {
+          "name": "label_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The name of the content tag label."
+        },
+        {
+          "name": "score",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "When ranking_type is BRANDED_CONTENT , this field represents commercial score, which is calculated based on the creator’s experience with commercial content with and the performance of their past commercial content. When ranking_type is ORGANIC_CONTENT , this field represents follower growth score (an indicator of how quickly the creator’s follower count is growing), which is calculated based on the creator’s follower count growth and video performance within the specified time period. Example: 81.56906666666666."
+        },
+        {
+          "name": "number_of_followers",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Follower count. The creator’s current follower count. Example: 242703."
+        },
+        {
+          "name": "branded_content_video_views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Branded content video views. The total views of all branded content videos, where the video’s branded content toggle was enabled, produced by the Creator within the specified time period. Example: 528377. Note : This field returns a non-null value only when ranking_type is BRANDED_CONTENT in the request."
+        },
+        {
+          "name": "branded_content_engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Branded content engagement rate. The engagement rate of branded content within the specified time period, calculated as (total number of comments, likes, and shares of branded content) / (total video views). For example, a value of 3.02 means the branded content engagement rate is 3.02%. Note : This field returns a non-null value only when ranking_type is BRANDED_CONTENT in the request."
+        },
+        {
+          "name": "total_video_views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Total video views. The total number of views from all of the creator’s videos within the specified time period. Example: 633516."
+        },
+        {
+          "name": "engagement_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Engagement rate. The collective engagement rate for all of the creator’s videos during the specified time period. This is calculated as (total number of comments, likes and shares)/(total video views). For example, a value of 2.97 means the branded content engagement rate is 2.97%."
+        },
+        {
+          "name": "starting_price",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The creator’s starting base price. Example: 30000. Note : If the creator’s starting base pay is not set, the value of this field will be null."
+        },
+        {
+          "name": "starting_price_currency",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The currency for the creator’s starting base price. Example: USD . Note : If the creator’s starting base pay is not set, the value of this field will be an empty string ( \"\" )."
+        },
+        {
+          "name": "follower_growth",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of followers gained during the specified time period. Example: 180476. Note : This field returns a non-null value only when ranking_type is ORGANIC_CONTENT in the request."
+        },
+        {
+          "name": "last_updated_at",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The UTC+0 time when the ranking data was last updated, in ISO-8601 format. Example: 2024-11-19T14:14:22Z ."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"creators\": [\n            {\n                \"branded_content_engagement_rate\": null,\n                \"branded_content_video_views\": null,\n                \"content_labels\": [\n                    {\n                        \"label_id\": \"11014001\",\n                        \"label_name\": \"Automobiles\"\n                    }\n                ],\n                \"country\": \"US\",\n                \"display_name\": \"{{display_name}}\",\n                \"engagement_rate\": 1.95,\n                \"follower_growth\": 180476,\n                \"handle\": \"{{handle}}\",\n                \"industry_labels\": [\n                    {\n                        \"label_id\": \"14100000000\",\n                        \"label_name\": \"Oral Care\"\n                    }\n                ],\n                \"number_of_followers\": 10711990,\n                \"profile_image\": \"{{profile_image}}\",\n                \"ranking_change\": \"+1\",\n                \"score\": 91.476275,\n                \"starting_price\": 30000,\n                \"starting_price_currency\": \"USD\",\n                \"total_video_views\": 329546252\n            },\n            ...,\n            {\n                \"branded_content_engagement_rate\": null,\n                \"branded_content_video_views\": null,\n                \"content_labels\": [\n                    {\n                        \"label_id\": \"11014001\",\n                        \"label_name\": \"Automobiles\"\n                    }\n                ],\n                \"country\": \"US\",\n                \"display_name\": \"{{display_name}}\",\n                \"engagement_rate\": 1.94,\n                \"follower_growth\": 6083,\n                \"handle\": \"{{handle}}\",\n                \"industry_labels\": null,\n                \"number_of_followers\": 132742,\n                \"profile_image\": \"{{profile_image}}\",\n                \"ranking_change\": \"N/A\",\n                \"score\": 82.74355,\n                \"starting_price\": null,\n                \"starting_price_currency\": \"\",\n                \"total_video_views\": 3213298\n            }\n        ],\n        \"last_updated_at\": \"2024-11-19T14:14:22Z\",\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 20,\n            \"total_number\": 100,\n            \"total_page\": 5\n        }\n    }\n}"

@@ -54,6 +54,72 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "The response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "The returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "upload_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The upload task ID. It will be needed in all of the following requests for the same task."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The file name. The maximum length is 100 characters."
+        },
+        {
+          "name": "start_offset",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The starting offset of the first chunk."
+        },
+        {
+          "name": "end_offset",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The ending offset of the first chunk."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The unique request ID."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

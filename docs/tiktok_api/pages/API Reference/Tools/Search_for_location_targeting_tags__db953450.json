@@ -122,6 +122,205 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "targeting_tag_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the targeting tags that are matched by the specified keyword or keywords. Note : Multiple targeting tags of different names ( name ) may be returned for the same keyword ."
+        },
+        {
+          "name": "keyword",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The keyword that is used to search for targeting tags."
+        },
+        {
+          "name": "targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The targeting type that the targeting tag is used for. Enum values: GEO (Geographical targeting, which consists of administrative region targeting and zip code targeting (or postal code targeting))."
+        },
+        {
+          "name": "status_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the status of the targeting tag."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the targeting tag. Enum values: ENABLED (can be used for targeting), DISABLED (cannot be used for targeting)."
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The reason why the targeting tag cannot be used for targeting. Returned when status = DISABLED . Enum values: OFFLINE : The targeting tag is offline. NOT_SUPPORTED : The targeting tag is not offline but is not supported for the specified settings."
+        },
+        {
+          "name": "geo",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the targeting tag that is used for location targeting. Returned when targeting_type is GEO ."
+        },
+        {
+          "name": "geo_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Location ID, zip code ID, or postal code ID. Location IDs can be used for administrative region targeting while zip code IDs can be used for zip code targeting and postal code IDs can be used for postal code targeting. When the corresponding geo_type is ZIP_CODE , you can pass the value of this field as zip code ID or postal code ID to zipcode_ids when calling /adgroup/create/ , /adgroup/update/ or /ad/audience_size/estimate/ . When the corresponding geo_type is not ZIP_CODE , you can pass the value of this field as location ID to location_ids when calling /adgroup/create/ , /adgroup/update/ or /ad/audience_size/estimate/ ."
+        },
+        {
+          "name": "geo_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of location that the geo_id corresponds to. Enum values: COUNTRY (country), PROVINCE (province), CITY (city or county), DISTRICT (district or city), DMA (DMA), ZIP_CODE (zip code or postal code)."
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The description of the targeted location."
+        },
+        {
+          "name": "region_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region that the targeted location belongs to."
+        },
+        {
+          "name": "parent_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the parent location. Returns 0 if no parent location exists."
+        },
+        {
+          "name": "parent_tags",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about all the parent targeting tags."
+        },
+        {
+          "name": "targeting_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The targeting type that the parent targeting tag is used for. Enum values: GEO (Geographical targeting, which consists of administrative region targeting and zip code targeting (or postal code targeting))."
+        },
+        {
+          "name": "status_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the status of the parent targeting tag."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the parent targeting tag. Enum values: ENABLED (can be used for targeting), DISABLED (cannot be used for targeting)."
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The reason why the parent targeting tag cannot be used for targeting. Returned when status = DISABLED . Enum values: OFFLINE : The parent targeting tag is offline. NOT_SUPPORTED : The parent targeting tag is not offline but is not supported for the specified settings."
+        },
+        {
+          "name": "geo",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the parent targeting tag that is used for location targeting. Returned when targeting_type is GEO ."
+        },
+        {
+          "name": "geo_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Parent location ID, zip code ID, or postal code ID. When the corresponding geo_type is ZIP_CODE , you can pass the value of this field to zipcode_ids when calling /adgroup/create/ , /adgroup/update/ or /ad/audience_size/estimate/ . When the corresponding geo_type is not ZIP_CODE , you can pass the value of this field to location_ids when calling /adgroup/create/ , /adgroup/update/ or /ad/audience_size/estimate/ ."
+        },
+        {
+          "name": "geo_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of location that the geo_id corresponds to. Enum values: COUNTRY (country), PROVINCE (province), CITY (city or county), DISTRICT (district or city), DMA (DMA), ZIP_CODE (zip code or postal code)."
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The description of the parent location."
+        },
+        {
+          "name": "region_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The code of the country or region that the parent location belongs to."
+        },
+        {
+          "name": "parent_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ID of the parent location for the parent location. Returns 0 if no parent location exists."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"parent_tags\": [\n            {\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"6251999\",\n                    \"geo_type\": \"COUNTRY\",\n                    \"parent_id\": \"0\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"Country\"\n                },\n                \"isp\": null,\n                \"name\": \"Canada\",\n                \"targeting_type\": \"GEO\"\n            },\n            {\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"6354959\",\n                    \"geo_type\": \"PROVINCE\",\n                    \"parent_id\": \"6251999\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"province\"\n                },\n                \"isp\": null,\n                \"name\": \"Newfoundland and Labrador\",\n                \"targeting_type\": \"GEO\"\n            }\n        ],\n        \"targeting_tag_list\": [\n            {\n                \"keyword\": \"A0A\",\n                \"status_info\": {\n                    \"reason\": null,\n                    \"status\": \"ENABLED\"\n                },\n                \"geo\": {\n                    \"geo_id\": \"8124000000533\",\n                    \"geo_type\": \"ZIP_CODE\",\n                    \"parent_id\": \"6354959\",\n                    \"region_code\": \"CA\",\n                    \"description\": \"postcode\"\n                },\n                \"isp\": null,\n                \"name\": \"A0A\",\n                \"targeting_type\": \"GEO\"\n            }\n        ]\n    }\n}"

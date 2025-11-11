@@ -82,6 +82,128 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of partner assets"
+        },
+        {
+          "name": "asset_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset ID. If the asset_type is ADVERTISER , this is the advertiser ID. If the asset_type is CATALOG , this is the catalog ID. If the asset_type is TIKTOK_SHOP , this is the TikTok Shop ID. If the asset_type is PIXEL , this is the Pixel ID."
+        },
+        {
+          "name": "asset_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset type. Enum values: ADVERTISER , CATALOG , TIKTOK_SHOP , and PIXEL ."
+        },
+        {
+          "name": "asset_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Asset name."
+        },
+        {
+          "name": "advertiser_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Ad account role. Enum values: ADMIN , OPERATOR , ANALYST . Returned only when asset_type is ADVERTISER ."
+        },
+        {
+          "name": "advertiser_account_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Type of the ad account. Enum values: RESERVATION (reservation ad account), AUCTION (auction ad account)."
+        },
+        {
+          "name": "catalog_role",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Business Center user's permissions to the catalog. Valid when asset_type = CATALOG . Enum values: ADMIN : The Business Center user has Admin permissions to the catalog. AD_PROMOTE : The Business Center user can only use the catalog for promotions."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results"
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

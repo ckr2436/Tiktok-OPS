@@ -69,6 +69,135 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "videos",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of up to 20 TikTok video posts with their Spark Ads recommendation results."
+        },
+        {
+          "name": "recommendation_level",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The recommendation level, which indicates the video's suitability for Spark Ads. Enum values: HIGH : Highly recommended. MEDIUM : Moderately recommended. LOW : Not recommended."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Unique identifier for the TikTok video post. You can pass the value of this field to tiktok_item_id in /ad/create/ to create Spark Ads. To learn more about Spark Ads, see Create Spark Ads . Example: 6995316737801538821 . Updated in: Real-time"
+        },
+        {
+          "name": "embed_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "An embeddable link for this TikTok video. Example: https://www.tiktok.com/static/profile-video?id=7202758233486822657&hide_author=1&utm_campaign=tt4d_open_api&utm_source=7220548562860376066 . Updated in: Real-time"
+        },
+        {
+          "name": "thumbnail_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for the video thumbnail. You need to re-acquire the URL after it expires. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/75dec21d63500917fb6ec8bc59415156~c5_300x300.jpeg?x-expires=1614099600&x-signature=PmK%2BWs3LzSzRL2tYs%2FZx7EjG3Gk%3D . Updated in: Real-time"
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the video was published, in the format of an Epoch/Unix timestamp in seconds (UTC time). Example: 1628461703 . Updated in: Real-time"
+        },
+        {
+          "name": "video_views",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of video views for the video. Note : Counts when playback duration >0 and the playback is the first playback in an impression session. If the user swipes away from the ad then swipes back, it would be counted as 2 impressions. Therefore, a new video view will be counted again with the new impression session. Example: 603. Updated in: T + 24-48 hours (UTC time)"
+        },
+        {
+          "name": "likes",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of likes on the video. Example: 243. Updated in: T + 24-48 hours (UTC time)"
+        },
+        {
+          "name": "comments",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of comments on the video. Example: 10. Updated in: T + 24-48 hours (UTC time)"
+        },
+        {
+          "name": "shares",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of times the video has been shared. The share count displayed in this field corresponds to the number of shares shown in the For You feed on the TikTok mobile app. It includes both external shares and internal shares sent to friends using the \"Send to friends\" button. For example, if a video is shared externally 30 times and shared with friends within the TikTok app 20 times, the value of this field will be 50. Example: 10. Updated in: T + 24-48 hours (UTC time)"
+        },
+        {
+          "name": "audience_countries",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Percentage breakdown of the top 10 countries or regions where viewers of the video are located. Max size: 10. Example: [{\"country\":\"CA\",\"percentage\":0.0132}, {\"country\":\"GB\",\"percentage\":0.0987},{\"country\":\"US\",\"percentage\":0.7303},...] Updated in: T + 24-48 hours (UTC time) Note : If the video_views of the video is less than 100, the value of this field will be an empty list ( [] )."
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "ISO 3166-1 alpha-2 country code."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Percentage of audience registered from a specified country or region."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"videos\": [\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"MEDIUM\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 0,\n                \"likes\": 0,\n                \"comments\": 0,\n                \"embed_url\": \"{{embed_url}}\"\n            },\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"MEDIUM\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 0,\n                \"likes\": 0,\n                \"comments\": 0,\n                \"embed_url\": \"{{embed_url}}\"\n            },\n            {\n                \"shares\": 0,\n                \"thumbnail_url\": \"{{thumbnail_url}}\",\n                \"create_time\": \"{{create_time}}\",\n                \"recommendation_level\": \"LOW\",\n                \"audience_countries\": [],\n                \"item_id\": \"{{item_id}}\",\n                \"video_views\": 4,\n                \"likes\": 3,\n                \"comments\": 1,\n                \"embed_url\": \"{{embed_url}}\"\n            }\n        ]\n    }\n}"

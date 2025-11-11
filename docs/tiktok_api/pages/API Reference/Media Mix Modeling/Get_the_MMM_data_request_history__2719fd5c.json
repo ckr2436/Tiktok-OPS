@@ -40,6 +40,51 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "historical_requests",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "A JSON-formatted string array that displays historical requests, providing details for each request. For the fields media_type and Status , you might need to convert the returned integer values to string values in other MMM endpoints based on the following mapping: Supported values for media_type : 0 : corresponds to All . 1 : corresponds to Earned . 2 : corresponds to Paid . Supported values for Status : 1 : corresponds to request received . 3 : corresponds to in progress . 5 : corresponds to completed - ready for download . 2 : corresponds to failed . 4 : corresponds to failed ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"historical_requests\": [\n            \"{\\\"RequestID\\\":\\\"{{RequestID}}\\\",\\\"CreateTime\\\":\\\"2024-11-07T22:03:39Z\\\",\\\"Message\\\":\\\"{\\\\\\\"targets\\\\\\\":[{\\\\\\\"advertiser_id\\\\\\\":\\\\\\\"{{advertiser_id}}\\\\\\\"}],\\\\\\\"from_date\\\\\\\":\\\\\\\"20240729\\\\\\\",\\\\\\\"to_date\\\\\\\":\\\\\\\"20240829\\\\\\\",\\\\\\\"media_type\\\\\\\":2}\\\",\\\"Status\\\":5}\",\n            \"{\\\"RequestID\\\":\\\"{{RequestID}}\\\",\\\"CreateTime\\\":\\\"2024-11-19T19:54:58Z\\\",\\\"Message\\\":\\\"{\\\\\\\"targets\\\\\\\":[{\\\\\\\"advertiser_id\\\\\\\":\\\\\\\"{{advertiser_id}}\\\\\\\"}],\\\\\\\"from_date\\\\\\\":\\\\\\\"20241104\\\\\\\",\\\\\\\"to_date\\\\\\\":\\\\\\\"20241108\\\\\\\",\\\\\\\"country_code\\\\\\\":[\\\\\\\"JP\\\\\\\"],\\\\\\\"media_type\\\\\\\":2}\\\",\\\"Status\\\":1}\"\n        ]\n    }\n}"

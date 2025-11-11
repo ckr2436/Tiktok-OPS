@@ -425,6 +425,79 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data"
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "user_count_stage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Evaluation of the estimated audience size. Enum: 1 : Too Narrow. The estimated audience size is less than 10,000, and accounts for less then 20% of possible audience size in the selected locations on the selected placements. 2 : Narrow. The estimated audience size is equal to or larger than 10,000, but still accounts for less than 20% of possible audience size in the selected locations on the selected placements. 3 : Balanced. The estimated audience size accounts for 20% or more but less than 80% of possible audience size in the selected locations on the selected placements. 4 : Fairly Broad: The estimated audience size accounts for 80% or more of the possible audience size in the selected locations on the selected placements"
+        },
+        {
+          "name": "user_count",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Estimated audience sizes"
+        },
+        {
+          "name": "lower_end",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Lower-end of the estimated audience size range"
+        },
+        {
+          "name": "upper_end",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Upper-end of the estimated audience size range"
+        },
+        {
+          "name": "purchase_intention_keyword_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of purchase intention keywords that you want to use to target audiences with an interest in purchases related to a content category."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": {

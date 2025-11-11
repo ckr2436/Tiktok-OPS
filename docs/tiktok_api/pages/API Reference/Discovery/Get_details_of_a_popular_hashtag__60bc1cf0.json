@@ -61,6 +61,156 @@
     ]
   },
   "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "hashtag_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag ID. Example: 4268426520694 ."
+        },
+        {
+          "name": "hashtag_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Hashtag name. Example: yummy ."
+        },
+        {
+          "name": "views",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag in the selected region and timeframe. Example: 134333716."
+        },
+        {
+          "name": "views_global_lifetime",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag, globally and across their whole lifetime. Example: 91639649280."
+        },
+        {
+          "name": "posts",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of posts for related videos that feature this hashtag in the selected region and timeframe. Example: 21856."
+        },
+        {
+          "name": "posts_global_lifetime",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of posts for related videos that feature this hashtag, globally and across their whole lifetime. Example: 7846729."
+        },
+        {
+          "name": "top_country_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "The location codes of the top five locations in the world where this hashtag is most popular. To learn about the location that a location code represents, see Location code . Example: [\"US\", \"GB\", \"PH\", \"CA\", \"DE\"] ."
+        },
+        {
+          "name": "hashtag_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The status of the hashtag. Enum values: ONLINE : available for ad creation. OFFLINE : unavailable for ad creation."
+        },
+        {
+          "name": "trending_history",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "The historical ranking data for the hashtag, spanning up to the past 30 days."
+        },
+        {
+          "name": "date",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Date, in the format of YYYY-MM-DD . Example: 2024-01-01 ."
+        },
+        {
+          "name": "rank_position_daily",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The rank position of the hashtag among hashtags across all categories or industries in the selected region ( country_code ) on the date. Example: 73 . Note : If the hashtag does not perform well compared to the last time period, the hashtag will not be considered a trending hashtag and the value of this field will be null."
+        },
+        {
+          "name": "views_daily",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The number of views for related videos that feature this hashtag in the selected region ( country_code ) on the date. Example: 39409290. Note : If the daily views are less than 1,000, the value of this field will be null."
+        },
+        {
+          "name": "audience_insights",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about viewers that watch videos associated with this hashtag. Note : If hashtag_status is OFFLINE or the expected audience size for the hashtag is less than 1,000, audience_insights will be returned as empty."
+        },
+        {
+          "name": "audience_ages",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about viewers' age."
+        },
+        {
+          "name": "age",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Age group. Enum values: 18-24 , 25-34 , 35+ ."
+        },
+        {
+          "name": "percentage",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "The approximate percentage of viewers associated with different age groups."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
     "example": {
       "status_line": "HTTPS/1.1 200 OK",
       "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"hashtag_status\": \"ONLINE\",\n        \"posts\": 31927,\n        \"hashtag_id\": \"{{hashtag_id}}\",\n        \"audience_insights\": {\n            \"audience_ages\": [\n                {\n                    \"percentage\": 0.36926615840545485,\n                    \"age\": \"25-34\"\n                },\n                {\n                    \"percentage\": 0.3550167061571056,\n                    \"age\": \"18-24\"\n                },\n                {\n                    \"percentage\": 0.2757171047811277,\n                    \"age\": \"35+\"\n                }\n            ]\n        },\n        \"hashtag_name\": \"tattoo\",\n        \"views_global_lifetime\": 157770993216,\n        \"posts_global_lifetime\": 12543346,\n        \"views\": 216408760,\n        \"top_country_list\": [\n            \"US\",\n            \"MX\",\n            \"BR\",\n            \"VN\",\n            \"ID\"\n        ],\n        \"trending_history\": [\n            {\n                \"date\": \"2024-03-09\",\n                \"rank_position_daily\": \"121\",\n                \"views_daily\": 39181186\n            },\n            ...\n            {\n                \"date\": \"2024-04-06\",\n                \"rank_position_daily\": \"85\",\n                \"views_daily\": 49419265\n            },\n            {\n                \"date\": \"2024-04-07\",\n                \"rank_position_daily\": \"128\",\n                \"views_daily\": 45524768\n            }\n        ]\n    }\n}"
