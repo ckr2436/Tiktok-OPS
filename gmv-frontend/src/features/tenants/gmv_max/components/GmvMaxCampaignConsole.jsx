@@ -357,45 +357,6 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
 
   const metricsSummary = buildMetricsSummary(metricsQuery.data);
 
-  useEffect(() => {
-    if (!selectedId) {
-      setEditingStrategyText('');
-      setStrategyError(null);
-      return;
-    }
-    if (strategyQuery.data) {
-      try {
-        setEditingStrategyText(JSON.stringify(strategyQuery.data, null, 2));
-        setStrategyError(null);
-      } catch (error) {
-        setEditingStrategyText('');
-      }
-    } else {
-      setEditingStrategyText('');
-      setStrategyError(null);
-    }
-  }, [selectedId, strategyQuery.data]);
-
-  useEffect(() => {
-    resetPreview();
-  }, [resetPreview, selectedId]);
-
-  if (!workspaceId || !authId) {
-    return <div>请选择 workspace / 授权账号后查看 GMV Max Campaign。</div>;
-  }
-
-  if (!advertiserId) {
-    return <div>请选择一个广告主以查看 GMV Max Campaign。</div>;
-  }
-
-  if (campaignsQuery.isLoading) {
-    return <div>加载 GMV Max Campaign 列表中...</div>;
-  }
-
-  if (campaignsQuery.isError) {
-    return <div>加载失败：{formatAxiosError(campaignsQuery.error)}</div>;
-  }
-
   const list = Array.isArray(campaignsQuery.data?.items)
     ? campaignsQuery.data.items
     : campaignsQuery.data?.list || [];
@@ -498,6 +459,45 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
       setStrategyError(`保存策略失败：${formatAxiosError(error)}`);
     },
   });
+
+  useEffect(() => {
+    if (!selectedId) {
+      setEditingStrategyText('');
+      setStrategyError(null);
+      return;
+    }
+    if (strategyQuery.data) {
+      try {
+        setEditingStrategyText(JSON.stringify(strategyQuery.data, null, 2));
+        setStrategyError(null);
+      } catch (error) {
+        setEditingStrategyText('');
+      }
+    } else {
+      setEditingStrategyText('');
+      setStrategyError(null);
+    }
+  }, [selectedId, strategyQuery.data]);
+
+  useEffect(() => {
+    resetPreview();
+  }, [resetPreview, selectedId]);
+
+  if (!workspaceId || !authId) {
+    return <div>请选择 workspace / 授权账号后查看 GMV Max Campaign。</div>;
+  }
+
+  if (!advertiserId) {
+    return <div>请选择一个广告主以查看 GMV Max Campaign。</div>;
+  }
+
+  if (campaignsQuery.isLoading) {
+    return <div>加载 GMV Max Campaign 列表中...</div>;
+  }
+
+  if (campaignsQuery.isError) {
+    return <div>加载失败：{formatAxiosError(campaignsQuery.error)}</div>;
+  }
 
   return (
     <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
