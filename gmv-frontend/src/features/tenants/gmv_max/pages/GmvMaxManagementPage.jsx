@@ -510,7 +510,7 @@ export default function GmvMaxManagementPage() {
   }, [setFeedback]);
 
   const bindingsQuery = useQuery({
-    queryKey: ['gmv-max', 'bindings', wid],
+    queryKey: ['gmvmax', 'bindings', wid],
     enabled: !!wid,
     queryFn: () => (wid ? listBindings(wid) : []),
     onError: (error) => pushErrorFeedback(error, '无法获取绑定列表'),
@@ -522,7 +522,7 @@ export default function GmvMaxManagementPage() {
   );
 
   const optionsQueryKey = useMemo(
-    () => ['gmv-max', 'options', wid, selectedAuthId],
+    () => ['gmvmax', 'options', wid, selectedAuthId],
     [wid, selectedAuthId],
   );
 
@@ -538,7 +538,7 @@ export default function GmvMaxManagementPage() {
   });
 
   const businessCentersQuery = useQuery({
-    queryKey: ['gmv-max', 'business-centers', wid, selectedAuthId],
+    queryKey: ['gmvmax', 'business-centers', wid, selectedAuthId],
     enabled: !!wid && !!selectedAuthId,
     queryFn: ({ signal }) => fetchBusinessCenters(wid, provider, selectedAuthId, { signal }),
     select: (response) => (Array.isArray(response?.items) ? response.items : []),
@@ -546,7 +546,7 @@ export default function GmvMaxManagementPage() {
   });
 
   const advertisersAllQuery = useQuery({
-    queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId, 'all'],
+    queryKey: ['gmvmax', 'advertisers', wid, selectedAuthId, 'all'],
     enabled: !!wid && !!selectedAuthId,
     queryFn: ({ signal }) => fetchAdvertisers(wid, provider, selectedAuthId, {}, { signal }),
     select: (response) => (Array.isArray(response?.items) ? response.items : []),
@@ -554,7 +554,7 @@ export default function GmvMaxManagementPage() {
   });
 
   const advertisersByBcQuery = useQuery({
-    queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId, 'bc', form.bcId || ''],
+    queryKey: ['gmvmax', 'advertisers', wid, selectedAuthId, 'bc', form.bcId || ''],
     enabled: !!wid && !!selectedAuthId && !!form.bcId,
     queryFn: ({ signal }) => fetchAdvertisers(
       wid,
@@ -568,7 +568,7 @@ export default function GmvMaxManagementPage() {
   });
 
   const storesQuery = useQuery({
-    queryKey: ['gmv-max', 'stores', wid, selectedAuthId, form.advertiserId || '', form.bcId || ''],
+    queryKey: ['gmvmax', 'stores', wid, selectedAuthId, form.advertiserId || '', form.bcId || ''],
     enabled: !!wid && !!selectedAuthId && !!form.advertiserId,
     queryFn: ({ signal }) => fetchStores(
       wid,
@@ -583,7 +583,7 @@ export default function GmvMaxManagementPage() {
   });
 
   const bindingConfigQuery = useQuery({
-    queryKey: ['gmv-max', 'binding-config', wid, selectedAuthId, configVersion],
+    queryKey: ['gmvmax', 'binding-config', wid, selectedAuthId, configVersion],
     enabled: !!wid && !!selectedAuthId,
     queryFn: ({ signal }) => fetchBindingConfig(wid, provider, selectedAuthId, { signal }),
     select: (response) => response || null,
@@ -626,8 +626,8 @@ export default function GmvMaxManagementPage() {
 
       if (wid && selectedAuthId) {
         queryClient.setQueryData(optionsQueryKey, result);
-        queryClient.invalidateQueries({ queryKey: ['gmv-max', 'business-centers', wid, selectedAuthId] });
-        queryClient.invalidateQueries({ queryKey: ['gmv-max', 'advertisers', wid, selectedAuthId] });
+        queryClient.invalidateQueries({ queryKey: ['gmvmax', 'business-centers', wid, selectedAuthId] });
+        queryClient.invalidateQueries({ queryKey: ['gmvmax', 'advertisers', wid, selectedAuthId] });
       }
     },
     onError: (error) => pushErrorFeedback(error, '刷新失败，请稍后重试'),
@@ -635,7 +635,7 @@ export default function GmvMaxManagementPage() {
 
   const productsQueryEnabled = !!wid && !!selectedAuthId && !!form.storeId;
   const productQueryKey = useMemo(
-    () => ['gmv-max', 'products', wid || '', selectedAuthId || '', form.storeId || ''],
+    () => ['gmvmax', 'products', wid || '', selectedAuthId || '', form.storeId || ''],
     [wid, selectedAuthId, form.storeId],
   );
   const initialProductsCache = useMemo(
@@ -722,7 +722,7 @@ export default function GmvMaxManagementPage() {
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
       setStoresByAdvertiser({});
-      queryClient.removeQueries({ queryKey: ['gmv-max', 'products'], exact: false });
+      queryClient.removeQueries({ queryKey: ['gmvmax', 'products'], exact: false });
       productsAnnouncementRef.current = false;
       optionsEtagRef.current = null;
       return;
@@ -732,7 +732,7 @@ export default function GmvMaxManagementPage() {
       setMetaSummary(null);
       setForm(DEFAULT_FORM);
       setStoresByAdvertiser({});
-      queryClient.removeQueries({ queryKey: ['gmv-max', 'products'], exact: false });
+      queryClient.removeQueries({ queryKey: ['gmvmax', 'products'], exact: false });
       productsAnnouncementRef.current = false;
       optionsEtagRef.current = null;
       return;
@@ -752,7 +752,7 @@ export default function GmvMaxManagementPage() {
     setMetaSummary(null);
     setStoresByAdvertiser({});
     setSyncRunStatus(null);
-    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || ''], exact: false });
     productsAnnouncementRef.current = false;
     optionsEtagRef.current = null;
 
@@ -862,7 +862,7 @@ export default function GmvMaxManagementPage() {
     setSelectedAuthId(v);
     saveScopeToLS({ wid, authId: v, bcId: '', advertiserId: '', storeId: '' });
     syncUrl({ authId: v, bcId: '', advertiserId: '', storeId: '' });
-    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || ''], exact: false });
+    queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || ''], exact: false });
     productsAnnouncementRef.current = false;
   }
   function handleBcChange(evt) {
@@ -870,7 +870,7 @@ export default function GmvMaxManagementPage() {
     const next = { ...form, bcId: value, advertiserId: '', storeId: '' };
     setForm(next);
     setStoresByAdvertiser({});
-    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || ''], exact: false });
     productsAnnouncementRef.current = false;
     saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
     syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
@@ -879,7 +879,7 @@ export default function GmvMaxManagementPage() {
     const value = evt.target.value || '';
     const next = { ...form, advertiserId: value, storeId: '' };
     setForm(next);
-    queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+    queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || ''], exact: false });
     productsAnnouncementRef.current = false;
     saveScopeToLS({ wid, authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
     syncUrl({ authId: selectedAuthId, bcId: next.bcId, advertiserId: next.advertiserId, storeId: next.storeId });
@@ -891,20 +891,20 @@ export default function GmvMaxManagementPage() {
     setForm(next);
 
     if (prevStoreId && prevStoreId !== value) {
-      queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || '', prevStoreId], exact: true });
+      queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || '', prevStoreId], exact: true });
     }
 
     if (value) {
       const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: value });
       if (cached) {
-        queryClient.setQueryData(['gmv-max', 'products', wid || '', selectedAuthId || '', value], cached);
+        queryClient.setQueryData(['gmvmax', 'products', wid || '', selectedAuthId || '', value], cached);
         productsAnnouncementRef.current = false;
       } else {
-        queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || '', value], exact: true });
+        queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || '', value], exact: true });
         productsAnnouncementRef.current = true;
       }
     } else {
-      queryClient.removeQueries({ queryKey: ['gmv-max', 'products', wid || '', selectedAuthId || ''], exact: false });
+      queryClient.removeQueries({ queryKey: ['gmvmax', 'products', wid || '', selectedAuthId || ''], exact: false });
       productsAnnouncementRef.current = false;
     }
 
@@ -923,7 +923,7 @@ export default function GmvMaxManagementPage() {
     if (!wid || !selectedAuthId || !form.storeId) return;
     const cached = readProductsCache({ wid, authId: selectedAuthId, storeId: form.storeId });
     if (cached) {
-      queryClient.setQueryData(['gmv-max', 'products', wid || '', selectedAuthId || '', form.storeId], cached);
+      queryClient.setQueryData(['gmvmax', 'products', wid || '', selectedAuthId || '', form.storeId], cached);
       productsAnnouncementRef.current = false;
     }
   }, [form.storeId, queryClient, selectedAuthId, wid]);
@@ -1136,7 +1136,7 @@ export default function GmvMaxManagementPage() {
    * 渲染
    * --------------------------- */
   return (
-    <div className="gmv-max-page">
+    <div className="gmvmax-page">
       <div className="page-header">
         <div>
           <h1>GMV Max 管理</h1>

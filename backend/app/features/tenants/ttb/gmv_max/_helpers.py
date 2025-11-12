@@ -17,6 +17,12 @@ def _normalize_provider(provider: str) -> str:
     return "tiktok-business"
 
 
+def normalize_provider(provider: str) -> str:
+    """Return the canonical provider identifier or raise 404 if unsupported."""
+
+    return _normalize_provider(provider)
+
+
 def _ensure_account(db: Session, workspace_id: int, auth_id: int) -> OAuthAccountTTB:
     account = db.get(OAuthAccountTTB, int(auth_id))
     if not account or account.workspace_id != int(workspace_id):
@@ -27,6 +33,16 @@ def _ensure_account(db: Session, workspace_id: int, auth_id: int) -> OAuthAccoun
             detail=f"binding status {account.status} cannot be used",
         )
     return account
+
+
+def ensure_ttb_auth_in_workspace(db: Session, workspace_id: int, auth_id: int) -> OAuthAccountTTB:
+    """Ensure the TikTok Business auth belongs to the workspace.
+
+    Raises HTTP 404 when the auth is missing or belongs to another workspace to
+    avoid leaking tenant information.
+    """
+
+    return _ensure_account(db, workspace_id, auth_id)
 
 
 def ensure_account(db: Session, workspace_id: int, provider: str, auth_id: int) -> OAuthAccountTTB:

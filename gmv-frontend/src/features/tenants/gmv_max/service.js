@@ -59,12 +59,12 @@ async function apiPost(url, body) {
 }
 
 export async function fetchBindingConfig(wid, provider, authId, options = {}) {
-  const url = `${accountPrefix(wid, provider, authId)}/gmv-max/config`;
+  const url = `${accountPrefix(wid, provider, authId)}/gmvmax/config`;
   return apiGet(url, options);
 }
 
 export async function saveBindingConfig(wid, provider, authId, payload) {
-  const url = `${accountPrefix(wid, provider, authId)}/gmv-max/config`;
+  const url = `${accountPrefix(wid, provider, authId)}/gmvmax/config`;
   return apiPut(url, payload);
 }
 
@@ -148,7 +148,7 @@ export async function fetchGmvOptions(
   authId,
   { refresh = false, etag, signal } = {},
 ) {
-  const base = `${accountPrefix(wid, provider, authId)}/gmv-max/options`;
+  const base = `${accountPrefix(wid, provider, authId)}/gmvmax/options`;
   const url = refresh ? appendQuery(base, { refresh: 1 }) : base;
   const headers = {};
   if (etag) {

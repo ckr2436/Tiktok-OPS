@@ -52,7 +52,7 @@ function LegacyGmvRedirect() {
   if (!wid) {
     return <Navigate to="/dashboard" replace />;
   }
-  return <Navigate to={`/tenants/${wid}/gmv-max`} replace />;
+  return <Navigate to={`/tenants/${wid}/gmvmax`} replace />;
 }
 
 const router = createBrowserRouter([
@@ -140,7 +140,7 @@ const router = createBrowserRouter([
 
           // 公司域 - GMV Max
           {
-            path: 'tenants/:wid/gmv-max',
+            path: 'tenants/:wid/gmvmax',
             element: (
               <TenantGuard>
                 <GmvMaxManagementPage />
