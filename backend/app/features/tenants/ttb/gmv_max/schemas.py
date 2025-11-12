@@ -34,7 +34,7 @@ class GmvMaxCampaignOut(BaseModel):
     id: int
     campaign_id: str
     name: str
-    status: str
+    status: Optional[str] = None
     advertiser_id: str
     shopping_ads_type: Optional[str] = None
     optimization_goal: Optional[str] = None
