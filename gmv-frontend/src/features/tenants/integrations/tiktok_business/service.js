@@ -1,11 +1,13 @@
 // TikTok Business integration service helpers
 
+import { apiRoot } from '@/core/config.js';
+
 export function normProvider(p) {
   const raw = (p && String(p).trim()) || 'tiktok-business';
   return raw.toLowerCase().replace(/_/g, '-');
 }
 
-const tenantPrefix = (wid) => `/api/v1/tenants/${encodeURIComponent(wid)}`;
+const tenantPrefix = (wid) => `${apiRoot}/tenants/${encodeURIComponent(wid)}`;
 const oauthPrefix = (wid) => `${tenantPrefix(wid)}/oauth/tiktok-business`;
 const providerPrefix = (wid, provider) => `${tenantPrefix(wid)}/providers/${encodeURIComponent(normProvider(provider))}`;
 const accountsPrefix = (wid, provider) => `${providerPrefix(wid, provider)}/accounts`;

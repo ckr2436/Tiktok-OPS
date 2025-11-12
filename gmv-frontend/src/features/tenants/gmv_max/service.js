@@ -1,6 +1,7 @@
+import { apiRoot } from '@/core/config.js';
 import { listBindings, normProvider } from '../integrations/tiktok_business/service.js';
 
-const tenantPrefix = (wid) => `/api/v1/tenants/${encodeURIComponent(wid)}`;
+const tenantPrefix = (wid) => `${apiRoot}/tenants/${encodeURIComponent(wid)}`;
 const providerPrefix = (wid, provider) => `${tenantPrefix(wid)}/providers/${encodeURIComponent(normProvider(provider))}`;
 const accountPrefix = (wid, provider, authId) => `${providerPrefix(wid, provider)}/accounts/${encodeURIComponent(authId)}`;
 

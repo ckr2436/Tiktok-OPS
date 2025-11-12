@@ -23,5 +23,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Build FE
+        run: |
+          cd gmv-frontend
+          pnpm install --frozen-lockfile=false
+          pnpm build
+
+      - name: Verify FE API prefix
+        run: bash scripts/verify_fe_api_prefix.sh
+
       - name: Task5 self-check
         run: scripts/verify_task5.sh
