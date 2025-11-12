@@ -68,6 +68,7 @@ def test_sync_metrics_hourly_is_idempotent(db_session):
         name="Metrics Campaign",
         status="PAUSED",
         currency="USD",
+        store_id="shop-9",
     )
     db_session.add(campaign)
     db_session.flush()

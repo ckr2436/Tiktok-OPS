@@ -60,6 +60,8 @@ _DEFAULT_REPORT_METRICS = [
     "live_follows",
 ]
 
+_REPORT_PAGE_SIZE = 200
+
 
 def _normalize_date(value: date | str) -> str:
     if isinstance(value, date):
@@ -436,15 +438,31 @@ async def sync_gmvmax_metrics_hourly(
 
     synced_rows = 0
     page = 1
+    store_id = campaign.store_id
+    if not store_id:
+        logger.warning(
+            "skip hourly metrics sync because store_id missing",
+            extra={
+                "campaign_id": campaign.campaign_id,
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+            },
+        )
+        return {"synced_rows": 0}
+
+    dimensions = ["campaign_id", "stat_time_hour"]
+    campaign_ids = [campaign.campaign_id]
     while True:
         data = await ttb_client.report_gmvmax(
             advertiser_id,
+            store_ids=[store_id],
             start_date=start_date_str,
             end_date=end_date_str,
-            time_granularity="HOUR",
             metrics=_DEFAULT_REPORT_METRICS,
-            campaign_ids=[campaign.campaign_id],
+            dimensions=dimensions,
+            campaign_ids=campaign_ids,
             page=page,
+            page_size=_REPORT_PAGE_SIZE,
         )
         if not isinstance(data, dict):
             break
@@ -574,15 +592,31 @@ async def sync_gmvmax_metrics_daily(
 
     synced_rows = 0
     page = 1
+    store_id = campaign.store_id
+    if not store_id:
+        logger.warning(
+            "skip daily metrics sync because store_id missing",
+            extra={
+                "campaign_id": campaign.campaign_id,
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+            },
+        )
+        return {"synced_rows": 0}
+
+    dimensions = ["campaign_id", "stat_time_day"]
+    campaign_ids = [campaign.campaign_id]
     while True:
         data = await ttb_client.report_gmvmax(
             advertiser_id,
+            store_ids=[store_id],
             start_date=start_date_str,
             end_date=end_date_str,
-            time_granularity="DAY",
             metrics=_DEFAULT_REPORT_METRICS,
-            campaign_ids=[campaign.campaign_id],
+            dimensions=dimensions,
+            campaign_ids=campaign_ids,
             page=page,
+            page_size=_REPORT_PAGE_SIZE,
         )
         if not isinstance(data, dict):
             break
