@@ -33,7 +33,7 @@ from app.data.models.ttb_entities import (
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
 from .gmv_max.router import router as gmv_max_router
-from .gmvmax import router as gmvmax_router
+from .gmv_max.router_provider import router as gmv_max_provider_router
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
     get_binding_config,
@@ -1371,7 +1371,7 @@ def list_account_products(
 
 
 @router.get(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/options",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/options",
 )
 async def get_gmv_max_options(
     workspace_id: int,
@@ -1469,7 +1469,7 @@ async def get_gmv_max_options(
 
 
 @router.get(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/config",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/config",
     response_model=GMVMaxBindingConfig,
 )
 def get_gmv_max_config(
@@ -1492,7 +1492,7 @@ def get_gmv_max_config(
 
 
 @router.put(
-    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max/config",
+    "/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/config",
     response_model=GMVMaxBindingConfig,
 )
 def update_gmv_max_config(
@@ -1546,13 +1546,13 @@ def update_gmv_max_config(
 
 
 # -------------------------- GMV Max 子路由 --------------------------
-router.include_router(
-    gmv_max_router,
-    prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max",
-    tags=["gmv-max"],
-)
+router.include_router(gmv_max_router)
 
-router.include_router(gmvmax_router)
+router.include_router(
+    gmv_max_provider_router,
+    prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax",
+    tags=["gmvmax"],
+)
 
 
 # -------------------------- 旧路由废弃 --------------------------

@@ -12,6 +12,7 @@ from app.core.deps import SessionUser, require_tenant_admin, require_tenant_memb
 from app.core.errors import install_exception_handlers
 from app.data.models import Workspace, OAuthProviderApp, OAuthAccountTTB
 from app.data.models.ttb_entities import (
+    TTBBindingConfig,
     TTBBusinessCenter,
     TTBAdvertiser,
     TTBStore,
@@ -152,6 +153,16 @@ def _seed_gmv_data(db_session) -> None:
     )
     db_session.add(store_link)
 
+    binding = TTBBindingConfig(
+        workspace_id=int(ws.id),
+        auth_id=int(account.id),
+        bc_id="7508663838649384976",
+        advertiser_id="7492997033645637633",
+        store_id="7496202240253986992",
+        auto_sync_products=False,
+    )
+    db_session.add(binding)
+
     for resource, rev in (
         ("bc", "bc_rev_1"),
         ("advertiser", "adv_rev_1"),
@@ -174,7 +185,7 @@ def test_options_returns_payload_and_etag(gmv_app):
     client, _ = gmv_app
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
     assert resp.status_code == 200
     etag = resp.headers.get("ETag")
@@ -204,7 +215,7 @@ def test_options_handles_missing_display_timezone(monkeypatch, gmv_app):
     )
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
 
     assert resp.status_code == 200
@@ -216,13 +227,13 @@ def test_options_returns_304_when_etag_matches(gmv_app):
     client, _ = gmv_app
 
     first = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
     etag = first.headers.get("ETag")
     assert etag
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
         headers={"If-None-Match": etag},
     )
     assert resp.status_code == 304
@@ -243,7 +254,7 @@ def test_refresh_timeout_returns_body(monkeypatch, gmv_app):
     monkeypatch.setattr(router_module, "enqueue_meta_sync", _fake_enqueue_meta_sync)
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
         params={"refresh": 1},
     )
     assert resp.status_code == 200
@@ -257,7 +268,7 @@ def test_refresh_returns_new_data_when_updated(monkeypatch, gmv_app):
     client, _ = gmv_app
 
     first = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
     initial_etag = first.headers["ETag"]
 
@@ -283,7 +294,7 @@ def test_refresh_returns_new_data_when_updated(monkeypatch, gmv_app):
     )
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
         params={"refresh": 1},
     )
 
@@ -362,14 +373,14 @@ def test_options_supports_legacy_cursor_types(gmv_app):
     db.commit()
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
     assert resp.status_code == 200
     etag = resp.headers.get("ETag")
     assert etag
 
     resp304 = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
         headers={"If-None-Match": etag},
     )
     assert resp304.status_code == 304
@@ -382,14 +393,14 @@ def test_options_returns_etag_without_cursors(gmv_app):
     db.commit()
 
     resp = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
     )
     assert resp.status_code == 200
     etag = resp.headers.get("ETag")
     assert etag
 
     resp304 = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
         headers={"If-None-Match": etag},
     )
     assert resp304.status_code == 304
@@ -510,7 +521,7 @@ def test_options_links_handle_raw_variants(gmv_app):
 
     try:
         resp = client.get(
-            "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/options"
+            "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options"
         )
     finally:
         event.remove(TTBStore, "load", _inject_raw)
@@ -528,3 +539,16 @@ def test_options_links_handle_raw_variants(gmv_app):
     adv_entries = {item["advertiser_id"]: item for item in data["advertisers"]}
     assert adv_entries[adv_json_id]["bc_id"] == bc_id
     assert adv_entries[adv_raw_id]["bc_id"] == bc_id
+
+
+def test_gmvmax_alias_scope_enforced(gmv_app):
+    client, _ = gmv_app
+
+    ok_resp = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax/")
+    assert ok_resp.status_code == 200
+    payload = ok_resp.json()
+    assert payload["total"] == 0
+    assert payload["items"] == []
+
+    not_found = client.get("/api/v1/tenants/2/ttb/accounts/1/gmvmax/")
+    assert not_found.status_code == 404

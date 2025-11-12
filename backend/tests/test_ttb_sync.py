@@ -186,7 +186,7 @@ def _seed_data(db_session) -> None:
 
 def test_get_binding_config_returns_default(tenant_app):
     client, _ = tenant_app
-    resp = client.get("/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/config")
+    resp = client.get("/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/config")
     assert resp.status_code == 200
     data = resp.json()
     assert data["bc_id"] is None
@@ -202,7 +202,7 @@ def test_update_binding_config_success(tenant_app):
         "auto_sync_products": True,
     }
     resp = client.put(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmv-max/config",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/config",
         json=payload,
     )
     assert resp.status_code == 200

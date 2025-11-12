@@ -27,7 +27,7 @@ COOKIE_SAMESITE=lax
 - 2025-11-01: Renamed all TikTok Business shop entities and APIs to store/store_id. Existing migrations upgrade database schema and task catalog entries automatically; downstream integrations must update to the new naming.
 - 2025-11-12: Replaced legacy TikTok Business data browsing endpoints with a GMV Max management workflow. Only metadata dropdown sources, the GMV Max binding configuration, and product sync remain available; legacy list/chart APIs now return `TTB_LEGACY_DISABLED` (HTTP 410).
 - 2025-11-12: Added the `ttb.sync.meta` periodic task recommendation and GMV Max auto-sync scheduler wiring; refresh jobs now run through the new binding configuration service.
-- 2025-11-15: GMV Max advertiser hydration now calls `/advertiser/info/` in batches after each sync to populate currency, timezone、display_timezone、country、industry、status 以及 owner_bc_id；选项接口 `/gmv-max/options` 提供链路缓存与手动刷新，前端基于返回的 `links` 在本地联动过滤下拉列表，并使用 `refresh=timeout` 反馈提示。
+- 2025-11-15: GMV Max advertiser hydration now calls `/advertiser/info/` in batches after each sync to populate currency, timezone、display_timezone、country、industry、status 以及 owner_bc_id；选项接口 `/gmvmax/options` 提供链路缓存与手动刷新，前端基于返回的 `links` 在本地联动过滤下拉列表，并使用 `refresh=timeout` 反馈提示。
 - 2025-11-20: Metadata sync now mirrors the official TikTok Business API chain (`bc/get` → `oauth2/advertiser/get` → `advertiser/info` → `store/list`). Stores persist `store_type`, `store_code`, `store_authorized_bc_id`; advertiser listings expose timezone/currency/country in all responses. Products are fetched on demand with `store_id` only.
 
 ## Tenant TikTok Business API quick reference
@@ -43,11 +43,11 @@ curl -H 'Authorization: Bearer <token>' \
 
 # fetch cached GMV Max options (ETag aware)
 curl -H 'Authorization: Bearer <token>' \
-  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/options
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmvmax/options
 
 # trigger background refresh (returns immediately with {"refresh":"timeout","idempotency_key":...} when no change within 3s)
 curl -H 'Authorization: Bearer <token>' \
-  'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/options?refresh=1'
+  'https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmvmax/options?refresh=1'
 
 # trigger GMV Max product sync for an advertiser/store pair
 curl -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
@@ -69,7 +69,7 @@ curl -H 'Authorization: Bearer <token>' \
 
 # fetch GMV Max binding configuration
 curl -H 'Authorization: Bearer <token>' \
-  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmv-max/config
+  https://gmv.local/api/v1/tenants/42/providers/tiktok-business/accounts/7/gmvmax/config
 
 # inspect run 123 for auth_id=7
 curl -H 'Authorization: Bearer <token>' \
