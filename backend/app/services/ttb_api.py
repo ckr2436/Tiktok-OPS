@@ -136,7 +136,13 @@ def _ensure_gmvmax_campaign_filters(params: Dict[str, Any]) -> None:
         params["gmv_max_promotion_types"] = promotion_types
     else:
         params.pop("gmv_max_promotion_types", None)
-    params["filtering"] = json.dumps(filtering_dict, ensure_ascii=False, separators=(",", ":"))
+
+    cleaned_filtering = _remove_none(filtering_dict)
+    params["filtering"] = json.dumps(
+        cleaned_filtering,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
