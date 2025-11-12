@@ -107,8 +107,10 @@ async def list_campaigns(
     provider: str,
     auth_id: int,
     advertiser_id: Optional[str] = None,
+    store_id: Optional[str] = None,
+    business_center_id: Optional[str] = None,
     status_filter: Optional[str] = None,
-    q: Optional[str] = None,
+    search: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
     sync: bool = False,
@@ -141,8 +143,8 @@ async def list_campaigns(
     )
     if status_filter:
         query = query.filter(TTBGmvMaxCampaign.status == status_filter)
-    if q:
-        pattern = f"%{q}%"
+    if search:
+        pattern = f"%{search}%"
         query = query.filter(TTBGmvMaxCampaign.name.ilike(pattern))
 
     total = query.count()
