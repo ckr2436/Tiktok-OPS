@@ -7,6 +7,11 @@ const http = axios.create({
   timeout: 15000,
 });
 
+export function safePath(path) {
+  if (typeof path !== 'string') return path;
+  return path.replace(/\/api\/v1\/api\/v1/g, '/api/v1');
+}
+
 function ensureHeader(headers, key, value) {
   if (!headers) return;
   if (typeof headers.set === 'function') {
@@ -94,6 +99,9 @@ http.interceptors.request.use((cfg) => {
     headers.set('x-client', 'gmv-frontend');
   } else {
     headers['x-client'] = 'gmv-frontend';
+  }
+  if (typeof cfg.url === 'string') {
+    cfg.url = safePath(cfg.url);
   }
   const requestId =
     readHeader(headers, 'x-request-id') ||
