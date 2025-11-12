@@ -274,7 +274,21 @@ def upsert_campaign_from_api(
 
     result.advertiser_id = str(advertiser_id)
     result.name = _extract_field(payload, "campaign_name", "name")
-    result.status = _extract_field(payload, "status", "campaign_status")
+
+    store_identifier = _extract_field(payload, "store_id", "shop_id")
+    result.store_id = str(store_identifier) if store_identifier is not None else None
+
+    operation_status_value = _extract_field(payload, "operation_status")
+    result.operation_status = (
+        str(operation_status_value) if operation_status_value is not None else None
+    )
+
+    status_value = _extract_field(payload, "status", "campaign_status")
+    if status_value is None:
+        status_value = _extract_field(payload, "primary_status")
+    if status_value is None and result.operation_status is not None:
+        status_value = result.operation_status
+    result.status = str(status_value) if status_value is not None else None
     result.shopping_ads_type = _extract_field(payload, "shopping_ads_type")
     result.optimization_goal = _extract_field(payload, "optimization_goal")
 
