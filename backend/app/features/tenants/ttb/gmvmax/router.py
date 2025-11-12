@@ -29,7 +29,7 @@ from app.services.ttb_gmvmax import (
 )
 
 router = APIRouter(
-    prefix="/api/v1/tenants/{workspace_id}/ttb/gmvmax",
+    prefix="/{workspace_id}/ttb/gmvmax",
     tags=["GMV Max"],
 )
 
