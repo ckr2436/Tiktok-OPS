@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Iterable, Optional, Sequence
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, case
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_gmvmax import (
@@ -35,6 +35,19 @@ from ._helpers import (
 
 def _ensure_provider(provider: str) -> str:
     return normalize_provider(provider)
+
+
+def _order_desc_nulls_last(col):
+    """
+    Vendor-agnostic 等价实现：ORDER BY col DESC NULLS LAST
+    在 MySQL/MariaDB 上编译为：
+      ORDER BY (col IS NULL) ASC, col DESC
+    在支持 NULLS LAST 的方言上也安全。
+    """
+    return [
+        case((col.is_(None), 1), else_=0).asc(),
+        col.desc(),
+    ]
 
 
 def _ensure_campaign(
@@ -150,7 +163,7 @@ async def list_campaigns(
     total = query.count()
     offset = (page - 1) * page_size
     items = (
-        query.order_by(TTBGmvMaxCampaign.ext_created_time.desc().nullslast())
+        query.order_by(*_order_desc_nulls_last(TTBGmvMaxCampaign.ext_created_time))
         .offset(offset)
         .limit(page_size)
         .all()
@@ -610,3 +623,4 @@ def preview_strategy(
         "metrics": metrics,
         "decision": dict(decision) if decision else None,
     }
+
