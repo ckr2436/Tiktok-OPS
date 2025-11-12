@@ -44,8 +44,7 @@ class GmvMaxCampaignOut(BaseModel):
     ext_created_time: Optional[datetime] = None
     ext_updated_time: Optional[datetime] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GmvMaxCampaignListResponse(BaseModel):
