@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_tenant_admin, require_tenant_member
@@ -84,19 +84,28 @@ async def update_gmvmax_strategy_handler(
     campaign_id: str,
     payload: GmvMaxStrategyConfigIn,
     db: Session = Depends(get_db),
-) -> GmvMaxStrategyConfigOut:
+) -> Response | GmvMaxStrategyConfigOut:
+    data = payload.model_dump(exclude_unset=True, exclude_none=True)
     cfg = update_strategy(
         db,
         workspace_id=workspace_id,
         provider=PROVIDER_ALIAS,
         auth_id=auth_id,
         campaign_id=campaign_id,
-        payload=payload.dict(exclude_unset=True),
+        payload=data,
     )
+    if cfg is None:
+        return Response(status_code=204)
     return _serialize_strategy(cfg)
 
 
+# Allow both GET (legacy) and POST (new frontend contract) callers.
 @router.get(
+    "/{campaign_id}/strategy/preview",
+    response_model=GmvMaxStrategyPreviewResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+@router.post(
     "/{campaign_id}/strategy/preview",
     response_model=GmvMaxStrategyPreviewResponse,
     dependencies=[Depends(require_tenant_member)],

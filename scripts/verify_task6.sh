@@ -13,3 +13,5 @@ grep -E '@router\.post\("/campaigns/actions"\)' -n backend/app/features/tenants/
 grep -E 'include_router\(gmvmax_router' -n backend/app/features/tenants/ttb/router.py >/dev/null
 
 echo "OK: gmvmax 路由结构通过"
+
+pytest backend/tests/test_gmvmax_routes_smoke_newprefix.py
