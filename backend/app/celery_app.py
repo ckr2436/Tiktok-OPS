@@ -43,12 +43,10 @@ celery_app.conf.result_backend = BACKEND_URL
 if _use_ssl(celery_app.conf.broker_url):
     celery_app.conf.broker_use_ssl = True
 else:
-    # 只在存在时再删除，避免 alembic 日志里看到的 KeyError
     try:
         if "broker_use_ssl" in celery_app.conf:  # type: ignore[operator]
             del celery_app.conf["broker_use_ssl"]  # type: ignore[index]
     except Exception:
-        # 某些 Celery/Kombu 版本的配置映射行为特殊，删除失败就忽略
         pass
 
 
@@ -67,7 +65,6 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
         else:
             names = [default_q]
     else:
-        # pydantic BaseSettings 可能已解析成 list[str]
         if isinstance(raw_list, (list, tuple)):
             names = list(raw_list)
         else:
@@ -76,7 +73,10 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
             except Exception:
                 names = [default_q]
 
-    # 统一 direct 交换器
+    # 统一 direct 交换器；并强制把 gmvmax 队列加上（防止忘配 .env）
+    if "gmvmax" not in names:
+        names.append("gmvmax")
+
     exch = Exchange("gmv.celery", type="direct", durable=True)
     qs = [Queue(n, exchange=exch, routing_key=n, durable=True) for n in names]
     return default_q, qs
@@ -108,7 +108,14 @@ celery_app.conf.update(
     task_queues=queue_objs,
 )
 
+# 路由双保险：所有 gmvmax.* 任务默认进 gmvmax 队列
+celery_app.conf.task_routes = {
+    "gmvmax.*": {"queue": "gmvmax"},
+}
+
 # ★ 导入任务，确保 worker 启动即注册
-import app.tasks.oauth_tasks   # noqa: F401
-import app.tasks.ttb_sync_tasks  # noqa: F401  # ← 注册 ttb 同步任务
-import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401  # ← 新增：注册 kie_ai 任务
+import app.tasks.oauth_tasks  # noqa: F401
+import app.tasks.ttb_sync_tasks  # noqa: F401
+import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
+import app.tasks.ttb_gmvmax_tasks  # noqa: F401  # ← 新增：注册 gmvmax 任务
+
