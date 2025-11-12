@@ -69,6 +69,11 @@ class TTBHttpError(Exception):
 
 _MAX_PAGE_SIZE = 50  # 官方上限
 
+_DEFAULT_GMV_MAX_PROMOTION_TYPES: tuple[str, str] = (
+    "PRODUCT_GMV_MAX",
+    "LIVE_GMV_MAX",
+)
+
 
 def _remove_none(value: Any) -> Any:
     if isinstance(value, dict):
@@ -85,6 +90,53 @@ def _clean_params_map(data: Dict[str, Any]) -> Dict[str, Any]:
             continue
         cleaned[key] = _remove_none(value)
     return cleaned
+
+
+def _normalize_promotion_types(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        return []
+    normalized: list[str] = []
+    for item in candidates:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _ensure_gmvmax_campaign_filters(params: Dict[str, Any]) -> None:
+    """确保 GMV Max Campaigns 查询包含必填的过滤项。"""
+
+    top_level_raw = params.get("gmv_max_promotion_types")
+    filtering_raw = params.get("filtering")
+    if isinstance(filtering_raw, str):
+        try:
+            filtering_dict = json.loads(filtering_raw)
+        except json.JSONDecodeError:
+            filtering_dict = {}
+    elif isinstance(filtering_raw, dict):
+        filtering_dict = dict(filtering_raw)
+    else:
+        filtering_dict = {}
+
+    promotion_types = _normalize_promotion_types(filtering_dict.get("gmv_max_promotion_types"))
+    if not promotion_types:
+        fallback = _normalize_promotion_types(top_level_raw)
+        if not fallback:
+            fallback = list(_DEFAULT_GMV_MAX_PROMOTION_TYPES)
+        promotion_types = fallback
+        filtering_dict["gmv_max_promotion_types"] = promotion_types
+
+    if top_level_raw is not None:
+        params["gmv_max_promotion_types"] = promotion_types
+    else:
+        params.pop("gmv_max_promotion_types", None)
+    params["filtering"] = json.dumps(filtering_dict, ensure_ascii=False, separators=(",", ":"))
 
 
 def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
@@ -681,6 +733,7 @@ class TTBApiClient:
     async def fetch_gmvmax_campaigns(self, advertiser_id: str, **filters: Any) -> dict:
         params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
         params.update(filters)
+        _ensure_gmvmax_campaign_filters(params)
         payload = await self._request_json(
             "GET",
             "/gmv_max/campaign/get/",
