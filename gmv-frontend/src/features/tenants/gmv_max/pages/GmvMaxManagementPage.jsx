@@ -17,6 +17,7 @@ import {
   saveBindingConfig,
   triggerProductSync,
 } from '../service.js';
+import { GmvMaxCampaignConsole } from '../components/GmvMaxCampaignConsole.jsx';
 import {
   buildAdvertiserOptions,
   buildBusinessCenterOptions,
@@ -1483,6 +1484,15 @@ export default function GmvMaxManagementPage() {
       </div>
 
       <SummaryPanel summary={metaSummary} />
+
+      <section style={{ marginTop: 32 }}>
+        <h2 style={{ marginBottom: 12 }}>GMV Max 投放控制台（只读预览版）</h2>
+        <GmvMaxCampaignConsole
+          workspaceId={wid}
+          authId={selectedAuthId}
+          advertiserId={form.advertiserId}
+        />
+      </section>
     </div>
   );
 }

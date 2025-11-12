@@ -29,6 +29,13 @@ from .ttb_entities import (
     TTBAdvertiserStoreLink,
     TTBBindingConfig,
 )
+from .ttb_gmvmax import (
+    TTBGmvMaxCampaign,
+    TTBGmvMaxMetricsHourly,
+    TTBGmvMaxMetricsDaily,
+    TTBGmvMaxActionLog,
+    TTBGmvMaxStrategyConfig,
+)
 
 __all__ = [
     "Base",
@@ -57,4 +64,9 @@ __all__ = [
     "TTBBCAdvertiserLink",
     "TTBAdvertiserStoreLink",
     "TTBBindingConfig",
+    "TTBGmvMaxCampaign",
+    "TTBGmvMaxMetricsHourly",
+    "TTBGmvMaxMetricsDaily",
+    "TTBGmvMaxActionLog",
+    "TTBGmvMaxStrategyConfig",
 ]

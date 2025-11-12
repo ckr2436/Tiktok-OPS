@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.data.models.oauth_ttb import OAuthAccountTTB
-from app.services.oauth_ttb import get_access_token_plain, get_credentials_for_auth_id
+from app.services.ttb_client_factory import build_ttb_client
 from app.services.policy_engine import PolicyEngine, PolicyLimits
 from app.services.ttb_api import TTBApiClient
 from app.services.ttb_sync import TTBSyncService
@@ -194,20 +194,9 @@ class TiktokBusinessProvider:
         - access_token：长期令牌（Header: Access-Token）
         - app_id / app_secret：从 OAuthProviderApp 解密，用于 /oauth2/advertiser/get/ 等需要 app 凭据的接口
         """
-        # 长期 access_token（用户层授权）
-        token, _ = get_access_token_plain(db, int(auth_id))
-        # app 级凭据（平台层应用）
-        app_id, app_secret, _redirect_uri = get_credentials_for_auth_id(db, int(auth_id))
-
         default_qps = float(getattr(settings, "TTB_API_DEFAULT_QPS", 5.0))
         qps = float(limits.rate_limit_rps or default_qps)
-
-        return TTBApiClient(
-            access_token=token,
-            app_id=app_id,
-            app_secret=app_secret,
-            qps=qps,
-        )
+        return build_ttb_client(db, int(auth_id), qps=qps)
 
     async def _run_single(
         self,

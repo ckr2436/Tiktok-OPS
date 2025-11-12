@@ -10,17 +10,17 @@ from app.core.errors import APIError
 
 @dataclass(frozen=True)
 class PeriodicTaskSpec:
-    """
-    计划任务的目录项定义。仅作为“推荐默认”，实际启停由 ops 控制。
-    """
+    """计划任务的目录项定义。仅作为“推荐默认”，实际启停由 ops 控制。"""
+
     name: str
     task: str
     crontab: Optional[str] = None  # e.g. "*/15 * * * *"
     interval_seconds: Optional[int] = None
-    args: List = None
-    kwargs: Dict = None
+    args: List | None = None
+    kwargs: Dict | None = None
     queue: Optional[str] = None
     description: Optional[str] = None
+    manual_only: bool = False
 
 
 # 建议的绑定维度周期任务（示例；真正启用由你方 ops 决定）
@@ -69,6 +69,72 @@ CATALOG: List[PeriodicTaskSpec] = [
         kwargs={"mode": "incremental", "limit": 200},
         queue="gmv.tasks.events",
         description="Incremental business centers sync per binding",
+    ),
+    # ---- GMV Max ----
+    PeriodicTaskSpec(
+        name="gmvmax:campaigns:sync",
+        task="gmvmax.sync_campaigns",
+        crontab="*/30 * * * *",  # 每 30 分钟刷新 Campaign 列表
+        args=[],
+        kwargs={
+            "workspace_id": "<workspace_id>",
+            "auth_id": "<auth_id>",
+            "advertiser_id": "<advertiser_id>",
+            "filters": {},
+        },
+        queue="gmvmax",
+        description="Sync GMV Max campaigns per workspace/auth/advertiser binding every 30 minutes.",
+    ),
+    PeriodicTaskSpec(
+        name="gmvmax:metrics:sync_hourly",
+        task="gmvmax.sync_metrics",
+        crontab="*/30 * * * *",  # 每 30 分钟同步最近 6 小时指标
+        args=[],
+        kwargs={
+            "workspace_id": "<workspace_id>",
+            "auth_id": "<auth_id>",
+            "advertiser_id": "<advertiser_id>",
+            "campaign_id": "<campaign_id>",
+            "granularity": "HOUR",
+            "start_date": "<ISO-8601 start datetime>",
+            "end_date": "<ISO-8601 end datetime>",
+        },
+        queue="gmvmax",
+        description="Sync the last few hours of GMV Max hourly metrics for each campaign.",
+    ),
+    PeriodicTaskSpec(
+        name="gmvmax:metrics:sync_daily",
+        task="gmvmax.sync_metrics",
+        crontab="0 3 * * *",  # 每天 03:00 UTC 同步日级指标
+        args=[],
+        kwargs={
+            "workspace_id": "<workspace_id>",
+            "auth_id": "<auth_id>",
+            "advertiser_id": "<advertiser_id>",
+            "campaign_id": "<campaign_id>",
+            "granularity": "DAY",
+            "start_date": "<YYYY-MM-DD start date>",
+            "end_date": "<YYYY-MM-DD end date>",
+        },
+        queue="gmvmax",
+        description="Sync the trailing daily GMV Max metrics window (e.g. last 7 days).",
+    ),
+    PeriodicTaskSpec(
+        name="gmvmax:campaigns:apply_action",
+        task="gmvmax.apply_action",
+        args=[],
+        kwargs={
+            "workspace_id": "<workspace_id>",
+            "auth_id": "<auth_id>",
+            "advertiser_id": "<advertiser_id>",
+            "campaign_id": "<campaign_id>",
+            "action": "START|PAUSE|SET_BUDGET|SET_ROAS",
+            "payload": {},
+            "reason": "<optional reason>",
+        },
+        queue="gmvmax",
+        description="Manual/strategy-triggered GMV Max campaign action (no default cron).",
+        manual_only=True,
     ),
 ]
 

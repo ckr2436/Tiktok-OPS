@@ -32,6 +32,8 @@ from app.data.models.ttb_entities import (
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
+from .gmv_max.router import router as gmv_max_router
+from .gmvmax import router as gmvmax_router
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
     get_binding_config,
@@ -1541,6 +1543,16 @@ def update_gmv_max_config(
         raise
 
     return _serialize_binding_config(row)
+
+
+# -------------------------- GMV Max 子路由 --------------------------
+router.include_router(
+    gmv_max_router,
+    prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmv-max",
+    tags=["gmv-max"],
+)
+
+router.include_router(gmvmax_router)
 
 
 # -------------------------- 旧路由废弃 --------------------------
