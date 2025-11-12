@@ -1,6 +1,6 @@
 import http from "@/lib/http.js";
 
-const prefix = (wid, authId) => `/tenants/${wid}/ttb/accounts/${authId}/gmvmax`;
+const prefix = (wid, authId) => `tenants/${wid}/ttb/accounts/${authId}/gmvmax`;
 
 const requireCampaignId = (campaignId) => {
   if (!campaignId) {
