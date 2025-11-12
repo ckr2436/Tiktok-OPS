@@ -516,19 +516,46 @@ def update_strategy(
         campaign=campaign,
     )
 
-    cfg.enabled = bool(payload.get("enabled", False))
-    cfg.target_roi = _parse_decimal(payload.get("target_roi"))
-    cfg.min_roi = _parse_decimal(payload.get("min_roi"))
-    cfg.max_roi = _parse_decimal(payload.get("max_roi"))
-    cfg.min_impressions = payload.get("min_impressions")
-    cfg.min_clicks = payload.get("min_clicks")
-    cfg.max_budget_raise_pct_per_day = _parse_decimal(payload.get("max_budget_raise_pct_per_day"))
-    cfg.max_budget_cut_pct_per_day = _parse_decimal(payload.get("max_budget_cut_pct_per_day"))
-    cfg.max_roas_step_per_adjust = _parse_decimal(payload.get("max_roas_step_per_adjust"))
-    cfg.cooldown_minutes = payload.get("cooldown_minutes")
-    cfg.min_runtime_minutes_before_first_change = payload.get(
-        "min_runtime_minutes_before_first_change"
-    )
+    if "enabled" in payload:
+        cfg.enabled = bool(payload["enabled"])
+
+    if "target_roi" in payload:
+        cfg.target_roi = _parse_decimal(payload.get("target_roi"))
+
+    if "min_roi" in payload:
+        cfg.min_roi = _parse_decimal(payload.get("min_roi"))
+
+    if "max_roi" in payload:
+        cfg.max_roi = _parse_decimal(payload.get("max_roi"))
+
+    if "min_impressions" in payload:
+        cfg.min_impressions = payload.get("min_impressions")
+
+    if "min_clicks" in payload:
+        cfg.min_clicks = payload.get("min_clicks")
+
+    if "max_budget_raise_pct_per_day" in payload:
+        cfg.max_budget_raise_pct_per_day = _parse_decimal(
+            payload.get("max_budget_raise_pct_per_day")
+        )
+
+    if "max_budget_cut_pct_per_day" in payload:
+        cfg.max_budget_cut_pct_per_day = _parse_decimal(
+            payload.get("max_budget_cut_pct_per_day")
+        )
+
+    if "max_roas_step_per_adjust" in payload:
+        cfg.max_roas_step_per_adjust = _parse_decimal(
+            payload.get("max_roas_step_per_adjust")
+        )
+
+    if "cooldown_minutes" in payload:
+        cfg.cooldown_minutes = payload.get("cooldown_minutes")
+
+    if "min_runtime_minutes_before_first_change" in payload:
+        cfg.min_runtime_minutes_before_first_change = payload.get(
+            "min_runtime_minutes_before_first_change"
+        )
 
     db.add(cfg)
     db.commit()

@@ -105,7 +105,7 @@ class GmvMaxActionLogListResponse(BaseModel):
 
 
 class GmvMaxStrategyConfigIn(BaseModel):
-    enabled: bool = False
+    enabled: Optional[bool] = None
     target_roi: Optional[str] = None
     min_roi: Optional[str] = None
     max_roi: Optional[str] = None
