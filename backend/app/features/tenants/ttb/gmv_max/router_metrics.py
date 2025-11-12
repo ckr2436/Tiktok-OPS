@@ -14,7 +14,7 @@ from .service import query_metrics, sync_metrics
 
 PROVIDER_ALIAS = "tiktok_business"
 
-router = APIRouter()
+router = APIRouter(prefix="/gmvmax")
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

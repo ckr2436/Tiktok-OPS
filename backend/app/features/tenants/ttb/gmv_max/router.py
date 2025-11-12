@@ -6,7 +6,7 @@ from .router_metrics import router as metrics_router
 from .router_strategy import router as strategy_router
 
 router = APIRouter(
-    prefix="/{workspace_id}/ttb/accounts/{auth_id}/gmvmax",
+    prefix="/{workspace_id}/ttb/accounts/{auth_id}",
     tags=["GMV Max"],
 )
 router.include_router(campaigns_router)

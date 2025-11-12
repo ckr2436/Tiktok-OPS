@@ -1550,7 +1550,7 @@ router.include_router(gmv_max_router)
 
 router.include_router(
     gmv_max_provider_router,
-    prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax",
+    prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}",
     tags=["gmvmax"],
 )
 

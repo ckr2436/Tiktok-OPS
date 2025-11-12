@@ -243,7 +243,7 @@ def gmvmax_smoke_client(monkeypatch):
 
 def test_list_campaigns_uses_new_prefix(gmvmax_smoke_client):
     client = gmvmax_smoke_client["client"]
-    response = client.get("/api/v1/tenants/1/ttb/accounts/99/gmvmax/")
+    response = client.get("/api/v1/tenants/1/ttb/accounts/99/gmvmax")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["total"] == 1
@@ -253,7 +253,7 @@ def test_list_campaigns_uses_new_prefix(gmvmax_smoke_client):
 def test_sync_campaigns_accepts_minimal_body(gmvmax_smoke_client):
     client = gmvmax_smoke_client["client"]
     response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/campaigns/sync",
+        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/sync",
         json={"force": False},
     )
     assert response.status_code == 200, response.text
@@ -282,7 +282,7 @@ def test_sync_metrics_accepts_range_payload(gmvmax_smoke_client):
 def test_preview_strategy_allows_post_with_empty_body(gmvmax_smoke_client):
     client = gmvmax_smoke_client["client"]
     response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/strategy/preview",
+        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/strategies/preview",
         json={},
     )
     assert response.status_code == 200, response.text
@@ -305,7 +305,7 @@ def test_update_strategy_returns_partial_patch(gmvmax_smoke_client):
 def test_apply_action_accepts_minimal_payload(gmvmax_smoke_client):
     client = gmvmax_smoke_client["client"]
     response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/campaigns/cmp-smoke/actions",
+        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/actions",
         json={"action": "PAUSE"},
     )
     assert response.status_code == 200, response.text

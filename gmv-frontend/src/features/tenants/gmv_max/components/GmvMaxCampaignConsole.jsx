@@ -158,8 +158,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     queryKey: ['gmvmax-actions', workspaceId, selectedId],
     enabled: Boolean(workspaceId && selectedId),
     queryFn: async () => {
-      const response = await listActionLogs(workspaceId, authId, {
-        campaign_id: selectedId,
+      const response = await listActionLogs(workspaceId, authId, selectedId, {
         limit: 50,
         offset: 0,
       });
@@ -236,10 +235,9 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
       if (!selectedId) throw new Error('请选择一个 Campaign 后再执行操作');
       const body = {
         action,
-        campaign_ids: [selectedId],
         ...(payload || {}),
       };
-      const response = await applyAction(workspaceId, authId, body);
+      const response = await applyAction(workspaceId, authId, selectedId, body);
       const data = response?.data;
       return data?.data ?? data ?? null;
     },
