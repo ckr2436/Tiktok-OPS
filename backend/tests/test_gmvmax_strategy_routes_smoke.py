@@ -90,7 +90,7 @@ def test_strategy_routes_registered():
     assert any("/{campaign_id}/strategy/preview" in path for path in paths)
 
 
-def test_update_strategy_partial_does_not_reset_other_fields(gmv_strategy_app):
+def test_update_strategy_partial_patch_keeps_other_fields(gmv_strategy_app):
     client, db = gmv_strategy_app
 
     campaign = TTBGmvMaxCampaign(
@@ -157,3 +157,40 @@ def test_update_strategy_partial_does_not_reset_other_fields(gmv_strategy_app):
     assert body["max_budget_raise_pct_per_day"] == 12.5
     assert body["max_budget_cut_pct_per_day"] == 7.5
     assert body["min_runtime_minutes_before_first_change"] == 120
+
+
+def test_update_strategy_noop_returns_204(gmv_strategy_app):
+    client, db = gmv_strategy_app
+
+    campaign = TTBGmvMaxCampaign(
+        id=2,
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="7492997033645637634",
+        campaign_id="cmp-noop",
+        name="No-op Update",
+    )
+    db.add(campaign)
+    db.flush()
+
+    config = TTBGmvMaxStrategyConfig(
+        id=2,
+        workspace_id=1,
+        auth_id=1,
+        campaign_id=campaign.campaign_id,
+        enabled=False,
+        target_roi=Decimal("1.00"),
+    )
+    db.add(config)
+    db.commit()
+
+    response = client.put(
+        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/cmp-noop/strategy",
+        json={},
+    )
+    assert response.status_code == 204, response.text
+    assert response.content == b""
+
+    db.refresh(config)
+    assert config.enabled is False
+    assert config.target_roi == Decimal("1.00")

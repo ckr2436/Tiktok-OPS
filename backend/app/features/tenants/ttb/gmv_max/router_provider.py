@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_session, require_tenant_admin, require_tenant_member
@@ -413,15 +413,18 @@ async def update_gmvmax_strategy_provider(
     campaign_id: str,
     payload: GmvMaxStrategyConfigIn,
     db: Session = Depends(get_db),
-) -> GmvMaxStrategyConfigOut:
+) -> Response | GmvMaxStrategyConfigOut:
+    data = payload.model_dump(exclude_unset=True, exclude_none=True)
     cfg = update_strategy(
         db,
         workspace_id=workspace_id,
         provider=provider,
         auth_id=auth_id,
         campaign_id=campaign_id,
-        payload=payload.dict(exclude_unset=True),
+        payload=data,
     )
+    if cfg is None:
+        return Response(status_code=204)
     return _serialize_strategy(cfg)
 
 

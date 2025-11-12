@@ -2,19 +2,75 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  fetchGmvMaxCampaigns,
-  fetchGmvMaxCampaignDetail,
-  fetchGmvMaxStrategy,
-  previewGmvMaxStrategy,
-  fetchGmvMaxMetrics,
-  applyGmvMaxAction,
-  fetchGmvMaxActions,
-  updateGmvMaxStrategy,
-} from '../service.js';
+  listCampaigns,
+  getCampaign,
+  getStrategy,
+  syncCampaigns,
+  syncMetrics,
+  queryMetrics,
+  listActionLogs,
+  applyAction,
+  updateStrategy,
+  previewStrategy,
+} from '../../ttb/gmvmax/api.js';
 import {
   GMV_MAX_STRATEGY_PRESETS,
   GMV_MAX_STRATEGY_PRESET_LIST,
 } from '../strategyPresets.js';
+
+function isPlainObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function buildPatch(original, updated) {
+  if (Array.isArray(updated)) {
+    return deepEqual(updated, Array.isArray(original) ? original : undefined) ? undefined : updated;
+  }
+  if (isPlainObject(updated)) {
+    const patch = {};
+    let changed = false;
+    const base = isPlainObject(original) ? original : {};
+    for (const key of Object.keys(updated)) {
+      const nextValue = buildPatch(base[key], updated[key]);
+      if (nextValue !== undefined) {
+        patch[key] = nextValue;
+        changed = true;
+      }
+    }
+    return changed ? patch : undefined;
+  }
+  return deepEqual(updated, original) ? undefined : updated;
+}
+
+function formatAxiosError(error) {
+  if (!error) return '请求失败';
+  if (error.response?.data?.error?.message) return error.response.data.error.message;
+  if (error.response?.data?.message) return error.response.data.message;
+  if (error.response?.data?.detail) return error.response.data.detail;
+  if (typeof error.message === 'string' && error.message) return error.message;
+  return '请求失败';
+}
 
 export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
   const [selectedId, setSelectedId] = useState(null);
@@ -47,87 +103,146 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
   const campaignsQuery = useQuery({
     queryKey: ['gmvmax-campaigns', workspaceId, authId, advertiserId],
     enabled: Boolean(workspaceId && authId && advertiserId),
-    queryFn: () =>
-      fetchGmvMaxCampaigns({
-        workspaceId,
-        authId,
-        advertiserId,
-        sync: false,
-      }),
+    queryFn: async () => {
+      const params = {};
+      if (advertiserId) params.advertiser_id = advertiserId;
+      const response = await listCampaigns(workspaceId, authId, params);
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
   });
 
   const detailQuery = useQuery({
     queryKey: ['gmvmax-campaign-detail', workspaceId, authId, advertiserId, selectedId],
     enabled: Boolean(workspaceId && authId && advertiserId && selectedId),
-    queryFn: () =>
-      fetchGmvMaxCampaignDetail({
-        workspaceId,
-        authId,
-        advertiserId,
-        campaignId: selectedId,
-        refresh: false,
-      }),
+    queryFn: async () => {
+      const response = await getCampaign(workspaceId, authId, selectedId);
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
   });
 
   const strategyQuery = useQuery({
     queryKey: ['gmvmax-strategy', workspaceId, authId, selectedId],
     enabled: Boolean(workspaceId && authId && selectedId),
-    queryFn: () =>
-      fetchGmvMaxStrategy({
-        workspaceId,
-        authId,
-        campaignId: selectedId,
-      }),
-  });
-
-  const previewQuery = useQuery({
-    queryKey: ['gmvmax-strategy-preview', workspaceId, authId, selectedId],
-    enabled: Boolean(workspaceId && authId && selectedId),
-    queryFn: () =>
-      previewGmvMaxStrategy({
-        workspaceId,
-        authId,
-        campaignId: selectedId,
-      }),
+    queryFn: async () => {
+      const response = await getStrategy(workspaceId, authId, selectedId);
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
   });
 
   const metricsQuery = useQuery({
-    queryKey: ['gmvmax-metrics', workspaceId, authId, advertiserId, selectedId, metricsRange],
+    queryKey: [
+      'gmvmax-metrics',
+      workspaceId,
+      authId,
+      advertiserId,
+      selectedId,
+      metricsRangeDates.start,
+      metricsRangeDates.end,
+    ],
     enabled: Boolean(workspaceId && authId && advertiserId && selectedId),
-    queryFn: () =>
-      fetchGmvMaxMetrics({
-        workspaceId,
-        authId,
-        campaignId: selectedId,
-        granularity: 'DAY',
+    queryFn: async () => {
+      const response = await queryMetrics(workspaceId, authId, selectedId, {
         start: metricsRangeDates.start,
         end: metricsRangeDates.end,
-      }),
+        granularity: 'DAY',
+      });
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
   });
 
   const actionsQuery = useQuery({
     queryKey: ['gmvmax-actions', workspaceId, selectedId],
     enabled: Boolean(workspaceId && selectedId),
-    queryFn: () =>
-      fetchGmvMaxActions({
-        workspaceId,
-        campaignId: selectedId,
+    queryFn: async () => {
+      const response = await listActionLogs(workspaceId, authId, {
+        campaign_id: selectedId,
         limit: 50,
         offset: 0,
-      }),
+      });
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
   });
 
-  const actionMutation = useMutation({
-    mutationFn: ({ action, payload, reason }) =>
-      applyGmvMaxAction({
+  const campaignSyncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await syncCampaigns(workspaceId, authId, { force: false });
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['gmvmax-campaigns', workspaceId, authId, advertiserId],
+      });
+    },
+  });
+
+  const metricsSyncMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedId) throw new Error('请选择一个 Campaign 后再同步指标');
+      const response = await syncMetrics(workspaceId, authId, selectedId, {
+        start: metricsRangeDates.start,
+        end: metricsRangeDates.end,
+        granularity: 'DAY',
+      });
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          'gmvmax-metrics',
+          workspaceId,
+          authId,
+          advertiserId,
+          selectedId,
+          metricsRangeDates.start,
+          metricsRangeDates.end,
+        ],
+      });
+    },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedId) throw new Error('请选择一个 Campaign 后再预览策略');
+      let overrides;
+      const trimmed = editingStrategyText.trim();
+      if (trimmed) {
+        try {
+          overrides = JSON.parse(trimmed);
+        } catch (error) {
+          throw new Error(`JSON 解析失败，请检查格式：${String(error.message || error)}`);
+        }
+      }
+      const response = await previewStrategy(
         workspaceId,
         authId,
-        advertiserId,
-        campaignId: selectedId,
+        selectedId,
+        overrides ? { strategy_overrides: overrides } : {},
+      );
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
+  });
+  const { reset: resetPreview } = previewMutation;
+
+  const actionMutation = useMutation({
+    mutationFn: async ({ action, payload }) => {
+      if (!selectedId) throw new Error('请选择一个 Campaign 后再执行操作');
+      const body = {
         action,
-        payload,
-        reason,
-      }),
+        campaign_ids: [selectedId],
+        ...(payload || {}),
+      };
+      const response = await applyAction(workspaceId, authId, body);
+      const data = response?.data;
+      return data?.data ?? data ?? null;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-campaign-detail', workspaceId, authId, advertiserId, selectedId],
@@ -135,11 +250,17 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-strategy', workspaceId, authId, selectedId],
       });
+      resetPreview();
       queryClient.invalidateQueries({
-        queryKey: ['gmvmax-strategy-preview', workspaceId, authId, selectedId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['gmvmax-metrics', workspaceId, authId, advertiserId, selectedId],
+        queryKey: [
+          'gmvmax-metrics',
+          workspaceId,
+          authId,
+          advertiserId,
+          selectedId,
+          metricsRangeDates.start,
+          metricsRangeDates.end,
+        ],
       });
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-campaigns', workspaceId, authId, advertiserId],
@@ -155,7 +276,6 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     actionMutation.mutate({
       action: 'START',
       payload: {},
-      reason: 'manual: start from console',
     });
   }
 
@@ -164,7 +284,6 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     actionMutation.mutate({
       action: 'PAUSE',
       payload: {},
-      reason: 'manual: pause from console',
     });
   }
 
@@ -183,7 +302,6 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     actionMutation.mutate({
       action: 'SET_BUDGET',
       payload: { daily_budget_cents: cents },
-      reason: 'manual: set budget from console',
     });
   }
 
@@ -199,7 +317,6 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     actionMutation.mutate({
       action: 'SET_ROAS',
       payload: { roas_bid: value },
-      reason: 'manual: set roas from console',
     });
   }
 
@@ -261,6 +378,10 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     }
   }, [selectedId, strategyQuery.data]);
 
+  useEffect(() => {
+    resetPreview();
+  }, [resetPreview, selectedId]);
+
   if (!workspaceId || !authId) {
     return <div>请选择 workspace / 授权账号后查看 GMV Max Campaign。</div>;
   }
@@ -274,7 +395,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
   }
 
   if (campaignsQuery.isError) {
-    return <div>加载失败：{String(campaignsQuery.error)}</div>;
+    return <div>加载失败：{formatAxiosError(campaignsQuery.error)}</div>;
   }
 
   const list = Array.isArray(campaignsQuery.data?.items)
@@ -329,43 +450,54 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
 
   const strategyMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedId) return;
+      if (!selectedId) return null;
       let parsed;
       try {
         parsed = editingStrategyText ? JSON.parse(editingStrategyText) : {};
       } catch (error) {
-        setStrategyError(`JSON 解析失败，请检查格式：${String(error)}`);
+        setStrategyError(`JSON 解析失败，请检查格式：${String(error.message || error)}`);
         throw error;
       }
+      const original = strategyQuery.data || {};
+      const patch = buildPatch(original, parsed);
+      if (patch === undefined) {
+        const message = '策略未发生变更，无需保存。';
+        setStrategyError(message);
+        throw new Error(message);
+      }
       setStrategyError(null);
-      return updateGmvMaxStrategy({
-        workspaceId,
-        authId,
-        campaignId: selectedId,
-        data: parsed,
-      });
+      const response = await updateStrategy(workspaceId, authId, selectedId, patch);
+      const data = response?.data;
+      return data?.data ?? data ?? null;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-strategy', workspaceId, authId, selectedId],
       });
       queryClient.invalidateQueries({
-        queryKey: ['gmvmax-strategy-preview', workspaceId, authId, selectedId],
+        queryKey: ['gmvmax-campaign-detail', workspaceId, authId, advertiserId, selectedId],
       });
+      resetPreview();
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-actions', workspaceId, selectedId],
       });
       queryClient.invalidateQueries({
-        queryKey: ['gmvmax-metrics', workspaceId, authId, advertiserId, selectedId],
+        queryKey: [
+          'gmvmax-metrics',
+          workspaceId,
+          authId,
+          advertiserId,
+          selectedId,
+          metricsRangeDates.start,
+          metricsRangeDates.end,
+        ],
       });
       queryClient.invalidateQueries({
         queryKey: ['gmvmax-campaigns', workspaceId, authId, advertiserId],
       });
     },
     onError: (error) => {
-      if (!strategyError) {
-        setStrategyError(`保存策略失败：${String(error)}`);
-      }
+      setStrategyError(`保存策略失败：${formatAxiosError(error)}`);
     },
   });
 
@@ -373,6 +505,31 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
       <div style={{ flex: '0 0 260px', borderRight: '1px solid #eee' }}>
         <h3>GMV Max Campaign 列表</h3>
+        <div
+          style={{
+            marginBottom: 8,
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => campaignSyncMutation.mutate()}
+            disabled={campaignSyncMutation.isLoading}
+          >
+            {campaignSyncMutation.isLoading ? '同步中…' : '同步活动'}
+          </button>
+          {campaignSyncMutation.isError && (
+            <span style={{ color: '#d1433f', fontSize: 12 }}>
+              {formatAxiosError(campaignSyncMutation.error)}
+            </span>
+          )}
+          {campaignSyncMutation.isSuccess && !campaignSyncMutation.isLoading && (
+            <span style={{ color: '#047857', fontSize: 12 }}>已提交同步请求。</span>
+          )}
+        </div>
         <div style={{ marginBottom: 8, fontSize: 12 }}>
           店铺筛选：
           <select
@@ -436,6 +593,14 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
             {actionMutation.isLoading && (
               <span style={{ fontSize: 12 }}>执行中...</span>
             )}
+            {actionMutation.isError && (
+              <span style={{ fontSize: 12, color: '#d1433f' }}>
+                执行失败：{formatAxiosError(actionMutation.error)}
+              </span>
+            )}
+            {actionMutation.isSuccess && !actionMutation.isLoading && (
+              <span style={{ fontSize: 12, color: '#047857' }}>操作已提交。</span>
+            )}
           </div>
         )}
         {!selectedId && <div>请在左侧选择一个 Campaign</div>}
@@ -463,9 +628,24 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
                   ({metricsRangeDates.start} ~ {metricsRangeDates.end})
                 </span>
               </div>
+              <div style={{ marginBottom: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => metricsSyncMutation.mutate()}
+                  disabled={metricsSyncMutation.isLoading || !selectedId}
+                >
+                  {metricsSyncMutation.isLoading ? '同步中…' : '同步指标'}
+                </button>
+                {metricsSyncMutation.isError && (
+                  <span style={{ color: '#d1433f' }}>{formatAxiosError(metricsSyncMutation.error)}</span>
+                )}
+                {metricsSyncMutation.isSuccess && !metricsSyncMutation.isLoading && (
+                  <span style={{ color: '#047857' }}>已提交同步请求。</span>
+                )}
+              </div>
               {metricsQuery.isLoading && <div>加载指标中...</div>}
               {metricsQuery.isError && (
-                <div>加载失败：{String(metricsQuery.error)}</div>
+                <div>加载失败：{formatAxiosError(metricsQuery.error)}</div>
               )}
               {metricsSummary && (
                 <div style={{ fontSize: 13, lineHeight: 1.6 }}>
@@ -492,7 +672,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
             <section>
               <h4>Campaign 详情</h4>
               {detailQuery.isLoading && <div>加载详情中...</div>}
-              {detailQuery.isError && <div>加载失败：{String(detailQuery.error)}</div>}
+              {detailQuery.isError && <div>加载失败：{formatAxiosError(detailQuery.error)}</div>}
               {detailQuery.data && (
                 <pre style={{ maxHeight: 240, overflow: 'auto', fontSize: 12 }}>
                   {JSON.stringify(detailQuery.data, null, 2)}
@@ -503,7 +683,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
             <section>
               <h4>策略配置（JSON 编辑）</h4>
               {strategyQuery.isLoading && <div>加载策略中...</div>}
-              {strategyQuery.isError && <div>加载失败：{String(strategyQuery.error)}</div>}
+              {strategyQuery.isError && <div>加载失败：{formatAxiosError(strategyQuery.error)}</div>}
               {strategyError && (
                 <div style={{ color: 'red', fontSize: 12, marginBottom: 4 }}>{strategyError}</div>
               )}
@@ -582,17 +762,32 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
                 >
                   重置为当前策略
                 </button>
+                <button
+                  type="button"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => previewMutation.mutate()}
+                  disabled={previewMutation.isLoading || !selectedId}
+                >
+                  {previewMutation.isLoading ? '预览中…' : '生成预览'}
+                </button>
                 {strategyMutation.isLoading && <span style={{ marginLeft: 8 }}>保存中...</span>}
               </div>
+              {previewMutation.isError && (
+                <div style={{ color: '#d1433f', fontSize: 12, marginTop: 4 }}>
+                  预览失败：{formatAxiosError(previewMutation.error)}
+                </div>
+              )}
             </section>
 
             <section>
               <h4>策略预览（只读）</h4>
-              {previewQuery.isLoading && <div>计算预览中...</div>}
-              {previewQuery.isError && <div>加载失败：{String(previewQuery.error)}</div>}
-              {previewQuery.data && (
+              {previewMutation.isLoading && <div>计算预览中...</div>}
+              {!previewMutation.isLoading && !previewMutation.data && (
+                <div>点击上方“生成预览”按钮以获取最新预览。</div>
+              )}
+              {previewMutation.data && (
                 <pre style={{ maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-                  {JSON.stringify(previewQuery.data, null, 2)}
+                  {JSON.stringify(previewMutation.data, null, 2)}
                 </pre>
               )}
             </section>
@@ -601,7 +796,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
               <h4>操作日志（最近 50 条）</h4>
               {actionsQuery.isLoading && <div>加载日志中...</div>}
               {actionsQuery.isError && (
-                <div>加载失败：{String(actionsQuery.error)}</div>
+                <div>加载失败：{formatAxiosError(actionsQuery.error)}</div>
               )}
               {!actionsQuery.isLoading &&
                 !actionsQuery.isError && (

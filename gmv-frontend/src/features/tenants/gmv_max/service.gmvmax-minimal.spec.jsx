@@ -1,21 +1,23 @@
 import { describe, expect, test } from 'vitest';
-import * as api from './service.js';
+import * as api from '../ttb/gmvmax/api.js';
 
-describe('gmv_max minimal gmvmax api', () => {
-  test('exports minimal campaign/strategy helpers', () => {
-    expect(api.fetchGmvMaxCampaigns).toBeInstanceOf(Function);
-    expect(api.fetchGmvMaxCampaignDetail).toBeInstanceOf(Function);
-    expect(api.fetchGmvMaxStrategy).toBeInstanceOf(Function);
-    expect(api.updateGmvMaxStrategy).toBeInstanceOf(Function);
-    expect(api.previewGmvMaxStrategy).toBeInstanceOf(Function);
+describe('ttb gmvmax api exports', () => {
+  test('exports campaign & strategy helpers', () => {
+    expect(api.listCampaigns).toBeInstanceOf(Function);
+    expect(api.getCampaign).toBeInstanceOf(Function);
+    expect(api.getStrategy).toBeInstanceOf(Function);
+    expect(api.updateStrategy).toBeInstanceOf(Function);
+    expect(api.previewStrategy).toBeInstanceOf(Function);
   });
 
-  test('exports metrics & action helpers', () => {
-    expect(api.fetchGmvMaxMetrics).toBeInstanceOf(Function);
-    expect(api.applyGmvMaxAction).toBeInstanceOf(Function);
+  test('exports sync & metrics helpers', () => {
+    expect(api.syncCampaigns).toBeInstanceOf(Function);
+    expect(api.syncMetrics).toBeInstanceOf(Function);
+    expect(api.queryMetrics).toBeInstanceOf(Function);
   });
 
-  test('exports actions fetch helper', () => {
-    expect(api.fetchGmvMaxActions).toBeInstanceOf(Function);
+  test('exports action helpers', () => {
+    expect(api.listActionLogs).toBeInstanceOf(Function);
+    expect(api.applyAction).toBeInstanceOf(Function);
   });
 });
