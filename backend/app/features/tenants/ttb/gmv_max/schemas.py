@@ -7,7 +7,23 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+
+class GmvMaxCampaignListQuery(BaseModel):
+    advertiser_id: str = Field(alias="advertiser_id")
+    store_id: str | None = None
+    business_center_id: str | None = Field(default=None, alias="business_center_id")
+    status: str | None = Field(default=None, alias="status")
+    search: str | None = Field(
+        default=None,
+        alias="search",
+        validation_alias=AliasChoices("search", "q"),
+    )
+    shop_collection_id: str | None = Field(default=None, alias="shop_collection_id")
+    product_set_id: str | None = Field(default=None, alias="product_set_id")
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class GmvMaxSyncResponse(BaseModel):

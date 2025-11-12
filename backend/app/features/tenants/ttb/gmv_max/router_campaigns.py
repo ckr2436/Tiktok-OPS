@@ -8,6 +8,7 @@ from app.data.db import get_db
 
 from .schemas import (
     GmvMaxCampaignDetailResponse,
+    GmvMaxCampaignListQuery,
     GmvMaxCampaignListResponse,
     GmvMaxCampaignOut,
     GmvMaxSyncResponse,
@@ -50,9 +51,7 @@ async def sync_gmvmax_campaigns_handler(
 async def list_gmvmax_campaigns_handler(
     workspace_id: int,
     auth_id: int,
-    advertiser_id: str | None = Query(None),
-    status_filter: str | None = Query(None, alias="status"),
-    q: str | None = Query(None),
+    filters: GmvMaxCampaignListQuery = Depends(GmvMaxCampaignListQuery),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     sync: bool = Query(False),
@@ -63,9 +62,11 @@ async def list_gmvmax_campaigns_handler(
         workspace_id=workspace_id,
         provider=PROVIDER_ALIAS,
         auth_id=auth_id,
-        advertiser_id=advertiser_id,
-        status_filter=status_filter,
-        q=q,
+        advertiser_id=filters.advertiser_id,
+        store_id=filters.store_id,
+        business_center_id=filters.business_center_id,
+        status_filter=filters.status,
+        search=filters.search,
         page=page,
         page_size=page_size,
         sync=sync,
