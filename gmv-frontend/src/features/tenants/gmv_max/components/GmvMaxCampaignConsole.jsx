@@ -144,8 +144,7 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
     ],
     enabled: Boolean(workspaceId && authId && advertiserId && selectedId),
     queryFn: async () => {
-      const response = await queryMetrics(workspaceId, authId, {
-        campaign_id: selectedId,
+      const response = await queryMetrics(workspaceId, authId, selectedId, {
         start: metricsRangeDates.start,
         end: metricsRangeDates.end,
         granularity: 'DAY',
@@ -185,13 +184,10 @@ export function GmvMaxCampaignConsole({ workspaceId, authId, advertiserId }) {
   const metricsSyncMutation = useMutation({
     mutationFn: async () => {
       if (!selectedId) throw new Error('请选择一个 Campaign 后再同步指标');
-      const response = await syncMetrics(workspaceId, authId, {
-        campaign_ids: [selectedId],
-        range: {
-          start: metricsRangeDates.start,
-          end: metricsRangeDates.end,
-          granularity: 'DAY',
-        },
+      const response = await syncMetrics(workspaceId, authId, selectedId, {
+        start: metricsRangeDates.start,
+        end: metricsRangeDates.end,
+        granularity: 'DAY',
       });
       const data = response?.data;
       return data?.data ?? data ?? null;
