@@ -17,11 +17,11 @@ from .service import get_campaign, list_campaigns, sync_campaigns
 
 PROVIDER_ALIAS = "tiktok_business"
 
-router = APIRouter()
+router = APIRouter(prefix="/gmvmax")
 
 
 @router.post(
-    "/campaigns/sync",
+    "/sync",
     response_model=GmvMaxSyncResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -44,7 +44,7 @@ async def sync_gmvmax_campaigns_handler(
 
 
 @router.get(
-    "/",
+    "",
     response_model=GmvMaxCampaignListResponse,
     dependencies=[Depends(require_tenant_member)],
 )

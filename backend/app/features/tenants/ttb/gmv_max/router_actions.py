@@ -21,7 +21,7 @@ from .service import apply_campaign_action, list_action_logs
 
 PROVIDER_ALIAS = "tiktok_business"
 
-router = APIRouter()
+router = APIRouter(prefix="/gmvmax")
 
 
 def _audit_adapter(actor_user: SessionUser | None) -> Callable[..., Any] | None:
@@ -69,7 +69,7 @@ def _audit_adapter(actor_user: SessionUser | None) -> Callable[..., Any] | None:
 
 
 @router.post(
-    "/campaigns/{campaign_id}/actions",
+    "/{campaign_id}/actions",
     response_model=GmvMaxCampaignActionOut,
     dependencies=[Depends(require_tenant_admin)],
 )

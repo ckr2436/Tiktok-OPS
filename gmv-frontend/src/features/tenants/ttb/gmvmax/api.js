@@ -1,6 +1,6 @@
 import http from "@/lib/http.js";
 
-const prefix = (wid, authId) => `tenants/${wid}/ttb/accounts/${authId}/gmvmax`;
+export const base = (wid, authId) => `tenants/${wid}/ttb/accounts/${authId}/gmvmax`;
 
 const requireCampaignId = (campaignId) => {
   if (!campaignId) {
@@ -9,35 +9,38 @@ const requireCampaignId = (campaignId) => {
   return campaignId;
 };
 
+const campaignPath = (wid, authId, campaignId) =>
+  `${base(wid, authId)}/${requireCampaignId(campaignId)}`;
+
 export const listCampaigns = (wid, authId, params) =>
-  http.get(`${prefix(wid, authId)}`, { params });
+  http.get(base(wid, authId), { params });
 
 export const getCampaign = (wid, authId, campaignId) =>
-  http.get(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}`);
+  http.get(campaignPath(wid, authId, campaignId));
 
 export const queryMetrics = (wid, authId, campaignId, params) =>
-  http.get(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}/metrics`, { params });
+  http.get(`${campaignPath(wid, authId, campaignId)}/metrics`, { params });
 
 export const syncMetrics = (wid, authId, campaignId, body = {}) =>
-  http.post(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}/metrics/sync`, body);
+  http.post(`${campaignPath(wid, authId, campaignId)}/metrics/sync`, body);
 
-export const applyAction = (wid, authId, body) =>
-  http.post(`${prefix(wid, authId)}/campaigns/actions`, body);
+export const listActionLogs = (wid, authId, campaignId, params) =>
+  http.get(`${campaignPath(wid, authId, campaignId)}/actions`, { params });
 
-export const listActionLogs = (wid, authId, params) =>
-  http.get(`${prefix(wid, authId)}/campaigns/actions`, { params });
+export const applyAction = (wid, authId, campaignId, body) =>
+  http.post(`${campaignPath(wid, authId, campaignId)}/actions`, body);
 
 export const getStrategy = (wid, authId, campaignId) =>
-  http.get(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}/strategy`);
+  http.get(`${campaignPath(wid, authId, campaignId)}/strategy`);
 
 export const updateStrategy = (wid, authId, campaignId, patch) =>
-  http.put(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}/strategy`, patch);
+  http.put(`${campaignPath(wid, authId, campaignId)}/strategy`, patch);
 
 export const previewStrategy = (wid, authId, campaignId, body = {}) =>
-  http.post(`${prefix(wid, authId)}/${requireCampaignId(campaignId)}/strategy/preview`, body);
+  http.post(`${campaignPath(wid, authId, campaignId)}/strategies/preview`, body);
 
 export const syncCampaigns = (wid, authId, body = { force: false }) =>
-  http.post(`${prefix(wid, authId)}/campaigns/sync`, body);
+  http.post(`${base(wid, authId)}/sync`, body);
 
 export default {
   listCampaigns,

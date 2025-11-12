@@ -42,7 +42,7 @@ from .service import (
     update_strategy,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/gmvmax")
 
 
 def _audit_adapter(actor_user: SessionUser | None) -> Callable[..., Any] | None:
@@ -90,7 +90,7 @@ def _audit_adapter(actor_user: SessionUser | None) -> Callable[..., Any] | None:
 
 
 @router.post(
-    "/campaigns/sync",
+    "/sync",
     response_model=GmvMaxSyncResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -114,7 +114,7 @@ async def sync_gmvmax_campaigns_provider(
 
 
 @router.get(
-    "/",
+    "",
     response_model=GmvMaxCampaignListResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -280,7 +280,7 @@ async def query_gmvmax_metrics_provider(
 
 
 @router.post(
-    "/campaigns/{campaign_id}/actions",
+    "/{campaign_id}/actions",
     response_model=GmvMaxCampaignActionOut,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -429,8 +429,8 @@ async def update_gmvmax_strategy_provider(
     return _serialize_strategy(cfg)
 
 
-@router.get(
-    "/{campaign_id}/strategy/preview",
+@router.post(
+    "/{campaign_id}/strategies/preview",
     response_model=GmvMaxStrategyPreviewResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -439,6 +439,7 @@ async def preview_gmvmax_strategy_provider(
     provider: str,
     auth_id: int,
     campaign_id: str,
+    payload: dict[str, Any] | None = None,
     db: Session = Depends(get_db),
 ) -> GmvMaxStrategyPreviewResponse:
     result = preview_strategy(

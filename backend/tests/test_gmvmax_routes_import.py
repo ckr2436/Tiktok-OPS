@@ -9,7 +9,7 @@ def test_import_router_ok() -> None:
     assert isinstance(router, APIRouter)
     paths = {route.path for route in router.routes}
     assert any("ttb/accounts/{auth_id}/gmvmax" in path for path in paths)
-    assert any(path.endswith("/gmvmax/") for path in paths)
-    assert any("/campaigns/{campaign_id}" in path for path in paths)
+    assert any(path.endswith("/gmvmax") for path in paths)
+    assert any(path.endswith("/gmvmax/{campaign_id}") for path in paths)
     assert any("/{campaign_id}/metrics/sync" in path for path in paths)
-    assert any("/campaigns/{campaign_id}/actions" in path for path in paths)
+    assert any("/{campaign_id}/actions" in path for path in paths)

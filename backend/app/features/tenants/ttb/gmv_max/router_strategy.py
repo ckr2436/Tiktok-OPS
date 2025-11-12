@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from .service import get_strategy, preview_strategy, update_strategy
 
 PROVIDER_ALIAS = "tiktok_business"
 
-router = APIRouter()
+router = APIRouter(prefix="/gmvmax")
 
 
 def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
@@ -85,7 +85,7 @@ async def update_gmvmax_strategy_handler(
     payload: GmvMaxStrategyConfigIn,
     db: Session = Depends(get_db),
 ) -> Response | GmvMaxStrategyConfigOut:
-    data = payload.model_dump(exclude_unset=True, exclude_none=True)
+    data = payload.model_dump(exclude_unset=True)
     cfg = update_strategy(
         db,
         workspace_id=workspace_id,
@@ -99,14 +99,8 @@ async def update_gmvmax_strategy_handler(
     return _serialize_strategy(cfg)
 
 
-# Allow both GET (legacy) and POST (new frontend contract) callers.
-@router.get(
-    "/{campaign_id}/strategy/preview",
-    response_model=GmvMaxStrategyPreviewResponse,
-    dependencies=[Depends(require_tenant_member)],
-)
 @router.post(
-    "/{campaign_id}/strategy/preview",
+    "/{campaign_id}/strategies/preview",
     response_model=GmvMaxStrategyPreviewResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -114,6 +108,7 @@ async def preview_gmvmax_strategy_handler(
     workspace_id: int,
     auth_id: int,
     campaign_id: str,
+    payload: dict[str, Any] | None = None,
     db: Session = Depends(get_db),
 ) -> GmvMaxStrategyPreviewResponse:
     result = preview_strategy(

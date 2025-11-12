@@ -50,7 +50,7 @@ def tenant_headers():
 
 def test_list_campaigns_only_requires_advertiser_id(client, tenant_headers):
     response = client.get(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/",
+        "/api/v1/tenants/1/ttb/accounts/1/gmvmax",
         params={"advertiser_id": "123"},
         headers=tenant_headers,
     )
@@ -59,7 +59,7 @@ def test_list_campaigns_only_requires_advertiser_id(client, tenant_headers):
 
 def test_list_campaigns_missing_advertiser_id_422(client, tenant_headers):
     response = client.get(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/",
+        "/api/v1/tenants/1/ttb/accounts/1/gmvmax",
         headers=tenant_headers,
     )
     assert response.status_code == 422
