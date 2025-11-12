@@ -11,7 +11,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class GmvMaxCampaignListQuery(BaseModel):
-    advertiser_id: str = Field(alias="advertiser_id")
+    advertiser_id: str | None = Field(default=None, alias="advertiser_id")
     store_id: str | None = None
     business_center_id: str | None = Field(default=None, alias="business_center_id")
     status: str | None = Field(default=None, alias="status")
@@ -35,7 +35,9 @@ class GmvMaxCampaignOut(BaseModel):
     campaign_id: str
     name: str
     status: Optional[str] = None
+    operation_status: Optional[str] = None
     advertiser_id: str
+    store_id: Optional[str] = None
     shopping_ads_type: Optional[str] = None
     optimization_goal: Optional[str] = None
     roas_bid: Optional[Decimal] = None

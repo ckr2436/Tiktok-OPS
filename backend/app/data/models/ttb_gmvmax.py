@@ -61,9 +61,10 @@ class TTBGmvMaxCampaign(Base):
 
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-
+    store_id: Mapped[str | None] = mapped_column(String(64), default=None)
     name: Mapped[str | None] = mapped_column(String(255), default=None)
     status: Mapped[str | None] = mapped_column(String(32), default=None)
+    operation_status: Mapped[str | None] = mapped_column(String(32), default=None)
     shopping_ads_type: Mapped[str | None] = mapped_column(String(32), default=None)
     optimization_goal: Mapped[str | None] = mapped_column(String(64), default=None)
 

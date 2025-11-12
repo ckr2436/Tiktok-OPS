@@ -154,6 +154,8 @@ async def list_campaigns(
         .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(resolved_advertiser))
     )
+    if store_id:
+        query = query.filter(TTBGmvMaxCampaign.store_id == str(store_id))
     if status_filter:
         query = query.filter(TTBGmvMaxCampaign.status == status_filter)
     if search:
