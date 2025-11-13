@@ -19,7 +19,7 @@ import math
 import time
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple, Literal
+from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple, Literal, Sequence, Mapping
 
 import httpx
 from tenacity import (
@@ -885,21 +885,53 @@ class TTBApiClient:
     async def report_gmvmax(
         self,
         advertiser_id: str,
+        *,
+        store_ids: Sequence[str],
         start_date: str,
         end_date: str,
-        time_granularity: str = "HOUR",
-        metrics: list[str] | None = None,
-        **filters: Any,
+        metrics: Sequence[str],
+        dimensions: Sequence[str],
+        enable_total_metrics: bool | None = None,
+        filtering: Mapping[str, Any] | None = None,
+        page: int | None = None,
+        page_size: int | None = None,
+        sort_field: str | None = None,
+        sort_type: str | None = None,
+        **extra_params: Any,
     ) -> dict:
+        cleaned_store_ids = [
+            str(item)
+            for item in store_ids
+            if item is not None and str(item).strip()
+        ]
+        if not cleaned_store_ids:
+            raise ValueError("store_ids must not be empty")
+
         params: Dict[str, Any] = {
             "advertiser_id": str(advertiser_id),
+            "store_ids": cleaned_store_ids,
             "start_date": start_date,
             "end_date": end_date,
-            "time_granularity": time_granularity,
+            "metrics": [str(metric) for metric in metrics if metric is not None],
+            "dimensions": [str(dimension) for dimension in dimensions if dimension is not None],
         }
-        if metrics is not None:
-            params["metrics"] = [str(metric) for metric in metrics if metric is not None]
-        params.update(filters)
+        if enable_total_metrics is not None:
+            params["enable_total_metrics"] = bool(enable_total_metrics)
+        if filtering:
+            params["filtering"] = dict(filtering)
+        if page is not None:
+            params["page"] = int(page)
+        if page_size is not None:
+            params["page_size"] = int(page_size)
+        if sort_field:
+            params["sort_field"] = str(sort_field)
+        if sort_type:
+            params["sort_type"] = str(sort_type)
+        if extra_params:
+            params.update(_remove_none(extra_params))
+
+        _ensure_gmvmax_campaign_filters(params)
+
         payload = await self._request_json(
             "GET",
             "/gmv_max/report/get/",
