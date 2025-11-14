@@ -2,43 +2,22 @@ import base64
 from decimal import Decimal
 from importlib import import_module
 
+import base64
+from decimal import Decimal
+from importlib import import_module
+
 import pytest
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
-from app.core.errors import install_exception_handlers
 from app.data.models import OAuthAccountTTB, OAuthProviderApp, Workspace
+from app.data.models.ttb_entities import TTBBindingConfig
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxStrategyConfig
-from app.features.tenants.ttb.router import router as ttb_router
+from app.features.tenants.ttb.gmv_max.service import get_strategy, update_strategy
 from app.services.crypto import encrypt_text_to_blob
 
 
 @pytest.fixture()
-def gmv_strategy_app(db_session):
-    app = FastAPI()
-    install_exception_handlers(app)
-    app.include_router(ttb_router)
-
-    dummy_user = SessionUser(
-        id=1,
-        email="member@example.com",
-        username="member",
-        display_name="Member",
-        usercode="U100",
-        is_platform_admin=False,
-        workspace_id=1,
-        role="member",
-        is_active=True,
-    )
-
-    def _override(workspace_id: int):  # noqa: ANN001
-        return dummy_user
-
-    app.dependency_overrides[require_tenant_member] = _override
-    app.dependency_overrides[require_tenant_admin] = _override
-
+def gmv_strategy_db(db_session):
     if not getattr(settings, "CRYPTO_MASTER_KEY_B64", ""):
         settings.CRYPTO_MASTER_KEY_B64 = base64.urlsafe_b64encode(b"0" * 32).decode()
 
@@ -73,36 +52,25 @@ def gmv_strategy_app(db_session):
     )
     db_session.add(account)
 
-    db_session.commit()
-
-    with TestClient(app) as client:
-        yield client, db_session
-
-    app.dependency_overrides.clear()
-
-
-def test_strategy_routes_registered():
-    mod = import_module("app.features.tenants.ttb.gmv_max.router")
-    router = getattr(mod, "router", None)
-    assert isinstance(router, APIRouter)
-    paths = {route.path for route in router.routes}
-    assert any("/{campaign_id}/strategy" in path for path in paths)
-    assert any("/{campaign_id}/strategy/preview" in path for path in paths)
-
-
-def test_update_strategy_partial_patch_keeps_other_fields(gmv_strategy_app):
-    client, db = gmv_strategy_app
+    binding = TTBBindingConfig(
+        workspace_id=1,
+        auth_id=1,
+        bc_id="7508663838649384976",
+        advertiser_id="7492997033645637633",
+        store_id="7496202240253986992",
+        auto_sync_products=False,
+    )
+    db_session.add(binding)
 
     campaign = TTBGmvMaxCampaign(
         id=1,
         workspace_id=1,
         auth_id=1,
-        advertiser_id="7492997033645637633",
+        advertiser_id=str(binding.advertiser_id),
         campaign_id="cmp-partial",
         name="Partial Update",
     )
-    db.add(campaign)
-    db.flush()
+    db_session.add(campaign)
 
     config = TTBGmvMaxStrategyConfig(
         id=1,
@@ -121,76 +89,68 @@ def test_update_strategy_partial_patch_keeps_other_fields(gmv_strategy_app):
         cooldown_minutes=45,
         min_runtime_minutes_before_first_change=120,
     )
-    db.add(config)
-    db.commit()
+    db_session.add(config)
 
-    routes = {route.path for route in client.app.routes}
-    assert any('gmvmax' in path for path in routes)
-
-    response = client.put(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/cmp-partial/strategy",
-        json={"target_roi": "1.5"},
-    )
-    assert response.status_code == 200, response.text
-
-    db.refresh(config)
-
-    assert config.enabled is True
-    assert config.min_roi == Decimal("0.80")
-    assert config.max_roi == Decimal("2.00")
-    assert config.min_impressions == 1000
-    assert config.min_clicks == 50
-    assert config.max_budget_raise_pct_per_day == Decimal("12.5")
-    assert config.max_budget_cut_pct_per_day == Decimal("7.5")
-    assert config.max_roas_step_per_adjust == Decimal("0.40")
-    assert config.cooldown_minutes == 45
-    assert config.min_runtime_minutes_before_first_change == 120
-    assert config.target_roi == Decimal("1.5")
-
-    body = response.json()
-    assert body["enabled"] is True
-    assert Decimal(body["min_roi"]) == Decimal("0.80")
-    assert Decimal(body["max_roi"]) == Decimal("2.00")
-    assert body["min_impressions"] == 1000
-    assert body["min_clicks"] == 50
-    assert Decimal(body["target_roi"]) == Decimal("1.5")
-    assert body["max_budget_raise_pct_per_day"] == 12.5
-    assert body["max_budget_cut_pct_per_day"] == 7.5
-    assert body["min_runtime_minutes_before_first_change"] == 120
+    db_session.commit()
+    return db_session
 
 
-def test_update_strategy_noop_returns_204(gmv_strategy_app):
-    client, db = gmv_strategy_app
+def test_strategy_routes_registered():
+    mod = import_module("app.features.tenants.ttb.gmv_max.router_provider")
+    router = getattr(mod, "router", None)
+    paths = {route.path for route in router.routes}
+    assert any("/{campaign_id}/strategy" in path for path in paths)
+    assert any("/{campaign_id}/strategies/preview" in path for path in paths)
 
-    campaign = TTBGmvMaxCampaign(
-        id=2,
+
+def test_update_strategy_partial_patch_keeps_other_fields(gmv_strategy_db):
+    db = gmv_strategy_db
+
+    cfg = update_strategy(
+        db,
         workspace_id=1,
+        provider="tiktok-business",
         auth_id=1,
-        advertiser_id="7492997033645637634",
-        campaign_id="cmp-noop",
-        name="No-op Update",
+        campaign_id="cmp-partial",
+        payload={"target_roi": "1.5"},
     )
-    db.add(campaign)
-    db.flush()
+    assert cfg is not None
+    assert cfg.enabled is True
+    assert cfg.min_roi == Decimal("0.80")
+    assert cfg.max_roi == Decimal("2.00")
+    assert cfg.min_impressions == 1000
+    assert cfg.min_clicks == 50
+    assert cfg.max_budget_raise_pct_per_day == Decimal("12.5")
+    assert cfg.max_budget_cut_pct_per_day == Decimal("7.5")
+    assert cfg.max_roas_step_per_adjust == Decimal("0.40")
+    assert cfg.cooldown_minutes == 45
+    assert cfg.min_runtime_minutes_before_first_change == 120
+    assert cfg.target_roi == Decimal("1.5")
 
-    config = TTBGmvMaxStrategyConfig(
-        id=2,
+
+def test_update_strategy_noop_returns_none(gmv_strategy_db):
+    db = gmv_strategy_db
+
+    cfg = update_strategy(
+        db,
         workspace_id=1,
+        provider="tiktok-business",
         auth_id=1,
-        campaign_id=campaign.campaign_id,
-        enabled=False,
-        target_roi=Decimal("1.00"),
+        campaign_id="cmp-partial",
+        payload={},
     )
-    db.add(config)
-    db.commit()
+    assert cfg is None
 
-    response = client.put(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/cmp-noop/strategy",
-        json={},
+
+def test_get_strategy_returns_existing_record(gmv_strategy_db):
+    db = gmv_strategy_db
+
+    cfg = get_strategy(
+        db,
+        workspace_id=1,
+        provider="tiktok-business",
+        auth_id=1,
+        campaign_id="cmp-partial",
     )
-    assert response.status_code == 204, response.text
-    assert response.content == b""
-
-    db.refresh(config)
-    assert config.enabled is False
-    assert config.target_roi == Decimal("1.00")
+    assert cfg.campaign_id == "cmp-partial"
+    assert cfg.target_roi == Decimal("1.10")

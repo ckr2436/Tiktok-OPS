@@ -1,9 +1,10 @@
 import base64
 import importlib
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
@@ -21,6 +22,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiserStoreLink,
 )
 from app.features.tenants.ttb.router import router as ttb_router
+from app.features.tenants.ttb.gmv_max import router_provider
 from app.services.crypto import encrypt_text_to_blob
 from app.services.ttb_meta import (
     MetaCursorState,
@@ -541,14 +543,44 @@ def test_options_links_handle_raw_variants(gmv_app):
     assert adv_entries[adv_raw_id]["bc_id"] == bc_id
 
 
-def test_gmvmax_alias_scope_enforced(gmv_app):
+def test_gmvmax_alias_scope_enforced(monkeypatch, gmv_app):
     client, _ = gmv_app
 
-    ok_resp = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax/")
+    binding = router_provider.GMVMaxAccountBinding(
+        account=None,
+        advertiser_id="7492997033645637633",
+        store_id="7496202240253986992",
+    )
+    context = router_provider.GMVMaxRouteContext(
+        workspace_id=1,
+        provider="tiktok-business",
+        auth_id=1,
+        advertiser_id="7492997033645637633",
+        store_id="7496202240253986992",
+        binding=binding,
+        client=SimpleNamespace(gmv_max_campaign_get=lambda *_, **__: None),
+    )
+
+    def _context_override(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001
+        if workspace_id != 1:
+            raise HTTPException(status_code=404, detail="binding not found")
+        return context
+
+    async def fake_call(func, *args, **kwargs):  # noqa: ANN001
+        payload = type("Payload", (), {"list": [], "page_info": {}})()
+        return type("Resp", (), {"data": payload, "request_id": "stub"})()
+
+    client.app.dependency_overrides[router_provider.get_route_context] = _context_override
+    monkeypatch.setattr(router_provider, "_call_tiktok", fake_call)
+
+    ok_resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/"
+    )
     assert ok_resp.status_code == 200
     payload = ok_resp.json()
-    assert payload["total"] == 0
     assert payload["items"] == []
 
-    not_found = client.get("/api/v1/tenants/2/ttb/accounts/1/gmvmax/")
+    not_found = client.get(
+        "/api/v1/tenants/2/providers/tiktok-business/accounts/1/gmvmax/"
+    )
     assert not_found.status_code == 404

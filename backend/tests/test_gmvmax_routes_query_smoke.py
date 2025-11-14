@@ -1,65 +1,96 @@
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import asyncio
+from types import SimpleNamespace
 
-from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
-from app.core.errors import install_exception_handlers
-from app.features.tenants.ttb.router import router as ttb_router
-from app.features.tenants.ttb.gmv_max import router_campaigns
+from app.features.tenants.ttb.gmv_max import router_provider
+from app.providers.tiktok_business.gmvmax_client import PageInfo
 
 
-@pytest.fixture()
-def client(monkeypatch):
-    app = FastAPI()
-    install_exception_handlers(app)
-    app.include_router(ttb_router)
-
-    member = SessionUser(
-        id=1,
-        email="member@example.com",
-        username="member",
-        display_name="Member",
-        usercode="U100",
-        is_platform_admin=False,
+def _build_stub_context():
+    binding = router_provider.GMVMaxAccountBinding(
+        account=None,
+        advertiser_id="adv-123",
+        store_id="store-999",
+    )
+    return router_provider.GMVMaxRouteContext(
         workspace_id=1,
-        role="member",
-        is_active=True,
+        provider="tiktok-business",
+        auth_id=1,
+        advertiser_id="adv-123",
+        store_id="store-999",
+        binding=binding,
+        client=SimpleNamespace(gmv_max_campaign_get=lambda *_, **__: None),
     )
 
-    def _member_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001
-        return member
 
-    app.dependency_overrides[require_tenant_member] = _member_override
-    app.dependency_overrides[require_tenant_admin] = _member_override
+def test_list_campaigns_accepts_explicit_advertiser_id(monkeypatch):
+    stub_context = _build_stub_context()
+    calls = []
 
-    async def fake_list_campaigns(db, *, workspace_id, provider, auth_id, **kwargs):
-        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    async def fake_call(func, *args, **kwargs):  # noqa: ANN001
+        calls.append((func, args, kwargs))
+        data = type("Payload", (), {"list": [], "page_info": PageInfo()})()
+        return type("Resp", (), {"data": data, "request_id": "stub"})()
 
-    monkeypatch.setattr(router_campaigns, "list_campaigns", fake_list_campaigns)
+    monkeypatch.setattr(router_provider, "_call_tiktok", fake_call)
 
-    with TestClient(app) as test_client:
-        yield test_client
-
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture()
-def tenant_headers():
-    return {"X-Workspace-Id": "1"}
-
-
-def test_list_campaigns_only_requires_advertiser_id(client, tenant_headers):
-    response = client.get(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax",
-        params={"advertiser_id": "123"},
-        headers=tenant_headers,
+    response = asyncio.run(
+        router_provider.list_gmvmax_campaigns_provider(
+            workspace_id=1,
+            provider="tiktok-business",
+            auth_id=1,
+            gmv_max_promotion_types=None,
+            store_ids=None,
+            campaign_ids=None,
+            campaign_name=None,
+            primary_status=None,
+            creation_filter_start_time=None,
+            creation_filter_end_time=None,
+            fields=None,
+            page=None,
+            page_size=None,
+            advertiser_id="123",
+            context=stub_context,
+        )
     )
-    assert response.status_code == 200, response.json()
+    assert response.items == []
+    assert isinstance(response.page_info, PageInfo)
+    assert response.request_id == "stub"
+    _, args, _ = calls[-1]
+    request = args[0]
+    assert str(request.advertiser_id) == "123"
 
 
-def test_list_campaigns_missing_advertiser_id_422(client, tenant_headers):
-    response = client.get(
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax",
-        headers=tenant_headers,
+def test_list_campaigns_uses_context_advertiser(monkeypatch):
+    stub_context = _build_stub_context()
+    calls = []
+
+    async def fake_call(func, *args, **kwargs):  # noqa: ANN001
+        calls.append((func, args, kwargs))
+        data = type("Payload", (), {"list": [], "page_info": PageInfo()})()
+        return type("Resp", (), {"data": data, "request_id": "stub"})()
+
+    monkeypatch.setattr(router_provider, "_call_tiktok", fake_call)
+
+    response = asyncio.run(
+        router_provider.list_gmvmax_campaigns_provider(
+            workspace_id=1,
+            provider="tiktok-business",
+            auth_id=1,
+            gmv_max_promotion_types=None,
+            store_ids=None,
+            campaign_ids=None,
+            campaign_name=None,
+            primary_status=None,
+            creation_filter_start_time=None,
+            creation_filter_end_time=None,
+            fields=None,
+            page=None,
+            page_size=None,
+            advertiser_id=None,
+            context=stub_context,
+        )
     )
-    assert response.status_code == 422
+    assert response.items == []
+    _, args, _ = calls[-1]
+    request = args[0]
+    assert str(request.advertiser_id) == "adv-123"

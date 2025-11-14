@@ -13,7 +13,9 @@ describe('GMV-Max URL contract', () => {
 
   it('builds list/detail urls without /campaigns segment', async () => {
     const listUrl = svc.base(wid, auth);
-    expect(listUrl).toContain(`/tenants/${wid}/ttb/accounts/${auth}/gmvmax`);
+    expect(listUrl).toContain(
+      `/tenants/${wid}/providers/tiktok-business/accounts/${auth}/gmvmax`,
+    );
     expect(listUrl).not.toContain('/campaigns');
 
     const getSpy = vi.spyOn(http, 'get').mockResolvedValue({ data: null });

@@ -16,16 +16,18 @@ client = TestClient(_build_app())
 
 def test_routes_exist_shape_only():
     for path in [
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax",
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/999",
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/999/metrics",
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/999/actions",
-        "/api/v1/tenants/1/ttb/accounts/1/gmvmax/999/strategy",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/999",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/999/metrics",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/999/actions",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/999/strategy",
     ]:
         response = client.get(path)
         assert response.status_code in (200, 401, 403, 404)
 
 
 def test_no_get_requires_body():
-    response = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax/999/metrics")
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/999/metrics"
+    )
     assert "Field required" not in response.text
