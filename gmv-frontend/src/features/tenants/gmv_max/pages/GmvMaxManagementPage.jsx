@@ -1489,6 +1489,7 @@ export default function GmvMaxManagementPage() {
         <h2 style={{ marginBottom: 12 }}>GMV Max 投放控制台（只读预览版）</h2>
         <GmvMaxCampaignConsole
           workspaceId={wid}
+          provider={provider}
           authId={selectedAuthId}
           advertiserId={form.advertiserId}
         />

@@ -1,9 +1,10 @@
 import base64
 import importlib
 from datetime import datetime, timezone
+from typing import Callable
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
@@ -20,7 +21,12 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
 )
+from app.features.tenants.ttb.gmv_max import router_provider
 from app.features.tenants.ttb.router import router as ttb_router
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxCampaignListData,
+    GMVMaxResponse,
+)
 from app.services.crypto import encrypt_text_to_blob
 from app.services.ttb_meta import (
     MetaCursorState,
@@ -542,13 +548,50 @@ def test_options_links_handle_raw_variants(gmv_app):
 
 
 def test_gmvmax_alias_scope_enforced(gmv_app):
-    client, _ = gmv_app
+    client, db = gmv_app
 
-    ok_resp = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax/")
-    assert ok_resp.status_code == 200
-    payload = ok_resp.json()
-    assert payload["total"] == 0
-    assert payload["items"] == []
+    account = db.get(OAuthAccountTTB, 1)
 
-    not_found = client.get("/api/v1/tenants/2/ttb/accounts/1/gmvmax/")
-    assert not_found.status_code == 404
+    class _StubClient:
+        async def gmv_max_campaign_get(self, request):  # noqa: ANN001
+            return GMVMaxResponse(
+                code=0,
+                message="ok",
+                request_id="campaign-list",
+                data=GMVMaxCampaignListData(list=[]),
+            )
+
+    context = router_provider.GMVMaxRouteContext(
+        workspace_id=1,
+        provider="tiktok-business",
+        auth_id=1,
+        advertiser_id="7492997033645637633",
+        store_id=None,
+        binding=router_provider.GMVMaxAccountBinding(
+            account=account,
+            advertiser_id="7492997033645637633",
+            store_id=None,
+        ),
+        client=_StubClient(),
+    )
+
+    def override_get_context(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001
+        if workspace_id != 1:
+            raise HTTPException(status_code=404, detail="binding not found")
+        return context
+
+    client.app.dependency_overrides[router_provider.get_route_context] = override_get_context
+    try:
+        ok_resp = client.get(
+            "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax"
+        )
+        assert ok_resp.status_code == 200
+        payload = ok_resp.json()
+        assert payload["items"] == []
+
+        not_found = client.get(
+            "/api/v1/tenants/2/providers/tiktok-business/accounts/1/gmvmax"
+        )
+        assert not_found.status_code == 404
+    finally:
+        client.app.dependency_overrides.pop(router_provider.get_route_context, None)
