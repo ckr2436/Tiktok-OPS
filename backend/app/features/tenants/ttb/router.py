@@ -32,7 +32,6 @@ from app.data.models.ttb_entities import (
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
-from .gmv_max.router import router as gmv_max_router
 from .gmv_max.router_provider import router as gmv_max_provider_router
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
@@ -1547,9 +1546,6 @@ def update_gmv_max_config(
     return _serialize_binding_config(row)
 
 
-# -------------------------- GMV Max 子路由 --------------------------
-router.include_router(gmv_max_router)
-
 router.include_router(
     gmv_max_provider_router,
     prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}",
@@ -1560,7 +1556,7 @@ router.include_router(
 # -------------------------- 旧路由废弃 --------------------------
 _DEPRECATION_DETAIL = (
     "This endpoint was replaced by /api/v1/tenants/providers/tiktok-business/*. "
-    "Legacy tenants/ttb routes will be removed after 2024-12-31."
+    "Legacy tenants/ttb routes have been removed."
 )
 
 
@@ -1570,5 +1566,5 @@ _DEPRECATION_DETAIL = (
     include_in_schema=False,
 )
 def deprecated_ttb_routes(**_: dict) -> None:
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_DEPRECATION_DETAIL)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_DEPRECATION_DETAIL)
 

@@ -134,5 +134,14 @@ def resolve_account_binding(
     )
 
 
+def get_advertiser_id_for_account(
+    db: Session, workspace_id: int, provider: str, auth_id: int
+) -> str:
+    """Return the configured advertiser identifier for this account."""
+
+    binding = resolve_account_binding(db, workspace_id, provider, auth_id)
+    return str(binding.advertiser_id)
+
+
 async def _helpers_async_marker() -> None:  # pragma: no cover - helper for verify script
     """No-op async marker used by automated verification."""

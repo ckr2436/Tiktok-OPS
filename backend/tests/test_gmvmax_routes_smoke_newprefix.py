@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from datetime import date
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -132,13 +133,7 @@ def gmvmax_client_fixture(monkeypatch):
     app.dependency_overrides[require_tenant_member] = _member_override
     app.dependency_overrides[require_tenant_admin] = _admin_override
 
-    from app.features.tenants.ttb.gmv_max import (
-        router_actions,
-        router_campaigns,
-        router_metrics,
-        router_provider,
-        router_strategy,
-    )
+    from app.features.tenants.ttb.gmv_max import router_provider
 
     stub_client = StubGMVMaxClient()
 
@@ -160,18 +155,6 @@ def gmvmax_client_fixture(monkeypatch):
         return context
 
     app.dependency_overrides[router_provider.get_route_context] = _override_context
-    app.dependency_overrides[router_campaigns.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_actions.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_metrics.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_strategy.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
 
     with TestClient(app) as client:
         yield {
@@ -319,10 +302,3 @@ def test_strategy_preview_returns_recommendation(gmvmax_client_fixture):
     )
     assert response.status_code == 200
     assert response.json()["recommendation"]["budget"] == 123.0
-
-
-def test_deprecated_wrapper_proxies_list(gmvmax_client_fixture):
-    client: TestClient = gmvmax_client_fixture["client"]
-    response = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax")
-    assert response.status_code == 200
-    assert response.json()["items"][0]["campaign_id"] == "cmp-1"

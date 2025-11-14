@@ -1,6 +1,12 @@
 import http from "@/lib/http.js";
 
-export const base = (wid, authId) => `tenants/${wid}/ttb/accounts/${authId}/gmvmax`;
+const DEFAULT_PROVIDER = "tiktok-business";
+
+const providerSegment = (provider = DEFAULT_PROVIDER) =>
+  encodeURIComponent(provider || DEFAULT_PROVIDER);
+
+export const base = (wid, authId, provider = DEFAULT_PROVIDER) =>
+  `tenants/${wid}/providers/${providerSegment(provider)}/accounts/${authId}/gmvmax`;
 
 const requireCampaignId = (campaignId) => {
   if (!campaignId) {
