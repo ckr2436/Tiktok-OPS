@@ -1479,6 +1479,7 @@ def get_gmv_max_config(
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
+    """Retrieve the persisted GMV Max binding configuration for this account."""
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
     try:
@@ -1503,6 +1504,7 @@ def update_gmv_max_config(
     me: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
 ):
+    """Update the GMV Max binding configuration for this advertiser account."""
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
 

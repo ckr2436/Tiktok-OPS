@@ -1,135 +1,82 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_tenant_admin, require_tenant_member
 from app.data.db import get_db
 
-from .schemas import GmvMaxMetricsPoint, GmvMaxMetricsResponse, GmvMaxMetricsSyncRequest
-from .service import query_metrics, sync_metrics
+from .router_provider import (
+    GMVMaxRouteContext,
+    get_route_context as get_provider_context,
+    query_gmvmax_metrics_provider,
+    sync_gmvmax_metrics_provider,
+)
+from .schemas import MetricsRequest, MetricsResponse
 
-PROVIDER_ALIAS = "tiktok_business"
+PROVIDER_SLUG = "tiktok-business"
 
 router = APIRouter(prefix="/gmvmax")
 
 
-def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
-    if value is None:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid datetime") from exc
-
-
-def _parse_date(value: Optional[str]) -> Optional[date]:
-    if value is None:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid date") from exc
+def get_deprecated_route_context(
+    workspace_id: int,
+    auth_id: int,
+    db: Session = Depends(get_db),
+) -> GMVMaxRouteContext:
+    return get_provider_context(workspace_id, PROVIDER_SLUG, auth_id, db)
 
 
 @router.post(
     "/{campaign_id}/metrics/sync",
+    response_model=MetricsResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
+# DEPRECATED: use /providers/{provider}/accounts/{auth_id}/gmvmax/{campaign_id}/metrics/sync instead.
 async def sync_gmvmax_metrics_handler(
     workspace_id: int,
     auth_id: int,
     campaign_id: str,
-    payload: GmvMaxMetricsSyncRequest,
-    db: Session = Depends(get_db),
-) -> dict[str, int]:
-    synced = await sync_metrics(
-        db,
+    payload: MetricsRequest,
+    advertiser_id: Optional[str] = Query(None),
+    context: GMVMaxRouteContext = Depends(get_deprecated_route_context),
+) -> MetricsResponse:
+    return await sync_gmvmax_metrics_provider(
         workspace_id=workspace_id,
-        provider=PROVIDER_ALIAS,
+        provider=PROVIDER_SLUG,
         auth_id=auth_id,
         campaign_id=campaign_id,
-        advertiser_id=payload.advertiser_id,
-        granularity=payload.granularity,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
+        payload=payload,
+        advertiser_id=advertiser_id,
+        context=context,
     )
-    return {"synced_rows": synced}
 
 
 @router.get(
     "/{campaign_id}/metrics",
-    response_model=GmvMaxMetricsResponse,
+    response_model=MetricsResponse,
     dependencies=[Depends(require_tenant_member)],
 )
+# DEPRECATED: use /providers/{provider}/accounts/{auth_id}/gmvmax/{campaign_id}/metrics instead.
 async def query_gmvmax_metrics_handler(
     workspace_id: int,
     auth_id: int,
     campaign_id: str,
-    granularity: str = Query("hour", regex=r"^(?i)(hour|day)$"),
-    start: Optional[str] = Query(None, description="ISO date or datetime"),
-    end: Optional[str] = Query(None, description="ISO date or datetime"),
-    limit: int = Query(200, ge=1, le=2000),
-    offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
-) -> GmvMaxMetricsResponse:
-    gran = granularity.lower()
-    if gran == "hour":
-        start_dt = _parse_datetime(start)
-        end_dt = _parse_datetime(end)
-        result = query_metrics(
-            db,
-            workspace_id=workspace_id,
-            provider=PROVIDER_ALIAS,
-            auth_id=auth_id,
-            campaign_id=campaign_id,
-            granularity="HOUR",
-            start=start_dt,
-            end=end_dt,
-            limit=limit,
-            offset=offset,
-        )
-        points = [
-            GmvMaxMetricsPoint(
-                ts=row.interval_start,
-                impressions=row.impressions,
-                clicks=row.clicks,
-                cost_cents=row.cost_cents,
-                gross_revenue_cents=row.gross_revenue_cents,
-                orders=row.orders,
-                roi=row.roi,
-            )
-            for row in result["items"]
-        ]
-        return GmvMaxMetricsResponse(granularity="hour", points=points)
-
-    start_date = _parse_date(start)
-    end_date = _parse_date(end)
-    result = query_metrics(
-        db,
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    advertiser_id: Optional[str] = Query(None),
+    context: GMVMaxRouteContext = Depends(get_deprecated_route_context),
+) -> MetricsResponse:
+    return await query_gmvmax_metrics_provider(
         workspace_id=workspace_id,
-        provider=PROVIDER_ALIAS,
+        provider=PROVIDER_SLUG,
         auth_id=auth_id,
         campaign_id=campaign_id,
-        granularity="DAY",
-        start=start_date,
-        end=end_date,
-        limit=limit,
-        offset=offset,
+        start_date=start_date,
+        end_date=end_date,
+        advertiser_id=advertiser_id,
+        context=context,
     )
-    points = [
-        GmvMaxMetricsPoint(
-            ts=row.date,
-            impressions=row.impressions,
-            clicks=row.clicks,
-            cost_cents=row.cost_cents,
-            gross_revenue_cents=row.gross_revenue_cents,
-            orders=row.orders,
-            roi=row.roi,
-        )
-        for row in result["items"]
-    ]
-    return GmvMaxMetricsResponse(granularity="day", points=points)

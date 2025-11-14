@@ -1,151 +1,238 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from decimal import Decimal
-from datetime import date, datetime
-from decimal import Decimal
-from enum import Enum
-from typing import List, Literal, Optional
+from __future__ import annotations
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from datetime import date
+from typing import Any, Dict, List, Optional, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxBidRecommendation,
+    GMVMaxCampaign,
+    GMVMaxCampaignInfoData,
+    GMVMaxReportData,
+    GMVMaxSession,
+    GMVMaxSessionProduct,
+    GMVMaxSessionSettings,
+    PageInfo,
+)
+
+DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT_GMV_MAX", "LIVE_GMV_MAX"]
+DEFAULT_METRICS: List[str] = [
+    "spend",
+    "impressions",
+    "clicks",
+    "orders",
+    "gross_revenue",
+    "roi",
+]
+DEFAULT_DIMENSIONS: List[str] = ["campaign_id", "stat_time_day"]
 
 
-class GmvMaxCampaignListQuery(BaseModel):
-    advertiser_id: str | None = Field(default=None, alias="advertiser_id")
-    store_id: str | None = None
-    business_center_id: str | None = Field(default=None, alias="business_center_id")
-    status: str | None = Field(default=None, alias="status")
-    search: str | None = Field(
-        default=None,
-        alias="search",
-        validation_alias=AliasChoices("search", "q"),
+class CampaignFilter(BaseModel):
+    """High level filters supported by GMV Max campaign list endpoint."""
+
+    gmv_max_promotion_types: List[str] = Field(
+        default_factory=lambda: list(DEFAULT_PROMOTION_TYPES)
     )
-    shop_collection_id: str | None = Field(default=None, alias="shop_collection_id")
-    product_set_id: str | None = Field(default=None, alias="product_set_id")
+    store_ids: Optional[List[str]] = None
+    campaign_ids: Optional[List[str]] = None
+    campaign_name: Optional[str] = None
+    primary_status: Optional[str] = None
+    creation_filter_start_time: Optional[str] = None
+    creation_filter_end_time: Optional[str] = None
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
 
-class GmvMaxSyncResponse(BaseModel):
-    synced: int
+class CampaignListOptions(BaseModel):
+    """Optional parameters for campaign listing requests."""
+
+    fields: Optional[List[str]] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=50)
 
 
-class GmvMaxCampaignOut(BaseModel):
-    id: int
-    campaign_id: str
-    name: str
-    status: Optional[str] = None
-    operation_status: Optional[str] = None
-    advertiser_id: str
+class ReportFiltering(BaseModel):
+    """Filtering block for GMV Max report requests."""
+
+    gmv_max_promotion_types: Optional[List[str]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ReportRequest(BaseModel):
+    """Tenant level request body for metrics/report endpoints."""
+
+    store_ids: Optional[List[str]] = None
+    start_date: date
+    end_date: date
+    metrics: List[str]
+    dimensions: List[str]
+    enable_total_metrics: Optional[bool] = None
+    filtering: Optional[ReportFiltering] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=50)
+    sort_field: Optional[str] = None
+    sort_type: Optional[str] = None
+
+
+class SyncRequest(BaseModel):
+    """Payload accepted by the sync endpoint combining campaigns + report."""
+
+    advertiser_id: Optional[str] = None
+    campaign_filter: Optional[CampaignFilter] = Field(
+        default=None, alias="campaign_filter"
+    )
+    campaign_options: Optional[CampaignListOptions] = None
+    report: ReportRequest
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncResponse(BaseModel):
+    """Combined response returning campaign listing and report payloads."""
+
+    campaigns: List[GMVMaxCampaign]
+    campaigns_page_info: Optional[PageInfo] = None
+    report: GMVMaxReportData
+    campaign_request_id: Optional[str] = None
+    report_request_id: Optional[str] = None
+
+
+class CampaignListResponse(BaseModel):
+    """Response returned by the campaign list route."""
+
+    items: List[GMVMaxCampaign]
+    page_info: Optional[PageInfo] = None
+    request_id: Optional[str] = None
+
+
+class CampaignDetailResponse(BaseModel):
+    """Detailed campaign payload with optional session listing."""
+
+    campaign: GMVMaxCampaignInfoData
+    sessions: List[GMVMaxSession] = Field(default_factory=list)
+    sessions_page_info: Optional[PageInfo] = None
+    request_id: Optional[str] = None
+    sessions_request_id: Optional[str] = None
+
+
+class MetricsRequest(BaseModel):
+    """Request payload for metrics endpoints."""
+
+    store_ids: Optional[List[str]] = None
+    start_date: date
+    end_date: date
+    metrics: Optional[List[str]] = None
+    dimensions: Optional[List[str]] = None
+    enable_total_metrics: Optional[bool] = None
+    filtering: Optional[ReportFiltering] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=50)
+    sort_field: Optional[str] = None
+    sort_type: Optional[str] = None
+
+
+class MetricsResponse(BaseModel):
+    """Proxy payload for metrics queries."""
+
+    report: GMVMaxReportData
+    request_id: Optional[str] = None
+
+
+class CampaignActionRequest(BaseModel):
+    """Action payload accepted by the campaign actions route."""
+
+    type: Literal["pause", "enable", "update_budget", "update_strategy"]
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CampaignActionResponse(BaseModel):
+    """Normalized campaign action response."""
+
+    type: Literal["pause", "enable", "update_budget", "update_strategy"]
+    status: Literal["success", "failed"]
+    response: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = None
+
+
+class StrategyResponse(BaseModel):
+    """Strategy payload combining campaign, session, and recommendations."""
+
+    campaign: GMVMaxCampaignInfoData
+    sessions: List[GMVMaxSession] = Field(default_factory=list)
+    sessions_page_info: Optional[PageInfo] = None
+    recommendation: Optional[GMVMaxBidRecommendation] = None
+    campaign_request_id: Optional[str] = None
+    sessions_request_id: Optional[str] = None
+    recommendation_request_id: Optional[str] = None
+
+
+class StrategyCampaignPatch(BaseModel):
+    """Subset of campaign fields that can be updated through the strategy route."""
+
+    budget: Optional[float] = None
+    roas_bid: Optional[float] = None
+    promotion_days: Optional[Dict[str, Any]] = None
+    schedule_type: Optional[str] = None
+    schedule_start_time: Optional[str] = None
+    schedule_end_time: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class StrategySessionPatch(BaseModel):
+    """Session level fields accepted by the strategy update route."""
+
+    session_id: str
+    store_id: Optional[str] = None
+    session: Optional[GMVMaxSessionSettings] = None
+    product_list: Optional[List[GMVMaxSessionProduct]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class StrategyUpdateRequest(BaseModel):
+    """Payload accepted by PUT strategy route."""
+
+    campaign: Optional[StrategyCampaignPatch] = None
+    session: Optional[StrategySessionPatch] = None
+
+
+class StrategyUpdateResponse(BaseModel):
+    """Response returned by PUT strategy route."""
+
+    status: Literal["success", "partial", "noop", "failed"]
+    campaign: Optional[GMVMaxCampaignInfoData] = None
+    sessions: Optional[List[GMVMaxSession]] = None
+    campaign_request_id: Optional[str] = None
+    session_request_id: Optional[str] = None
+
+
+class StrategyPreviewRequest(BaseModel):
+    """Request payload accepted by the strategy preview route."""
+
     store_id: Optional[str] = None
     shopping_ads_type: Optional[str] = None
     optimization_goal: Optional[str] = None
-    roas_bid: Optional[Decimal] = None
-    daily_budget_cents: Optional[int] = None
-    currency: Optional[str] = None
-    ext_created_time: Optional[datetime] = None
-    ext_updated_time: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
+    item_group_ids: Optional[List[str]] = None
+    identity_id: Optional[str] = None
 
 
-class GmvMaxCampaignListResponse(BaseModel):
-    total: int
-    page: int
-    page_size: int
-    items: List[GmvMaxCampaignOut]
-    synced: Optional[int] = None
+class StrategyPreviewResponse(BaseModel):
+    """Preview response returning bid recommendations."""
+
+    status: Literal["success", "failed"]
+    recommendation: Optional[GMVMaxBidRecommendation] = None
+    request_id: Optional[str] = None
 
 
-class GmvMaxCampaignDetailResponse(BaseModel):
-    campaign: GmvMaxCampaignOut
+class ActionLogEntry(BaseModel):
+    """Placeholder action log representation (empty for now)."""
 
-
-class GmvMaxMetricsPoint(BaseModel):
-    ts: datetime | date
-    impressions: Optional[int] = None
-    clicks: Optional[int] = None
-    cost_cents: Optional[int] = None
-    gross_revenue_cents: Optional[int] = None
-    orders: Optional[int] = None
-    roi: Optional[Decimal] = None
-
-
-class GmvMaxMetricsResponse(BaseModel):
-    granularity: Literal["hour", "day"]
-    points: List[GmvMaxMetricsPoint]
-
-
-class GmvMaxCampaignActionType(str, Enum):
-    START = "START"
-    PAUSE = "PAUSE"
-    SET_BUDGET = "SET_BUDGET"
-    SET_ROAS = "SET_ROAS"
-
-
-class GmvMaxCampaignActionIn(BaseModel):
-    action: GmvMaxCampaignActionType
-    daily_budget_cents: Optional[int] = None
-    roas_bid: Optional[Decimal] = None
-    reason: Optional[str] = None
-
-
-class GmvMaxCampaignActionOut(BaseModel):
-    action: GmvMaxCampaignActionType
-    result: str
-    campaign: GmvMaxCampaignOut
-
-
-class GmvMaxMetricsSyncRequest(BaseModel):
-    advertiser_id: str
-    granularity: Literal["DAY", "HOUR"] = "DAY"
-    start_date: date
-    end_date: date
-
-
-class GmvMaxActionLogOut(BaseModel):
-    id: int
-    action: str
-    reason: Optional[str] = None
-    performed_by: Optional[str] = None
-    result: Optional[str] = None
-    error_message: Optional[str] = None
-    before: Optional[dict] = None
-    after: Optional[dict] = None
-    created_at: Optional[datetime] = None
-
-
-class GmvMaxActionLogListResponse(BaseModel):
-    campaign_id: str
-    count: int
-    items: List[GmvMaxActionLogOut]
-
-
-class GmvMaxStrategyConfigIn(BaseModel):
-    enabled: Optional[bool] = None
-    target_roi: Optional[str] = None
-    min_roi: Optional[str] = None
-    max_roi: Optional[str] = None
-    min_impressions: Optional[int] = None
-    min_clicks: Optional[int] = None
-    max_budget_raise_pct_per_day: Optional[float] = None
-    max_budget_cut_pct_per_day: Optional[float] = None
-    max_roas_step_per_adjust: Optional[str] = None
-    cooldown_minutes: Optional[int] = None
-    min_runtime_minutes_before_first_change: Optional[int] = None
-
-
-class GmvMaxStrategyConfigOut(GmvMaxStrategyConfigIn):
-    workspace_id: int
-    auth_id: int
-    campaign_id: str
-
-
-class GmvMaxStrategyPreviewResponse(BaseModel):
-    enabled: bool
-    reason: Optional[str] = None
-    metrics: Optional[dict] = None
-    decision: Optional[dict] = None
+    entries: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 async def _schemas_async_marker() -> None:  # pragma: no cover - helper for verify script
