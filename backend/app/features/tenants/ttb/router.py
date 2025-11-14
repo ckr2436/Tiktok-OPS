@@ -32,7 +32,6 @@ from app.data.models.ttb_entities import (
 )
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
-from .gmv_max.router import router as gmv_max_router
 from .gmv_max.router_provider import router as gmv_max_provider_router
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
@@ -1548,8 +1547,6 @@ def update_gmv_max_config(
 
 
 # -------------------------- GMV Max 子路由 --------------------------
-router.include_router(gmv_max_router)
-
 router.include_router(
     gmv_max_provider_router,
     prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}",

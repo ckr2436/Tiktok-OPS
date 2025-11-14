@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.router import router as ttb_router
+from app.features.tenants.ttb.gmv_max import router_provider
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
     GMVMaxCampaign,
@@ -132,14 +133,6 @@ def gmvmax_client_fixture(monkeypatch):
     app.dependency_overrides[require_tenant_member] = _member_override
     app.dependency_overrides[require_tenant_admin] = _admin_override
 
-    from app.features.tenants.ttb.gmv_max import (
-        router_actions,
-        router_campaigns,
-        router_metrics,
-        router_provider,
-        router_strategy,
-    )
-
     stub_client = StubGMVMaxClient()
 
     context = router_provider.GMVMaxRouteContext(
@@ -156,21 +149,8 @@ def gmvmax_client_fixture(monkeypatch):
         client=stub_client,
     )
 
-    def _override_context(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001, ARG001
-        return context
-
-    app.dependency_overrides[router_provider.get_route_context] = _override_context
-    app.dependency_overrides[router_campaigns.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_actions.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_metrics.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
-    )
-    app.dependency_overrides[router_strategy.get_deprecated_route_context] = (
-        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
+    app.dependency_overrides[router_provider.get_route_context] = (
+        lambda workspace_id, provider, auth_id, db=None: context  # noqa: ARG005
     )
 
     with TestClient(app) as client:
@@ -320,9 +300,3 @@ def test_strategy_preview_returns_recommendation(gmvmax_client_fixture):
     assert response.status_code == 200
     assert response.json()["recommendation"]["budget"] == 123.0
 
-
-def test_deprecated_wrapper_proxies_list(gmvmax_client_fixture):
-    client: TestClient = gmvmax_client_fixture["client"]
-    response = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax")
-    assert response.status_code == 200
-    assert response.json()["items"][0]["campaign_id"] == "cmp-1"
