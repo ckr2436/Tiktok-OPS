@@ -1,315 +1,328 @@
 from __future__ import annotations
 
-
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import date
 from types import SimpleNamespace
+from typing import Any, Dict, List
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.core.deps import (
-    SessionUser,
-    require_session,
-    require_tenant_admin,
-    require_tenant_member,
-)
+from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.router import router as ttb_router
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxBidRecommendation,
+    GMVMaxCampaign,
+    GMVMaxCampaignInfoData,
+    GMVMaxCampaignListData,
+    GMVMaxReportData,
+    GMVMaxReportEntry,
+    GMVMaxResponse,
+    GMVMaxSession,
+    GMVMaxSessionListData,
+    GMVMaxSessionProduct,
+)
+
+
+class StubGMVMaxClient:
+    def __init__(self) -> None:
+        self.campaign_requests: List[Any] = []
+        self.report_requests: List[Any] = []
+        self.action_calls: List[str] = []
+
+    async def gmv_max_campaign_get(self, request):  # noqa: ANN001
+        self.campaign_requests.append(request)
+        data = GMVMaxCampaignListData(
+            list=[
+                GMVMaxCampaign(campaign_id="cmp-1", campaign_name="Primary"),
+            ],
+        )
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="campaign-list",
+            data=data,
+        )
+
+    async def gmv_max_campaign_info(self, request):  # noqa: ANN001
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="campaign-info",
+            data=GMVMaxCampaignInfoData(
+                campaign_id=request.campaign_id,
+                campaign_name="Primary",
+                advertiser_id=request.advertiser_id,
+                store_id="store-1",
+                shopping_ads_type="PRODUCT",
+                optimization_goal="GMV",
+            ),
+        )
+
+    async def gmv_max_session_list(self, request):  # noqa: ANN001
+        session = GMVMaxSession(
+            session_id="session-1",
+            campaign_id=request.campaign_id,
+            product_list=[GMVMaxSessionProduct(spu_id="spu-1")],
+        )
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="session-list",
+            data=GMVMaxSessionListData(list=[session]),
+        )
+
+    async def gmv_max_report_get(self, request):  # noqa: ANN001
+        self.report_requests.append(request)
+        entry = GMVMaxReportEntry(metrics={"spend": "10"}, dimensions={})
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="report",
+            data=GMVMaxReportData(list=[entry]),
+        )
+
+    async def gmv_max_campaign_update(self, request):  # noqa: ANN001
+        self.action_calls.append("campaign_update")
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="campaign-update",
+            data=GMVMaxCampaignInfoData(
+                campaign_id=request.body.campaign_id,
+                campaign_name="Primary",
+                advertiser_id=request.advertiser_id,
+                store_id="store-1",
+            ),
+        )
+
+    async def gmv_max_session_update(self, request):  # noqa: ANN001
+        self.action_calls.append("session_update")
+        session = GMVMaxSession(session_id=request.body.session_id)
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="session-update",
+            data=GMVMaxSessionListData(list=[session]),
+        )
+
+    async def gmv_max_bid_recommend(self, request):  # noqa: ANN001
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="bid-recommend",
+            data=GMVMaxBidRecommendation(budget=123.0, roas_bid=2.5),
+        )
 
 
 @pytest.fixture()
-def gmvmax_smoke_client(monkeypatch):
+def gmvmax_client_fixture(monkeypatch):
     app = FastAPI()
     install_exception_handlers(app)
     app.include_router(ttb_router)
 
-    member = SessionUser(
-        id=100,
-        email="tester@example.com",
-        username="tester",
-        display_name="Tester",
-        usercode="UTEST",
-        is_platform_admin=False,
-        workspace_id=1,
-        role="member",
-        is_active=True,
-    )
+    # override auth dependencies
+    def _member_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001, ARG001
+        return True
 
-    def _member_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001
-        return member
-
-    def _admin_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001
-        return member
-
-    def _session_override():  # noqa: ANN001
-        return member
+    def _admin_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001, ARG001
+        return True
 
     app.dependency_overrides[require_tenant_member] = _member_override
     app.dependency_overrides[require_tenant_admin] = _admin_override
-    app.dependency_overrides[require_session] = _session_override
 
     from app.features.tenants.ttb.gmv_max import (
         router_actions,
         router_campaigns,
         router_metrics,
+        router_provider,
         router_strategy,
     )
-    from app.features.tenants.ttb.gmv_max import schemas as gmv_schemas
 
-    gmv_schemas.GmvMaxCampaignOut.model_config = {
-        **gmv_schemas.GmvMaxCampaignOut.model_config,
-        "from_attributes": True,
-    }
+    stub_client = StubGMVMaxClient()
 
-    campaign = gmv_schemas.GmvMaxCampaignOut(
-        id=101,
-        campaign_id="cmp-smoke",
-        name="Smoke Test",
-        status="ACTIVE",
-        advertiser_id="adv-001",
-        shopping_ads_type=None,
-        optimization_goal=None,
-        roas_bid=None,
-        daily_budget_cents=5000,
-        currency="CNY",
-        ext_created_time=datetime(2024, 1, 1, 0, 0, 0),
-        ext_updated_time=None,
+    context = router_provider.GMVMaxRouteContext(
+        workspace_id=1,
+        provider="tiktok-business",
+        auth_id=1,
+        advertiser_id="adv-1",
+        store_id="store-1",
+        binding=router_provider.GMVMaxAccountBinding(
+            account=SimpleNamespace(),
+            advertiser_id="adv-1",
+            store_id="store-1",
+        ),
+        client=stub_client,
     )
 
-    base_strategy = {
-        "workspace_id": 1,
-        "auth_id": 99,
-        "campaign_id": campaign.campaign_id,
-        "enabled": True,
-        "target_roi": Decimal("1.20"),
-        "min_roi": Decimal("0.80"),
-        "max_roi": Decimal("2.40"),
-        "min_impressions": 100,
-        "min_clicks": 5,
-        "max_budget_raise_pct_per_day": Decimal("10.0"),
-        "max_budget_cut_pct_per_day": Decimal("5.0"),
-        "max_roas_step_per_adjust": Decimal("0.50"),
-        "cooldown_minutes": 30,
-        "min_runtime_minutes_before_first_change": 120,
-    }
+    def _override_context(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001, ARG001
+        return context
 
-    sync_campaign_calls: list[dict] = []
-    sync_metrics_calls: list[dict] = []
-    update_calls: list[dict] = []
-    action_calls: list[dict] = []
-    preview_calls: list[dict] = []
-
-    async def fake_list_campaigns(db, *, workspace_id, provider, auth_id, **_extra):
-        sync_campaign_calls.append({
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "list": True,
-        })
-        return {
-            "items": [campaign],
-            "total": 1,
-            "page": 1,
-            "page_size": 20,
-        }
-
-    async def fake_sync_campaigns(db, *, workspace_id, provider, auth_id, **_extra):
-        sync_campaign_calls.append({
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "sync": True,
-        })
-        return 2
-
-    async def fake_sync_metrics(
-        db,
-        *,
-        workspace_id,
-        provider,
-        auth_id,
-        campaign_id,
-        advertiser_id,
-        granularity,
-        start_date,
-        end_date,
-    ):
-        sync_metrics_calls.append({
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "campaign_id": campaign_id,
-            "advertiser_id": advertiser_id,
-            "granularity": granularity,
-            "start_date": start_date,
-            "end_date": end_date,
-        })
-        return 12
-
-    def fake_preview_strategy(
-        db,
-        *,
-        workspace_id,
-        provider,
-        auth_id,
-        campaign_id,
-    ):
-        preview_calls.append({
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "campaign_id": campaign_id,
-        })
-        return {"enabled": True, "decision": {"reason": "ok"}}
-
-    def fake_update_strategy(
-        db,
-        *,
-        workspace_id,
-        provider,
-        auth_id,
-        campaign_id,
-        payload,
-    ):
-        update_calls.append(payload)
-        if not payload:
-            return None
-
-        normalized: dict[str, object] = {}
-        for key, value in payload.items():
-            if key in {
-                "target_roi",
-                "min_roi",
-                "max_roi",
-                "max_roas_step_per_adjust",
-                "max_budget_raise_pct_per_day",
-                "max_budget_cut_pct_per_day",
-            }:
-                normalized[key] = Decimal(str(value))
-            else:
-                normalized[key] = value
-
-        data = base_strategy | normalized
-        return SimpleNamespace(**data)
-
-    async def fake_apply_campaign_action(
-        db,
-        *,
-        workspace_id,
-        provider,
-        auth_id,
-        campaign_id,
-        action,
-        payload,
-        reason,
-        performed_by,
-        audit_hook=None,
-    ):
-        action_calls.append({
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "campaign_id": campaign_id,
-            "action": action,
-            "payload": payload,
-            "reason": reason,
-            "performed_by": performed_by,
-        })
-        log_entry = SimpleNamespace(result="ok", action=action)
-        return campaign, log_entry
-
-    monkeypatch.setattr(router_campaigns, "list_campaigns", fake_list_campaigns)
-    monkeypatch.setattr(router_campaigns, "sync_campaigns", fake_sync_campaigns)
-    monkeypatch.setattr(router_metrics, "sync_metrics", fake_sync_metrics)
-    monkeypatch.setattr(router_strategy, "preview_strategy", fake_preview_strategy)
-    monkeypatch.setattr(router_strategy, "update_strategy", fake_update_strategy)
-    monkeypatch.setattr(router_actions, "apply_campaign_action", fake_apply_campaign_action)
+    app.dependency_overrides[router_provider.get_route_context] = _override_context
+    app.dependency_overrides[router_campaigns.get_deprecated_route_context] = (
+        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
+    )
+    app.dependency_overrides[router_actions.get_deprecated_route_context] = (
+        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
+    )
+    app.dependency_overrides[router_metrics.get_deprecated_route_context] = (
+        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
+    )
+    app.dependency_overrides[router_strategy.get_deprecated_route_context] = (
+        lambda workspace_id, auth_id, db=None: context  # noqa: ARG005
+    )
 
     with TestClient(app) as client:
         yield {
             "client": client,
-            "campaign": campaign,
-            "sync_campaign_calls": sync_campaign_calls,
-            "sync_metrics_calls": sync_metrics_calls,
-            "update_calls": update_calls,
-            "action_calls": action_calls,
-            "preview_calls": preview_calls,
+            "stub": stub_client,
         }
 
     app.dependency_overrides.clear()
 
 
-def test_list_campaigns_uses_new_prefix(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
-    response = client.get("/api/v1/tenants/1/ttb/accounts/99/gmvmax")
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["total"] == 1
-    assert body["items"][0]["campaign_id"] == "cmp-smoke"
-
-
-def test_sync_campaigns_accepts_minimal_body(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
-    response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/sync",
-        json={"force": False},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["synced"] == 2
-
-
-def test_sync_metrics_accepts_range_payload(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
-    response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/metrics/sync",
-        json={
-            "advertiser_id": "adv-001",
-            "granularity": "DAY",
+def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "report": {
             "start_date": date(2024, 1, 1).isoformat(),
-            "end_date": date(2024, 1, 7).isoformat(),
+            "end_date": date(2024, 1, 2).isoformat(),
+            "metrics": ["spend"],
+            "dimensions": ["campaign_id"],
+        }
+    }
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/sync",
+        json=payload,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["campaigns"][0]["campaign_id"] == "cmp-1"
+    assert body["report"]["list"][0]["metrics"]["spend"] == "10"
+
+
+def test_campaign_list_proxy(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax",
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["items"][0]["campaign_name"] == "Primary"
+
+
+def test_campaign_detail_includes_sessions(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["campaign"]["campaign_id"] == "cmp-1"
+    assert body["sessions"][0]["session_id"] == "session-1"
+
+
+def test_metrics_sync_returns_report(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "start_date": date(2024, 1, 1).isoformat(),
+        "end_date": date(2024, 1, 7).isoformat(),
+        "metrics": ["spend"],
+        "dimensions": ["campaign_id"],
+    }
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics/sync",
+        json=payload,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report"]["list"], body
+
+
+def test_metrics_query_defaults(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report"]["list"][0]["metrics"]["spend"] == "10"
+
+
+def test_campaign_action_session_update(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "type": "update_strategy",
+        "payload": {
+            "session_id": "session-1",
+            "session": {"budget": 99.0},
         },
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["synced_rows"] == 12
-    call = gmvmax_smoke_client["sync_metrics_calls"][0]
-    assert call["granularity"] == "DAY"
-    assert call["start_date"] == date(2024, 1, 1)
-    assert call["end_date"] == date(2024, 1, 7)
-
-
-def test_preview_strategy_allows_post_with_empty_body(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
+    }
     response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/strategies/preview",
-        json={},
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/actions",
+        json=payload,
     )
-    assert response.status_code == 200, response.text
-    assert response.json()["enabled"] is True
-    assert gmvmax_smoke_client["preview_calls"]
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert "session_update" in gmvmax_client_fixture["stub"].action_calls
 
 
-def test_update_strategy_returns_partial_patch(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
+def test_actions_placeholder_list(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/actions",
+    )
+    assert response.status_code == 200
+    assert response.json()["entries"] == []
+
+
+def test_strategy_payload(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/strategy",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["campaign"]["campaign_id"] == "cmp-1"
+    assert body["sessions"][0]["session_id"] == "session-1"
+    assert body["recommendation"]["budget"] == 123.0
+
+
+def test_strategy_update_supports_dual_calls(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "campaign": {"budget": 500.0},
+        "session": {"session_id": "session-1"},
+    }
     response = client.put(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/strategy",
-        json={"target_roi": "1.50"},
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/strategy",
+        json=payload,
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200
     body = response.json()
-    assert body["target_roi"] == "1.50"
-    assert gmvmax_smoke_client["update_calls"][0] == {"target_roi": "1.50"}
+    assert body["status"] == "success"
+    assert body["campaign"]["campaign_id"] == "cmp-1"
 
 
-def test_apply_action_accepts_minimal_payload(gmvmax_smoke_client):
-    client = gmvmax_smoke_client["client"]
+def test_strategy_preview_returns_recommendation(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "store_id": "store-1",
+        "shopping_ads_type": "PRODUCT",
+        "optimization_goal": "GMV",
+        "item_group_ids": ["spu-1"],
+    }
     response = client.post(
-        "/api/v1/tenants/1/ttb/accounts/99/gmvmax/cmp-smoke/actions",
-        json={"action": "PAUSE"},
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/strategies/preview",
+        json=payload,
     )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["action"] == "PAUSE"
-    call = gmvmax_smoke_client["action_calls"][0]
-    assert call["payload"] == {}
+    assert response.status_code == 200
+    assert response.json()["recommendation"]["budget"] == 123.0
+
+
+def test_deprecated_wrapper_proxies_list(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get("/api/v1/tenants/1/ttb/accounts/1/gmvmax")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["campaign_id"] == "cmp-1"
