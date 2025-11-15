@@ -154,6 +154,66 @@ export async function applyGmvMaxAction(workspaceId, provider, authId, campaignI
   );
 }
 
+export async function listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params, config) {
+  const axiosConfig = mergeConfig(config, params);
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives`,
+    axiosConfig,
+  );
+}
+
+export async function listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params, config) {
+  const axiosConfig = mergeConfig(config, params);
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/metrics`,
+    axiosConfig,
+  );
+}
+
+export async function listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params, config) {
+  const axiosConfig = mergeConfig(config, params);
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/heating`,
+    axiosConfig,
+  );
+}
+
+export async function startGmvMaxCreativeHeating(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  creativeId,
+  payload,
+  config,
+) {
+  return post(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/${encode(
+      creativeId,
+    )}/heating/start`,
+    payload,
+    config,
+  );
+}
+
+export async function stopGmvMaxCreativeHeating(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  creativeId,
+  payload,
+  config,
+) {
+  return post(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/${encode(
+      creativeId,
+    )}/heating/stop`,
+    payload,
+    config,
+  );
+}
+
 export async function listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params, config) {
   const sanitizedParams = params && 'page_size' in params
     ? { ...params, page_size: clampPageSize(params.page_size) }

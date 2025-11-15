@@ -15,6 +15,7 @@ import {
   useSyncGmvMaxMetricsMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
+import GmvMaxCreativesPanel from '../components/GmvMaxCreativesPanel.jsx';
 
 const MIN_MONITORING_INTERVAL = 10;
 const METRIC_CHOICES = [
@@ -660,10 +661,6 @@ export default function GmvMaxCampaignDetailPage() {
     () => buildTrendSeries(metricsQuery.data?.report),
     [metricsQuery.data],
   );
-  const creativesTable = useMemo(
-    () => buildDimensionTable(metricsQuery.data?.report, 'creative'),
-    [metricsQuery.data],
-  );
   const productTable = useMemo(
     () => buildDimensionTable(metricsQuery.data?.report, 'product'),
     [metricsQuery.data],
@@ -1177,41 +1174,13 @@ export default function GmvMaxCampaignDetailPage() {
           </div>
 
           <div className="gmvmax-dashboard__tables">
-            <div className="gmvmax-dashboard__table">
-              <h3>Creatives</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Creative</th>
-                    <th>Spend</th>
-                    <th>GMV</th>
-                    <th>Orders</th>
-                    <th>CTR</th>
-                    <th>CPC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {creativesTable.length === 0 ? (
-                    <tr>
-                      <td colSpan={6}>No creative metrics.</td>
-                    </tr>
-                  ) : (
-                    creativesTable
-                      .slice()
-                      .sort((a, b) => b.gmv - a.gmv)
-                      .map((row) => (
-                        <tr key={row.id}>
-                          <td>{row.name}</td>
-                          <td>${formatMoney(row.spend)}</td>
-                          <td>${formatMoney(row.gmv)}</td>
-                          <td>{formatNumber(row.orders)}</td>
-                          <td>{formatPercent(row.ctr)}</td>
-                          <td>${formatMoney(row.cpc)}</td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
+            <div className="gmvmax-dashboard__table gmvmax-dashboard__table--creatives">
+              <GmvMaxCreativesPanel
+                workspaceId={workspaceId}
+                provider={provider}
+                authId={authId}
+                campaignId={campaignId}
+              />
             </div>
             <div className="gmvmax-dashboard__table">
               <h3>Products</h3>
