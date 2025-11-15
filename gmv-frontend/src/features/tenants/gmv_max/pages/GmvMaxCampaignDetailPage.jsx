@@ -718,7 +718,7 @@ export default function GmvMaxCampaignDetailPage() {
   }, [applyActionMutation]);
 
   const handleResume = useCallback(() => {
-    applyActionMutation.mutate({ type: 'enable' });
+    applyActionMutation.mutate({ type: 'resume' });
   }, [applyActionMutation]);
 
   const openBudgetDialog = useCallback((mode) => {
