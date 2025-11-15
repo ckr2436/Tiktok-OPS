@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
@@ -155,6 +156,69 @@ class CampaignActionResponse(BaseModel):
     type: Literal["pause", "enable", "update_budget", "update_strategy"]
     status: Literal["success", "failed"]
     response: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = None
+
+
+class CreativeHeatingActionRequest(BaseModel):
+    """Payload accepted for creative heating actions."""
+
+    action_type: Literal["BOOST_CREATIVE"]
+    creative_id: str
+    mode: Optional[str] = None
+    target_daily_budget: Optional[float] = None
+    budget_delta: Optional[float] = None
+    currency: Optional[str] = None
+    max_duration_minutes: Optional[int] = Field(default=None, ge=1)
+    note: Optional[str] = None
+    creative_name: Optional[str] = None
+    product_id: Optional[str] = None
+    item_id: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _ensure_budget_fields(self) -> "CreativeHeatingActionRequest":
+        if self.target_daily_budget is None and self.budget_delta is None:
+            raise ValueError("target_daily_budget or budget_delta is required")
+        return self
+
+
+class CreativeHeatingRecord(BaseModel):
+    """Serialized representation of a creative heating row."""
+
+    id: int
+    workspace_id: int
+    provider: str
+    auth_id: int
+    campaign_id: str
+    creative_id: str
+    creative_name: Optional[str] = None
+    mode: Optional[str] = None
+    target_daily_budget: Optional[float] = None
+    budget_delta: Optional[float] = None
+    currency: Optional[str] = None
+    max_duration_minutes: Optional[int] = None
+    note: Optional[str] = None
+    status: str
+    last_action_type: Optional[str] = None
+    last_action_time: Optional[datetime] = None
+    last_error: Optional[str] = None
+    evaluation_window_minutes: int = 60
+    min_clicks: Optional[int] = None
+    min_ctr: Optional[float] = None
+    min_gross_revenue: Optional[float] = None
+    auto_stop_enabled: bool = True
+    is_heating_active: bool = False
+    last_evaluated_at: Optional[datetime] = None
+    last_evaluation_result: Optional[str] = None
+
+
+class CreativeHeatingActionResponse(BaseModel):
+    """Response returned when applying a creative heating action."""
+
+    action_type: Literal["BOOST_CREATIVE"]
+    heating: CreativeHeatingRecord
+    tiktok_response: Optional[Dict[str, Any]] = None
     request_id: Optional[str] = None
 
 

@@ -33,6 +33,7 @@ _GMVMAX_TASKS = {
     "gmvmax.sync_campaigns",
     "gmvmax.sync_metrics",
     "gmvmax.apply_action",
+    "gmvmax.creative_heating_cycle",
 }
 
 

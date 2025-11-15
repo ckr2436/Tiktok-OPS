@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_tenant_admin, require_tenant_member
 from app.data.db import get_db
+from app.data.repositories.tiktok_business.gmvmax_heating import (
+    update_heating_action_result,
+    upsert_creative_heating,
+)
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
     GMVMaxCampaignFiltering,
     GMVMaxCampaignGetRequest,
     GMVMaxCampaignInfoRequest,
+    GMVMaxCampaignActionApplyBody,
+    GMVMaxCampaignActionApplyRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
     GMVMaxReportFiltering,
@@ -46,6 +52,9 @@ from .schemas import (
     DEFAULT_PROMOTION_TYPES,
     DEFAULT_DIMENSIONS,
     DEFAULT_METRICS,
+    CreativeHeatingActionRequest,
+    CreativeHeatingActionResponse,
+    CreativeHeatingRecord,
     MetricsRequest,
     MetricsResponse,
     ReportFiltering,
@@ -73,6 +82,7 @@ class GMVMaxRouteContext:
     store_id: Optional[str]
     binding: GMVMaxAccountBinding
     client: TikTokBusinessGMVMaxClient
+    db: Session
 
 
 async def _handle_tiktok_error(exc: Exception) -> None:
@@ -295,6 +305,7 @@ def get_route_context(
         store_id=binding.store_id,
         binding=binding,
         client=client,
+        db=db,
     )
 
 
@@ -493,9 +504,146 @@ async def query_gmvmax_metrics_provider(
     return MetricsResponse(report=response.data, request_id=response.request_id)
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+
+
+def _serialize_heating_row(row: Any) -> CreativeHeatingRecord:
+    payload: Dict[str, Any] = {
+        "id": row.id,
+        "workspace_id": row.workspace_id,
+        "provider": row.provider,
+        "auth_id": row.auth_id,
+        "campaign_id": row.campaign_id,
+        "creative_id": row.creative_id,
+        "creative_name": getattr(row, "creative_name", None),
+        "mode": getattr(row, "mode", None),
+        "target_daily_budget": _to_float(getattr(row, "target_daily_budget", None)),
+        "budget_delta": _to_float(getattr(row, "budget_delta", None)),
+        "currency": getattr(row, "currency", None),
+        "max_duration_minutes": getattr(row, "max_duration_minutes", None),
+        "note": getattr(row, "note", None),
+        "status": getattr(row, "status", "PENDING"),
+        "last_action_type": getattr(row, "last_action_type", None),
+        "last_action_time": getattr(row, "last_action_time", None),
+        "last_error": getattr(row, "last_error", None),
+        "evaluation_window_minutes": getattr(row, "evaluation_window_minutes", 60),
+        "min_clicks": getattr(row, "min_clicks", None),
+        "min_ctr": _to_float(getattr(row, "min_ctr", None)),
+        "min_gross_revenue": _to_float(getattr(row, "min_gross_revenue", None)),
+        "auto_stop_enabled": bool(getattr(row, "auto_stop_enabled", True)),
+        "is_heating_active": bool(getattr(row, "is_heating_active", False)),
+        "last_evaluated_at": getattr(row, "last_evaluated_at", None),
+        "last_evaluation_result": getattr(row, "last_evaluation_result", None),
+    }
+    return CreativeHeatingRecord.model_validate(payload)
+
+
+def _extract_error_message(detail: Any) -> str:
+    if isinstance(detail, dict):
+        message = detail.get("message") or detail.get("detail")
+        if message:
+            return str(message)
+        return str(detail)
+    return str(detail)
+
+
+async def _apply_creative_heating_action(
+    *,
+    context: GMVMaxRouteContext,
+    campaign_id: str,
+    request: CreativeHeatingActionRequest,
+) -> CreativeHeatingActionResponse:
+    heating_row = await upsert_creative_heating(
+        context.db,
+        workspace_id=context.workspace_id,
+        provider=context.provider,
+        auth_id=context.auth_id,
+        campaign_id=str(campaign_id),
+        creative_id=request.creative_id,
+        mode=request.mode,
+        target_daily_budget=request.target_daily_budget,
+        budget_delta=request.budget_delta,
+        currency=request.currency,
+        max_duration_minutes=request.max_duration_minutes,
+        note=request.note,
+        creative_name=request.creative_name,
+        product_id=request.product_id,
+        item_id=request.item_id,
+    )
+    context.db.flush()
+
+    action_body = {
+        "campaign_id": str(campaign_id),
+        "action_type": request.action_type,
+        "creative_id": request.creative_id,
+    }
+    if request.mode:
+        action_body["mode"] = request.mode
+    if request.target_daily_budget is not None:
+        action_body["target_daily_budget"] = request.target_daily_budget
+    if request.budget_delta is not None:
+        action_body["budget_delta"] = request.budget_delta
+    if request.currency:
+        action_body["currency"] = request.currency
+    if request.max_duration_minutes is not None:
+        action_body["max_duration_minutes"] = request.max_duration_minutes
+    if request.note:
+        action_body["note"] = request.note
+
+    api_request = GMVMaxCampaignActionApplyRequest(
+        advertiser_id=context.advertiser_id,
+        body=GMVMaxCampaignActionApplyBody(**action_body),
+    )
+
+    action_time = datetime.now(tz=timezone.utc)
+    try:
+        response = await _call_tiktok(
+            context.client.gmv_max_campaign_action_apply, api_request
+        )
+    except HTTPException as exc:
+        detail = exc.detail
+        await update_heating_action_result(
+            context.db,
+            heating_id=heating_row.id,
+            status="FAILED",
+            action_type="APPLY_BOOST",
+            action_time=action_time,
+            request_payload=action_body,
+            response_payload=detail if isinstance(detail, dict) else None,
+            error_message=_extract_error_message(detail),
+        )
+        context.db.flush()
+        raise
+
+    updated_row = await update_heating_action_result(
+        context.db,
+        heating_id=heating_row.id,
+        status="APPLIED",
+        action_type="APPLY_BOOST",
+        action_time=action_time,
+        request_payload=action_body,
+        response_payload=response.data.model_dump(exclude_none=True),
+        error_message=None,
+    )
+    context.db.flush()
+
+    return CreativeHeatingActionResponse(
+        action_type="BOOST_CREATIVE",
+        heating=_serialize_heating_row(updated_row),
+        tiktok_response=response.data.model_dump(exclude_none=True),
+        request_id=response.request_id,
+    )
+
+
 @router.post(
     "/{campaign_id}/actions",
-    response_model=CampaignActionResponse,
+    response_model=Union[CampaignActionResponse, CreativeHeatingActionResponse],
     dependencies=[Depends(require_tenant_admin)],
 )
 async def apply_gmvmax_campaign_action_provider(
@@ -503,19 +651,35 @@ async def apply_gmvmax_campaign_action_provider(
     provider: str,
     auth_id: int,
     campaign_id: str,
-    payload: CampaignActionRequest,
+    payload: Dict[str, Any] = Body(...),
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> CampaignActionResponse:
+) -> Union[CampaignActionResponse, CreativeHeatingActionResponse]:
     """Apply a GMV Max campaign action and return the TikTok response."""
 
+    raw_type = payload.get("action_type")
+    if raw_type is None and "type" in payload:
+        raw_type = payload["type"]
+    normalized_type = str(raw_type or "").upper()
+
+    if normalized_type == "BOOST_CREATIVE":
+        candidate = dict(payload)
+        candidate["action_type"] = "BOOST_CREATIVE"
+        heating_request = CreativeHeatingActionRequest.model_validate(candidate)
+        return await _apply_creative_heating_action(
+            context=context,
+            campaign_id=str(campaign_id),
+            request=heating_request,
+        )
+
+    action_request = CampaignActionRequest.model_validate(payload)
     adv = advertiser_id or context.advertiser_id
-    if payload.type == "update_strategy" and payload.payload.get("session_id"):
-        body = _build_session_update_body(campaign_id, payload.payload, context.store_id)
+    if action_request.type == "update_strategy" and action_request.payload.get("session_id"):
+        body = _build_session_update_body(campaign_id, action_request.payload, context.store_id)
         request = GMVMaxSessionUpdateRequest(advertiser_id=adv, body=body)
         response = await _call_tiktok(context.client.gmv_max_session_update, request)
         return CampaignActionResponse(
-            type=payload.type,
+            type=action_request.type,
             status="success",
             response={
                 "sessions": [item.model_dump() for item in response.data.list],
@@ -523,11 +687,11 @@ async def apply_gmvmax_campaign_action_provider(
             request_id=response.request_id,
         )
 
-    body = _build_campaign_update_body(campaign_id, payload.type, payload.payload)
+    body = _build_campaign_update_body(campaign_id, action_request.type, action_request.payload)
     request = GMVMaxCampaignUpdateRequest(advertiser_id=adv, body=body)
     response = await _call_tiktok(context.client.gmv_max_campaign_update, request)
     return CampaignActionResponse(
-        type=payload.type,
+        type=action_request.type,
         status="success",
         response=response.data.model_dump(exclude_none=True),
         request_id=response.request_id,
