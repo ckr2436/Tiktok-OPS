@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 
@@ -21,6 +21,7 @@ import {
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
 import { clampPageSize, getGmvMaxCampaign } from '../api/gmvMaxApi.js';
+import { loadScope, saveScope } from '../utils/scopeStorage.js';
 
 const PROVIDER = 'tiktok-business';
 const PROVIDER_LABEL = 'TikTok Business';
@@ -69,6 +70,233 @@ function getProductIdentifier(product) {
     }
   }
   return '';
+}
+
+function getProductStatus(product) {
+  if (!product || typeof product !== 'object') return '';
+  return (
+    product.gmv_max_ads_status ||
+    product.status ||
+    product.product_status ||
+    product.state ||
+    ''
+  );
+}
+
+function isProductAvailable(product) {
+  const status = String(getProductStatus(product) || '').trim().toUpperCase();
+  if (!status) return true;
+  if (status.includes('NOT_AVAILABLE')) return false;
+  if (status.includes('UNAVAILABLE')) return false;
+  return true;
+}
+
+function normalizeIdValue(value) {
+  if (value === undefined || value === null) return '';
+  const stringValue = String(value).trim();
+  return stringValue;
+}
+
+function addId(target, value) {
+  const normalized = normalizeIdValue(value);
+  if (!normalized) return;
+  target.add(normalized);
+}
+
+function collectBusinessCenterIdsFromCampaign(campaign, target = new Set()) {
+  if (!campaign || typeof campaign !== 'object') return target;
+  addId(target, campaign.owner_bc_id);
+  addId(target, campaign.ownerBcId);
+  addId(target, campaign.business_center_id);
+  addId(target, campaign.businessCenterId);
+  addId(target, campaign.bc_id);
+
+  const bcList = campaign.business_center_ids || campaign.businessCenterIds;
+  if (Array.isArray(bcList)) {
+    bcList.forEach((item) => {
+      if (item && typeof item === 'object') {
+        addId(target, item.bc_id);
+        addId(target, item.id);
+        addId(target, item.business_center_id);
+        addId(target, item.businessCenterId);
+      } else {
+        addId(target, item);
+      }
+    });
+  }
+
+  const bcObject = campaign.business_center || campaign.businessCenter;
+  if (bcObject && typeof bcObject === 'object') {
+    addId(target, bcObject.bc_id);
+    addId(target, bcObject.id);
+    addId(target, bcObject.business_center_id);
+    addId(target, bcObject.businessCenterId);
+  }
+
+  const nested = campaign.campaign;
+  if (nested && nested !== campaign) {
+    collectBusinessCenterIdsFromCampaign(nested, target);
+  }
+
+  return target;
+}
+
+function collectBusinessCenterIdsFromDetail(detail, target = new Set()) {
+  if (!detail || typeof detail !== 'object') return target;
+  collectBusinessCenterIdsFromCampaign(detail.campaign, target);
+  const bcObject = detail.business_center || detail.businessCenter;
+  if (bcObject && typeof bcObject === 'object') {
+    addId(target, bcObject.bc_id);
+    addId(target, bcObject.id);
+    addId(target, bcObject.business_center_id);
+    addId(target, bcObject.businessCenterId);
+  }
+  return target;
+}
+
+function collectAdvertiserIdsFromCampaign(campaign, target = new Set()) {
+  if (!campaign || typeof campaign !== 'object') return target;
+  addId(target, campaign.advertiser_id);
+  addId(target, campaign.advertiserId);
+
+  const advertiserObject = campaign.advertiser || campaign.advertiser_info || campaign.advertiserInfo;
+  if (advertiserObject && typeof advertiserObject === 'object') {
+    addId(target, advertiserObject.advertiser_id);
+    addId(target, advertiserObject.advertiserId);
+    addId(target, advertiserObject.id);
+  }
+
+  const nested = campaign.campaign;
+  if (nested && nested !== campaign) {
+    collectAdvertiserIdsFromCampaign(nested, target);
+  }
+
+  return target;
+}
+
+function collectAdvertiserIdsFromDetail(detail, target = new Set()) {
+  if (!detail || typeof detail !== 'object') return target;
+  collectAdvertiserIdsFromCampaign(detail.campaign, target);
+  const advertiserObject = detail.advertiser || detail.advertiser_info || detail.advertiserInfo;
+  if (advertiserObject && typeof advertiserObject === 'object') {
+    addId(target, advertiserObject.advertiser_id);
+    addId(target, advertiserObject.advertiserId);
+    addId(target, advertiserObject.id);
+  }
+  return target;
+}
+
+function collectStoreIdsFromCampaign(campaign, target = new Set()) {
+  if (!campaign || typeof campaign !== 'object') return target;
+  addId(target, campaign.store_id);
+  addId(target, campaign.storeId);
+
+  const storeObject = campaign.store || campaign.store_info || campaign.storeInfo;
+  if (storeObject && typeof storeObject === 'object') {
+    addId(target, storeObject.store_id);
+    addId(target, storeObject.storeId);
+    addId(target, storeObject.id);
+  }
+
+  const storeLists = [
+    campaign.store_ids,
+    campaign.storeIds,
+    campaign.stores,
+    campaign.store_list,
+    campaign.storeList,
+  ];
+  storeLists.forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((item) => {
+      if (item && typeof item === 'object') {
+        addId(target, item.store_id);
+        addId(target, item.storeId);
+        addId(target, item.id);
+      } else {
+        addId(target, item);
+      }
+    });
+  });
+
+  const nested = campaign.campaign;
+  if (nested && nested !== campaign) {
+    collectStoreIdsFromCampaign(nested, target);
+  }
+
+  return target;
+}
+
+function collectStoreIdsFromDetail(detail, target = new Set()) {
+  if (!detail || typeof detail !== 'object') return target;
+  collectStoreIdsFromCampaign(detail.campaign, target);
+  const sessions = detail.sessions || detail.session_list || [];
+  sessions.forEach((session) => {
+    if (!session || typeof session !== 'object') return;
+    addId(target, session.store_id);
+    addId(target, session.storeId);
+    const storeObject = session.store || session.store_info || session.storeInfo;
+    if (storeObject && typeof storeObject === 'object') {
+      addId(target, storeObject.store_id);
+      addId(target, storeObject.storeId);
+      addId(target, storeObject.id);
+    }
+    const products = session.product_list || session.products || [];
+    products.forEach((product) => {
+      if (!product || typeof product !== 'object') return;
+      addId(target, product.store_id);
+      addId(target, product.storeId);
+    });
+  });
+  return target;
+}
+
+function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusinessCenterId) {
+  if (!selectedBusinessCenterId) return true;
+  const target = normalizeIdValue(selectedBusinessCenterId);
+  if (!target) return true;
+  const ids = collectBusinessCenterIdsFromCampaign(campaign);
+  if (ids.has(target)) return true;
+  const detailIds = collectBusinessCenterIdsFromDetail(detail);
+  if (detailIds.has(target)) return true;
+  return Boolean(detailLoading);
+}
+
+function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId) {
+  if (!selectedAdvertiserId) return true;
+  const target = normalizeIdValue(selectedAdvertiserId);
+  if (!target) return true;
+  const ids = collectAdvertiserIdsFromCampaign(campaign);
+  if (ids.has(target)) return true;
+  const detailIds = collectAdvertiserIdsFromDetail(detail);
+  if (detailIds.has(target)) return true;
+  return Boolean(detailLoading);
+}
+
+function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
+  if (!selectedStoreId) return true;
+  const target = normalizeIdValue(selectedStoreId);
+  if (!target) return true;
+  const ids = collectStoreIdsFromCampaign(campaign);
+  if (ids.has(target)) return true;
+  const detailIds = collectStoreIdsFromDetail(detail);
+  if (detailIds.has(target)) return true;
+  return Boolean(detailLoading);
+}
+
+function matchesCampaignScope(card, filters) {
+  if (!card || !card.campaign) return false;
+  const { campaign, detail, detailLoading } = card;
+  const { businessCenterId, advertiserId, storeId } = filters;
+  if (!matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId)) {
+    return false;
+  }
+  if (!matchesAdvertiser(campaign, detail, detailLoading, advertiserId)) {
+    return false;
+  }
+  if (!matchesStore(campaign, detail, detailLoading, storeId)) {
+    return false;
+  }
+  return true;
 }
 
 function parseOptionalFloat(value) {
@@ -1145,6 +1373,61 @@ export default function GmvMaxOverviewPage() {
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
+  const savedScopeRef = useRef(null);
+  const restorationRef = useRef({
+    account: false,
+    businessCenter: false,
+    advertiser: false,
+    store: false,
+  });
+  const [readyToSave, setReadyToSave] = useState(false);
+
+  const markRestored = useCallback(
+    (key) => {
+      if (restorationRef.current[key]) return;
+      restorationRef.current[key] = true;
+      if (
+        restorationRef.current.account &&
+        restorationRef.current.businessCenter &&
+        restorationRef.current.advertiser &&
+        restorationRef.current.store
+      ) {
+        setReadyToSave(true);
+      }
+    },
+    [setReadyToSave],
+  );
+
+  useEffect(() => {
+    if (!workspaceId) {
+      savedScopeRef.current = null;
+      restorationRef.current = {
+        account: false,
+        businessCenter: false,
+        advertiser: false,
+        store: false,
+      };
+      setReadyToSave(false);
+      return;
+    }
+    const scope = loadScope(workspaceId, provider);
+    savedScopeRef.current = scope;
+    restorationRef.current = {
+      account: false,
+      businessCenter: false,
+      advertiser: false,
+      store: false,
+    };
+    setReadyToSave(false);
+  }, [provider, workspaceId]);
+
+  useEffect(() => {
+    setAuthId('');
+    setBusinessCenterId('');
+    setAdvertiserId('');
+    setStoreId('');
+    setSelectedProductIds([]);
+  }, [workspaceId]);
 
   const accountsQuery = useAccountsQuery(
     workspaceId,
@@ -1242,40 +1525,6 @@ export default function GmvMaxOverviewPage() {
     [accounts],
   );
 
-  useEffect(() => {
-    if (!authId && accountOptions.length === 1) {
-      setAuthId(accountOptions[0].value);
-    }
-  }, [accountOptions, authId]);
-
-  useEffect(() => {
-    if (!authId) return;
-    if (accountOptions.some((option) => option.value === authId)) return;
-    setAuthId('');
-  }, [accountOptions, authId]);
-
-  useEffect(() => {
-    setBusinessCenterId('');
-    setAdvertiserId('');
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [authId]);
-
-  useEffect(() => {
-    setAdvertiserId('');
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [businessCenterId]);
-
-  useEffect(() => {
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [advertiserId]);
-
-  useEffect(() => {
-    setSelectedProductIds([]);
-  }, [storeId]);
-
   const businessCenters = useMemo(() => {
     const data = businessCentersQuery.data;
     const items = data?.items || data?.list || data || [];
@@ -1293,6 +1542,350 @@ export default function GmvMaxOverviewPage() {
     const items = data?.items || data?.list || data || [];
     return Array.isArray(items) ? items : [];
   }, [storesQuery.data]);
+
+  useEffect(() => {
+    if (restorationRef.current.account) return;
+    const saved = savedScopeRef.current;
+    if (
+      !workspaceId ||
+      !saved ||
+      saved.workspaceId !== String(workspaceId) ||
+      (saved.provider && saved.provider !== provider)
+    ) {
+      markRestored('account');
+      return;
+    }
+    if (accountsQuery.isLoading || accountsQuery.isFetching) return;
+    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
+    if (savedAccountId && accountOptions.some((option) => option.value === savedAccountId)) {
+      if (authId !== savedAccountId) {
+        setAuthId(savedAccountId);
+      }
+    }
+    markRestored('account');
+  }, [
+    accountOptions,
+    accountsQuery.isFetching,
+    accountsQuery.isLoading,
+    authId,
+    markRestored,
+    provider,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (restorationRef.current.businessCenter) return;
+    const saved = savedScopeRef.current;
+    if (
+      !workspaceId ||
+      !saved ||
+      saved.workspaceId !== String(workspaceId) ||
+      (saved.provider && saved.provider !== provider)
+    ) {
+      markRestored('businessCenter');
+      return;
+    }
+    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
+    if (savedAccountId && authId !== savedAccountId) {
+      if (
+        !accountsQuery.isLoading &&
+        !accountsQuery.isFetching &&
+        !accountOptions.some((option) => option.value === savedAccountId)
+      ) {
+        markRestored('businessCenter');
+      }
+      return;
+    }
+    if (!authId) {
+      markRestored('businessCenter');
+      return;
+    }
+    if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) return;
+    if (saved.businessCenterId !== undefined) {
+      if (saved.businessCenterId === null) {
+        if (businessCenterId !== '') {
+          setBusinessCenterId('');
+          return;
+        }
+      } else {
+        const normalized = String(saved.businessCenterId);
+        const hasSaved = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalized);
+        if (hasSaved) {
+          if (businessCenterId !== normalized) {
+            setBusinessCenterId(normalized);
+            return;
+          }
+        }
+      }
+    }
+    markRestored('businessCenter');
+  }, [
+    accountOptions,
+    accountsQuery.isFetching,
+    accountsQuery.isLoading,
+    authId,
+    businessCenterId,
+    businessCenters,
+    businessCentersQuery.isFetching,
+    businessCentersQuery.isLoading,
+    markRestored,
+    provider,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (restorationRef.current.advertiser) return;
+    const saved = savedScopeRef.current;
+    if (
+      !workspaceId ||
+      !saved ||
+      saved.workspaceId !== String(workspaceId) ||
+      (saved.provider && saved.provider !== provider)
+    ) {
+      markRestored('advertiser');
+      return;
+    }
+    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
+    if (savedAccountId && authId !== savedAccountId) {
+      if (
+        !accountsQuery.isLoading &&
+        !accountsQuery.isFetching &&
+        !accountOptions.some((option) => option.value === savedAccountId)
+      ) {
+        markRestored('advertiser');
+      }
+      return;
+    }
+    if (!authId) {
+      markRestored('advertiser');
+      return;
+    }
+    const savedBusinessCenterId = saved.businessCenterId;
+    if (savedBusinessCenterId !== undefined) {
+      if (savedBusinessCenterId === null) {
+        if (businessCenterId !== '') {
+          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
+            return;
+          }
+          setBusinessCenterId('');
+          return;
+        }
+      } else {
+        const normalized = String(savedBusinessCenterId);
+        if (businessCenterId !== normalized) {
+          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
+            return;
+          }
+          const hasSavedBc = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalized);
+          if (hasSavedBc) {
+            return;
+          }
+        }
+      }
+    }
+    if (advertisersQuery.isLoading || advertisersQuery.isFetching) return;
+    if (saved.advertiserId !== undefined) {
+      if (saved.advertiserId === null) {
+        if (advertiserId !== '') {
+          setAdvertiserId('');
+          return;
+        }
+      } else {
+        const normalized = String(saved.advertiserId);
+        const hasSavedAdvertiser = advertisers.some(
+          (adv) => String(adv.advertiser_id ?? adv.id) === normalized,
+        );
+        if (hasSavedAdvertiser) {
+          if (advertiserId !== normalized) {
+            setAdvertiserId(normalized);
+            return;
+          }
+        }
+      }
+    }
+    markRestored('advertiser');
+  }, [
+    accountOptions,
+    accountsQuery.isFetching,
+    accountsQuery.isLoading,
+    advertisers,
+    advertisersQuery.isFetching,
+    advertisersQuery.isLoading,
+    advertiserId,
+    authId,
+    businessCenterId,
+    businessCenters,
+    businessCentersQuery.isFetching,
+    businessCentersQuery.isLoading,
+    markRestored,
+    provider,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (restorationRef.current.store) return;
+    const saved = savedScopeRef.current;
+    if (
+      !workspaceId ||
+      !saved ||
+      saved.workspaceId !== String(workspaceId) ||
+      (saved.provider && saved.provider !== provider)
+    ) {
+      markRestored('store');
+      return;
+    }
+    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
+    if (savedAccountId && authId !== savedAccountId) {
+      if (
+        !accountsQuery.isLoading &&
+        !accountsQuery.isFetching &&
+        !accountOptions.some((option) => option.value === savedAccountId)
+      ) {
+        markRestored('store');
+      }
+      return;
+    }
+    if (!authId) {
+      markRestored('store');
+      return;
+    }
+    const savedBusinessCenterId = saved.businessCenterId;
+    if (savedBusinessCenterId !== undefined) {
+      if (savedBusinessCenterId === null) {
+        if (businessCenterId !== '') {
+          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
+            return;
+          }
+          setBusinessCenterId('');
+          return;
+        }
+      } else {
+        const normalizedBc = String(savedBusinessCenterId);
+        if (businessCenterId !== normalizedBc) {
+          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
+            return;
+          }
+          const hasSavedBc = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalizedBc);
+          if (hasSavedBc) {
+            return;
+          }
+        }
+      }
+    }
+    const savedAdvertiserId = saved.advertiserId;
+    if (savedAdvertiserId !== undefined) {
+      if (savedAdvertiserId === null) {
+        if (advertiserId !== '') {
+          if (advertisersQuery.isLoading || advertisersQuery.isFetching) {
+            return;
+          }
+          setAdvertiserId('');
+          return;
+        }
+      } else {
+        const normalizedAdvertiser = String(savedAdvertiserId);
+        if (advertiserId !== normalizedAdvertiser) {
+          if (advertisersQuery.isLoading || advertisersQuery.isFetching) {
+            return;
+          }
+          const hasSavedAdvertiser = advertisers.some(
+            (adv) => String(adv.advertiser_id ?? adv.id) === normalizedAdvertiser,
+          );
+          if (hasSavedAdvertiser) {
+            return;
+          }
+        }
+      }
+    }
+    if (storesQuery.isLoading || storesQuery.isFetching) return;
+    if (saved.storeId !== undefined) {
+      if (saved.storeId === null) {
+        if (storeId !== '') {
+          setStoreId('');
+          return;
+        }
+      } else {
+        const normalized = String(saved.storeId);
+        const hasSavedStore = stores.some((store) => String(store.store_id ?? store.id) === normalized);
+        if (hasSavedStore) {
+          if (storeId !== normalized) {
+            setStoreId(normalized);
+            return;
+          }
+        }
+      }
+    }
+    markRestored('store');
+  }, [
+    accountOptions,
+    accountsQuery.isFetching,
+    accountsQuery.isLoading,
+    advertiserId,
+    advertisers,
+    advertisersQuery.isFetching,
+    advertisersQuery.isLoading,
+    authId,
+    businessCenterId,
+    businessCenters,
+    businessCentersQuery.isFetching,
+    businessCentersQuery.isLoading,
+    markRestored,
+    provider,
+    storeId,
+    stores,
+    storesQuery.isFetching,
+    storesQuery.isLoading,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (!authId && accountOptions.length === 1) {
+      setAuthId(accountOptions[0].value);
+    }
+  }, [accountOptions, authId]);
+
+  useEffect(() => {
+    if (!authId) return;
+    if (accountOptions.some((option) => option.value === authId)) return;
+    setAuthId('');
+  }, [accountOptions, authId]);
+
+  useEffect(() => {
+    if (authId) return;
+    setBusinessCenterId('');
+    setAdvertiserId('');
+    setStoreId('');
+    setSelectedProductIds([]);
+  }, [authId]);
+
+  useEffect(() => {
+    if (businessCenterId) return;
+    setAdvertiserId('');
+    setStoreId('');
+    setSelectedProductIds([]);
+  }, [businessCenterId]);
+
+  useEffect(() => {
+    if (advertiserId) return;
+    setStoreId('');
+    setSelectedProductIds([]);
+  }, [advertiserId]);
+
+  useEffect(() => {
+    if (storeId) return;
+    setSelectedProductIds([]);
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!readyToSave) return;
+    if (!workspaceId) return;
+    saveScope(workspaceId, provider, {
+      accountAuthId: authId || undefined,
+      businessCenterId: businessCenterId === '' ? null : businessCenterId,
+      advertiserId: advertiserId === '' ? null : advertiserId,
+      storeId: storeId === '' ? null : storeId,
+    });
+  }, [authId, advertiserId, businessCenterId, provider, readyToSave, storeId, workspaceId]);
 
   const storeNameById = useMemo(() => {
     const map = new Map();
@@ -1312,10 +1905,11 @@ export default function GmvMaxOverviewPage() {
   }, [productsQuery.data]);
 
   const campaigns = useMemo(() => {
+    if (!authId) return [];
     const data = campaignsQuery.data;
     const items = data?.items || data?.list || data || [];
     return Array.isArray(items) ? items : [];
-  }, [campaignsQuery.data]);
+  }, [authId, campaignsQuery.data]);
 
   const campaignDetailQueries = useQueries({
     queries: campaigns.map((campaign) => {
@@ -1362,9 +1956,21 @@ export default function GmvMaxOverviewPage() {
     return products.filter((product) => {
       const id = getProductIdentifier(product);
       if (!id) return false;
+      if (!isProductAvailable(product)) return false;
       return !assignedProductIds.has(id);
     });
   }, [assignedProductIds, products]);
+
+  useEffect(() => {
+    setSelectedProductIds((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const availableIds = new Set(
+        unassignedProducts.map((product) => getProductIdentifier(product)).filter(Boolean),
+      );
+      const filtered = prev.filter((id) => availableIds.has(String(id)));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [unassignedProducts]);
 
   const selectedProductIdSet = useMemo(
     () => new Set((selectedProductIds || []).map((id) => String(id))),
@@ -1416,6 +2022,17 @@ export default function GmvMaxOverviewPage() {
       }),
     [campaignDetailsById, campaigns],
   );
+
+  const filteredCampaignCards = useMemo(() => {
+    if (!authId) return [];
+    return campaignCards.filter((card) =>
+      matchesCampaignScope(card, {
+        businessCenterId,
+        advertiserId,
+        storeId,
+      }),
+    );
+  }, [advertiserId, authId, businessCenterId, campaignCards, storeId]);
 
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
     onSuccess: () => {
@@ -1545,7 +2162,7 @@ export default function GmvMaxOverviewPage() {
   const editingDetailError = editingDetailResult?.error;
   const editingDetailRefetch = editingDetailResult?.refetch;
 
-  const campaignsLoading = campaignsQuery.isLoading || campaignsQuery.isFetching;
+  const campaignsLoading = Boolean(authId) && (campaignsQuery.isLoading || campaignsQuery.isFetching);
   const productsLoading = productsQuery.isLoading || productsQuery.isFetching;
 
   const selectedAccountLabel = accountOptions.find((item) => item.value === authId)?.label || '';
@@ -1703,13 +2320,25 @@ export default function GmvMaxOverviewPage() {
           <h2>GMV Max series</h2>
         </header>
         <div className="gmvmax-card__body">
-          <SeriesErrorNotice error={campaignsQuery.error} onRetry={campaignsQuery.refetch} />
+          <SeriesErrorNotice
+            error={authId ? campaignsQuery.error : null}
+            onRetry={campaignsQuery.refetch}
+          />
           {campaignsLoading ? <Loading text="Loading campaigns…" /> : null}
-          {!campaignsLoading && !campaignsQuery.error && campaigns.length === 0 ? (
-            <p className="gmvmax-placeholder">No GMV Max series found for the selected scope.</p>
+          {!campaignsLoading && !campaignsQuery.error && (!authId || filteredCampaignCards.length === 0) ? (
+            <p className="gmvmax-placeholder">
+              No GMV Max series found for the selected scope.
+              {!authId ? ' Select an account to get started.' : ''}
+            </p>
           ) : null}
           <div className="gmvmax-campaign-grid">
-            {campaignCards.map(({ campaign, detail, detailLoading, detailError, detailRefetch }) => (
+            {filteredCampaignCards.map(({
+              campaign,
+              detail,
+              detailLoading,
+              detailError,
+              detailRefetch,
+            }) => (
               <CampaignCard
                 key={campaign.campaign_id || campaign.id}
                 campaign={campaign}
