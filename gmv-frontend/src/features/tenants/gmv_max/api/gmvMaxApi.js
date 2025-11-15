@@ -6,7 +6,7 @@ function encode(value) {
 }
 
 function tenantPrefix(workspaceId) {
-  return `/api/v1/tenants/${encode(workspaceId)}`;
+  return `/tenants/${encode(workspaceId)}`;
 }
 
 function providerPrefix(workspaceId, provider) {
