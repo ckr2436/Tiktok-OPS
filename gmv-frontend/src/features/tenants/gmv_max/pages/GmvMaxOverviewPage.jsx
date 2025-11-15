@@ -15,13 +15,15 @@ import {
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
   useProductsQuery,
-  useProvidersQuery,
   useStoresQuery,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
-import { getGmvMaxCampaign } from '../api/gmvMaxApi.js';
+import { clampPageSize, getGmvMaxCampaign } from '../api/gmvMaxApi.js';
+
+const PROVIDER = 'tiktok-business';
+const PROVIDER_LABEL = 'TikTok Business';
 
 function formatError(error) {
   if (!error) return null;
@@ -171,14 +173,37 @@ function extractChoiceList(candidate) {
   return [];
 }
 
-function ErrorBlock({ error, onRetry }) {
-  const message = formatError(error);
-  if (!message) return null;
+function ErrorBlock({ error, onRetry, message: overrideMessage }) {
+  if (!error) return null;
+  console.error('GMV Max request failed', error);
+  const message = overrideMessage ?? formatError(error) ?? 'Something went wrong. Please try again.';
+  const safeMessage =
+    typeof message === 'string' && message.trim().startsWith('[')
+      ? 'Something went wrong. Please try again.'
+      : message;
   return (
-    <div className="gmvmax-error">
-      <span>{message}</span>
+    <div className="gmvmax-inline-error" role="alert">
+      <span>{safeMessage}</span>
       {onRetry ? (
-        <button type="button" onClick={onRetry} className="gmvmax-error__retry">
+        <button type="button" onClick={onRetry} className="gmvmax-button gmvmax-button--link">
+          Retry
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SeriesErrorNotice({ error, onRetry }) {
+  if (!error) return null;
+  console.error('Failed to load GMV Max series', error);
+  return (
+    <div className="gmvmax-error-card" role="alert">
+      <div>
+        <h3>Failed to load GMV Max series</h3>
+        <p>Please check your filters and try again.</p>
+      </div>
+      {onRetry ? (
+        <button type="button" onClick={onRetry} className="gmvmax-button gmvmax-button--primary">
           Retry
         </button>
       ) : null}
@@ -318,7 +343,7 @@ function CampaignCard({
       store_ids: storeId ? [String(storeId)] : undefined,
     },
     {
-      enabled: Boolean(workspaceId && provider && authId && campaignId && storeId),
+      enabled: Boolean(workspaceId && authId && campaignId && storeId),
     },
   );
 
@@ -383,13 +408,26 @@ function CampaignCard({
         <ErrorBlock error={metricsQuery.error} onRetry={metricsQuery.refetch} />
       </div>
       <footer className="gmvmax-campaign-card__footer">
-        <button type="button" onClick={() => onEdit?.(campaignId)} disabled={!detail || detailLoading}>
+        <button
+          type="button"
+          className="gmvmax-button gmvmax-button--secondary"
+          onClick={() => onEdit?.(campaignId)}
+          disabled={!detail || detailLoading}
+        >
           Edit
         </button>
-        <button type="button" onClick={() => onManage?.(campaignId)}>
+        <button
+          type="button"
+          className="gmvmax-button gmvmax-button--ghost"
+          onClick={() => onManage?.(campaignId)}
+        >
           Manage
         </button>
-        <button type="button" onClick={() => onDashboard?.(campaignId)}>
+        <button
+          type="button"
+          className="gmvmax-button gmvmax-button--ghost"
+          onClick={() => onDashboard?.(campaignId)}
+        >
           Dashboard
         </button>
       </footer>
@@ -470,7 +508,7 @@ function CreateSeriesModal({
     authId,
     {},
     {
-      enabled: Boolean(open && workspaceId && provider && authId),
+      enabled: Boolean(open && workspaceId && authId),
     },
   );
 
@@ -1098,7 +1136,7 @@ export default function GmvMaxOverviewPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [provider, setProvider] = useState('');
+  const provider = PROVIDER;
   const [authId, setAuthId] = useState('');
   const [businessCenterId, setBusinessCenterId] = useState('');
   const [advertiserId, setAdvertiserId] = useState('');
@@ -1108,17 +1146,12 @@ export default function GmvMaxOverviewPage() {
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
 
-  const providersQuery = useProvidersQuery(workspaceId, {
-    enabled: Boolean(workspaceId),
-    staleTime: 5 * 60 * 1000,
-  });
-
   const accountsQuery = useAccountsQuery(
     workspaceId,
     provider,
     {},
     {
-      enabled: Boolean(workspaceId && provider),
+      enabled: Boolean(workspaceId),
     },
   );
 
@@ -1128,7 +1161,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     {},
     {
-      enabled: Boolean(workspaceId && provider && authId),
+      enabled: Boolean(workspaceId && authId),
     },
   );
 
@@ -1144,7 +1177,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     advertiserParams,
     {
-      enabled: Boolean(workspaceId && provider && authId),
+      enabled: Boolean(workspaceId && authId),
     },
   );
 
@@ -1157,12 +1190,12 @@ export default function GmvMaxOverviewPage() {
       owner_bc_id: businessCenterId || undefined,
     },
     {
-      enabled: Boolean(workspaceId && provider && authId && advertiserId),
+      enabled: Boolean(workspaceId && authId && advertiserId),
     },
   );
 
   const productParams = useMemo(
-    () => ({ store_id: storeId || undefined, page_size: 100 }),
+    () => ({ store_id: storeId || undefined, page_size: clampPageSize(50) }),
     [storeId],
   );
 
@@ -1172,12 +1205,12 @@ export default function GmvMaxOverviewPage() {
     authId,
     productParams,
     {
-      enabled: Boolean(workspaceId && provider && authId && storeId),
+      enabled: Boolean(workspaceId && authId && storeId),
     },
   );
 
   const campaignParams = useMemo(() => {
-    const params = { page_size: 100 };
+    const params = { page_size: clampPageSize(50) };
     if (storeId) params.store_ids = [String(storeId)];
     if (advertiserId) params.advertiser_id = advertiserId;
     return params;
@@ -1189,35 +1222,9 @@ export default function GmvMaxOverviewPage() {
     authId,
     campaignParams,
     {
-      enabled: Boolean(workspaceId && provider && authId),
+      enabled: Boolean(workspaceId && authId),
     },
   );
-
-  const providers = useMemo(() => {
-    const data = providersQuery.data;
-    if (!data) return [];
-    const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
-    const dedup = new Map();
-    items.forEach((item) => {
-      const key = item?.provider || item?.value || item?.id || 'tiktok-business';
-      if (!dedup.has(key)) {
-        dedup.set(key, {
-          value: key,
-          label: item?.label || item?.name || key,
-        });
-      }
-    });
-    return Array.from(dedup.values());
-  }, [providersQuery.data]);
-
-  useEffect(() => {
-    if (provider) return;
-    if (providers.length === 0) return;
-    const preferred = providers.find((item) => item.value === 'tiktok-business') || providers[0];
-    if (preferred) {
-      setProvider(preferred.value);
-    }
-  }, [providers, provider]);
 
   const accounts = useMemo(() => {
     const data = accountsQuery.data;
@@ -1316,7 +1323,7 @@ export default function GmvMaxOverviewPage() {
       return {
         queryKey: ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId],
         queryFn: () => getGmvMaxCampaign(workspaceId, provider, authId, campaignId),
-        enabled: Boolean(workspaceId && provider && authId && campaignId),
+        enabled: Boolean(workspaceId && authId && campaignId),
         staleTime: 60 * 1000,
       };
     }),
@@ -1417,8 +1424,8 @@ export default function GmvMaxOverviewPage() {
     },
   });
 
-  const canSync = Boolean(provider && authId && storeId);
-  const canCreateSeries = Boolean(provider && authId && storeId);
+  const canSync = Boolean(authId && storeId);
+  const canCreateSeries = Boolean(authId && storeId);
 
   const handleSync = useCallback(async () => {
     if (!canSync) return;
@@ -1427,7 +1434,7 @@ export default function GmvMaxOverviewPage() {
     const payload = {
       advertiser_id: advertiserId ? String(advertiserId) : undefined,
       campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
-      campaign_options: { page_size: 100 },
+      campaign_options: { page_size: clampPageSize(50) },
       report: {
         store_ids: storeId ? [String(storeId)] : undefined,
         start_date: range.start,
@@ -1442,7 +1449,13 @@ export default function GmvMaxOverviewPage() {
       await campaignsQuery.refetch();
       await productsQuery.refetch();
     } catch (error) {
-      setSyncError(formatError(error));
+      console.error('Failed to sync GMV Max campaigns', error);
+      const message = formatError(error);
+      setSyncError(
+        typeof message === 'string' && message.trim().startsWith('[')
+          ? 'Sync failed. Please try again.'
+          : message,
+      );
     }
   }, [
     advertiserId,
@@ -1539,169 +1552,181 @@ export default function GmvMaxOverviewPage() {
 
   return (
     <div className="gmvmax-page">
-      <h1>GMV Max Overview</h1>
-
-      <section className="gmvmax-filter-bar">
-        <div className="gmvmax-filter-fields">
-          <FormField label="Provider">
-            <select
-              value={provider}
-              onChange={(event) => {
-                setProvider(event.target.value);
-                setAuthId('');
-                setBusinessCenterId('');
-                setAdvertiserId('');
-                setStoreId('');
-              }}
-            >
-              <option value="">Select provider</option>
-              {providers.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Account">
-            <select
-              value={authId}
-              onChange={(event) => {
-                setAuthId(event.target.value);
-                setBusinessCenterId('');
-                setAdvertiserId('');
-                setStoreId('');
-              }}
-              disabled={!provider}
-            >
-              <option value="">Select account</option>
-              {accountOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                  {option.status === 'invalid' ? ' (invalid)' : ''}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Business center (optional)">
-            <select
-              value={businessCenterId}
-              onChange={(event) => {
-                setBusinessCenterId(event.target.value);
-                setAdvertiserId('');
-                setStoreId('');
-              }}
-              disabled={!authId}
-            >
-              <option value="">All business centers</option>
-              {businessCenters.map((bc) => (
-                <option key={bc.bc_id || bc.id} value={bc.bc_id || bc.id}>
-                  {bc.name || bc.bc_id || bc.id}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Advertiser">
-            <select
-              value={advertiserId}
-              onChange={(event) => {
-                setAdvertiserId(event.target.value);
-                setStoreId('');
-              }}
-              disabled={!authId}
-            >
-              <option value="">Select advertiser</option>
-              {advertisers.map((adv) => (
-                <option key={adv.advertiser_id || adv.id} value={adv.advertiser_id || adv.id}>
-                  {adv.display_name || adv.name || adv.advertiser_id || adv.id}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Store">
-            <select
-              value={storeId}
-              onChange={(event) => setStoreId(event.target.value)}
-              disabled={!advertiserId}
-            >
-              <option value="">Select store</option>
-              {stores.map((store) => (
-                <option key={store.store_id || store.id} value={store.store_id || store.id}>
-                  {store.name || store.store_name || store.store_id || store.id}
-                </option>
-              ))}
-            </select>
-          </FormField>
+      <header className="gmvmax-page__header">
+        <div>
+          <h1>GMV Max Overview</h1>
+          <p className="gmvmax-page__subtitle">
+            Monitor TikTok Business performance and manage GMV Max series.
+          </p>
         </div>
-        <div className="gmvmax-filter-actions">
-          <button type="button" onClick={handleSync} disabled={!canSync || syncMutation.isPending}>
-            {syncMutation.isPending ? 'Syncing…' : 'Sync GMV Max Campaigns'}
-          </button>
-          {syncError ? <div className="gmvmax-error">{syncError}</div> : null}
+        <span className="gmvmax-provider-badge">Provider: {PROVIDER_LABEL}</span>
+      </header>
+
+      <section className="gmvmax-card gmvmax-card--filters">
+        <header className="gmvmax-card__header">
+          <div>
+            <h2>Scope filters</h2>
+            <p>Select the account and store context for GMV Max management.</p>
+          </div>
+        </header>
+        <div className="gmvmax-card__body">
+          <div className="gmvmax-field-grid">
+            <FormField label="Account">
+              <select
+                value={authId}
+                onChange={(event) => {
+                  setAuthId(event.target.value);
+                  setBusinessCenterId('');
+                  setAdvertiserId('');
+                  setStoreId('');
+                }}
+              >
+                <option value="">Select account</option>
+                {accountOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                    {option.status === 'invalid' ? ' (invalid)' : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Business center (optional)">
+              <select
+                value={businessCenterId}
+                onChange={(event) => {
+                  setBusinessCenterId(event.target.value);
+                  setAdvertiserId('');
+                  setStoreId('');
+                }}
+                disabled={!authId}
+              >
+                <option value="">All business centers</option>
+                {businessCenters.map((bc) => (
+                  <option key={bc.bc_id || bc.id} value={bc.bc_id || bc.id}>
+                    {bc.name || bc.bc_id || bc.id}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Advertiser">
+              <select
+                value={advertiserId}
+                onChange={(event) => {
+                  setAdvertiserId(event.target.value);
+                  setStoreId('');
+                }}
+                disabled={!authId}
+              >
+                <option value="">Select advertiser</option>
+                {advertisers.map((adv) => (
+                  <option key={adv.advertiser_id || adv.id} value={adv.advertiser_id || adv.id}>
+                    {adv.display_name || adv.name || adv.advertiser_id || adv.id}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Store">
+              <select
+                value={storeId}
+                onChange={(event) => setStoreId(event.target.value)}
+                disabled={!advertiserId}
+              >
+                <option value="">Select store</option>
+                {stores.map((store) => (
+                  <option key={store.store_id || store.id} value={store.store_id || store.id}>
+                    {store.name || store.store_name || store.store_id || store.id}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+          <div className="gmvmax-card__footer">
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--primary"
+              onClick={handleSync}
+              disabled={!canSync || syncMutation.isPending}
+            >
+              {syncMutation.isPending ? 'Syncing…' : 'Sync GMV Max Campaigns'}
+            </button>
+            {syncError ? <p className="gmvmax-inline-error-text">{syncError}</p> : null}
+          </div>
         </div>
       </section>
 
-      <section className="gmvmax-section">
-        <header className="gmvmax-section__header">
+      <section className="gmvmax-card">
+        <header className="gmvmax-card__header">
           <div>
-            <h2>Unassigned Products</h2>
+            <h2>Unassigned products</h2>
             {selectedAccountLabel ? <p className="gmvmax-subtext">Account: {selectedAccountLabel}</p> : null}
           </div>
           <button
             type="button"
+            className="gmvmax-button gmvmax-button--primary"
             onClick={handleOpenCreate}
             disabled={!canCreateSeries || products.length === 0}
           >
             Create GMV Max Series
           </button>
         </header>
-        {(!provider || !authId) && <p>Select a provider and account to view products.</p>}
-        {provider && authId && !storeId && <p>Select an advertiser and store to load products.</p>}
-        {provider && authId && storeId ? (
-          <>
-            <ProductSelectionPanel
-              products={unassignedProducts}
-              selectedIds={selectedProductIdSet}
-              onToggle={handleToggleProduct}
-              onToggleAll={handleToggleAllProducts}
-              storeNames={storeNameById}
-              loading={productsLoading}
-              emptyMessage={
-                productsLoading ? 'Loading products…' : 'All products are currently assigned to a GMV Max series.'
-              }
-            />
-            <p className="gmvmax-subtext">
-              Selected {selectedProductIdSet.size} product(s) ready for a new GMV Max series.
-            </p>
-          </>
-        ) : null}
-        <ErrorBlock error={productsQuery.error} onRetry={productsQuery.refetch} />
+        <div className="gmvmax-card__body">
+          {!authId ? <p className="gmvmax-placeholder">Select an account to view products.</p> : null}
+          {authId && !storeId ? (
+            <p className="gmvmax-placeholder">Choose an advertiser and store to load products.</p>
+          ) : null}
+          {authId && storeId ? (
+            <>
+              <ProductSelectionPanel
+                products={unassignedProducts}
+                selectedIds={selectedProductIdSet}
+                onToggle={handleToggleProduct}
+                onToggleAll={handleToggleAllProducts}
+                storeNames={storeNameById}
+                loading={productsLoading}
+                emptyMessage={
+                  productsLoading
+                    ? 'Loading products…'
+                    : 'All products are currently assigned to a GMV Max series.'
+                }
+              />
+              <p className="gmvmax-subtext">
+                Selected {selectedProductIdSet.size} product(s) ready for a new GMV Max series.
+              </p>
+            </>
+          ) : null}
+          <ErrorBlock error={productsQuery.error} onRetry={productsQuery.refetch} />
+        </div>
       </section>
 
-      <section className="gmvmax-section">
-        <header className="gmvmax-section__header">
-          <h2>GMV Max Series</h2>
+      <section className="gmvmax-card">
+        <header className="gmvmax-card__header">
+          <h2>GMV Max series</h2>
         </header>
-        <ErrorBlock error={campaignsQuery.error} onRetry={campaignsQuery.refetch} />
-        {campaignsLoading ? <Loading text="Loading campaigns…" /> : null}
-        {!campaignsLoading && campaigns.length === 0 ? <p>No GMV Max series found for the selected scope.</p> : null}
-        <div className="gmvmax-campaign-grid">
-          {campaignCards.map(({ campaign, detail, detailLoading, detailError, detailRefetch }) => (
-            <CampaignCard
-              key={campaign.campaign_id || campaign.id}
-              campaign={campaign}
-              detail={detail}
-              detailLoading={detailLoading}
-              detailError={detailError}
-              onRetryDetail={detailRefetch}
-              workspaceId={workspaceId}
-              provider={provider}
-              authId={authId}
-              storeId={storeId}
-              onEdit={handleEditRequest}
-              onManage={handleManage}
-              onDashboard={handleDashboard}
-            />
-          ))}
+        <div className="gmvmax-card__body">
+          <SeriesErrorNotice error={campaignsQuery.error} onRetry={campaignsQuery.refetch} />
+          {campaignsLoading ? <Loading text="Loading campaigns…" /> : null}
+          {!campaignsLoading && !campaignsQuery.error && campaigns.length === 0 ? (
+            <p className="gmvmax-placeholder">No GMV Max series found for the selected scope.</p>
+          ) : null}
+          <div className="gmvmax-campaign-grid">
+            {campaignCards.map(({ campaign, detail, detailLoading, detailError, detailRefetch }) => (
+              <CampaignCard
+                key={campaign.campaign_id || campaign.id}
+                campaign={campaign}
+                detail={detail}
+                detailLoading={detailLoading}
+                detailError={detailError}
+                onRetryDetail={detailRefetch}
+                workspaceId={workspaceId}
+                provider={provider}
+                authId={authId}
+                storeId={storeId}
+                onEdit={handleEditRequest}
+                onManage={handleManage}
+                onDashboard={handleDashboard}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
