@@ -1,6 +1,15 @@
 import http from '@/lib/http.js';
 import { normProvider } from '@/features/tenants/integrations/tiktok_business/service.js';
 
+export function clampPageSize(size, max = 50) {
+  const limit = Number.isFinite(Number(max)) && Number(max) > 0 ? Math.floor(Number(max)) : 50;
+  const parsed = Number(size);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return limit;
+  }
+  return Math.max(1, Math.min(Math.floor(parsed), limit));
+}
+
 function encode(value) {
   return encodeURIComponent(value);
 }
@@ -74,7 +83,10 @@ export async function listStores(workspaceId, provider, authId, options = {}, co
 }
 
 export async function listProducts(workspaceId, provider, authId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
+  const sanitizedParams = params && 'page_size' in params
+    ? { ...params, page_size: clampPageSize(params.page_size) }
+    : params;
+  const axiosConfig = mergeConfig(config, sanitizedParams);
   return get(`${accountPrefix(workspaceId, provider, authId)}/products`, axiosConfig);
 }
 
@@ -96,7 +108,10 @@ export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload
 }
 
 export async function listGmvMaxCampaigns(workspaceId, provider, authId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
+  const sanitizedParams = params && 'page_size' in params
+    ? { ...params, page_size: clampPageSize(params.page_size) }
+    : params;
+  const axiosConfig = mergeConfig(config, sanitizedParams);
   return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax`, axiosConfig);
 }
 
@@ -121,7 +136,10 @@ export async function syncGmvMaxMetrics(workspaceId, provider, authId, campaignI
 }
 
 export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
+  const sanitizedParams = params && 'page_size' in params
+    ? { ...params, page_size: clampPageSize(params.page_size) }
+    : params;
+  const axiosConfig = mergeConfig(config, sanitizedParams);
   return get(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/metrics`,
     axiosConfig,
@@ -137,7 +155,10 @@ export async function applyGmvMaxAction(workspaceId, provider, authId, campaignI
 }
 
 export async function listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
+  const sanitizedParams = params && 'page_size' in params
+    ? { ...params, page_size: clampPageSize(params.page_size) }
+    : params;
+  const axiosConfig = mergeConfig(config, sanitizedParams);
   return get(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/actions`,
     axiosConfig,
