@@ -1116,7 +1116,7 @@ export default function GmvMaxOverviewPage() {
   const accountsQuery = useAccountsQuery(
     workspaceId,
     provider,
-    { page_size: 200 },
+    {},
     {
       enabled: Boolean(workspaceId && provider),
     },
@@ -1162,7 +1162,7 @@ export default function GmvMaxOverviewPage() {
   );
 
   const productParams = useMemo(
-    () => ({ store_id: storeId || undefined, page_size: 200 }),
+    () => ({ store_id: storeId || undefined, page_size: 100 }),
     [storeId],
   );
 
@@ -1177,7 +1177,7 @@ export default function GmvMaxOverviewPage() {
   );
 
   const campaignParams = useMemo(() => {
-    const params = { page_size: 200 };
+    const params = { page_size: 100 };
     if (storeId) params.store_ids = [String(storeId)];
     if (advertiserId) params.advertiser_id = advertiserId;
     return params;
@@ -1427,7 +1427,7 @@ export default function GmvMaxOverviewPage() {
     const payload = {
       advertiser_id: advertiserId ? String(advertiserId) : undefined,
       campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
-      campaign_options: { page_size: 200 },
+      campaign_options: { page_size: 100 },
       report: {
         store_ids: storeId ? [String(storeId)] : undefined,
         start_date: range.start,
