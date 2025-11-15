@@ -12,6 +12,7 @@ from app.celery_app import celery_app
 from app.data.db import get_db
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.services.ttb_client_factory import build_ttb_client
+from app.services.gmvmax_heating import run_creative_heating_cycle
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action,
@@ -459,4 +460,29 @@ def task_gmvmax_evaluate_strategy(
         raise
     finally:
         _close_client(client)
+        _close_session(db)
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.creative_heating_cycle",
+    autoretry_for=(Exception,),
+    retry_backoff=10,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    max_retries=5,
+    queue="gmvmax",
+)
+def task_gmvmax_creative_heating_cycle(self, **extra: Any) -> dict:
+    db = _db_session()
+    try:
+        result = asyncio.run(run_creative_heating_cycle(db))
+        db.commit()
+        logger.info("gmvmax.creative_heating_cycle done", extra=result)
+        return result
+    except Exception:
+        db.rollback()
+        logger.exception("gmvmax.creative_heating_cycle failed")
+        raise
+    finally:
         _close_session(db)

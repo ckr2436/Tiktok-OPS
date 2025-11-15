@@ -559,6 +559,7 @@ def test_gmvmax_alias_scope_enforced(monkeypatch, gmv_app):
         store_id="7496202240253986992",
         binding=binding,
         client=SimpleNamespace(gmv_max_campaign_get=lambda *_, **__: None),
+        db=SimpleNamespace(flush=lambda: None),
     )
 
     def _context_override(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001

@@ -113,6 +113,17 @@ celery_app.conf.task_routes = {
     "gmvmax.*": {"queue": "gmvmax"},
 }
 
+# 默认注册 creative heating 巡检任务（可通过环境变量覆盖）
+beat_schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
+beat_schedule.setdefault(
+    "gmvmax_creative_heating_cycle",
+    {
+        "task": "gmvmax.creative_heating_cycle",
+        "schedule": int(getattr(settings, "GMVMAX_HEATING_CYCLE_INTERVAL", 15 * 60)),
+    },
+)
+celery_app.conf.beat_schedule = beat_schedule
+
 # ★ 导入任务，确保 worker 启动即注册
 import app.tasks.oauth_tasks  # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401

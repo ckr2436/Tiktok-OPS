@@ -19,6 +19,7 @@ def _build_stub_context():
         store_id="store-999",
         binding=binding,
         client=SimpleNamespace(gmv_max_campaign_get=lambda *_, **__: None),
+        db=SimpleNamespace(flush=lambda: None),
     )
 
 

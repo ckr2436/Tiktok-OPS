@@ -10,13 +10,13 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     text,
-    Integer,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import BigInteger as _BigInteger
@@ -171,6 +171,193 @@ class TTBGmvMaxMetricsDaily(Base):
     ad_conversion_rate: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+class TTBGmvMaxCreativeMetric(Base):
+    __tablename__ = "ttb_gmvmax_creative_metrics_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "campaign_id",
+            "creative_id",
+            "stat_time_day",
+            name="uk_ttb_gmvmax_creative_metrics_scope",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_metrics_campaign",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "campaign_id",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_metrics_day",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "stat_time_day",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_metrics_creative",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "creative_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'tiktok-business'"),
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    adgroup_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    product_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    item_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    stat_time_day: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
+
+    impressions: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    clicks: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    net_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    orders: Mapped[int | None] = mapped_column(Integer, default=None)
+    gross_revenue: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    roi: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_click_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_conversion_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_2s: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_6s: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_p25: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_p50: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_p75: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    ad_video_view_rate_p100: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+
+    raw_metrics: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+class TTBGmvMaxCreativeHeating(Base):
+    __tablename__ = "ttb_gmvmax_creative_heating"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "campaign_id",
+            "creative_id",
+            name="uk_ttb_gmvmax_creative_heating_scope",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_heating_campaign",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "campaign_id",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_heating_creative",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "creative_id",
+        ),
+        Index(
+            "idx_ttb_gmvmax_creative_heating_status",
+            "workspace_id",
+            "provider",
+            "auth_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'tiktok-business'"),
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    product_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    item_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    mode: Mapped[str | None] = mapped_column(String(32), default=None)
+    target_daily_budget: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    budget_delta: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+    max_duration_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+
+    evaluation_window_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("60")
+    )
+    min_clicks: Mapped[int | None] = mapped_column(Integer, default=None)
+    min_ctr: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), default=None)
+    min_gross_revenue: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), default=None)
+    auto_stop_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("1")
+    )
+    is_heating_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0")
+    )
+
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'PENDING'"))
+    last_action_type: Mapped[str | None] = mapped_column(String(64), default=None)
+    last_action_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    last_action_request: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    last_action_response: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_evaluation_result: Mapped[str | None] = mapped_column(String(64), default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),

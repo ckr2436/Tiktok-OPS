@@ -348,6 +348,28 @@ class GMVMaxCampaignUpdateRequest(BaseModel):
     body: GMVMaxCampaignUpdateBody
 
 
+class GMVMaxCampaignActionApplyBody(BaseModel):
+    campaign_id: str
+    action_type: str
+    creative_id: Optional[str] = None
+    mode: Optional[str] = None
+    target_daily_budget: Optional[float] = None
+    budget_delta: Optional[float] = None
+    currency: Optional[str] = None
+    max_duration_minutes: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCampaignActionApplyRequest(BaseModel):
+    advertiser_id: str
+    body: GMVMaxCampaignActionApplyBody
+
+
+class GMVMaxCampaignActionApplyData(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
 class GMVMaxSessionCreateBody(BaseModel):
     campaign_id: str
     store_id: str
@@ -576,6 +598,19 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             json_body=_ttb_api._remove_none(body),
         )
         return self._parse_response(payload, GMVMaxCampaignInfoData)
+
+    async def gmv_max_campaign_action_apply(
+        self, request: GMVMaxCampaignActionApplyRequest
+    ) -> GMVMaxResponse[GMVMaxCampaignActionApplyData]:
+        params = {"advertiser_id": request.advertiser_id}
+        body = request.body.model_dump(exclude_none=True)
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/action/apply/",
+            params=_ttb_api._clean_params_map(params),
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(payload, GMVMaxCampaignActionApplyData)
 
     async def gmv_max_session_create(
         self, request: GMVMaxSessionCreateRequest

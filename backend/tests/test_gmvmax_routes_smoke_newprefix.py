@@ -137,6 +137,7 @@ def gmvmax_client_fixture(monkeypatch):
 
     stub_client = StubGMVMaxClient()
 
+    db_stub = SimpleNamespace(flush=lambda: None)
     context = router_provider.GMVMaxRouteContext(
         workspace_id=1,
         provider="tiktok-business",
@@ -149,6 +150,7 @@ def gmvmax_client_fixture(monkeypatch):
             store_id="store-1",
         ),
         client=stub_client,
+        db=db_stub,
     )
 
     def _override_context(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001, ARG001

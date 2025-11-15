@@ -33,6 +33,8 @@ from .ttb_gmvmax import (
     TTBGmvMaxCampaign,
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxMetricsDaily,
+    TTBGmvMaxCreativeMetric,
+    TTBGmvMaxCreativeHeating,
     TTBGmvMaxActionLog,
     TTBGmvMaxStrategyConfig,
 )
@@ -67,6 +69,8 @@ __all__ = [
     "TTBGmvMaxCampaign",
     "TTBGmvMaxMetricsHourly",
     "TTBGmvMaxMetricsDaily",
+    "TTBGmvMaxCreativeMetric",
+    "TTBGmvMaxCreativeHeating",
     "TTBGmvMaxActionLog",
     "TTBGmvMaxStrategyConfig",
 ]

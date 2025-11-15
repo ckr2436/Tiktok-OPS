@@ -136,6 +136,15 @@ CATALOG: List[PeriodicTaskSpec] = [
         description="Manual/strategy-triggered GMV Max campaign action (no default cron).",
         manual_only=True,
     ),
+    PeriodicTaskSpec(
+        name="gmvmax:creative:heating_cycle",
+        task="gmvmax.creative_heating_cycle",
+        crontab="*/15 * * * *",
+        args=[],
+        kwargs={},
+        queue="gmvmax",
+        description="Evaluate GMV Max creative heating configs and auto-stop under-performing creatives.",
+    ),
 ]
 
 
