@@ -1,5 +1,5 @@
 // src/routes/index.jsx
-import { createBrowserRouter, Navigate, useParams } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
 
 // 布局
 import AppLayout from '../components/layout/AppLayout.jsx';
@@ -42,18 +42,11 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 // 公司域：TikTok Business 授权 + GMV Max
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
-import GmvMaxManagementPage from '../features/tenants/gmv_max/pages/GmvMaxManagementPage.jsx';
+import GmvMaxOverviewPage from '../features/tenants/gmv_max/pages/GmvMaxOverviewPage.jsx';
+import GmvMaxCampaignDetailPage from '../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx';
 
 // 租户 - KIE Sora2 页面
 import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
-
-function LegacyGmvRedirect() {
-  const { wid } = useParams();
-  if (!wid) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  return <Navigate to={`/tenants/${wid}/gmvmax`} replace />;
-}
 
 const router = createBrowserRouter([
   // 登录页
@@ -143,7 +136,15 @@ const router = createBrowserRouter([
             path: 'tenants/:wid/gmvmax',
             element: (
               <TenantGuard>
-                <GmvMaxManagementPage />
+                <GmvMaxOverviewPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/gmvmax/:campaignId',
+            element: (
+              <TenantGuard>
+                <GmvMaxCampaignDetailPage />
               </TenantGuard>
             ),
           },
@@ -158,23 +159,6 @@ const router = createBrowserRouter([
             ),
           },
 
-          // 兼容旧链接重定向
-          {
-            path: 'tenants/:wid/integrations/tiktok-business/accounts',
-            element: (
-              <TenantGuard>
-                <LegacyGmvRedirect />
-              </TenantGuard>
-            ),
-          },
-          {
-            path: 'tenants/:wid/integrations/tiktok-business/accounts/:authId/*',
-            element: (
-              <TenantGuard>
-                <LegacyGmvRedirect />
-              </TenantGuard>
-            ),
-          },
         ],
       },
     ],
