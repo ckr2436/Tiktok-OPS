@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Union
@@ -69,6 +70,7 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/gmvmax")
+logger = logging.getLogger("gmv.ttb.gmvmax.router")
 
 
 @dataclass(slots=True)
@@ -118,14 +120,40 @@ async def _handle_tiktok_error(exc: Exception) -> None:
     ) from exc
 
 
+def _extract_request_payload(args: Sequence[Any], kwargs: Dict[str, Any]) -> Any:
+    for candidate in list(args) + list(kwargs.values()):
+        if hasattr(candidate, "model_dump"):
+            try:
+                return candidate.model_dump(exclude_none=True)
+            except Exception:  # pragma: no cover - defensive
+                return str(candidate)
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
 async def _call_tiktok(
     func: Callable[..., Awaitable[GMVMaxResponse[Any]]],
     *args: Any,
+    _log_context: Optional[Dict[str, Any]] = None,
     **kwargs: Any,
 ) -> GMVMaxResponse[Any]:
     try:
         return await func(*args, **kwargs)
     except Exception as exc:  # noqa: BLE001
+        payload = _extract_request_payload(args, kwargs)
+        endpoint_name = getattr(func, "__name__", repr(func))
+        extra: Dict[str, Any] = {
+            "gmvmax_endpoint": endpoint_name,
+            "gmvmax_request_payload": payload,
+        }
+        if _log_context is not None:
+            extra["gmvmax_context"] = _log_context
+        logger.warning(
+            "tiktok gmv max request failed",
+            exc_info=True,
+            extra=extra,
+        )
         await _handle_tiktok_error(exc)
 
 
@@ -133,11 +161,16 @@ def _build_campaign_request(
     advertiser_id: str,
     filtering: Optional[CampaignFilter],
     options: Optional[CampaignListOptions],
+    *,
+    store_ids_override: Optional[Sequence[str]] = None,
 ) -> GMVMaxCampaignGetRequest:
     filter_obj = filtering or CampaignFilter()
+    store_ids = filter_obj.store_ids
+    if (not store_ids or len(store_ids) == 0) and store_ids_override:
+        store_ids = [str(item) for item in store_ids_override if item]
     filtering_model = GMVMaxCampaignFiltering(
         gmv_max_promotion_types=list(filter_obj.gmv_max_promotion_types),
-        store_ids=filter_obj.store_ids,
+        store_ids=store_ids,
         campaign_ids=filter_obj.campaign_ids,
         campaign_name=filter_obj.campaign_name,
         primary_status=filter_obj.primary_status,
@@ -319,28 +352,48 @@ async def sync_gmvmax_campaigns_provider(
     provider: str,
     auth_id: int,
     payload: SyncRequest,
+    bc_id_query: Optional[str] = Query(None, alias="bc_id"),
+    advertiser_id_query: Optional[str] = Query(None, alias="advertiser_id"),
+    store_id_query: Optional[str] = Query(None, alias="store_id"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncResponse:
     """Trigger a GMV Max campaign + report sync by proxying to TikTok."""
 
-    advertiser_id = payload.advertiser_id or context.advertiser_id
+    advertiser_id = (
+        payload.advertiser_id or advertiser_id_query or context.advertiser_id
+    )
+    store_id = payload.store_id or store_id_query or context.store_id
+    scope_context = {
+        "bc_id": payload.bc_id or bc_id_query,
+        "advertiser_id": advertiser_id,
+        "store_id": store_id,
+    }
+    log_context = {
+        "workspace_id": context.workspace_id,
+        "auth_id": context.auth_id,
+        "scope": scope_context,
+    }
+    store_ids_override = [store_id] if store_id else None
     campaign_req = _build_campaign_request(
         advertiser_id,
         payload.campaign_filter,
         payload.campaign_options,
+        store_ids_override=store_ids_override,
     )
     campaign_resp = await _call_tiktok(
         context.client.gmv_max_campaign_get,
         campaign_req,
+        _log_context=log_context,
     )
     report_req = _build_report_request(
         advertiser_id,
         payload.report,
-        default_store_id=context.store_id,
+        default_store_id=store_id,
     )
     report_resp = await _call_tiktok(
         context.client.gmv_max_report_get,
         report_req,
+        _log_context=log_context,
     )
     return SyncResponse(
         campaigns=campaign_resp.data.list,

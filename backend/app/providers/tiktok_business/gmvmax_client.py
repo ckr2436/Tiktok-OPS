@@ -515,6 +515,27 @@ class GMVMaxResponse(BaseModel, Generic[T]):
     model_config = ConfigDict(extra="allow")
 
 
+def _coerce_store_ids(value: Any) -> List[str]:
+    """Normalize store identifiers into a list of non-empty strings."""
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, Sequence):
+        results: List[str] = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                results.append(text)
+        return results
+    text = str(value).strip()
+    return [text] if text else []
+
+
 # ------------------------- Client implementation -------------------------
 
 
@@ -561,6 +582,18 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         self, request: GMVMaxCampaignGetRequest
     ) -> GMVMaxResponse[GMVMaxCampaignListData]:
         params = request.model_dump(exclude_none=True)
+        filtering_payload = params.get("filtering")
+        if isinstance(filtering_payload, dict):
+            normalized_store_ids: List[str] = []
+            normalized_store_ids.extend(_coerce_store_ids(filtering_payload.get("store_ids")))
+            extra_ids = _coerce_store_ids(filtering_payload.pop("store_id", None))
+            if extra_ids:
+                normalized_store_ids.extend(extra_ids)
+            if normalized_store_ids:
+                unique_ids = list(dict.fromkeys(normalized_store_ids))
+                filtering_payload["store_ids"] = unique_ids
+            elif "store_ids" in filtering_payload:
+                filtering_payload.pop("store_ids", None)
         _ttb_api._ensure_gmvmax_campaign_filters(params)
         cleaned = _ttb_api._clean_params_map(params)
         payload = await self._request_json("GET", "/gmv_max/campaign/get/", params=cleaned)

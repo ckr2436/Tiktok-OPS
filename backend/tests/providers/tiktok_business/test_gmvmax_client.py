@@ -125,6 +125,28 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             },
         ),
         (
+            GMVMaxCampaignGetRequest(
+                advertiser_id="456",
+                filtering=GMVMaxCampaignFiltering(
+                    gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
+                    **{"store_id": "store-123"},
+                ),
+            ),
+            "gmv_max_campaign_get",
+            "/open_api/v1.3/gmv_max/campaign/get/",
+            {
+                "advertiser_id": "456",
+                "filtering": json.dumps(
+                    {
+                        "gmv_max_promotion_types": ["PRODUCT_GMV_MAX"],
+                        "store_ids": ["store-123"],
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
+        ),
+        (
             GMVMaxCampaignInfoRequest(advertiser_id="123", campaign_id="c1"),
             "gmv_max_campaign_info",
             "/open_api/v1.3/campaign/gmv_max/info/",

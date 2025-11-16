@@ -83,6 +83,8 @@ class SyncRequest(BaseModel):
     """Payload accepted by the sync endpoint combining campaigns + report."""
 
     advertiser_id: Optional[str] = None
+    bc_id: Optional[str] = None
+    store_id: Optional[str] = None
     campaign_filter: Optional[CampaignFilter] = Field(
         default=None, alias="campaign_filter"
     )
