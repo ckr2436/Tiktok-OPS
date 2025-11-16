@@ -107,7 +107,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
         (
             GMVMaxCampaignGetRequest(
                 advertiser_id="123",
-                filtering=GMVMaxCampaignFiltering(gmv_max_promotion_types=["PRODUCT_GMV_MAX"]),
+                filtering=GMVMaxCampaignFiltering(gmv_max_promotion_types=["PRODUCT"]),
                 page=1,
                 page_size=20,
             ),
@@ -118,7 +118,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "page": "1",
                 "page_size": "20",
                 "filtering": json.dumps(
-                    {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
+                    {"gmv_max_promotion_types": ["PRODUCT"]},
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -128,7 +128,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             GMVMaxCampaignGetRequest(
                 advertiser_id="456",
                 filtering=GMVMaxCampaignFiltering(
-                    gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
+                    gmv_max_promotion_types=["PRODUCT"],
                     **{"store_id": "store-123"},
                 ),
             ),
@@ -138,7 +138,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "advertiser_id": "456",
                 "filtering": json.dumps(
                     {
-                        "gmv_max_promotion_types": ["PRODUCT_GMV_MAX"],
+                        "gmv_max_promotion_types": ["PRODUCT"],
                         "store_ids": ["store-123"],
                     },
                     ensure_ascii=False,
@@ -240,7 +240,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 end_date="2024-01-02",
                 metrics=["metric"],
                 dimensions=["dimension"],
-                filtering=GMVMaxReportFiltering(gmv_max_promotion_types=["PRODUCT_GMV_MAX"]),
+                filtering=GMVMaxReportFiltering(gmv_max_promotion_types=["PRODUCT"]),
                 page_size=50,
             ),
             "gmv_max_report_get",
@@ -254,7 +254,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "dimensions": json.dumps(["dimension"], ensure_ascii=False),
                 "page_size": "50",
                 "filtering": json.dumps(
-                    {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
+                    {"gmv_max_promotion_types": ["PRODUCT"]},
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -392,7 +392,7 @@ async def test_gmvmax_client_post_requests(
         (
             GMVMaxCampaignGetRequest(
                 advertiser_id="1",
-                filtering=GMVMaxCampaignFiltering(gmv_max_promotion_types=["PRODUCT_GMV_MAX"]),
+                filtering=GMVMaxCampaignFiltering(gmv_max_promotion_types=["PRODUCT"]),
             ),
             "gmv_max_campaign_get",
         ),
