@@ -2056,7 +2056,6 @@ export default function GmvMaxOverviewPage() {
           store_ids: storeId ? [String(storeId)] : undefined,
           start_date: range.start,
           end_date: range.end,
-          metrics: ['spend', 'impressions', 'clicks', 'orders', 'gross_revenue', 'roi'],
           dimensions: ['campaign_id', 'stat_time_day'],
           enable_total_metrics: true,
         },
