@@ -39,7 +39,30 @@ class StubGMVMaxClient:
         self.campaign_requests.append(request)
         data = GMVMaxCampaignListData(
             list=[
-                GMVMaxCampaign(campaign_id="cmp-1", campaign_name="Primary"),
+                GMVMaxCampaign(
+                    campaign_id="cmp-1",
+                    campaign_name="Primary",
+                    operation_status="ENABLE",
+                    secondary_status="CAMPAIGN_STATUS_DISABLE",
+                ),
+                GMVMaxCampaign(
+                    campaign_id="cmp-restore",
+                    campaign_name="Restorable",
+                    operation_status="DISABLE",
+                    secondary_status="CAMPAIGN_STATUS_LIVE_GMV_MAX_AUTHORIZATION_CANCEL",
+                ),
+                GMVMaxCampaign(
+                    campaign_id="cmp-blocked",
+                    campaign_name="Blocked",
+                    operation_status="DISABLE",
+                    secondary_status="CAMPAIGN_STATUS_DISABLE",
+                ),
+                GMVMaxCampaign(
+                    campaign_id="cmp-extra",
+                    campaign_name="Extra",
+                    operation_status="ENABLE",
+                    secondary_status="CAMPAIGN_STATUS_DISABLE",
+                ),
             ],
         )
         return GMVMaxResponse(
@@ -225,7 +248,8 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["campaigns"][0]["campaign_id"] == "cmp-1"
+    campaign_ids = [item["campaign_id"] for item in body["campaigns"]]
+    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-extra"]
     assert body["report"]["list"][0]["metrics"]["cost"] == "10"
 
 
@@ -259,7 +283,8 @@ def test_campaign_list_proxy(gmvmax_client_fixture):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["items"][0]["campaign_name"] == "Primary"
+    campaign_ids = [item["campaign_id"] for item in data["items"]]
+    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-extra"]
 
 
 def test_campaign_detail_includes_sessions(gmvmax_client_fixture):
