@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar
 
+import json
+
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -768,9 +770,15 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_report_get(
         self, request: GMVMaxReportGetRequest
     ) -> GMVMaxResponse[GMVMaxReportData]:
+        store_ids = [str(store) for store in request.store_ids]
         params: Dict[str, Any] = {
             "advertiser_id": request.advertiser_id,
-            "store_ids": [str(store) for store in request.store_ids],
+            # TikTok API requires store_ids to be encoded as an array field even on GET.
+            # Passing repeated query params (store_ids=123&store_ids=456) causes the
+            # API to treat the value as a scalar string and respond with
+            # "store_ids: Field must be set to array". Encoding the list as a JSON
+            # array matches the API expectation.
+            "store_ids": json.dumps(store_ids, ensure_ascii=False),
             "start_date": request.start_date,
             "end_date": request.end_date,
             "metrics": list(request.metrics),

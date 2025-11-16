@@ -247,7 +247,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             "/open_api/v1.3/gmv_max/report/get/",
             {
                 "advertiser_id": "1",
-                "store_ids": "s",
+                "store_ids": json.dumps(["s"], ensure_ascii=False),
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-02",
                 "metrics": "metric",
