@@ -781,13 +781,19 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             "store_ids": json.dumps(store_ids, ensure_ascii=False),
             "start_date": request.start_date,
             "end_date": request.end_date,
-            "metrics": list(request.metrics),
-            "dimensions": list(request.dimensions),
+            # Dimensions/metrics must also be sent as JSON arrays even though the
+            # endpoint is a GET request. Sending repeated query params leads to
+            # errors such as "dimensions: error unmarshaling parameter
+            # \"dimensions\"" from the TikTok API.
+            "metrics": json.dumps(list(request.metrics), ensure_ascii=False),
+            "dimensions": json.dumps(list(request.dimensions), ensure_ascii=False),
         }
         if request.enable_total_metrics is not None:
             params["enable_total_metrics"] = bool(request.enable_total_metrics)
         if request.filtering is not None:
-            params["filtering"] = request.filtering.model_dump(exclude_none=True)
+            params["filtering"] = json.dumps(
+                request.filtering.model_dump(exclude_none=True), ensure_ascii=False
+            )
         for key in ("page", "page_size", "sort_field", "sort_type"):
             value = getattr(request, key)
             if value is not None:

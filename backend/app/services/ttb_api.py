@@ -909,16 +909,29 @@ class TTBApiClient:
 
         params: Dict[str, Any] = {
             "advertiser_id": str(advertiser_id),
-            "store_ids": cleaned_store_ids,
+            # TikTok treats array-type GET parameters as JSON strings. Passing
+            # repeated query params (dimensions=value&dimensions=value2) causes
+            # errors like "dimensions: error unmarshaling parameter
+            # \"dimensions\"". Therefore, store_ids/metrics/dimensions should be
+            # JSON encoded before issuing the request.
+            "store_ids": json.dumps(cleaned_store_ids, ensure_ascii=False),
             "start_date": start_date,
             "end_date": end_date,
-            "metrics": [str(metric) for metric in metrics if metric is not None],
-            "dimensions": [str(dimension) for dimension in dimensions if dimension is not None],
+            "metrics": json.dumps(
+                [str(metric) for metric in metrics if metric is not None], ensure_ascii=False
+            ),
+            "dimensions": json.dumps(
+                [str(dimension) for dimension in dimensions if dimension is not None],
+                ensure_ascii=False,
+            ),
         }
         if enable_total_metrics is not None:
             params["enable_total_metrics"] = bool(enable_total_metrics)
         if filtering:
-            params["filtering"] = dict(filtering)
+            if isinstance(filtering, str):
+                params["filtering"] = filtering
+            else:
+                params["filtering"] = json.dumps(dict(filtering), ensure_ascii=False)
         if page is not None:
             params["page"] = int(page)
         if page_size is not None:

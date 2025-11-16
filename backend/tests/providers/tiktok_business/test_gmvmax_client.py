@@ -250,8 +250,8 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "store_ids": json.dumps(["s"], ensure_ascii=False),
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-02",
-                "metrics": "metric",
-                "dimensions": "dimension",
+                "metrics": json.dumps(["metric"], ensure_ascii=False),
+                "dimensions": json.dumps(["dimension"], ensure_ascii=False),
                 "page_size": "50",
                 "filtering": json.dumps(
                     {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
