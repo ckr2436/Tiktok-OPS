@@ -25,6 +25,26 @@ import { loadScope, saveScope } from '../utils/scopeStorage.js';
 
 const PROVIDER = 'tiktok-business';
 const PROVIDER_LABEL = 'TikTok Business';
+const DEFAULT_REPORT_METRICS = [
+  'cost',
+  'net_cost',
+  'orders',
+  'gross_revenue',
+  'roi',
+  'product_impressions',
+  'product_clicks',
+  'product_click_rate',
+  'ad_click_rate',
+  'ad_conversion_rate',
+  'video_views_2s',
+  'video_views_6s',
+  'video_views_p25',
+  'video_views_p50',
+  'video_views_p75',
+  'video_views_p100',
+  'live_views',
+  'live_follows',
+];
 
 function formatError(error) {
   if (!error) return null;
@@ -2056,6 +2076,7 @@ export default function GmvMaxOverviewPage() {
           store_ids: storeId ? [String(storeId)] : undefined,
           start_date: range.start,
           end_date: range.end,
+          metrics: DEFAULT_REPORT_METRICS,
           dimensions: ['campaign_id', 'stat_time_day'],
           enable_total_metrics: true,
         },
