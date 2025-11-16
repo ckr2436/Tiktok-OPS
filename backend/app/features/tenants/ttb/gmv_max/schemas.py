@@ -18,17 +18,14 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxSessionSettings,
     PageInfo,
 )
+from app.services.gmvmax_spec import (
+    GMVMAX_DEFAULT_DIMENSIONS,
+    GMVMAX_DEFAULT_METRICS,
+)
 
 DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
-DEFAULT_METRICS: List[str] = [
-    "spend",
-    "impressions",
-    "clicks",
-    "orders",
-    "gross_revenue",
-    "roi",
-]
-DEFAULT_DIMENSIONS: List[str] = ["campaign_id", "stat_time_day"]
+DEFAULT_METRICS: List[str] = list(GMVMAX_DEFAULT_METRICS)
+DEFAULT_DIMENSIONS: List[str] = list(GMVMAX_DEFAULT_DIMENSIONS)
 
 
 class CampaignFilter(BaseModel):

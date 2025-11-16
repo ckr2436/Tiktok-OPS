@@ -28,33 +28,13 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxReportGetRequest,
     TikTokBusinessGMVMaxClient,
 )
+from app.services.gmvmax_spec import GMVMAX_CREATIVE_METRICS
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 
 logger = logging.getLogger("gmv.services.gmvmax.heating")
 
 _CREATIVE_DIMENSIONS = ["campaign_id", "creative_id", "stat_time_day"]
-_CREATIVE_METRICS = [
-    "impressions",
-    "clicks",
-    "cost",
-    "net_cost",
-    "orders",
-    "gross_revenue",
-    "roi",
-    "product_impressions",
-    "product_clicks",
-    "product_click_rate",
-    "ad_click_rate",
-    "ad_conversion_rate",
-    "video_views_2s",
-    "video_views_6s",
-    "video_views_p25",
-    "video_views_p50",
-    "video_views_p75",
-    "video_views_p100",
-    "live_views",
-    "live_follows",
-]
+_CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
 _REPORT_PAGE_SIZE = 200
 _DEFAULT_PROVIDER = "tiktok-business"
 

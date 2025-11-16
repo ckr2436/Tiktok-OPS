@@ -76,7 +76,7 @@ class StubGMVMaxClient:
 
     async def gmv_max_report_get(self, request):  # noqa: ANN001
         self.report_requests.append(request)
-        entry = GMVMaxReportEntry(metrics={"spend": "10"}, dimensions={})
+        entry = GMVMaxReportEntry(metrics={"cost": "10"}, dimensions={})
         return GMVMaxResponse(
             code=0,
             message="ok",
@@ -173,7 +173,7 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
         "report": {
             "start_date": date(2024, 1, 1).isoformat(),
             "end_date": date(2024, 1, 2).isoformat(),
-            "metrics": ["spend"],
+            "metrics": ["cost"],
             "dimensions": ["campaign_id"],
         }
     }
@@ -184,7 +184,7 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["campaigns"][0]["campaign_id"] == "cmp-1"
-    assert body["report"]["list"][0]["metrics"]["spend"] == "10"
+    assert body["report"]["list"][0]["metrics"]["cost"] == "10"
 
 
 def test_sync_endpoint_uses_scope_store_id(gmvmax_client_fixture):
@@ -193,7 +193,7 @@ def test_sync_endpoint_uses_scope_store_id(gmvmax_client_fixture):
         "report": {
             "start_date": date(2024, 1, 1).isoformat(),
             "end_date": date(2024, 1, 2).isoformat(),
-            "metrics": ["spend"],
+            "metrics": ["cost"],
             "dimensions": ["campaign_id"],
         }
     }
@@ -236,7 +236,7 @@ def test_metrics_sync_returns_report(gmvmax_client_fixture):
     payload = {
         "start_date": date(2024, 1, 1).isoformat(),
         "end_date": date(2024, 1, 7).isoformat(),
-        "metrics": ["spend"],
+        "metrics": ["cost"],
         "dimensions": ["campaign_id"],
     }
     response = client.post(
@@ -255,7 +255,7 @@ def test_metrics_query_defaults(gmvmax_client_fixture):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["report"]["list"][0]["metrics"]["spend"] == "10"
+    assert body["report"]["list"][0]["metrics"]["cost"] == "10"
 
 
 def test_campaign_action_session_update(gmvmax_client_fixture):
