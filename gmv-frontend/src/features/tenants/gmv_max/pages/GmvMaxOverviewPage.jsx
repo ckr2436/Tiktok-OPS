@@ -2048,19 +2048,19 @@ export default function GmvMaxOverviewPage() {
     if (!canSync) return;
     setSyncError(null);
     const range = getRecentDateRange(7);
-    const payload = {
-      advertiser_id: advertiserId ? String(advertiserId) : undefined,
-      campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
-      campaign_options: { page_size: clampPageSize(50) },
-      report: {
-        store_ids: storeId ? [String(storeId)] : undefined,
-        start_date: range.start,
-        end_date: range.end,
-        metrics: ['spend', 'impressions', 'clicks', 'orders', 'gross_revenue', 'roi'],
-        dimensions: ['campaign_id'],
-        enable_total_metrics: true,
-      },
-    };
+      const payload = {
+        advertiser_id: advertiserId ? String(advertiserId) : undefined,
+        campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
+        campaign_options: { page_size: clampPageSize(50) },
+        report: {
+          store_ids: storeId ? [String(storeId)] : undefined,
+          start_date: range.start,
+          end_date: range.end,
+          metrics: ['spend', 'impressions', 'clicks', 'orders', 'gross_revenue', 'roi'],
+          dimensions: ['campaign_id', 'stat_time_day'],
+          enable_total_metrics: true,
+        },
+      };
     try {
       await syncMutation.mutateAsync(payload);
       await campaignsQuery.refetch();
