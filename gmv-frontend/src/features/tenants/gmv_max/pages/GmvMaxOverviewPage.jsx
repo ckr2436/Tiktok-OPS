@@ -29,21 +29,9 @@ const DEFAULT_REPORT_METRICS = [
   'cost',
   'net_cost',
   'orders',
+  'cost_per_order',
   'gross_revenue',
   'roi',
-  'product_impressions',
-  'product_clicks',
-  'product_click_rate',
-  'ad_click_rate',
-  'ad_conversion_rate',
-  'video_views_2s',
-  'video_views_6s',
-  'video_views_p25',
-  'video_views_p50',
-  'video_views_p75',
-  'video_views_p100',
-  'live_views',
-  'live_follows',
 ];
 
 function formatError(error) {

@@ -46,24 +46,16 @@ GMVMAX_METRIC_ALIASES: Final[dict[str, str]] = {
 
 # Defaults used by both background sync jobs and tenant facing APIs.
 GMVMAX_DEFAULT_METRICS: Final[tuple[str, ...]] = (
+    # Campaign-level reports only support aggregate commerce metrics. Official
+    # API rejects product/video/live specific metrics when dimensions only
+    # contain campaign_id/stat_time_day, so keep defaults limited to the
+    # supported subset to avoid 40002 errors.
     "cost",
     "net_cost",
     "orders",
+    "cost_per_order",
     "gross_revenue",
     "roi",
-    "product_impressions",
-    "product_clicks",
-    "product_click_rate",
-    "ad_click_rate",
-    "ad_conversion_rate",
-    "video_views_2s",
-    "video_views_6s",
-    "video_views_p25",
-    "video_views_p50",
-    "video_views_p75",
-    "video_views_p100",
-    "live_views",
-    "live_follows",
 )
 
 # Creative level monitoring needs a wider set because auto-heating relies on
