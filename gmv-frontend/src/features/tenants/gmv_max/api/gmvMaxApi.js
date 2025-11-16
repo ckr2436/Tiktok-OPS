@@ -154,6 +154,62 @@ export async function applyGmvMaxAction(workspaceId, provider, authId, campaignI
   );
 }
 
+export async function listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params, config) {
+  return getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config);
+}
+
+export async function listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params, config) {
+  return getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config);
+}
+
+export async function listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params, config) {
+  const axiosConfig = mergeConfig(config, params);
+  const data = await get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/actions`,
+    axiosConfig,
+  );
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  return { items: entries };
+}
+
+export async function startGmvMaxCreativeHeating(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  creativeId,
+  payload,
+  config,
+) {
+  const body = {
+    action_type: 'BOOST_CREATIVE',
+    creative_id: creativeId,
+    ...payload,
+  };
+  return applyGmvMaxAction(workspaceId, provider, authId, campaignId, body, config);
+}
+
+export async function stopGmvMaxCreativeHeating(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  creativeId,
+  payload,
+  config,
+) {
+  const body = {
+    action_type: 'BOOST_CREATIVE',
+    creative_id: creativeId,
+    mode: 'STOP',
+    ...payload,
+  };
+  if (body.target_daily_budget === undefined && body.budget_delta === undefined) {
+    body.budget_delta = 0;
+  }
+  return applyGmvMaxAction(workspaceId, provider, authId, campaignId, body, config);
+}
+
 export async function listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params, config) {
   const sanitizedParams = params && 'page_size' in params
     ? { ...params, page_size: clampPageSize(params.page_size) }

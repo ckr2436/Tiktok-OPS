@@ -2,6 +2,9 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   applyGmvMaxAction,
   createGmvMaxCampaign,
+  listGmvMaxCampaignCreatives,
+  listGmvMaxCreativeHeating,
+  listGmvMaxCreativeMetrics,
   getGmvMaxCampaign,
   getGmvMaxConfig,
   getGmvMaxMetrics,
@@ -12,6 +15,8 @@ import {
   listBusinessCenters,
   listGmvMaxActionLogs,
   listGmvMaxCampaigns,
+  startGmvMaxCreativeHeating,
+  stopGmvMaxCreativeHeating,
   listProducts,
   listProviders,
   listStores,
@@ -165,6 +170,57 @@ export function useGmvMaxActionLogsQuery(workspaceId, provider, authId, campaign
   });
 }
 
+export function useGmvMaxCampaignCreativesQuery(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  params = {},
+  options = {},
+) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('campaign-creatives', workspaceId, provider, authId, campaignId, params),
+    queryFn: () => listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    ...rest,
+  });
+}
+
+export function useGmvMaxCreativeMetricsQuery(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  params = {},
+  options = {},
+) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('creative-metrics', workspaceId, provider, authId, campaignId, params),
+    queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    ...rest,
+  });
+}
+
+export function useGmvMaxCreativeHeatingQuery(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  params = {},
+  options = {},
+) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('creative-heating', workspaceId, provider, authId, campaignId, params),
+    queryFn: () => listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    ...rest,
+  });
+}
+
 export function useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => syncGmvMaxCampaigns(workspaceId, provider, authId, payload),
@@ -182,6 +238,34 @@ export function useSyncGmvMaxMetricsMutation(workspaceId, provider, authId, camp
 export function useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, options = {}) {
   return useMutation({
     mutationFn: (payload) => applyGmvMaxAction(workspaceId, provider, authId, campaignId, payload),
+    ...options,
+  });
+}
+
+export function useStartGmvMaxCreativeHeatingMutation(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  options = {},
+) {
+  return useMutation({
+    mutationFn: ({ creativeId, payload }) =>
+      startGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, creativeId, payload),
+    ...options,
+  });
+}
+
+export function useStopGmvMaxCreativeHeatingMutation(
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  options = {},
+) {
+  return useMutation({
+    mutationFn: ({ creativeId, payload }) =>
+      stopGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, creativeId, payload),
     ...options,
   });
 }
