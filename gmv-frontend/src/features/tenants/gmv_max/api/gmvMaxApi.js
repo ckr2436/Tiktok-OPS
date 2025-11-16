@@ -155,27 +155,21 @@ export async function applyGmvMaxAction(workspaceId, provider, authId, campaignI
 }
 
 export async function listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
-  return get(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives`,
-    axiosConfig,
-  );
+  return getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config);
 }
 
 export async function listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params, config) {
-  const axiosConfig = mergeConfig(config, params);
-  return get(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/metrics`,
-    axiosConfig,
-  );
+  return getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config);
 }
 
 export async function listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params, config) {
   const axiosConfig = mergeConfig(config, params);
-  return get(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/heating`,
+  const data = await get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/actions`,
     axiosConfig,
   );
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  return { items: entries };
 }
 
 export async function startGmvMaxCreativeHeating(
@@ -187,13 +181,12 @@ export async function startGmvMaxCreativeHeating(
   payload,
   config,
 ) {
-  return post(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/${encode(
-      creativeId,
-    )}/heating/start`,
-    payload,
-    config,
-  );
+  const body = {
+    action_type: 'BOOST_CREATIVE',
+    creative_id: creativeId,
+    ...payload,
+  };
+  return applyGmvMaxAction(workspaceId, provider, authId, campaignId, body, config);
 }
 
 export async function stopGmvMaxCreativeHeating(
@@ -205,13 +198,16 @@ export async function stopGmvMaxCreativeHeating(
   payload,
   config,
 ) {
-  return post(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/${encode(
-      creativeId,
-    )}/heating/stop`,
-    payload,
-    config,
-  );
+  const body = {
+    action_type: 'BOOST_CREATIVE',
+    creative_id: creativeId,
+    mode: 'STOP',
+    ...payload,
+  };
+  if (body.target_daily_budget === undefined && body.budget_delta === undefined) {
+    body.budget_delta = 0;
+  }
+  return applyGmvMaxAction(workspaceId, provider, authId, campaignId, body, config);
 }
 
 export async function listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params, config) {
