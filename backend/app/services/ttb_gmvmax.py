@@ -15,6 +15,7 @@ from app.data.models.ttb_gmvmax import (
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxStrategyConfig,
 )
+from app.services.gmvmax_spec import GMVMAX_DEFAULT_METRICS
 from app.services.ttb_api import TTBApiClient
 
 
@@ -37,28 +38,7 @@ __all__ = [
 
 _DECIMAL_FOUR = Decimal("0.0001")
 _ONE_HUNDRED = Decimal("100")
-_DEFAULT_REPORT_METRICS = [
-    "impressions",
-    "clicks",
-    "cost",
-    "net_cost",
-    "orders",
-    "gross_revenue",
-    "roi",
-    "product_impressions",
-    "product_clicks",
-    "product_click_rate",
-    "ad_click_rate",
-    "ad_conversion_rate",
-    "video_views_2s",
-    "video_views_6s",
-    "video_views_p25",
-    "video_views_p50",
-    "video_views_p75",
-    "video_views_p100",
-    "live_views",
-    "live_follows",
-]
+_DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
 
 _REPORT_PAGE_SIZE = 200
 

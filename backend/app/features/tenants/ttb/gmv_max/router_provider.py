@@ -42,6 +42,14 @@ from ._helpers import (
     normalize_provider,
     resolve_account_binding,
 )
+from app.services.gmvmax_spec import (
+    GMVMAX_DEFAULT_DIMENSIONS,
+    GMVMAX_DEFAULT_METRICS,
+    GMVMAX_METRIC_ALIASES,
+    GMVMAX_SUPPORTED_DIMENSIONS,
+    GMVMAX_SUPPORTED_METRICS,
+)
+
 from .schemas import (
     ActionLogEntry,
     CampaignActionRequest,
@@ -51,8 +59,6 @@ from .schemas import (
     CampaignListOptions,
     CampaignListResponse,
     DEFAULT_PROMOTION_TYPES,
-    DEFAULT_DIMENSIONS,
-    DEFAULT_METRICS,
     CreativeHeatingActionRequest,
     CreativeHeatingActionResponse,
     CreativeHeatingRecord,
@@ -71,6 +77,88 @@ from .schemas import (
 
 router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
+
+
+def _normalize_metrics_list(metrics: Optional[Sequence[str]]) -> List[str]:
+    """Return canonical metric names accepted by TikTok."""
+
+    source = metrics or GMVMAX_DEFAULT_METRICS
+    normalized: List[str] = []
+    seen: set[str] = set()
+    invalid: List[str] = []
+    for metric in source:
+        if not metric:
+            continue
+        canonical = GMVMAX_METRIC_ALIASES.get(metric, metric)
+        if canonical not in GMVMAX_SUPPORTED_METRICS:
+            invalid.append(metric)
+            continue
+        if canonical in seen:
+            continue
+        normalized.append(canonical)
+        seen.add(canonical)
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "unsupported_metric",
+                "message": "Unsupported GMV Max metrics provided.",
+                "details": {
+                    "invalid": invalid,
+                    "allowed": sorted(GMVMAX_SUPPORTED_METRICS),
+                },
+            },
+        )
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "empty_metrics",
+                "message": "At least one GMV Max metric is required.",
+            },
+        )
+    return normalized
+
+
+def _normalize_dimensions_list(dimensions: Optional[Sequence[str]]) -> List[str]:
+    """Return canonical dimension names accepted by TikTok."""
+
+    source = dimensions or GMVMAX_DEFAULT_DIMENSIONS
+    normalized: List[str] = []
+    seen: set[str] = set()
+    invalid: List[str] = []
+    for dimension in source:
+        if not dimension:
+            continue
+        canonical = dimension
+        if canonical not in GMVMAX_SUPPORTED_DIMENSIONS:
+            invalid.append(dimension)
+            continue
+        if canonical in seen:
+            continue
+        normalized.append(canonical)
+        seen.add(canonical)
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "unsupported_dimension",
+                "message": "Unsupported GMV Max dimensions provided.",
+                "details": {
+                    "invalid": invalid,
+                    "allowed": sorted(GMVMAX_SUPPORTED_DIMENSIONS),
+                },
+            },
+        )
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "empty_dimensions",
+                "message": "At least one GMV Max dimension is required.",
+            },
+        )
+    return normalized
 
 
 @dataclass(slots=True)
@@ -208,8 +296,8 @@ def _build_report_request(
     campaign_id: Optional[str] = None,
 ) -> GMVMaxReportGetRequest:
     store_ids = _normalize_store_ids(report.store_ids, default_store_id)
-    metrics = report.metrics or list(DEFAULT_METRICS)
-    dimensions = report.dimensions or list(DEFAULT_DIMENSIONS)
+    metrics = _normalize_metrics_list(report.metrics)
+    dimensions = _normalize_dimensions_list(report.dimensions)
     filtering_payload: Dict[str, Any] = {}
     if report.filtering is not None:
         filtering_payload.update(report.filtering.model_dump(exclude_none=True))
