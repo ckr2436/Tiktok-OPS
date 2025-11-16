@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from datetime import date
-from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
@@ -12,6 +11,10 @@ from fastapi.testclient import TestClient
 from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.router import router as ttb_router
+from app.data.db import SessionLocal
+from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxMetricsDaily
+from app.data.models.workspaces import Workspace
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
     GMVMaxCampaign,
@@ -137,20 +140,58 @@ def gmvmax_client_fixture(monkeypatch):
 
     stub_client = StubGMVMaxClient()
 
-    db_stub = SimpleNamespace(flush=lambda: None)
-    context = router_provider.GMVMaxRouteContext(
-        workspace_id=1,
+    session = SessionLocal()
+    workspace = Workspace(id=1, name="Demo", company_code="0001")
+    provider_app = OAuthProviderApp(
+        id=1,
         provider="tiktok-business",
-        auth_id=1,
+        name="Provider",
+        client_id="client-id",
+        client_secret_cipher=b"secret",
+        redirect_uri="https://example.com/callback",
+    )
+    account = OAuthAccountTTB(
+        id=1,
+        workspace_id=workspace.id,
+        provider_app_id=provider_app.id,
+        alias="Account",
+        access_token_cipher=b"cipher",
+        token_fingerprint=b"f" * 32,
+    )
+    campaign = TTBGmvMaxCampaign(
+        id=1,
+        workspace_id=workspace.id,
+        auth_id=account.id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-1",
+        store_id="store-1",
+        name="Primary",
+    )
+    metric = TTBGmvMaxMetricsDaily(
+        id=1,
+        campaign_id=campaign.id,
+        date=date.today(),
+        cost_cents=1000,
+        net_cost_cents=900,
+        orders=2,
+        gross_revenue_cents=5000,
+    )
+    session.add_all([workspace, provider_app, account, campaign, metric])
+    session.flush()
+
+    context = router_provider.GMVMaxRouteContext(
+        workspace_id=workspace.id,
+        provider="tiktok-business",
+        auth_id=account.id,
         advertiser_id="adv-1",
         store_id="store-1",
         binding=router_provider.GMVMaxAccountBinding(
-            account=SimpleNamespace(),
+            account=account,
             advertiser_id="adv-1",
             store_id="store-1",
         ),
         client=stub_client,
-        db=db_stub,
+        db=session,
     )
 
     def _override_context(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001, ARG001
@@ -165,6 +206,7 @@ def gmvmax_client_fixture(monkeypatch):
         }
 
     app.dependency_overrides.clear()
+    session.close()
 
 
 def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
@@ -255,7 +297,7 @@ def test_metrics_query_defaults(gmvmax_client_fixture):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["report"]["list"][0]["metrics"]["cost"] == "10"
+    assert body["report"]["list"][0]["metrics"]["cost"] == 10.0
 
 
 def test_campaign_action_session_update(gmvmax_client_fixture):

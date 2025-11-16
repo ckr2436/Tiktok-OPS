@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from math import ceil
+from time import monotonic
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
@@ -14,6 +17,10 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
     upsert_creative_heating,
 )
+from app.data.repositories.tiktok_business.gmvmax_metrics import (
+    GMVMaxMetricDTO,
+    query_gmvmax_metrics,
+)
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
     GMVMaxCampaignFiltering,
@@ -23,9 +30,12 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignActionApplyRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
+    GMVMaxReportData,
+    GMVMaxReportEntry,
     GMVMaxReportFiltering,
     GMVMaxReportGetRequest,
     GMVMaxResponse,
+    PageInfo,
     GMVMaxSessionListRequest,
     GMVMaxSession,
     GMVMaxSessionProduct,
@@ -77,6 +87,83 @@ from .schemas import (
 
 router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
+
+
+class _TTLCache:
+    """Simple per-process TTL cache for metrics queries."""
+
+    def __init__(self, *, ttl_seconds: float, maxsize: int) -> None:
+        self._ttl = float(ttl_seconds)
+        self._maxsize = maxsize
+        self._store: OrderedDict[tuple[Any, ...], tuple[float, MetricsResponse]] = OrderedDict()
+
+    def get(self, key: tuple[Any, ...]) -> MetricsResponse | None:
+        entry = self._store.get(key)
+        if not entry:
+            return None
+        expires_at, value = entry
+        now = monotonic()
+        if expires_at <= now:
+            self._store.pop(key, None)
+            return None
+        self._store.move_to_end(key)
+        return value
+
+    def set(self, key: tuple[Any, ...], value: MetricsResponse) -> None:
+        expires_at = monotonic() + self._ttl
+        self._store[key] = (expires_at, value)
+        self._store.move_to_end(key)
+        while len(self._store) > self._maxsize:
+            self._store.popitem(last=False)
+
+
+_metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
+
+
+def _dto_to_report_entry(row: GMVMaxMetricDTO) -> GMVMaxReportEntry:
+    metrics = {
+        "impressions": row.impressions,
+        "clicks": row.clicks,
+        "cost": row.cost,
+        "net_cost": row.net_cost,
+        "orders": row.orders,
+        "cost_per_order": row.cost_per_order,
+        "gross_revenue": row.gross_revenue,
+        "roi": row.roi,
+        "product_impressions": row.product_impressions,
+        "product_clicks": row.product_clicks,
+        "product_click_rate": row.product_click_rate,
+        "ad_click_rate": row.ad_click_rate,
+        "ad_conversion_rate": row.ad_conversion_rate,
+        "live_views": row.live_views,
+        "live_follows": row.live_follows,
+    }
+    serialized_metrics = {k: v for k, v in metrics.items() if v is not None}
+    dimensions: Dict[str, Any] = {
+        "campaign_id": row.campaign_id,
+        "stat_time_day": row.stat_time_day.isoformat(),
+    }
+    if row.store_id:
+        dimensions["store_id"] = row.store_id
+    return GMVMaxReportEntry(metrics=serialized_metrics, dimensions=dimensions)
+
+
+def _build_metrics_response(
+    items: list[GMVMaxMetricDTO], *, total: int, page: int, page_size: int
+) -> MetricsResponse:
+    entries = [_dto_to_report_entry(item) for item in items]
+    has_more = page_size > 0 and page * page_size < total
+    total_page = ceil(total / page_size) if page_size else None
+    page_info = PageInfo(
+        page=page,
+        page_size=page_size,
+        total_number=total,
+        total_page=total_page,
+        has_more=has_more,
+        has_next=has_more,
+    )
+    report = GMVMaxReportData(list=entries, page_info=page_info, summary=None)
+    return MetricsResponse(report=report, request_id=None)
 
 
 def _normalize_metrics_list(metrics: Optional[Sequence[str]]) -> List[str]:
@@ -616,33 +703,65 @@ async def query_gmvmax_metrics_provider(
     provider: str,
     auth_id: int,
     campaign_id: str,
+    store_id: Optional[str] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
-    """Return GMV Max performance metrics for the requested campaign."""
+    """Return stored GMV Max performance metrics for the requested campaign."""
 
     end = end_date or date.today()
     start = start_date or (end - timedelta(days=6))
-    request_body = MetricsRequest(
-        store_ids=None,
+    if start > end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_date_range",
+                "message": "start_date must be earlier than or equal to end_date.",
+            },
+        )
+
+    effective_store_id = store_id or context.store_id
+    cache_key = (
+        context.workspace_id,
+        context.provider,
+        context.auth_id,
+        str(campaign_id),
+        effective_store_id or "*",
+        start.isoformat(),
+        end.isoformat(),
+        page,
+        page_size,
+    )
+    cached = _metrics_cache.get(cache_key)
+    if cached:
+        return cached
+
+    limit = page_size
+    offset = (page - 1) * page_size
+    items, total = query_gmvmax_metrics(
+        context.db,
+        workspace_id=context.workspace_id,
+        provider=context.provider,
+        auth_id=context.auth_id,
+        campaign_id=str(campaign_id),
+        store_id=effective_store_id,
         start_date=start,
         end_date=end,
-        metrics=None,
-        dimensions=None,
-        enable_total_metrics=None,
-        filtering=ReportFiltering(),
+        limit=limit,
+        offset=offset,
     )
-    adv = advertiser_id or context.advertiser_id
-    report_req = _build_report_request(
-        adv,
-        request_body,
-        default_store_id=context.store_id,
-        campaign_id=campaign_id,
+    response = _build_metrics_response(
+        items,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
-    response = await _call_tiktok(context.client.gmv_max_report_get, report_req)
-    return MetricsResponse(report=response.data, request_id=response.request_id)
+    _metrics_cache.set(cache_key, response)
+    return response
 
 
 def _to_float(value: Any) -> float | None:
