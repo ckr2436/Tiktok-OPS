@@ -23,6 +23,7 @@ from app.data.repositories.tiktok_business.gmvmax_metrics import (
 )
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
+    GMVMaxCampaign,
     GMVMaxCampaignFiltering,
     GMVMaxCampaignGetRequest,
     GMVMaxCampaignInfoRequest,
@@ -332,6 +333,43 @@ async def _call_tiktok(
         await _handle_tiktok_error(exc)
 
 
+def _normalize_status(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().upper()
+
+
+def _should_include_campaign(entry: GMVMaxCampaign) -> bool:
+    operation_status = _normalize_status(entry.operation_status)
+    if operation_status == "ENABLE":
+        return True
+    if operation_status == "DISABLE":
+        secondary_status = _normalize_status(entry.secondary_status)
+        if secondary_status == "CAMPAIGN_STATUS_DISABLE":
+            return False
+    return True
+
+
+def _filter_campaign_entries(entries: Optional[Sequence[GMVMaxCampaign | Dict[str, Any]]]) -> List[GMVMaxCampaign]:
+    if not entries:
+        return []
+    filtered: List[GMVMaxCampaign] = []
+    for entry in entries:
+        campaign: Optional[GMVMaxCampaign]
+        if isinstance(entry, GMVMaxCampaign):
+            campaign = entry
+        elif isinstance(entry, dict):
+            try:
+                campaign = GMVMaxCampaign.model_validate(entry)
+            except Exception:  # noqa: BLE001
+                continue
+        else:
+            continue
+        if _should_include_campaign(campaign):
+            filtered.append(campaign)
+    return filtered
+
+
 def _build_campaign_request(
     advertiser_id: str,
     filtering: Optional[CampaignFilter],
@@ -560,6 +598,7 @@ async def sync_gmvmax_campaigns_provider(
         campaign_req,
         _log_context=log_context,
     )
+    filtered_campaigns = _filter_campaign_entries(campaign_resp.data.list)
     report_req = _build_report_request(
         advertiser_id,
         payload.report,
@@ -571,7 +610,7 @@ async def sync_gmvmax_campaigns_provider(
         _log_context=log_context,
     )
     return SyncResponse(
-        campaigns=campaign_resp.data.list,
+        campaigns=filtered_campaigns,
         campaigns_page_info=campaign_resp.data.page_info,
         report=report_resp.data,
         campaign_request_id=campaign_resp.request_id,
@@ -616,8 +655,9 @@ async def list_gmvmax_campaigns_provider(
     options = CampaignListOptions(fields=fields, page=page, page_size=page_size)
     request = _build_campaign_request(adv, filter_obj, options)
     response = await _call_tiktok(context.client.gmv_max_campaign_get, request)
+    filtered_items = _filter_campaign_entries(response.data.list)
     return CampaignListResponse(
-        items=response.data.list,
+        items=filtered_items,
         page_info=response.data.page_info,
         request_id=response.request_id,
     )

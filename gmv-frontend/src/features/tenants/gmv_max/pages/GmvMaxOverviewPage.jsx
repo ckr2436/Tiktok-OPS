@@ -307,6 +307,27 @@ function matchesCampaignScope(card, filters) {
   return true;
 }
 
+function normalizeStatusValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().toUpperCase();
+}
+
+function filterCampaignsByStatus(campaigns) {
+  if (!Array.isArray(campaigns)) return [];
+  return campaigns.filter((campaign) => {
+    const operationStatus = normalizeStatusValue(
+      campaign?.operation_status ?? campaign?.operationStatus,
+    );
+    if (operationStatus === 'DISABLE') {
+      const secondaryStatus = normalizeStatusValue(
+        campaign?.secondary_status ?? campaign?.secondaryStatus,
+      );
+      return secondaryStatus !== 'CAMPAIGN_STATUS_DISABLE';
+    }
+    return true;
+  });
+}
+
 function parseOptionalFloat(value) {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
@@ -1916,7 +1937,7 @@ export default function GmvMaxOverviewPage() {
     if (!authId) return [];
     const data = campaignsQuery.data;
     const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
+    return filterCampaignsByStatus(Array.isArray(items) ? items : []);
   }, [authId, campaignsQuery.data]);
 
   const campaignDetailQueries = useQueries({
