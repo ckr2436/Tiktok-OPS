@@ -596,7 +596,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
                 filtering_payload["store_ids"] = unique_ids
             elif "store_ids" in filtering_payload:
                 filtering_payload.pop("store_ids", None)
-        _ttb_api._ensure_gmvmax_campaign_filters(params)
+        _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="campaign")
         cleaned = _ttb_api._clean_params_map(params)
         payload = await self._request_json("GET", "/gmv_max/campaign/get/", params=cleaned)
         return self._parse_response(payload, GMVMaxCampaignListData)
@@ -798,7 +798,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             value = getattr(request, key)
             if value is not None:
                 params[key] = value
-        _ttb_api._ensure_gmvmax_campaign_filters(params)
+        _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
         payload = await self._request_json(
             "GET",
             "/gmv_max/report/get/",
