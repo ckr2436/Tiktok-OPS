@@ -187,6 +187,29 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
     assert body["report"]["list"][0]["metrics"]["spend"] == "10"
 
 
+def test_sync_endpoint_uses_scope_store_id(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    payload = {
+        "report": {
+            "start_date": date(2024, 1, 1).isoformat(),
+            "end_date": date(2024, 1, 2).isoformat(),
+            "metrics": ["spend"],
+            "dimensions": ["campaign_id"],
+        }
+    }
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/sync",
+        params={"store_id": "store-scope"},
+        json=payload,
+    )
+    assert response.status_code == 200, response.text
+    stub = gmvmax_client_fixture["stub"]
+    assert stub.campaign_requests, "campaign request not captured"
+    assert stub.report_requests, "report request not captured"
+    assert stub.campaign_requests[-1].filtering.store_ids == ["store-scope"]
+    assert list(stub.report_requests[-1].store_ids) == ["store-scope"]
+
+
 def test_campaign_list_proxy(gmvmax_client_fixture):
     client: TestClient = gmvmax_client_fixture["client"]
     response = client.get(
