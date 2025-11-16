@@ -69,10 +69,19 @@ class TTBHttpError(Exception):
 
 _MAX_PAGE_SIZE = 50  # 官方上限
 
-_DEFAULT_GMV_MAX_PROMOTION_TYPES: tuple[str, str] = (
-    "PRODUCT_GMV_MAX",
-    "LIVE_GMV_MAX",
+_ALLOWED_GMV_MAX_PROMOTION_TYPES: tuple[str, str] = (
+    "PRODUCT",
+    "LIVE",
 )
+
+_DEFAULT_GMV_MAX_PROMOTION_TYPES = _ALLOWED_GMV_MAX_PROMOTION_TYPES
+
+_GMV_MAX_PROMOTION_TYPE_ALIASES: Dict[str, str] = {
+    "PRODUCT": "PRODUCT",
+    "PRODUCT_GMV_MAX": "PRODUCT",
+    "LIVE": "LIVE",
+    "LIVE_GMV_MAX": "LIVE",
+}
 
 
 def _remove_none(value: Any) -> Any:
@@ -100,12 +109,16 @@ def _normalize_promotion_types(value: Any) -> list[str]:
     else:
         return []
     normalized: list[str] = []
+    seen: set[str] = set()
     for item in candidates:
         if item is None:
             continue
         text = str(item).strip()
         if text:
-            normalized.append(text)
+            canonical = _GMV_MAX_PROMOTION_TYPE_ALIASES.get(text.upper(), text)
+            if canonical not in seen:
+                normalized.append(canonical)
+                seen.add(canonical)
     return normalized
 
 

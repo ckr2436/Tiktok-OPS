@@ -19,7 +19,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     PageInfo,
 )
 
-DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT_GMV_MAX", "LIVE_GMV_MAX"]
+DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
 DEFAULT_METRICS: List[str] = [
     "spend",
     "impressions",
