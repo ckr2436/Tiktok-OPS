@@ -76,6 +76,19 @@ _ALLOWED_GMV_MAX_PROMOTION_TYPES: tuple[str, str] = (
 
 _DEFAULT_GMV_MAX_PROMOTION_TYPES = _ALLOWED_GMV_MAX_PROMOTION_TYPES
 
+_PromotionTypeFormat = Literal["campaign", "report"]
+
+_PROMOTION_TYPE_FORMATTERS: Dict[_PromotionTypeFormat, Dict[str, str]] = {
+    "campaign": {
+        "PRODUCT": "PRODUCT_GMV_MAX",
+        "LIVE": "LIVE_GMV_MAX",
+    },
+    "report": {
+        "PRODUCT": "PRODUCT",
+        "LIVE": "LIVE",
+    },
+}
+
 _GMV_MAX_PROMOTION_TYPE_ALIASES: Dict[str, str] = {
     "PRODUCT": "PRODUCT",
     "PRODUCT_GMV_MAX": "PRODUCT",
@@ -122,7 +135,9 @@ def _normalize_promotion_types(value: Any) -> list[str]:
     return normalized
 
 
-def _ensure_gmvmax_campaign_filters(params: Dict[str, Any]) -> None:
+def _ensure_gmvmax_campaign_filters(
+    params: Dict[str, Any], *, promotion_type_format: _PromotionTypeFormat = "campaign"
+) -> None:
     """确保 GMV Max Campaigns 查询包含必填的过滤项。"""
 
     top_level_raw = params.get("gmv_max_promotion_types")
@@ -137,16 +152,31 @@ def _ensure_gmvmax_campaign_filters(params: Dict[str, Any]) -> None:
     else:
         filtering_dict = {}
 
-    promotion_types = _normalize_promotion_types(filtering_dict.get("gmv_max_promotion_types"))
+    formatter = _PROMOTION_TYPE_FORMATTERS.get(
+        promotion_type_format, _PROMOTION_TYPE_FORMATTERS["campaign"]
+    )
+    allowed_canonical = tuple(formatter.keys())
+
+    promotion_types = [
+        item
+        for item in _normalize_promotion_types(filtering_dict.get("gmv_max_promotion_types"))
+        if item in allowed_canonical
+    ]
     if not promotion_types:
-        fallback = _normalize_promotion_types(top_level_raw)
+        fallback = [
+            item
+            for item in _normalize_promotion_types(top_level_raw)
+            if item in allowed_canonical
+        ]
         if not fallback:
-            fallback = list(_DEFAULT_GMV_MAX_PROMOTION_TYPES)
+            fallback = [item for item in _DEFAULT_GMV_MAX_PROMOTION_TYPES if item in allowed_canonical]
         promotion_types = fallback
-        filtering_dict["gmv_max_promotion_types"] = promotion_types
+
+    formatted_types = [formatter[item] for item in promotion_types]
+    filtering_dict["gmv_max_promotion_types"] = formatted_types
 
     if top_level_raw is not None:
-        params["gmv_max_promotion_types"] = promotion_types
+        params["gmv_max_promotion_types"] = formatted_types
     else:
         params.pop("gmv_max_promotion_types", None)
 
@@ -752,7 +782,7 @@ class TTBApiClient:
     async def fetch_gmvmax_campaigns(self, advertiser_id: str, **filters: Any) -> dict:
         params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
         params.update(filters)
-        _ensure_gmvmax_campaign_filters(params)
+        _ensure_gmvmax_campaign_filters(params, promotion_type_format="campaign")
         payload = await self._request_json(
             "GET",
             "/gmv_max/campaign/get/",
@@ -956,7 +986,7 @@ class TTBApiClient:
         if extra_params:
             params.update(_remove_none(extra_params))
 
-        _ensure_gmvmax_campaign_filters(params)
+        _ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
 
         payload = await self._request_json(
             "GET",

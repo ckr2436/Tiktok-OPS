@@ -118,7 +118,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "page": "1",
                 "page_size": "20",
                 "filtering": json.dumps(
-                    {"gmv_max_promotion_types": ["PRODUCT"]},
+                    {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -138,7 +138,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "advertiser_id": "456",
                 "filtering": json.dumps(
                     {
-                        "gmv_max_promotion_types": ["PRODUCT"],
+                        "gmv_max_promotion_types": ["PRODUCT_GMV_MAX"],
                         "store_ids": ["store-123"],
                     },
                     ensure_ascii=False,
