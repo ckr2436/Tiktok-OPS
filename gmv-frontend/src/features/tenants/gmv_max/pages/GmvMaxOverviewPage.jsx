@@ -269,7 +269,9 @@ function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusiness
   if (ids.has(target)) return true;
   const detailIds = collectBusinessCenterIdsFromDetail(detail);
   if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  if (detailLoading) return true;
+  const hasAnyIds = ids.size > 0 || detailIds.size > 0;
+  return !hasAnyIds;
 }
 
 function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId) {
@@ -280,7 +282,9 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   if (ids.has(target)) return true;
   const detailIds = collectAdvertiserIdsFromDetail(detail);
   if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  if (detailLoading) return true;
+  const hasAnyIds = ids.size > 0 || detailIds.size > 0;
+  return !hasAnyIds;
 }
 
 function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
@@ -291,7 +295,9 @@ function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
   if (ids.has(target)) return true;
   const detailIds = collectStoreIdsFromDetail(detail);
   if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  if (detailLoading) return true;
+  const hasAnyIds = ids.size > 0 || detailIds.size > 0;
+  return !hasAnyIds;
 }
 
 function matchesCampaignScope(card, filters) {
