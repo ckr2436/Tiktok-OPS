@@ -74,7 +74,17 @@ function getRecentDateRange(days) {
 
 function getProductIdentifier(product) {
   if (!product) return '';
-  const candidates = [product.product_id, product.spu_id, product.item_id, product.id];
+  const candidates = [
+    product.product_id,
+    product.productId,
+    product.spu_id,
+    product.spuId,
+    product.item_group_id,
+    product.itemGroupId,
+    product.item_id,
+    product.itemId,
+    product.id,
+  ];
   for (const candidate of candidates) {
     if (candidate !== undefined && candidate !== null && String(candidate) !== '') {
       return String(candidate);
@@ -261,7 +271,93 @@ function collectStoreIdsFromDetail(detail, target = new Set()) {
   return target;
 }
 
-function buildScopeMatchResult(ids, detailIds, detailLoading, target, fallbackTarget) {
+function addProductIdentifier(target, value) {
+  let identifier = '';
+  if (value && typeof value === 'object') {
+    identifier =
+      getProductIdentifier(value) ||
+      normalizeIdValue(
+        value.item_group_id ??
+          value.itemGroupId ??
+          value.productId ??
+          value.itemId ??
+          value.spuId ??
+          value.group_id ??
+          value.groupId ??
+          '',
+      );
+  } else {
+    identifier = normalizeIdValue(value);
+  }
+  if (identifier) {
+    target.add(identifier);
+  }
+}
+
+function collectProductIdsFromList(list, target = new Set()) {
+  const items = ensureArray(list);
+  items.forEach((value) => addProductIdentifier(target, value));
+  return target;
+}
+
+function collectProductIdsFromCampaign(campaign, target = new Set()) {
+  if (!campaign || typeof campaign !== 'object') return target;
+
+  collectProductIdsFromList(campaign.item_group_ids, target);
+  collectProductIdsFromList(campaign.itemGroupIds, target);
+  collectProductIdsFromList(campaign.item_groups, target);
+  collectProductIdsFromList(campaign.itemGroupList, target);
+  collectProductIdsFromList(campaign.item_group_list, target);
+  collectProductIdsFromList(campaign.item_list, target);
+  collectProductIdsFromList(campaign.itemList, target);
+  collectProductIdsFromList(campaign.item_ids, target);
+  collectProductIdsFromList(campaign.itemIds, target);
+  collectProductIdsFromList(campaign.product_ids, target);
+  collectProductIdsFromList(campaign.productIds, target);
+  collectProductIdsFromList(campaign.product_list, target);
+  collectProductIdsFromList(campaign.productList, target);
+  collectProductIdsFromList(campaign.products, target);
+
+  const nested = campaign.campaign;
+  if (nested && nested !== campaign) {
+    collectProductIdsFromCampaign(nested, target);
+  }
+
+  return target;
+}
+
+function collectProductIdsFromDetail(detail, target = new Set()) {
+  if (!detail || typeof detail !== 'object') return target;
+
+  collectProductIdsFromCampaign(detail.campaign, target);
+  collectProductIdsFromList(detail.item_group_ids, target);
+  collectProductIdsFromList(detail.itemGroupIds, target);
+  collectProductIdsFromList(detail.item_groups, target);
+  collectProductIdsFromList(detail.itemGroupList, target);
+  collectProductIdsFromList(detail.item_group_list, target);
+  collectProductIdsFromList(detail.item_list, target);
+  collectProductIdsFromList(detail.itemList, target);
+  collectProductIdsFromList(detail.item_ids, target);
+  collectProductIdsFromList(detail.itemIds, target);
+  collectProductIdsFromList(detail.product_ids, target);
+  collectProductIdsFromList(detail.productIds, target);
+  collectProductIdsFromList(detail.product_list, target);
+  collectProductIdsFromList(detail.productList, target);
+  collectProductIdsFromList(detail.products, target);
+
+  const sessions = ensureArray(detail.sessions || detail.session_list);
+  sessions.forEach((session) => {
+    if (!session || typeof session !== 'object') return;
+    collectProductIdsFromList(session.product_list || session.products, target);
+    collectProductIdsFromList(session.item_group_ids || session.itemGroupIds, target);
+    collectProductIdsFromList(session.items, target);
+  });
+
+  return target;
+}
+
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = {}) {
+  const { assumeMatchWhenUnknown = false } = options;
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -273,6 +369,10 @@ function buildScopeMatchResult(ids, detailIds, detailLoading, target, fallbackTa
   const hasAnyIds = ids.size > 0 || detailIds.size > 0;
   if (hasAnyIds) {
     return { matches: false, pending: false };
+  }
+
+  if (assumeMatchWhenUnknown) {
+    return { matches: true, pending: false };
   }
 
   if (detailLoading) {
@@ -321,7 +421,13 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesStore(campaign, detail, detailLoading, selectedStoreId, scopeFallback) {
+function matchesStore(
+  campaign,
+  detail,
+  detailLoading,
+  selectedStoreId,
+  { assumeMatchWhenUnknown = false } = {},
+) {
   if (!selectedStoreId) {
     return { matches: true, pending: false };
   }
@@ -331,8 +437,9 @@ function matchesStore(campaign, detail, detailLoading, selectedStoreId, scopeFal
   }
   const ids = collectStoreIdsFromCampaign(campaign);
   const detailIds = collectStoreIdsFromDetail(detail);
-  const fallback = normalizeIdValue(scopeFallback?.storeId);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, {
+    assumeMatchWhenUnknown,
+  });
 }
 
 function matchesCampaignScope(card, filters) {
@@ -342,9 +449,11 @@ function matchesCampaignScope(card, filters) {
   const { campaign, detail, detailLoading, scopeFallback } = card;
   const { businessCenterId, advertiserId, storeId } = filters;
   const results = [
-    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId, scopeFallback),
-    matchesAdvertiser(campaign, detail, detailLoading, advertiserId, scopeFallback),
-    matchesStore(campaign, detail, detailLoading, storeId, scopeFallback),
+    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
+    matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
+    matchesStore(campaign, detail, detailLoading, storeId, {
+      assumeMatchWhenUnknown: Boolean(storeId),
+    }),
   ];
 
   return {
@@ -732,12 +841,7 @@ function CampaignCard({
 
   const reportPayload = metricsQuery.data?.report ?? metricsQuery.data?.data ?? metricsQuery.data ?? null;
   const metricsSummary = reportPayload ? summariseMetrics(reportPayload) : null;
-  const productCount = Array.isArray(detail?.sessions)
-    ? detail.sessions.reduce((acc, session) => {
-        const products = Array.isArray(session?.product_list) ? session.product_list.length : 0;
-        return acc + products;
-      }, 0)
-    : null;
+  const productCount = detail ? collectProductIdsFromDetail(detail).size : null;
   const statusLabel = formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
 
@@ -1991,21 +2095,16 @@ export default function GmvMaxOverviewPage() {
 
   const assignedProductIds = useMemo(() => {
     const ids = new Set();
+    campaigns.forEach((campaign) => {
+      collectProductIdsFromCampaign(campaign, ids);
+    });
     campaignDetailQueries.forEach((result) => {
       const detail = result?.data;
       if (!detail) return;
-      const sessions = detail.sessions || detail.session_list || [];
-      sessions.forEach((session) => {
-        (session?.product_list || session?.products || []).forEach((product) => {
-          const id = getProductIdentifier(product);
-          if (id) {
-            ids.add(id);
-          }
-        });
-      });
+      collectProductIdsFromDetail(detail, ids);
     });
     return ids;
-  }, [campaignDetailQueries]);
+  }, [campaignDetailQueries, campaigns]);
 
   const unassignedProducts = useMemo(() => {
     if (!isScopeReady || products.length === 0) return [];

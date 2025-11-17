@@ -91,6 +91,64 @@ class TTBGmvMaxCampaign(Base):
     )
 
 
+class TTBGmvMaxCampaignProduct(Base):
+    __tablename__ = "ttb_gmvmax_campaign_products"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "campaign_id",
+            "store_id",
+            "item_group_id",
+            name="uk_ttb_gmvmax_campaign_product_scope",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "store_id",
+            "item_group_id",
+            name="uk_ttb_gmvmax_store_product_unique",
+        ),
+        Index("idx_ttb_gmvmax_campaign_product_campaign", "campaign_id"),
+        Index("idx_ttb_gmvmax_campaign_product_store", "store_id"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    campaign_pk: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("ttb_gmvmax_campaigns.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation_status: Mapped[str | None] = mapped_column(String(32), default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class TTBGmvMaxMetricsHourly(Base):
     __tablename__ = "ttb_gmvmax_metrics_hourly"
     __table_args__ = (
