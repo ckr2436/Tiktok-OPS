@@ -261,8 +261,7 @@ function collectStoreIdsFromDetail(detail, target = new Set()) {
   return target;
 }
 
-function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = {}) {
-  const { assumeMatchWhenUnknown = false } = options;
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, fallbackTarget) {
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -280,14 +279,21 @@ function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = 
     return { matches: false, pending: true };
   }
 
-  if (assumeMatchWhenUnknown) {
+  const fallback = normalizeIdValue(fallbackTarget);
+  if (fallback && fallback === target) {
     return { matches: true, pending: false };
   }
 
   return { matches: false, pending: false };
 }
 
-function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusinessCenterId) {
+function matchesBusinessCenter(
+  campaign,
+  detail,
+  detailLoading,
+  selectedBusinessCenterId,
+  scopeFallback,
+) {
   if (!selectedBusinessCenterId) {
     return { matches: true, pending: false };
   }
@@ -297,10 +303,11 @@ function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusiness
   }
   const ids = collectBusinessCenterIdsFromCampaign(campaign);
   const detailIds = collectBusinessCenterIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
+  const fallback = normalizeIdValue(scopeFallback?.businessCenterId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId) {
+function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId, scopeFallback) {
   if (!selectedAdvertiserId) {
     return { matches: true, pending: false };
   }
@@ -310,16 +317,11 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   }
   const ids = collectAdvertiserIdsFromCampaign(campaign);
   const detailIds = collectAdvertiserIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
+  const fallback = normalizeIdValue(scopeFallback?.advertiserId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesStore(
-  campaign,
-  detail,
-  detailLoading,
-  selectedStoreId,
-  { assumeMatchWhenUnknown = false } = {},
-) {
+function matchesStore(campaign, detail, detailLoading, selectedStoreId, scopeFallback) {
   if (!selectedStoreId) {
     return { matches: true, pending: false };
   }
@@ -329,23 +331,20 @@ function matchesStore(
   }
   const ids = collectStoreIdsFromCampaign(campaign);
   const detailIds = collectStoreIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target, {
-    assumeMatchWhenUnknown,
-  });
+  const fallback = normalizeIdValue(scopeFallback?.storeId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
 function matchesCampaignScope(card, filters) {
   if (!card || !card.campaign) {
     return { matches: false, pending: false };
   }
-  const { campaign, detail, detailLoading } = card;
+  const { campaign, detail, detailLoading, scopeFallback } = card;
   const { businessCenterId, advertiserId, storeId } = filters;
   const results = [
-    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
-    matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
-    matchesStore(campaign, detail, detailLoading, storeId, {
-      assumeMatchWhenUnknown: Boolean(storeId),
-    }),
+    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId, scopeFallback),
+    matchesAdvertiser(campaign, detail, detailLoading, advertiserId, scopeFallback),
+    matchesStore(campaign, detail, detailLoading, storeId, scopeFallback),
   ];
 
   return {
@@ -1712,6 +1711,29 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
+  const currentScopeKey = useMemo(
+    () => ({
+      businessCenterId,
+      advertiserId,
+      storeId,
+    }),
+    [advertiserId, businessCenterId, storeId],
+  );
+
+  const [campaignScopeSnapshot, setCampaignScopeSnapshot] = useState(null);
+
+  useEffect(() => {
+    if (campaignsQuery.isSuccess && campaignsQuery.dataUpdatedAt) {
+      setCampaignScopeSnapshot(currentScopeKey);
+    }
+  }, [campaignsQuery.dataUpdatedAt, campaignsQuery.isSuccess, currentScopeKey]);
+
+  useEffect(() => {
+    if (!isScopeReady) {
+      setCampaignScopeSnapshot(null);
+    }
+  }, [isScopeReady]);
+
   const accounts = useMemo(() => {
     const data = accountsQuery.data;
     const items = data?.items || data?.list || data || [];
@@ -2052,9 +2074,10 @@ export default function GmvMaxOverviewPage() {
           detailLoading: detailResult?.isLoading ?? false,
           detailError: detailResult?.error,
           detailRefetch: detailResult?.refetch,
+          scopeFallback: campaignScopeSnapshot,
         };
       }),
-    [campaignDetailsById, campaigns],
+    [campaignDetailsById, campaignScopeSnapshot, campaigns],
   );
 
   const filteredCampaignCards = useMemo(() => {
