@@ -392,6 +392,32 @@ def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     return serialized
 
 
+async def _fetch_store_id_from_campaign_info(
+    ttb_client: TTBApiClient,
+    *,
+    advertiser_id: str,
+    campaign_id: str,
+) -> str | None:
+    try:
+        details = await ttb_client.get_gmvmax_campaign_info(advertiser_id, campaign_id)
+    except Exception:  # pragma: no cover - defensive logging
+        logger.warning(
+            "failed to fetch campaign info when resolving store_id",
+            exc_info=True,
+            extra={
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+            },
+        )
+        return None
+
+    if not isinstance(details, Mapping):
+        return None
+
+    store_identifier = _extract_field(details, "store_id", "shop_id")
+    return _normalize_identifier(store_identifier)
+
+
 async def sync_gmvmax_campaigns(
     db: Session,
     ttb_client: TTBApiClient,
@@ -402,16 +428,30 @@ async def sync_gmvmax_campaigns(
     **filters: Any,
 ) -> dict:
     synced = 0
+    store_hints_by_campaign: dict[str, str | None] = {}
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **filters
     ):
         if not isinstance(payload, dict):
             continue
+        campaign_identifier = _normalize_identifier(
+            _extract_field(payload, "campaign_id", "id")
+        )
         resolved_store_id = _resolve_store_id(
             advertiser_id=advertiser_id,
             campaign_payload=payload,
             page_context=page_context,
         )
+        if not resolved_store_id and campaign_identifier:
+            if campaign_identifier in store_hints_by_campaign:
+                resolved_store_id = store_hints_by_campaign[campaign_identifier]
+            else:
+                resolved_store_id = await _fetch_store_id_from_campaign_info(
+                    ttb_client,
+                    advertiser_id=str(advertiser_id),
+                    campaign_id=campaign_identifier,
+                )
+                store_hints_by_campaign[campaign_identifier] = resolved_store_id
         upsert_campaign_from_api(
             db,
             workspace_id=workspace_id,
@@ -626,6 +666,7 @@ def upsert_metrics_hourly_row(
     )
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
+    instance.store_id = str(campaign.store_id or "")
 
     db.flush()
     return instance
@@ -780,6 +821,7 @@ def upsert_metrics_daily_row(
     )
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
+    instance.store_id = str(campaign.store_id or "")
 
     db.flush()
     return instance

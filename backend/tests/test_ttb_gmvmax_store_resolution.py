@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import func, select
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 from app.data.models.workspaces import Workspace
-from app.services.ttb_gmvmax import upsert_campaign_from_api
+from app.services.ttb_gmvmax import sync_gmvmax_campaigns, upsert_campaign_from_api
 
 
 def _next_id(db_session, model) -> int:
@@ -157,3 +159,52 @@ def test_upsert_campaign_prefers_store_link_matching_bc(db_session):
     )
 
     assert campaign.store_id == "store-2"
+
+
+class _DummyTTBClient:
+    def __init__(self) -> None:
+        self.info_calls: list[tuple[str, str]] = []
+
+    async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+        yield {
+            "campaign_id": "cmp-1",
+            "campaign_name": "Demo",
+            "advertiser_id": advertiser_id,
+        }, {}
+
+    async def get_gmvmax_campaign_info(self, advertiser_id: str, campaign_id: str):
+        self.info_calls.append((advertiser_id, campaign_id))
+        return {
+            "campaign_id": campaign_id,
+            "store_id": "store-from-info",
+        }
+
+
+def test_sync_campaigns_fetches_store_id_from_detail_api(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    client = _DummyTTBClient()
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-1",
+    )
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+        )
+    )
+
+    campaign = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id, campaign_id="cmp-1")
+        .one()
+    )
+    assert campaign.store_id == "store-from-info"
+    assert client.info_calls == [("adv-1", "cmp-1")]

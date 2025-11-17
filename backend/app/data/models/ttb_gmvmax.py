@@ -97,6 +97,7 @@ class TTBGmvMaxMetricsHourly(Base):
         UniqueConstraint("campaign_id", "interval_start", name="uk_ttb_gmvmax_metrics_hourly"),
         Index("idx_ttb_gmvmax_metrics_hourly_campaign", "campaign_id"),
         Index("idx_ttb_gmvmax_metrics_hourly_interval", "interval_start"),
+        Index("idx_ttb_gmvmax_metrics_hourly_store", "store_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -106,6 +107,7 @@ class TTBGmvMaxMetricsHourly(Base):
         ForeignKey("ttb_gmvmax_campaigns.id", onupdate="RESTRICT", ondelete="CASCADE"),
         nullable=False,
     )
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
     interval_start: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     interval_end: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
@@ -146,6 +148,7 @@ class TTBGmvMaxMetricsDaily(Base):
         UniqueConstraint("campaign_id", "date", name="uk_ttb_gmvmax_metrics_daily"),
         Index("idx_ttb_gmvmax_metrics_daily_date", "date"),
         Index("idx_ttb_gmvmax_metrics_daily_campaign", "campaign_id"),
+        Index("idx_ttb_gmvmax_metrics_daily_store", "store_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -155,6 +158,7 @@ class TTBGmvMaxMetricsDaily(Base):
         ForeignKey("ttb_gmvmax_campaigns.id", onupdate="RESTRICT", ondelete="CASCADE"),
         nullable=False,
     )
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
     date: Mapped[date] = mapped_column(Date, nullable=False)
 

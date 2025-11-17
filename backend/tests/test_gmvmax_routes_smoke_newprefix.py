@@ -193,6 +193,7 @@ def gmvmax_client_fixture(monkeypatch):
     metric = TTBGmvMaxMetricsDaily(
         id=1,
         campaign_id=campaign.id,
+        store_id="store-1",
         date=date.today(),
         cost_cents=1000,
         net_cost_cents=900,
