@@ -261,53 +261,82 @@ function collectStoreIdsFromDetail(detail, target = new Set()) {
   return target;
 }
 
+function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
+  if (!target) {
+    return { matches: true, pending: false };
+  }
+
+  if (ids.has(target) || detailIds.has(target)) {
+    return { matches: true, pending: false };
+  }
+
+  const hasAnyIds = ids.size > 0 || detailIds.size > 0;
+  if (hasAnyIds) {
+    return { matches: false, pending: false };
+  }
+
+  if (detailLoading) {
+    return { matches: false, pending: true };
+  }
+
+  return { matches: true, pending: false };
+}
+
 function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusinessCenterId) {
-  if (!selectedBusinessCenterId) return true;
+  if (!selectedBusinessCenterId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedBusinessCenterId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectBusinessCenterIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectBusinessCenterIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
 }
 
 function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId) {
-  if (!selectedAdvertiserId) return true;
+  if (!selectedAdvertiserId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedAdvertiserId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectAdvertiserIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectAdvertiserIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
 }
 
 function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
-  if (!selectedStoreId) return true;
+  if (!selectedStoreId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedStoreId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectStoreIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectStoreIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
 }
 
 function matchesCampaignScope(card, filters) {
-  if (!card || !card.campaign) return false;
+  if (!card || !card.campaign) {
+    return { matches: false, pending: false };
+  }
   const { campaign, detail, detailLoading } = card;
   const { businessCenterId, advertiserId, storeId } = filters;
-  if (!matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId)) {
-    return false;
-  }
-  if (!matchesAdvertiser(campaign, detail, detailLoading, advertiserId)) {
-    return false;
-  }
-  if (!matchesStore(campaign, detail, detailLoading, storeId)) {
-    return false;
-  }
-  return true;
+  const results = [
+    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
+    matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
+    matchesStore(campaign, detail, detailLoading, storeId),
+  ];
+
+  return {
+    matches: results.every((result) => result.matches),
+    pending: results.some((result) => result.pending),
+  };
 }
 
 const DEFAULT_SCOPE = {
@@ -2015,13 +2044,14 @@ export default function GmvMaxOverviewPage() {
 
   const filteredCampaignCards = useMemo(() => {
     if (!isScopeReady) return [];
-    return campaignCards.filter((card) =>
-      matchesCampaignScope(card, {
+    return campaignCards.filter((card) => {
+      const { matches, pending } = matchesCampaignScope(card, {
         businessCenterId,
         advertiserId,
         storeId,
-      }),
-    );
+      });
+      return matches && !pending;
+    });
   }, [advertiserId, businessCenterId, campaignCards, isScopeReady, storeId]);
 
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
