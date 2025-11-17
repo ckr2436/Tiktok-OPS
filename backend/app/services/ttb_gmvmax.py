@@ -8,6 +8,7 @@ from typing import Any, Callable, Mapping, Optional, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data.models.ttb_entities import TTBAdvertiserStoreLink
 from app.data.models.ttb_gmvmax import (
     TTBGmvMaxActionLog,
     TTBGmvMaxCampaign,
@@ -150,6 +151,80 @@ def _resolve_store_id(
         },
     )
     return candidates[0]
+
+
+def _lookup_store_id_from_links(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_payload: Mapping[str, Any],
+) -> str | None:
+    """Resolve store_id via advertiser ↔ store links stored in our database."""
+
+    stmt = (
+        select(
+            TTBAdvertiserStoreLink.store_id,
+            TTBAdvertiserStoreLink.store_authorized_bc_id,
+            TTBAdvertiserStoreLink.bc_id_hint,
+        )
+        .where(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .where(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .where(TTBAdvertiserStoreLink.advertiser_id == str(advertiser_id))
+        .order_by(TTBAdvertiserStoreLink.last_seen_at.desc())
+    )
+    rows = db.execute(stmt).all()
+    if not rows:
+        return None
+
+    normalized_bc = _normalize_identifier(_extract_campaign_bc_id(campaign_payload))
+    matched_by_bc: list[str] = []
+    candidates: list[str] = []
+    for row in rows:
+        store_value = _normalize_identifier(row.store_id)
+        if not store_value:
+            continue
+        candidates.append(store_value)
+        if not normalized_bc:
+            continue
+        linked_bc_values = (
+            _normalize_identifier(row.store_authorized_bc_id),
+            _normalize_identifier(row.bc_id_hint),
+        )
+        if normalized_bc in linked_bc_values:
+            matched_by_bc.append(store_value)
+
+    if matched_by_bc:
+        unique_matches = list(dict.fromkeys(matched_by_bc))
+        if len(unique_matches) > 1:
+            logger.warning(
+                "multiple store links matched bc_id; defaulting to first",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "bc_id": normalized_bc,
+                    "store_candidates": unique_matches,
+                },
+            )
+        return unique_matches[0]
+
+    unique_candidates = list(dict.fromkeys(candidates))
+    if not unique_candidates:
+        return None
+    if len(unique_candidates) > 1:
+        logger.warning(
+            "ambiguous store link mapping; defaulting to first",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "store_candidates": unique_candidates,
+                "bc_id": normalized_bc,
+            },
+        )
+    return unique_candidates[0]
 
 
 def _normalize_status_value(value: Any) -> str | None:
@@ -392,6 +467,14 @@ def upsert_campaign_from_api(
     store_identifier = _extract_field(payload, "store_id", "shop_id")
     if store_identifier is None:
         store_identifier = store_id_hint
+    if store_identifier is None:
+        store_identifier = _lookup_store_id_from_links(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            campaign_payload=payload,
+        )
     if store_identifier is None:
         store_identifier = result.store_id
     if store_identifier is None:
