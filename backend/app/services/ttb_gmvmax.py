@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable, Mapping, Optional, TypedDict
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
@@ -34,6 +34,7 @@ __all__ = [
     "get_or_create_strategy_config",
     "aggregate_recent_metrics",
     "decide_campaign_action",
+    "resolve_store_id_from_page_context",
 ]
 
 
@@ -149,8 +150,35 @@ def _resolve_store_id(
             "store_candidates": candidates,
             "bc_id": campaign_bc_id,
         },
-    )
+        )
     return candidates[0]
+
+
+def resolve_store_id_from_page_context(
+    *,
+    advertiser_id: str,
+    campaign_payload: Mapping[str, Any],
+    page_context: Mapping[str, Any],
+) -> str | None:
+    """Public helper that surfaces :func:`_resolve_store_id` for reuse."""
+
+    return _resolve_store_id(
+        advertiser_id=str(advertiser_id),
+        campaign_payload=campaign_payload,
+        page_context=page_context,
+    )
+
+
+def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
+        return
+    if getattr(row, "id", None):
+        return
+    next_value = db.execute(
+        select(func.coalesce(func.max(TTBGmvMaxCampaign.id), 0))
+    ).scalar_one()
+    row.id = int(next_value or 0) + 1
 
 
 def _lookup_store_id_from_links(
@@ -496,6 +524,7 @@ def upsert_campaign_from_api(
             campaign_id=campaign_id,
         )
         db.add(result)
+        _assign_sqlite_pk(db, result)
 
     result.advertiser_id = str(advertiser_id)
     result.name = _extract_field(payload, "campaign_name", "name")
