@@ -765,6 +765,11 @@ async def query_gmvmax_metrics_provider(
         )
 
     effective_store_id = store_id or context.store_id
+    if not effective_store_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_store", "message": "store_id is required"},
+        )
     cache_key = (
         context.workspace_id,
         context.provider,
@@ -788,6 +793,7 @@ async def query_gmvmax_metrics_provider(
         provider=context.provider,
         auth_id=context.auth_id,
         campaign_id=str(campaign_id),
+        advertiser_id=context.advertiser_id,
         store_id=effective_store_id,
         start_date=start,
         end_date=end,

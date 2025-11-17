@@ -15,6 +15,7 @@ from app.data.models.ttb_gmvmax import (
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxStrategyConfig,
 )
+from app.data.repositories.tiktok_business.gmvmax import list_gmvmax_campaigns
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action as svc_apply_campaign_action,
@@ -148,27 +149,22 @@ async def list_campaigns(
             status_filter=status_filter,
         )
 
-    query = (
-        db.query(TTBGmvMaxCampaign)
-        .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
-        .filter(TTBGmvMaxCampaign.advertiser_id == str(resolved_advertiser))
-    )
-    if store_id:
-        query = query.filter(TTBGmvMaxCampaign.store_id == str(store_id))
-    if status_filter:
-        query = query.filter(TTBGmvMaxCampaign.status == status_filter)
-    if search:
-        pattern = f"%{search}%"
-        query = query.filter(TTBGmvMaxCampaign.name.ilike(pattern))
+    if not store_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_store", "message": "store_id is required"},
+        )
 
-    total = query.count()
-    offset = (page - 1) * page_size
-    items = (
-        query.order_by(*_order_desc_nulls_last(TTBGmvMaxCampaign.ext_created_time))
-        .offset(offset)
-        .limit(page_size)
-        .all()
+    items, total = list_gmvmax_campaigns(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(resolved_advertiser),
+        store_id=str(store_id),
+        status_filter=status_filter,
+        search=search,
+        page=page,
+        page_size=page_size,
     )
 
     payload: dict[str, Any] = {

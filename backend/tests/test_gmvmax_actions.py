@@ -54,6 +54,7 @@ def _setup_campaign(db_session) -> TTBGmvMaxCampaign:
         auth_id=account.id,
         advertiser_id="adv-1",
         campaign_id="cmp-1",
+        store_id="store-1",
         name="GMV Campaign",
         status="PAUSED",
         daily_budget_cents=1000,

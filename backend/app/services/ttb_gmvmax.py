@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Mapping, Optional, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,6 +41,125 @@ _ONE_HUNDRED = Decimal("100")
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
 
 _REPORT_PAGE_SIZE = 200
+
+
+def _normalize_identifier(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _extract_store_links(payload: Mapping[str, Any] | None) -> dict[str, list[str]]:
+    if not isinstance(payload, Mapping):
+        return {}
+    advertiser_map = payload.get("advertiser_to_stores")
+    if not isinstance(advertiser_map, Mapping):
+        return {}
+    result: dict[str, list[str]] = {}
+    for raw_adv, raw_store_ids in advertiser_map.items():
+        adv_key = _normalize_identifier(raw_adv)
+        if not adv_key:
+            continue
+        store_ids: list[str] = []
+        if isinstance(raw_store_ids, (list, tuple, set)):
+            for candidate in raw_store_ids:
+                normalized = _normalize_identifier(candidate)
+                if normalized:
+                    store_ids.append(normalized)
+        else:
+            normalized = _normalize_identifier(raw_store_ids)
+            if normalized:
+                store_ids.append(normalized)
+        if store_ids:
+            result[adv_key] = store_ids
+    return result
+
+
+def _build_store_lookup(stores: Any) -> dict[str, Mapping[str, Any]]:
+    if not isinstance(stores, list):
+        return {}
+    lookup: dict[str, Mapping[str, Any]] = {}
+    for entry in stores:
+        if not isinstance(entry, Mapping):
+            continue
+        store_key = _normalize_identifier(
+            entry.get("store_id") or entry.get("shop_id") or entry.get("id")
+        )
+        if not store_key:
+            continue
+        lookup[store_key] = entry
+    return lookup
+
+
+def _extract_campaign_bc_id(payload: Mapping[str, Any]) -> str | None:
+    for key in ("bc_id", "store_authorized_bc_id", "authorized_bc_id"):
+        normalized = _normalize_identifier(payload.get(key))
+        if normalized:
+            return normalized
+    return None
+
+
+def _resolve_store_id(
+    *,
+    advertiser_id: str,
+    campaign_payload: Mapping[str, Any],
+    page_context: Mapping[str, Any],
+) -> str | None:
+    links_payload = page_context.get("links") if isinstance(page_context, Mapping) else None
+    stores_payload = page_context.get("stores") if isinstance(page_context, Mapping) else None
+    store_links = _extract_store_links(links_payload)
+    store_lookup = _build_store_lookup(stores_payload)
+    candidates = list(dict.fromkeys(store_links.get(str(advertiser_id), [])))
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    campaign_bc_id = _extract_campaign_bc_id(campaign_payload)
+    if campaign_bc_id:
+        matches = [
+            store_id
+            for store_id in candidates
+            if _normalize_identifier(
+                store_lookup.get(store_id, {}).get("store_authorized_bc_id")
+            )
+            == campaign_bc_id
+            or _normalize_identifier(store_lookup.get(store_id, {}).get("bc_id"))
+            == campaign_bc_id
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                "multiple stores matched bc_id; defaulting to first",
+                extra={
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign_payload.get("campaign_id"),
+                    "bc_id": campaign_bc_id,
+                    "store_candidates": matches,
+                },
+            )
+            return matches[0]
+    logger.warning(
+        "ambiguous store mapping; defaulting to first",
+        extra={
+            "advertiser_id": advertiser_id,
+            "campaign_id": campaign_payload.get("campaign_id"),
+            "store_candidates": candidates,
+            "bc_id": campaign_bc_id,
+        },
+    )
+    return candidates[0]
+
+
+def _normalize_status_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        text = str(value).strip().upper()
+    except Exception:  # pragma: no cover - defensive
+        return None
+    return text or None
 
 
 def _normalize_date(value: date | str) -> str:
@@ -208,15 +327,23 @@ async def sync_gmvmax_campaigns(
     **filters: Any,
 ) -> dict:
     synced = 0
-    async for payload in ttb_client.iter_gmvmax_campaigns(advertiser_id, **filters):
+    async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
+        advertiser_id, **filters
+    ):
         if not isinstance(payload, dict):
             continue
+        resolved_store_id = _resolve_store_id(
+            advertiser_id=advertiser_id,
+            campaign_payload=payload,
+            page_context=page_context,
+        )
         upsert_campaign_from_api(
             db,
             workspace_id=workspace_id,
             auth_id=auth_id,
             advertiser_id=advertiser_id,
             payload=payload,
+            store_id_hint=resolved_store_id,
         )
         synced += 1
     db.flush()
@@ -230,6 +357,7 @@ def upsert_campaign_from_api(
     auth_id: int,
     advertiser_id: str,
     payload: dict,
+    store_id_hint: str | None = None,
 ) -> TTBGmvMaxCampaign:
     if not isinstance(payload, dict):
         raise ValueError("payload must be dict")
@@ -257,20 +385,32 @@ def upsert_campaign_from_api(
     result.advertiser_id = str(advertiser_id)
     result.name = _extract_field(payload, "campaign_name", "name")
 
-    store_identifier = _extract_field(payload, "store_id", "shop_id")
-    result.store_id = str(store_identifier) if store_identifier is not None else None
+    store_identifier = store_id_hint or _extract_field(payload, "store_id", "shop_id")
+    if store_identifier is None:
+        store_identifier = result.store_id
+    if store_identifier is None:
+        store_identifier = ""
+        logger.warning(
+            "gmvmax campaign missing store_id; defaulting to empty string",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "campaign_id": campaign_id,
+            },
+        )
+    result.store_id = str(store_identifier)
 
     operation_status_value = _extract_field(payload, "operation_status")
-    result.operation_status = (
-        str(operation_status_value) if operation_status_value is not None else None
-    )
+    result.operation_status = _normalize_status_value(operation_status_value)
 
     status_value = _extract_field(payload, "status", "campaign_status")
     if status_value is None:
         status_value = _extract_field(payload, "primary_status")
     if status_value is None and result.operation_status is not None:
         status_value = result.operation_status
-    result.status = str(status_value) if status_value is not None else None
+    result.status = _normalize_status_value(status_value)
+    secondary_status_value = _extract_field(payload, "secondary_status")
+    result.secondary_status = _normalize_status_value(secondary_status_value)
     result.shopping_ads_type = _extract_field(payload, "shopping_ads_type")
     result.optimization_goal = _extract_field(payload, "optimization_goal")
 

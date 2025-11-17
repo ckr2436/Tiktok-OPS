@@ -51,6 +51,8 @@ class GMVMaxCampaignListData(BaseModel):
 
     list: List[GMVMaxCampaign] = Field(default_factory=list)
     page_info: Optional[PageInfo] = None
+    links: Optional[Dict[str, Any]] = None
+    stores: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(extra="allow")
 

@@ -94,7 +94,8 @@ def _base_query(
     provider: str,
     auth_id: int,
     campaign_id: str,
-    store_id: Optional[str],
+    advertiser_id: str,
+    store_id: str,
     start_date: date,
     end_date: date,
 ) -> Select[tuple[TTBGmvMaxMetricsDaily, str, Optional[str]]]:
@@ -110,13 +111,12 @@ def _base_query(
         )
         .where(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
         .where(TTBGmvMaxCampaign.auth_id == int(auth_id))
+        .where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
+        .where(TTBGmvMaxCampaign.store_id == str(store_id))
         .where(TTBGmvMaxMetricsDaily.date >= start_date)
         .where(TTBGmvMaxMetricsDaily.date <= end_date)
     )
-
-    if store_id:
-        query = query.where(TTBGmvMaxCampaign.store_id == str(store_id))
 
     return query
 
@@ -128,7 +128,8 @@ def query_gmvmax_metrics(
     provider: str,
     auth_id: int,
     campaign_id: str,
-    store_id: Optional[str] = None,
+    advertiser_id: str,
+    store_id: str,
     start_date: date,
     end_date: date,
     limit: int = 50,
@@ -141,6 +142,7 @@ def query_gmvmax_metrics(
         provider=provider,
         auth_id=auth_id,
         campaign_id=campaign_id,
+        advertiser_id=advertiser_id,
         store_id=store_id,
         start_date=start_date,
         end_date=end_date,
