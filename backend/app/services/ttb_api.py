@@ -795,7 +795,7 @@ class TTBApiClient:
         self,
         advertiser_id: str,
         **filters: Any,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[tuple[dict, dict]]:
         base_filters = dict(filters)
         page_size_value = base_filters.pop("page_size", None)
         cursor_value = base_filters.pop("cursor", None)
@@ -831,19 +831,20 @@ class TTBApiClient:
 
             items_list: list[dict] = []
             page_info: Dict[str, Any] | None = None
-            if isinstance(data, dict):
+            page_context: dict = data if isinstance(data, dict) else {}
+            if isinstance(page_context, dict):
                 for key in ("list", "campaign_list", "items", "campaigns"):
-                    value = data.get(key)
+                    value = page_context.get(key)
                     if isinstance(value, list):
                         items_list = [item for item in value if isinstance(item, dict)]
                         if items_list:
                             break
-                raw_page_info = data.get("page_info")
+                raw_page_info = page_context.get("page_info")
                 if isinstance(raw_page_info, dict):
                     page_info = raw_page_info
 
             for item in items_list:
-                yield item
+                yield item, page_context
 
             if not items_list and not cursor_value and not page_token_value:
                 break

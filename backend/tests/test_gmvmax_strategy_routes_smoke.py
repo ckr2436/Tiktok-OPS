@@ -68,6 +68,7 @@ def gmv_strategy_db(db_session):
         auth_id=1,
         advertiser_id=str(binding.advertiser_id),
         campaign_id="cmp-partial",
+        store_id=str(binding.store_id),
         name="Partial Update",
     )
     db_session.add(campaign)
