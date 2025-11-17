@@ -385,7 +385,13 @@ def upsert_campaign_from_api(
     result.advertiser_id = str(advertiser_id)
     result.name = _extract_field(payload, "campaign_name", "name")
 
-    store_identifier = store_id_hint or _extract_field(payload, "store_id", "shop_id")
+    # Prefer the store identifier embedded in the payload because TikTok often
+    # supplies the authoritative value there. Only fall back to the
+    # store_id_hint when the payload omits the field to avoid overwriting
+    # correct store links with ambiguous hints.
+    store_identifier = _extract_field(payload, "store_id", "shop_id")
+    if store_identifier is None:
+        store_identifier = store_id_hint
     if store_identifier is None:
         store_identifier = result.store_id
     if store_identifier is None:
