@@ -261,53 +261,96 @@ function collectStoreIdsFromDetail(detail, target = new Set()) {
   return target;
 }
 
-function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusinessCenterId) {
-  if (!selectedBusinessCenterId) return true;
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, fallbackTarget) {
+  if (!target) {
+    return { matches: true, pending: false };
+  }
+
+  if (ids.has(target) || detailIds.has(target)) {
+    return { matches: true, pending: false };
+  }
+
+  const hasAnyIds = ids.size > 0 || detailIds.size > 0;
+  if (hasAnyIds) {
+    return { matches: false, pending: false };
+  }
+
+  if (detailLoading) {
+    return { matches: false, pending: true };
+  }
+
+  const fallback = normalizeIdValue(fallbackTarget);
+  if (fallback && fallback === target) {
+    return { matches: true, pending: false };
+  }
+
+  return { matches: false, pending: false };
+}
+
+function matchesBusinessCenter(
+  campaign,
+  detail,
+  detailLoading,
+  selectedBusinessCenterId,
+  scopeFallback,
+) {
+  if (!selectedBusinessCenterId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedBusinessCenterId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectBusinessCenterIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectBusinessCenterIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  const fallback = normalizeIdValue(scopeFallback?.businessCenterId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId) {
-  if (!selectedAdvertiserId) return true;
+function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId, scopeFallback) {
+  if (!selectedAdvertiserId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedAdvertiserId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectAdvertiserIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectAdvertiserIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  const fallback = normalizeIdValue(scopeFallback?.advertiserId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
-  if (!selectedStoreId) return true;
+function matchesStore(campaign, detail, detailLoading, selectedStoreId, scopeFallback) {
+  if (!selectedStoreId) {
+    return { matches: true, pending: false };
+  }
   const target = normalizeIdValue(selectedStoreId);
-  if (!target) return true;
+  if (!target) {
+    return { matches: true, pending: false };
+  }
   const ids = collectStoreIdsFromCampaign(campaign);
-  if (ids.has(target)) return true;
   const detailIds = collectStoreIdsFromDetail(detail);
-  if (detailIds.has(target)) return true;
-  return Boolean(detailLoading);
+  const fallback = normalizeIdValue(scopeFallback?.storeId);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
 function matchesCampaignScope(card, filters) {
-  if (!card || !card.campaign) return false;
-  const { campaign, detail, detailLoading } = card;
+  if (!card || !card.campaign) {
+    return { matches: false, pending: false };
+  }
+  const { campaign, detail, detailLoading, scopeFallback } = card;
   const { businessCenterId, advertiserId, storeId } = filters;
-  if (!matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId)) {
-    return false;
-  }
-  if (!matchesAdvertiser(campaign, detail, detailLoading, advertiserId)) {
-    return false;
-  }
-  if (!matchesStore(campaign, detail, detailLoading, storeId)) {
-    return false;
-  }
-  return true;
+  const results = [
+    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId, scopeFallback),
+    matchesAdvertiser(campaign, detail, detailLoading, advertiserId, scopeFallback),
+    matchesStore(campaign, detail, detailLoading, storeId, scopeFallback),
+  ];
+
+  return {
+    matches: results.every((result) => result.matches),
+    pending: results.some((result) => result.pending),
+  };
 }
 
 const DEFAULT_SCOPE = {
@@ -1668,6 +1711,29 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
+  const currentScopeKey = useMemo(
+    () => ({
+      businessCenterId,
+      advertiserId,
+      storeId,
+    }),
+    [advertiserId, businessCenterId, storeId],
+  );
+
+  const [campaignScopeSnapshot, setCampaignScopeSnapshot] = useState(null);
+
+  useEffect(() => {
+    if (campaignsQuery.isSuccess && campaignsQuery.dataUpdatedAt) {
+      setCampaignScopeSnapshot(currentScopeKey);
+    }
+  }, [campaignsQuery.dataUpdatedAt, campaignsQuery.isSuccess, currentScopeKey]);
+
+  useEffect(() => {
+    if (!isScopeReady) {
+      setCampaignScopeSnapshot(null);
+    }
+  }, [isScopeReady]);
+
   const accounts = useMemo(() => {
     const data = accountsQuery.data;
     const items = data?.items || data?.list || data || [];
@@ -2008,20 +2074,22 @@ export default function GmvMaxOverviewPage() {
           detailLoading: detailResult?.isLoading ?? false,
           detailError: detailResult?.error,
           detailRefetch: detailResult?.refetch,
+          scopeFallback: campaignScopeSnapshot,
         };
       }),
-    [campaignDetailsById, campaigns],
+    [campaignDetailsById, campaignScopeSnapshot, campaigns],
   );
 
   const filteredCampaignCards = useMemo(() => {
     if (!isScopeReady) return [];
-    return campaignCards.filter((card) =>
-      matchesCampaignScope(card, {
+    return campaignCards.filter((card) => {
+      const { matches, pending } = matchesCampaignScope(card, {
         businessCenterId,
         advertiserId,
         storeId,
-      }),
-    );
+      });
+      return matches && !pending;
+    });
   }, [advertiserId, businessCenterId, campaignCards, isScopeReady, storeId]);
 
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
