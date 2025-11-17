@@ -368,8 +368,8 @@ function collectProductIdsFromDetail(detail, target) {
   return ids;
 }
 
-function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = {}) {
-  const { assumeMatchWhenUnknown = false } = options;
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, options) {
+  const assumeMatchWhenUnknown = Boolean(options?.assumeMatchWhenUnknown);
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -433,13 +433,7 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   return buildScopeMatchResult(ids, detailIds, detailLoading, target, fallback);
 }
 
-function matchesStore(
-  campaign,
-  detail,
-  detailLoading,
-  selectedStoreId,
-  { assumeMatchWhenUnknown = false } = {},
-) {
+function matchesStore(campaign, detail, detailLoading, selectedStoreId, options) {
   if (!selectedStoreId) {
     return { matches: true, pending: false };
   }
@@ -449,9 +443,7 @@ function matchesStore(
   }
   const ids = collectStoreIdsFromCampaign(campaign);
   const detailIds = collectStoreIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target, {
-    assumeMatchWhenUnknown,
-  });
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, options);
 }
 
 function matchesCampaignScope(card, filters) {
