@@ -11,7 +11,7 @@ depends_on = None
 def _backfill_store_id(table_name: str) -> None:
     op.execute(
         text(
-            f"
+            f"""
             UPDATE {table_name}
             SET store_id = (
                 SELECT COALESCE(c.store_id, '')
@@ -19,7 +19,7 @@ def _backfill_store_id(table_name: str) -> None:
                 WHERE c.id = {table_name}.campaign_id
             )
             WHERE store_id IS NULL
-            "
+            """
         )
     )
     op.execute(
