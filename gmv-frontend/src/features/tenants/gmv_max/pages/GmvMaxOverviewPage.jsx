@@ -74,7 +74,17 @@ function getRecentDateRange(days) {
 
 function getProductIdentifier(product) {
   if (!product) return '';
-  const candidates = [product.product_id, product.spu_id, product.item_id, product.id];
+  const candidates = [
+    product.product_id,
+    product.productId,
+    product.spu_id,
+    product.spuId,
+    product.item_group_id,
+    product.itemGroupId,
+    product.item_id,
+    product.itemId,
+    product.id,
+  ];
   for (const candidate of candidates) {
     if (candidate !== undefined && candidate !== null && String(candidate) !== '') {
       return String(candidate);
@@ -114,99 +124,109 @@ function addId(target, value) {
   target.add(normalized);
 }
 
-function collectBusinessCenterIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.owner_bc_id);
-  addId(target, campaign.ownerBcId);
-  addId(target, campaign.business_center_id);
-  addId(target, campaign.businessCenterId);
-  addId(target, campaign.bc_id);
+function ensureIdSet(target) {
+  if (target && typeof target.add === 'function') {
+    return target;
+  }
+  return new Set();
+}
+
+function collectBusinessCenterIdsFromCampaign(campaign, target) {
+  const ids = ensureIdSet(target);
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.owner_bc_id);
+  addId(ids, campaign.ownerBcId);
+  addId(ids, campaign.business_center_id);
+  addId(ids, campaign.businessCenterId);
+  addId(ids, campaign.bc_id);
 
   const bcList = campaign.business_center_ids || campaign.businessCenterIds;
   if (Array.isArray(bcList)) {
     bcList.forEach((item) => {
       if (item && typeof item === 'object') {
-        addId(target, item.bc_id);
-        addId(target, item.id);
-        addId(target, item.business_center_id);
-        addId(target, item.businessCenterId);
+        addId(ids, item.bc_id);
+        addId(ids, item.id);
+        addId(ids, item.business_center_id);
+        addId(ids, item.businessCenterId);
       } else {
-        addId(target, item);
+        addId(ids, item);
       }
     });
   }
 
   const bcObject = campaign.business_center || campaign.businessCenter;
   if (bcObject && typeof bcObject === 'object') {
-    addId(target, bcObject.bc_id);
-    addId(target, bcObject.id);
-    addId(target, bcObject.business_center_id);
-    addId(target, bcObject.businessCenterId);
+    addId(ids, bcObject.bc_id);
+    addId(ids, bcObject.id);
+    addId(ids, bcObject.business_center_id);
+    addId(ids, bcObject.businessCenterId);
   }
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectBusinessCenterIdsFromCampaign(nested, target);
+    collectBusinessCenterIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectBusinessCenterIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectBusinessCenterIdsFromCampaign(detail.campaign, target);
+function collectBusinessCenterIdsFromDetail(detail, target) {
+  const ids = collectBusinessCenterIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const bcObject = detail.business_center || detail.businessCenter;
   if (bcObject && typeof bcObject === 'object') {
-    addId(target, bcObject.bc_id);
-    addId(target, bcObject.id);
-    addId(target, bcObject.business_center_id);
-    addId(target, bcObject.businessCenterId);
+    addId(ids, bcObject.bc_id);
+    addId(ids, bcObject.id);
+    addId(ids, bcObject.business_center_id);
+    addId(ids, bcObject.businessCenterId);
   }
-  return target;
+  return ids;
 }
 
-function collectAdvertiserIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.advertiser_id);
-  addId(target, campaign.advertiserId);
+function collectAdvertiserIdsFromCampaign(campaign, target) {
+  const ids = ensureIdSet(target);
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.advertiser_id);
+  addId(ids, campaign.advertiserId);
 
   const advertiserObject = campaign.advertiser || campaign.advertiser_info || campaign.advertiserInfo;
   if (advertiserObject && typeof advertiserObject === 'object') {
-    addId(target, advertiserObject.advertiser_id);
-    addId(target, advertiserObject.advertiserId);
-    addId(target, advertiserObject.id);
+    addId(ids, advertiserObject.advertiser_id);
+    addId(ids, advertiserObject.advertiserId);
+    addId(ids, advertiserObject.id);
   }
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectAdvertiserIdsFromCampaign(nested, target);
+    collectAdvertiserIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectAdvertiserIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectAdvertiserIdsFromCampaign(detail.campaign, target);
+function collectAdvertiserIdsFromDetail(detail, target) {
+  const ids = collectAdvertiserIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const advertiserObject = detail.advertiser || detail.advertiser_info || detail.advertiserInfo;
   if (advertiserObject && typeof advertiserObject === 'object') {
-    addId(target, advertiserObject.advertiser_id);
-    addId(target, advertiserObject.advertiserId);
-    addId(target, advertiserObject.id);
+    addId(ids, advertiserObject.advertiser_id);
+    addId(ids, advertiserObject.advertiserId);
+    addId(ids, advertiserObject.id);
   }
-  return target;
+  return ids;
 }
 
-function collectStoreIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.store_id);
-  addId(target, campaign.storeId);
+function collectStoreIdsFromCampaign(campaign, target) {
+  const ids = ensureIdSet(target);
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.store_id);
+  addId(ids, campaign.storeId);
 
   const storeObject = campaign.store || campaign.store_info || campaign.storeInfo;
   if (storeObject && typeof storeObject === 'object') {
-    addId(target, storeObject.store_id);
-    addId(target, storeObject.storeId);
-    addId(target, storeObject.id);
+    addId(ids, storeObject.store_id);
+    addId(ids, storeObject.storeId);
+    addId(ids, storeObject.id);
   }
 
   const storeLists = [
@@ -220,48 +240,136 @@ function collectStoreIdsFromCampaign(campaign, target = new Set()) {
     if (!Array.isArray(list)) return;
     list.forEach((item) => {
       if (item && typeof item === 'object') {
-        addId(target, item.store_id);
-        addId(target, item.storeId);
-        addId(target, item.id);
+        addId(ids, item.store_id);
+        addId(ids, item.storeId);
+        addId(ids, item.id);
       } else {
-        addId(target, item);
+        addId(ids, item);
       }
     });
   });
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectStoreIdsFromCampaign(nested, target);
+    collectStoreIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectStoreIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectStoreIdsFromCampaign(detail.campaign, target);
+function collectStoreIdsFromDetail(detail, target) {
+  const ids = collectStoreIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const sessions = detail.sessions || detail.session_list || [];
   sessions.forEach((session) => {
     if (!session || typeof session !== 'object') return;
-    addId(target, session.store_id);
-    addId(target, session.storeId);
+    addId(ids, session.store_id);
+    addId(ids, session.storeId);
     const storeObject = session.store || session.store_info || session.storeInfo;
     if (storeObject && typeof storeObject === 'object') {
-      addId(target, storeObject.store_id);
-      addId(target, storeObject.storeId);
-      addId(target, storeObject.id);
+      addId(ids, storeObject.store_id);
+      addId(ids, storeObject.storeId);
+      addId(ids, storeObject.id);
     }
     const products = session.product_list || session.products || [];
     products.forEach((product) => {
       if (!product || typeof product !== 'object') return;
-      addId(target, product.store_id);
-      addId(target, product.storeId);
+      addId(ids, product.store_id);
+      addId(ids, product.storeId);
     });
   });
-  return target;
+  return ids;
 }
 
-function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
+function addProductIdentifier(target, value) {
+  let identifier = '';
+  if (value && typeof value === 'object') {
+    identifier =
+      getProductIdentifier(value) ||
+      normalizeIdValue(
+        value.item_group_id ??
+          value.itemGroupId ??
+          value.productId ??
+          value.itemId ??
+          value.spuId ??
+          value.group_id ??
+          value.groupId ??
+          '',
+      );
+  } else {
+    identifier = normalizeIdValue(value);
+  }
+  if (identifier) {
+    target.add(identifier);
+  }
+}
+
+function collectProductIdsFromList(list, target) {
+  const ids = ensureIdSet(target);
+  const items = ensureArray(list);
+  items.forEach((value) => addProductIdentifier(ids, value));
+  return ids;
+}
+
+function collectProductIdsFromCampaign(campaign, target) {
+  const ids = ensureIdSet(target);
+  if (!campaign || typeof campaign !== 'object') return ids;
+
+  collectProductIdsFromList(campaign.item_group_ids, ids);
+  collectProductIdsFromList(campaign.itemGroupIds, ids);
+  collectProductIdsFromList(campaign.item_groups, ids);
+  collectProductIdsFromList(campaign.itemGroupList, ids);
+  collectProductIdsFromList(campaign.item_group_list, ids);
+  collectProductIdsFromList(campaign.item_list, ids);
+  collectProductIdsFromList(campaign.itemList, ids);
+  collectProductIdsFromList(campaign.item_ids, ids);
+  collectProductIdsFromList(campaign.itemIds, ids);
+  collectProductIdsFromList(campaign.product_ids, ids);
+  collectProductIdsFromList(campaign.productIds, ids);
+  collectProductIdsFromList(campaign.product_list, ids);
+  collectProductIdsFromList(campaign.productList, ids);
+  collectProductIdsFromList(campaign.products, ids);
+
+  const nested = campaign.campaign;
+  if (nested && nested !== campaign) {
+    collectProductIdsFromCampaign(nested, ids);
+  }
+
+  return ids;
+}
+
+function collectProductIdsFromDetail(detail, target) {
+  const ids = collectProductIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
+
+  collectProductIdsFromList(detail.item_group_ids, ids);
+  collectProductIdsFromList(detail.itemGroupIds, ids);
+  collectProductIdsFromList(detail.item_groups, ids);
+  collectProductIdsFromList(detail.itemGroupList, ids);
+  collectProductIdsFromList(detail.item_group_list, ids);
+  collectProductIdsFromList(detail.item_list, ids);
+  collectProductIdsFromList(detail.itemList, ids);
+  collectProductIdsFromList(detail.item_ids, ids);
+  collectProductIdsFromList(detail.itemIds, ids);
+  collectProductIdsFromList(detail.product_ids, ids);
+  collectProductIdsFromList(detail.productIds, ids);
+  collectProductIdsFromList(detail.product_list, ids);
+  collectProductIdsFromList(detail.productList, ids);
+  collectProductIdsFromList(detail.products, ids);
+
+  const sessions = ensureArray(detail.sessions || detail.session_list);
+  sessions.forEach((session) => {
+    if (!session || typeof session !== 'object') return;
+    collectProductIdsFromList(session.product_list || session.products, ids);
+    collectProductIdsFromList(session.item_group_ids || session.itemGroupIds, ids);
+    collectProductIdsFromList(session.items, ids);
+  });
+
+  return ids;
+}
+
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, options) {
+  const assumeMatchWhenUnknown = Boolean(options?.assumeMatchWhenUnknown);
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -273,6 +381,10 @@ function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
   const hasAnyIds = ids.size > 0 || detailIds.size > 0;
   if (hasAnyIds) {
     return { matches: false, pending: false };
+  }
+
+  if (assumeMatchWhenUnknown) {
+    return { matches: true, pending: false };
   }
 
   if (detailLoading) {
@@ -308,7 +420,7 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   return buildScopeMatchResult(ids, detailIds, detailLoading, target);
 }
 
-function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
+function matchesStore(campaign, detail, detailLoading, selectedStoreId, options) {
   if (!selectedStoreId) {
     return { matches: true, pending: false };
   }
@@ -318,7 +430,7 @@ function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
   }
   const ids = collectStoreIdsFromCampaign(campaign);
   const detailIds = collectStoreIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, options);
 }
 
 function matchesCampaignScope(card, filters) {
@@ -330,7 +442,9 @@ function matchesCampaignScope(card, filters) {
   const results = [
     matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
     matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
-    matchesStore(campaign, detail, detailLoading, storeId),
+    matchesStore(campaign, detail, detailLoading, storeId, {
+      assumeMatchWhenUnknown: Boolean(storeId),
+    }),
   ];
 
   return {
@@ -718,12 +832,7 @@ function CampaignCard({
 
   const reportPayload = metricsQuery.data?.report ?? metricsQuery.data?.data ?? metricsQuery.data ?? null;
   const metricsSummary = reportPayload ? summariseMetrics(reportPayload) : null;
-  const productCount = Array.isArray(detail?.sessions)
-    ? detail.sessions.reduce((acc, session) => {
-        const products = Array.isArray(session?.product_list) ? session.product_list.length : 0;
-        return acc + products;
-      }, 0)
-    : null;
+  const productCount = detail ? collectProductIdsFromDetail(detail).size : null;
   const statusLabel = formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
 
@@ -1954,21 +2063,16 @@ export default function GmvMaxOverviewPage() {
 
   const assignedProductIds = useMemo(() => {
     const ids = new Set();
+    campaigns.forEach((campaign) => {
+      collectProductIdsFromCampaign(campaign, ids);
+    });
     campaignDetailQueries.forEach((result) => {
       const detail = result?.data;
       if (!detail) return;
-      const sessions = detail.sessions || detail.session_list || [];
-      sessions.forEach((session) => {
-        (session?.product_list || session?.products || []).forEach((product) => {
-          const id = getProductIdentifier(product);
-          if (id) {
-            ids.add(id);
-          }
-        });
-      });
+      collectProductIdsFromDetail(detail, ids);
     });
     return ids;
-  }, [campaignDetailQueries]);
+  }, [campaignDetailQueries, campaigns]);
 
   const unassignedProducts = useMemo(() => {
     if (!isScopeReady || products.length === 0) return [];
