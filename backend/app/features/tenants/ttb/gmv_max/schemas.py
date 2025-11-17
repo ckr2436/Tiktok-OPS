@@ -80,7 +80,8 @@ class SyncRequest(BaseModel):
     """Payload accepted by the sync endpoint combining campaigns + report."""
 
     advertiser_id: Optional[str] = None
-    bc_id: Optional[str] = None
+    bc_id: Optional[str] = Field(default=None, alias="bc_id")
+    owner_bc_id: Optional[str] = Field(default=None, alias="owner_bc_id")
     store_id: Optional[str] = None
     campaign_filter: Optional[CampaignFilter] = Field(
         default=None, alias="campaign_filter"
@@ -89,6 +90,14 @@ class SyncRequest(BaseModel):
     report: ReportRequest
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _sync_bc_fields(self) -> "SyncRequest":
+        if self.owner_bc_id and not self.bc_id:
+            self.bc_id = self.owner_bc_id
+        elif self.bc_id and not self.owner_bc_id:
+            self.owner_bc_id = self.bc_id
+        return self
 
 
 class SyncResponse(BaseModel):
