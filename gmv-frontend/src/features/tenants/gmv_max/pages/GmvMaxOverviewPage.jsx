@@ -261,7 +261,8 @@ function collectStoreIdsFromDetail(detail, target = new Set()) {
   return target;
 }
 
-function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
+function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = {}) {
+  const { assumeMatchWhenUnknown = false } = options;
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -277,6 +278,10 @@ function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
 
   if (detailLoading) {
     return { matches: false, pending: true };
+  }
+
+  if (assumeMatchWhenUnknown) {
+    return { matches: true, pending: false };
   }
 
   return { matches: false, pending: false };
@@ -308,7 +313,13 @@ function matchesAdvertiser(campaign, detail, detailLoading, selectedAdvertiserId
   return buildScopeMatchResult(ids, detailIds, detailLoading, target);
 }
 
-function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
+function matchesStore(
+  campaign,
+  detail,
+  detailLoading,
+  selectedStoreId,
+  { assumeMatchWhenUnknown = false } = {},
+) {
   if (!selectedStoreId) {
     return { matches: true, pending: false };
   }
@@ -318,7 +329,9 @@ function matchesStore(campaign, detail, detailLoading, selectedStoreId) {
   }
   const ids = collectStoreIdsFromCampaign(campaign);
   const detailIds = collectStoreIdsFromDetail(detail);
-  return buildScopeMatchResult(ids, detailIds, detailLoading, target);
+  return buildScopeMatchResult(ids, detailIds, detailLoading, target, {
+    assumeMatchWhenUnknown,
+  });
 }
 
 function matchesCampaignScope(card, filters) {
@@ -330,7 +343,9 @@ function matchesCampaignScope(card, filters) {
   const results = [
     matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
     matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
-    matchesStore(campaign, detail, detailLoading, storeId),
+    matchesStore(campaign, detail, detailLoading, storeId, {
+      assumeMatchWhenUnknown: Boolean(storeId),
+    }),
   ];
 
   return {
