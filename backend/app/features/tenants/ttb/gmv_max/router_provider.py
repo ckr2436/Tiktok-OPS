@@ -566,6 +566,7 @@ async def sync_gmvmax_campaigns_provider(
     auth_id: int,
     payload: SyncRequest,
     bc_id_query: Optional[str] = Query(None, alias="bc_id"),
+    owner_bc_id_query: Optional[str] = Query(None, alias="owner_bc_id"),
     advertiser_id_query: Optional[str] = Query(None, alias="advertiser_id"),
     store_id_query: Optional[str] = Query(None, alias="store_id"),
     context: GMVMaxRouteContext = Depends(get_route_context),
@@ -576,8 +577,14 @@ async def sync_gmvmax_campaigns_provider(
         payload.advertiser_id or advertiser_id_query or context.advertiser_id
     )
     store_id = payload.store_id or store_id_query or context.store_id
+    resolved_bc_id = (
+        payload.owner_bc_id
+        or payload.bc_id
+        or owner_bc_id_query
+        or bc_id_query
+    )
     scope_context = {
-        "bc_id": payload.bc_id or bc_id_query,
+        "bc_id": resolved_bc_id,
         "advertiser_id": advertiser_id,
         "store_id": store_id,
     }
