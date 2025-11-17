@@ -124,8 +124,15 @@ function addId(target, value) {
   target.add(normalized);
 }
 
+function ensureIdSet(target) {
+  if (target && typeof target.add === 'function') {
+    return target;
+  }
+  return new Set();
+}
+
 function collectBusinessCenterIdsFromCampaign(campaign, target) {
-  const ids = target ?? new Set();
+  const ids = ensureIdSet(target);
   if (!campaign || typeof campaign !== 'object') return ids;
   addId(ids, campaign.owner_bc_id);
   addId(ids, campaign.ownerBcId);
@@ -177,7 +184,7 @@ function collectBusinessCenterIdsFromDetail(detail, target) {
 }
 
 function collectAdvertiserIdsFromCampaign(campaign, target) {
-  const ids = target ?? new Set();
+  const ids = ensureIdSet(target);
   if (!campaign || typeof campaign !== 'object') return ids;
   addId(ids, campaign.advertiser_id);
   addId(ids, campaign.advertiserId);
@@ -210,7 +217,7 @@ function collectAdvertiserIdsFromDetail(detail, target) {
 }
 
 function collectStoreIdsFromCampaign(campaign, target) {
-  const ids = target ?? new Set();
+  const ids = ensureIdSet(target);
   if (!campaign || typeof campaign !== 'object') return ids;
   addId(ids, campaign.store_id);
   addId(ids, campaign.storeId);
@@ -298,14 +305,14 @@ function addProductIdentifier(target, value) {
 }
 
 function collectProductIdsFromList(list, target) {
-  const ids = target ?? new Set();
+  const ids = ensureIdSet(target);
   const items = ensureArray(list);
   items.forEach((value) => addProductIdentifier(ids, value));
   return ids;
 }
 
 function collectProductIdsFromCampaign(campaign, target) {
-  const ids = target ?? new Set();
+  const ids = ensureIdSet(target);
   if (!campaign || typeof campaign !== 'object') return ids;
 
   collectProductIdsFromList(campaign.item_group_ids, ids);
