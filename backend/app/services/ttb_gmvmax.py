@@ -626,6 +626,7 @@ def upsert_metrics_hourly_row(
     )
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
+    instance.store_id = str(campaign.store_id or "")
 
     db.flush()
     return instance
@@ -780,6 +781,7 @@ def upsert_metrics_daily_row(
     )
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
+    instance.store_id = str(campaign.store_id or "")
 
     db.flush()
     return instance
