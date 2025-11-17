@@ -8,20 +8,23 @@ import Loading from '@/components/ui/Loading.jsx';
 
 import {
   useAccountsQuery,
-  useAdvertisersQuery,
-  useBusinessCentersQuery,
   useCreateGmvMaxCampaignMutation,
   useGmvMaxCampaignsQuery,
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
   useProductsQuery,
-  useStoresQuery,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
 import { clampPageSize, getGmvMaxCampaign } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
+import {
+  MAX_SCOPE_PRESETS,
+  buildScopePresetId,
+  loadScopePresets,
+  saveScopePresets,
+} from '../utils/scopePresets.js';
 
 const PROVIDER = 'tiktok-business';
 const PROVIDER_LABEL = 'TikTok Business';
@@ -305,6 +308,86 @@ function matchesCampaignScope(card, filters) {
     return false;
   }
   return true;
+}
+
+const DEFAULT_SCOPE = {
+  accountAuthId: null,
+  bcId: null,
+  advertiserId: null,
+  storeId: null,
+};
+
+function ensureArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.items)) return value.items;
+    if (Array.isArray(value.list)) return value.list;
+  }
+  return [];
+}
+
+function getBusinessCenterId(bc) {
+  if (!bc || typeof bc !== 'object') return '';
+  return normalizeIdValue(
+    bc.bc_id ?? bc.id ?? bc.business_center_id ?? bc.businessCenterId ?? bc.bcId ?? '',
+  );
+}
+
+function getBusinessCenterLabel(bc) {
+  if (!bc || typeof bc !== 'object') return '';
+  return bc.name || bc.bc_name || bc.bcName || getBusinessCenterId(bc) || 'Business center';
+}
+
+function getAdvertiserId(advertiser) {
+  if (!advertiser || typeof advertiser !== 'object') return '';
+  return normalizeIdValue(advertiser.advertiser_id ?? advertiser.id ?? advertiser.advertiserId ?? '');
+}
+
+function getAdvertiserLabel(advertiser) {
+  if (!advertiser || typeof advertiser !== 'object') return '';
+  return (
+    advertiser.display_name ||
+    advertiser.name ||
+    advertiser.advertiser_name ||
+    advertiser.advertiserName ||
+    getAdvertiserId(advertiser) ||
+    'Advertiser'
+  );
+}
+
+function getStoreId(store) {
+  if (!store || typeof store !== 'object') return '';
+  return normalizeIdValue(store.store_id ?? store.id ?? store.storeId ?? '');
+}
+
+function getStoreLabel(store) {
+  if (!store || typeof store !== 'object') return '';
+  return store.name || store.store_name || store.storeName || getStoreId(store) || 'Store';
+}
+
+function normalizeLinksMap(raw) {
+  const map = new Map();
+  if (!raw || typeof raw !== 'object') return map;
+  Object.entries(raw).forEach(([key, value]) => {
+    const normalizedKey = normalizeIdValue(key);
+    if (!normalizedKey) return;
+    if (!Array.isArray(value)) return;
+    const ids = value.map((item) => normalizeIdValue(item)).filter(Boolean);
+    if (ids.length > 0) {
+      map.set(normalizedKey, ids);
+    }
+  });
+  return map;
+}
+
+function extractLinkMap(links, ...candidates) {
+  if (!links || typeof links !== 'object') return new Map();
+  for (const key of candidates) {
+    if (links[key]) {
+      return normalizeLinksMap(links[key]);
+    }
+  }
+  return new Map();
 }
 
 function normalizeStatusValue(value) {
@@ -1394,69 +1477,71 @@ export default function GmvMaxOverviewPage() {
   const queryClient = useQueryClient();
 
   const provider = PROVIDER;
-  const [authId, setAuthId] = useState('');
-  const [businessCenterId, setBusinessCenterId] = useState('');
-  const [advertiserId, setAdvertiserId] = useState('');
-  const [storeId, setStoreId] = useState('');
+  const [scope, setScope] = useState(() => ({ ...DEFAULT_SCOPE }));
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
-  const savedScopeRef = useRef(null);
-  const restorationRef = useRef({
-    account: false,
-    businessCenter: false,
-    advertiser: false,
-    store: false,
-  });
-  const [readyToSave, setReadyToSave] = useState(false);
+  const [hasLoadedScope, setHasLoadedScope] = useState(false);
+  const [scopePresets, setScopePresets] = useState([]);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [presetLabelInput, setPresetLabelInput] = useState('');
 
-  const markRestored = useCallback(
-    (key) => {
-      if (restorationRef.current[key]) return;
-      restorationRef.current[key] = true;
-      if (
-        restorationRef.current.account &&
-        restorationRef.current.businessCenter &&
-        restorationRef.current.advertiser &&
-        restorationRef.current.store
-      ) {
-        setReadyToSave(true);
-      }
-    },
-    [setReadyToSave],
-  );
+  const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
+  const businessCenterId = scope.bcId ? String(scope.bcId) : '';
+  const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
+  const storeId = scope.storeId ? String(scope.storeId) : '';
+  const isScopeReady = Boolean(authId && businessCenterId && advertiserId && storeId);
 
   useEffect(() => {
     if (!workspaceId) {
-      savedScopeRef.current = null;
-      restorationRef.current = {
-        account: false,
-        businessCenter: false,
-        advertiser: false,
-        store: false,
-      };
-      setReadyToSave(false);
+      setScope({ ...DEFAULT_SCOPE });
+      setHasLoadedScope(false);
+      setSelectedPresetId('');
       return;
     }
-    const scope = loadScope(workspaceId, provider);
-    savedScopeRef.current = scope;
-    restorationRef.current = {
-      account: false,
-      businessCenter: false,
-      advertiser: false,
-      store: false,
-    };
-    setReadyToSave(false);
+    const saved = loadScope(workspaceId, provider);
+    if (saved) {
+      setScope({
+        accountAuthId: saved.accountAuthId ?? null,
+        bcId: saved.businessCenterId ?? null,
+        advertiserId: saved.advertiserId ?? null,
+        storeId: saved.storeId ?? null,
+      });
+    } else {
+      setScope({ ...DEFAULT_SCOPE });
+    }
+    setHasLoadedScope(true);
   }, [provider, workspaceId]);
 
   useEffect(() => {
-    setAuthId('');
-    setBusinessCenterId('');
-    setAdvertiserId('');
-    setStoreId('');
-    setSelectedProductIds([]);
+    if (!workspaceId) {
+      setScopePresets([]);
+      setSelectedPresetId('');
+      return;
+    }
+    const presets = loadScopePresets(workspaceId);
+    setScopePresets(presets);
+    setSelectedPresetId('');
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId || !hasLoadedScope) return;
+    saveScope(workspaceId, provider, {
+      accountAuthId: authId || undefined,
+      businessCenterId: businessCenterId || null,
+      advertiserId: advertiserId || null,
+      storeId: storeId || null,
+    });
+  }, [
+    advertiserId,
+    authId,
+    businessCenterId,
+    hasLoadedScope,
+    provider,
+    storeId,
+    workspaceId,
+  ]);
 
   const accountsQuery = useAccountsQuery(
     workspaceId,
@@ -1467,7 +1552,7 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
-  const businessCentersQuery = useBusinessCentersQuery(
+  const scopeOptionsQuery = useGmvMaxOptionsQuery(
     workspaceId,
     provider,
     authId,
@@ -1477,38 +1562,82 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
-  const advertiserParams = useMemo(() => {
-    const params = {};
-    if (businessCenterId) params.owner_bc_id = businessCenterId;
-    return params;
-  }, [businessCenterId]);
+  const scopeOptions = scopeOptionsQuery.data || {};
+  const scopeOptionsReady = scopeOptionsQuery.isSuccess;
 
-  const advertisersQuery = useAdvertisersQuery(
-    workspaceId,
-    provider,
-    authId,
-    advertiserParams,
-    {
-      enabled: Boolean(workspaceId && authId),
-    },
+  const businessCenterOptions = useMemo(() => {
+    if (!authId) return [];
+    const list = ensureArray(
+      scopeOptions.bcs ||
+        scopeOptions.business_centers ||
+        scopeOptions.businessCenters ||
+        scopeOptions.bc_list,
+    );
+    return list
+      .map((bc) => {
+        const id = getBusinessCenterId(bc);
+        if (!id) return null;
+        return { value: id, label: getBusinessCenterLabel(bc), data: bc };
+      })
+      .filter(Boolean);
+  }, [authId, scopeOptions]);
+
+  const advertiserList = useMemo(() => {
+    return ensureArray(scopeOptions.advertisers || scopeOptions.advertiser_list);
+  }, [scopeOptions]);
+
+  const storeList = useMemo(() => {
+    return ensureArray(scopeOptions.stores || scopeOptions.store_list);
+  }, [scopeOptions]);
+
+  const links = scopeOptions.links || {};
+  const bcToAdvertisers = useMemo(
+    () => extractLinkMap(links, 'bc_to_advertisers', 'bcToAdvertisers'),
+    [links],
+  );
+  const advertiserToStores = useMemo(
+    () => extractLinkMap(links, 'advertiser_to_stores', 'advertiserToStores'),
+    [links],
   );
 
-  const storesQuery = useStoresQuery(
-    workspaceId,
-    provider,
-    authId,
-    {
-      advertiserId: advertiserId || undefined,
-      owner_bc_id: businessCenterId || undefined,
-    },
-    {
-      enabled: Boolean(workspaceId && authId && advertiserId),
-    },
-  );
+  const advertiserOptions = useMemo(() => {
+    if (!authId || !businessCenterId) return [];
+    const allowed = bcToAdvertisers.get(businessCenterId);
+    const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
+    const hasLinks = bcToAdvertisers.size > 0;
+    return advertiserList
+      .filter((adv) => {
+        const id = getAdvertiserId(adv);
+        if (!id) return false;
+        if (allowedSet) return allowedSet.has(id);
+        return hasLinks ? false : true;
+      })
+      .map((adv) => ({ value: getAdvertiserId(adv), label: getAdvertiserLabel(adv), data: adv }));
+  }, [advertiserList, authId, bcToAdvertisers, businessCenterId]);
+
+  const storeOptions = useMemo(() => {
+    if (!authId || !advertiserId) return [];
+    const allowed = advertiserToStores.get(advertiserId);
+    const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
+    const hasLinks = advertiserToStores.size > 0;
+    return storeList
+      .filter((store) => {
+        const id = getStoreId(store);
+        if (!id) return false;
+        if (allowedSet) return allowedSet.has(id);
+        return hasLinks ? false : true;
+      })
+      .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }));
+  }, [advertiserId, advertiserToStores, authId, storeList]);
 
   const productParams = useMemo(
-    () => ({ store_id: storeId || undefined, page_size: clampPageSize(50) }),
-    [storeId],
+    () => ({
+      store_id: storeId || undefined,
+      advertiser_id: advertiserId || undefined,
+      owner_bc_id: businessCenterId || undefined,
+      page_size: clampPageSize(50),
+    }),
+    [advertiserId, businessCenterId, storeId],
   );
 
   const productsQuery = useProductsQuery(
@@ -1517,16 +1646,17 @@ export default function GmvMaxOverviewPage() {
     authId,
     productParams,
     {
-      enabled: Boolean(workspaceId && authId && storeId),
+      enabled: Boolean(workspaceId && provider && isScopeReady),
     },
   );
 
   const campaignParams = useMemo(() => {
     const params = { page_size: clampPageSize(50) };
-    if (storeId) params.store_ids = [String(storeId)];
+    if (businessCenterId) params.owner_bc_id = businessCenterId;
     if (advertiserId) params.advertiser_id = advertiserId;
+    if (storeId) params.store_ids = [String(storeId)];
     return params;
-  }, [storeId, advertiserId]);
+  }, [advertiserId, businessCenterId, storeId]);
 
   const campaignsQuery = useGmvMaxCampaignsQuery(
     workspaceId,
@@ -1534,7 +1664,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     campaignParams,
     {
-      enabled: Boolean(workspaceId && authId),
+      enabled: Boolean(workspaceId && provider && isScopeReady),
     },
   );
 
@@ -1554,402 +1684,233 @@ export default function GmvMaxOverviewPage() {
     [accounts],
   );
 
-  const businessCenters = useMemo(() => {
-    const data = businessCentersQuery.data;
-    const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
-  }, [businessCentersQuery.data]);
 
-  const advertisers = useMemo(() => {
-    const data = advertisersQuery.data;
-    const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
-  }, [advertisersQuery.data]);
 
-  const stores = useMemo(() => {
-    const data = storesQuery.data;
-    const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
-  }, [storesQuery.data]);
 
-  useEffect(() => {
-    if (restorationRef.current.account) return;
-    const saved = savedScopeRef.current;
-    if (
-      !workspaceId ||
-      !saved ||
-      saved.workspaceId !== String(workspaceId) ||
-      (saved.provider && saved.provider !== provider)
-    ) {
-      markRestored('account');
-      return;
-    }
-    if (accountsQuery.isLoading || accountsQuery.isFetching) return;
-    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
-    if (savedAccountId && accountOptions.some((option) => option.value === savedAccountId)) {
-      if (authId !== savedAccountId) {
-        setAuthId(savedAccountId);
-      }
-    }
-    markRestored('account');
+
+
+  const selectedAccountLabel =
+    accountOptions.find((item) => item.value === authId)?.label || '';
+  const selectedBusinessCenterLabel =
+    businessCenterOptions.find((item) => item.value === businessCenterId)?.label || '';
+  const selectedAdvertiserLabel =
+    advertiserOptions.find((item) => item.value === advertiserId)?.label || '';
+  const selectedStoreLabel = storeOptions.find((item) => item.value === storeId)?.label || '';
+
+  const defaultPresetLabel = useMemo(() => {
+    const parts = [
+      selectedAccountLabel,
+      selectedBusinessCenterLabel,
+      selectedAdvertiserLabel,
+      selectedStoreLabel,
+    ].filter(Boolean);
+    return parts.join(' / ');
   }, [
-    accountOptions,
-    accountsQuery.isFetching,
-    accountsQuery.isLoading,
-    authId,
-    markRestored,
-    provider,
-    workspaceId,
+    selectedAccountLabel,
+    selectedAdvertiserLabel,
+    selectedBusinessCenterLabel,
+    selectedStoreLabel,
   ]);
 
-  useEffect(() => {
-    if (restorationRef.current.businessCenter) return;
-    const saved = savedScopeRef.current;
-    if (
-      !workspaceId ||
-      !saved ||
-      saved.workspaceId !== String(workspaceId) ||
-      (saved.provider && saved.provider !== provider)
-    ) {
-      markRestored('businessCenter');
-      return;
-    }
-    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
-    if (savedAccountId && authId !== savedAccountId) {
-      if (
-        !accountsQuery.isLoading &&
-        !accountsQuery.isFetching &&
-        !accountOptions.some((option) => option.value === savedAccountId)
-      ) {
-        markRestored('businessCenter');
-      }
-      return;
-    }
-    if (!authId) {
-      markRestored('businessCenter');
-      return;
-    }
-    if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) return;
-    if (saved.businessCenterId !== undefined) {
-      if (saved.businessCenterId === null) {
-        if (businessCenterId !== '') {
-          setBusinessCenterId('');
-          return;
-        }
-      } else {
-        const normalized = String(saved.businessCenterId);
-        const hasSaved = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalized);
-        if (hasSaved) {
-          if (businessCenterId !== normalized) {
-            setBusinessCenterId(normalized);
-            return;
-          }
-        }
-      }
-    }
-    markRestored('businessCenter');
-  }, [
-    accountOptions,
-    accountsQuery.isFetching,
-    accountsQuery.isLoading,
-    authId,
-    businessCenterId,
-    businessCenters,
-    businessCentersQuery.isFetching,
-    businessCentersQuery.isLoading,
-    markRestored,
-    provider,
-    workspaceId,
-  ]);
-
-  useEffect(() => {
-    if (restorationRef.current.advertiser) return;
-    const saved = savedScopeRef.current;
-    if (
-      !workspaceId ||
-      !saved ||
-      saved.workspaceId !== String(workspaceId) ||
-      (saved.provider && saved.provider !== provider)
-    ) {
-      markRestored('advertiser');
-      return;
-    }
-    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
-    if (savedAccountId && authId !== savedAccountId) {
-      if (
-        !accountsQuery.isLoading &&
-        !accountsQuery.isFetching &&
-        !accountOptions.some((option) => option.value === savedAccountId)
-      ) {
-        markRestored('advertiser');
-      }
-      return;
-    }
-    if (!authId) {
-      markRestored('advertiser');
-      return;
-    }
-    const savedBusinessCenterId = saved.businessCenterId;
-    if (savedBusinessCenterId !== undefined) {
-      if (savedBusinessCenterId === null) {
-        if (businessCenterId !== '') {
-          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
-            return;
-          }
-          setBusinessCenterId('');
-          return;
-        }
-      } else {
-        const normalized = String(savedBusinessCenterId);
-        if (businessCenterId !== normalized) {
-          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
-            return;
-          }
-          const hasSavedBc = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalized);
-          if (hasSavedBc) {
-            return;
-          }
-        }
-      }
-    }
-    if (advertisersQuery.isLoading || advertisersQuery.isFetching) return;
-    if (saved.advertiserId !== undefined) {
-      if (saved.advertiserId === null) {
-        if (advertiserId !== '') {
-          setAdvertiserId('');
-          return;
-        }
-      } else {
-        const normalized = String(saved.advertiserId);
-        const hasSavedAdvertiser = advertisers.some(
-          (adv) => String(adv.advertiser_id ?? adv.id) === normalized,
-        );
-        if (hasSavedAdvertiser) {
-          if (advertiserId !== normalized) {
-            setAdvertiserId(normalized);
-            return;
-          }
-        }
-      }
-    }
-    markRestored('advertiser');
-  }, [
-    accountOptions,
-    accountsQuery.isFetching,
-    accountsQuery.isLoading,
-    advertisers,
-    advertisersQuery.isFetching,
-    advertisersQuery.isLoading,
-    advertiserId,
-    authId,
-    businessCenterId,
-    businessCenters,
-    businessCentersQuery.isFetching,
-    businessCentersQuery.isLoading,
-    markRestored,
-    provider,
-    workspaceId,
-  ]);
-
-  useEffect(() => {
-    if (restorationRef.current.store) return;
-    const saved = savedScopeRef.current;
-    if (
-      !workspaceId ||
-      !saved ||
-      saved.workspaceId !== String(workspaceId) ||
-      (saved.provider && saved.provider !== provider)
-    ) {
-      markRestored('store');
-      return;
-    }
-    const savedAccountId = saved.accountAuthId ? String(saved.accountAuthId) : '';
-    if (savedAccountId && authId !== savedAccountId) {
-      if (
-        !accountsQuery.isLoading &&
-        !accountsQuery.isFetching &&
-        !accountOptions.some((option) => option.value === savedAccountId)
-      ) {
-        markRestored('store');
-      }
-      return;
-    }
-    if (!authId) {
-      markRestored('store');
-      return;
-    }
-    const savedBusinessCenterId = saved.businessCenterId;
-    if (savedBusinessCenterId !== undefined) {
-      if (savedBusinessCenterId === null) {
-        if (businessCenterId !== '') {
-          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
-            return;
-          }
-          setBusinessCenterId('');
-          return;
-        }
-      } else {
-        const normalizedBc = String(savedBusinessCenterId);
-        if (businessCenterId !== normalizedBc) {
-          if (businessCentersQuery.isLoading || businessCentersQuery.isFetching) {
-            return;
-          }
-          const hasSavedBc = businessCenters.some((bc) => String(bc.bc_id ?? bc.id) === normalizedBc);
-          if (hasSavedBc) {
-            return;
-          }
-        }
-      }
-    }
-    const savedAdvertiserId = saved.advertiserId;
-    if (savedAdvertiserId !== undefined) {
-      if (savedAdvertiserId === null) {
-        if (advertiserId !== '') {
-          if (advertisersQuery.isLoading || advertisersQuery.isFetching) {
-            return;
-          }
-          setAdvertiserId('');
-          return;
-        }
-      } else {
-        const normalizedAdvertiser = String(savedAdvertiserId);
-        if (advertiserId !== normalizedAdvertiser) {
-          if (advertisersQuery.isLoading || advertisersQuery.isFetching) {
-            return;
-          }
-          const hasSavedAdvertiser = advertisers.some(
-            (adv) => String(adv.advertiser_id ?? adv.id) === normalizedAdvertiser,
-          );
-          if (hasSavedAdvertiser) {
-            return;
-          }
-        }
-      }
-    }
-    if (storesQuery.isLoading || storesQuery.isFetching) return;
-    if (saved.storeId !== undefined) {
-      if (saved.storeId === null) {
-        if (storeId !== '') {
-          setStoreId('');
-          return;
-        }
-      } else {
-        const normalized = String(saved.storeId);
-        const hasSavedStore = stores.some((store) => String(store.store_id ?? store.id) === normalized);
-        if (hasSavedStore) {
-          if (storeId !== normalized) {
-            setStoreId(normalized);
-            return;
-          }
-        }
-      }
-    }
-    markRestored('store');
-  }, [
-    accountOptions,
-    accountsQuery.isFetching,
-    accountsQuery.isLoading,
-    advertiserId,
-    advertisers,
-    advertisersQuery.isFetching,
-    advertisersQuery.isLoading,
-    authId,
-    businessCenterId,
-    businessCenters,
-    businessCentersQuery.isFetching,
-    businessCentersQuery.isLoading,
-    markRestored,
-    provider,
-    storeId,
-    stores,
-    storesQuery.isFetching,
-    storesQuery.isLoading,
-    workspaceId,
-  ]);
-
-  useEffect(() => {
-    if (!authId && accountOptions.length === 1) {
-      setAuthId(accountOptions[0].value);
-    }
-  }, [accountOptions, authId]);
-
-  useEffect(() => {
-    if (!authId) return;
-    if (accountOptions.some((option) => option.value === authId)) return;
-    setAuthId('');
-  }, [accountOptions, authId]);
-
-  useEffect(() => {
-    if (authId) return;
-    setBusinessCenterId('');
-    setAdvertiserId('');
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [authId]);
-
-  useEffect(() => {
-    if (businessCenterId) return;
-    setAdvertiserId('');
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [businessCenterId]);
-
-  useEffect(() => {
-    if (advertiserId) return;
-    setStoreId('');
-    setSelectedProductIds([]);
-  }, [advertiserId]);
-
-  useEffect(() => {
-    if (storeId) return;
-    setSelectedProductIds([]);
-  }, [storeId]);
-
-  useEffect(() => {
-    if (!readyToSave) return;
-    if (!workspaceId) return;
-    saveScope(workspaceId, provider, {
-      accountAuthId: authId || undefined,
-      businessCenterId: businessCenterId === '' ? null : businessCenterId,
-      advertiserId: advertiserId === '' ? null : advertiserId,
-      storeId: storeId === '' ? null : storeId,
+  const handleAccountChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope({
+      accountAuthId: value ? String(value) : null,
+      bcId: null,
+      advertiserId: null,
+      storeId: null,
     });
-  }, [authId, advertiserId, businessCenterId, provider, readyToSave, storeId, workspaceId]);
+    setSelectedPresetId('');
+  }, []);
+
+  const handleBusinessCenterChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope((prev) => ({
+      ...prev,
+      bcId: value ? String(value) : null,
+      advertiserId: null,
+      storeId: null,
+    }));
+    setSelectedPresetId('');
+  }, []);
+
+  const handleAdvertiserChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope((prev) => ({
+      ...prev,
+      advertiserId: value ? String(value) : null,
+      storeId: null,
+    }));
+    setSelectedPresetId('');
+  }, []);
+
+  const handleStoreChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope((prev) => ({
+      ...prev,
+      storeId: value ? String(value) : null,
+    }));
+    setSelectedPresetId('');
+  }, []);
+
+  const handlePresetChange = useCallback(
+    (event) => {
+      const presetId = event?.target?.value || '';
+      setSelectedPresetId(presetId);
+      const preset = scopePresets.find((item) => item.id === presetId);
+      if (!preset) return;
+      setScope({
+        accountAuthId: preset.accountAuthId || null,
+        bcId: preset.bcId || null,
+        advertiserId: preset.advertiserId || null,
+        storeId: preset.storeId || null,
+      });
+    },
+    [scopePresets],
+  );
+
+  const handleDeletePreset = useCallback(() => {
+    if (!workspaceId || !selectedPresetId) return;
+    setScopePresets((prev) => {
+      const next = prev.filter((preset) => preset.id !== selectedPresetId);
+      saveScopePresets(workspaceId, next);
+      return next;
+    });
+    setSelectedPresetId('');
+  }, [selectedPresetId, workspaceId]);
+
+  const handleSavePreset = useCallback(() => {
+    if (!workspaceId || !isScopeReady) return;
+    const label = presetLabelInput.trim() || defaultPresetLabel || 'GMV Max scope preset';
+    const preset = {
+      id: buildScopePresetId({
+        accountAuthId: authId,
+        bcId: businessCenterId,
+        advertiserId,
+        storeId,
+      }),
+      label,
+      accountAuthId: authId,
+      bcId: businessCenterId,
+      advertiserId,
+      storeId,
+    };
+    setScopePresets((prev) => {
+      const filtered = prev.filter((item) => item.id !== preset.id);
+      const next = [preset, ...filtered].slice(0, MAX_SCOPE_PRESETS);
+      saveScopePresets(workspaceId, next);
+      return next;
+    });
+    setPresetLabelInput('');
+    setSelectedPresetId(preset.id);
+  }, [
+    advertiserId,
+    authId,
+    businessCenterId,
+    defaultPresetLabel,
+    isScopeReady,
+    presetLabelInput,
+    storeId,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    setSelectedProductIds([]);
+  }, [advertiserId, authId, businessCenterId, storeId, workspaceId]);
+
+  useEffect(() => {
+    if (!authId || !businessCenterId || !scopeOptionsReady) return;
+    const hasBusinessCenter = businessCenterOptions.some((option) => option.value === businessCenterId);
+    if (hasBusinessCenter) return;
+    setScope((prev) => ({
+      ...prev,
+      bcId: null,
+      advertiserId: null,
+      storeId: null,
+    }));
+    setSelectedPresetId('');
+  }, [authId, businessCenterId, businessCenterOptions, scopeOptionsReady]);
+
+  useEffect(() => {
+    if (!businessCenterId || !advertiserId || !scopeOptionsReady) return;
+    const hasAdvertiser = advertiserOptions.some((option) => option.value === advertiserId);
+    if (hasAdvertiser) return;
+    setScope((prev) => ({
+      ...prev,
+      advertiserId: null,
+      storeId: null,
+    }));
+    setSelectedPresetId('');
+  }, [advertiserId, advertiserOptions, businessCenterId, scopeOptionsReady]);
+
+  useEffect(() => {
+    if (!advertiserId || !storeId || !scopeOptionsReady) return;
+    const hasStore = storeOptions.some((option) => option.value === storeId);
+    if (hasStore) return;
+    setScope((prev) => ({
+      ...prev,
+      storeId: null,
+    }));
+    setSelectedPresetId('');
+  }, [advertiserId, scopeOptionsReady, storeId, storeOptions]);
+
+  useEffect(() => {
+    if (!isScopeReady) {
+      setSelectedProductIds([]);
+    }
+  }, [isScopeReady]);
+
+  useEffect(() => {
+    setSyncError(null);
+  }, [advertiserId, authId, businessCenterId, storeId]);
 
   const storeNameById = useMemo(() => {
     const map = new Map();
-    stores.forEach((store) => {
-      const id = store.store_id ?? store.id;
-      if (id !== undefined && id !== null) {
-        map.set(String(id), store.name || store.store_name || String(id));
+    storeOptions.forEach((store) => {
+      const id = store.value;
+      if (id) {
+        map.set(String(id), store.label || String(id));
       }
     });
     return map;
-  }, [stores]);
+  }, [storeOptions]);
 
   const products = useMemo(() => {
+    if (!isScopeReady) return [];
     const data = productsQuery.data;
     const items = data?.items || data?.list || data || [];
     return Array.isArray(items) ? items : [];
-  }, [productsQuery.data]);
+  }, [isScopeReady, productsQuery.data]);
 
   const campaigns = useMemo(() => {
-    if (!authId) return [];
+    if (!isScopeReady) return [];
     const data = campaignsQuery.data;
     const items = data?.items || data?.list || data || [];
     return filterCampaignsByStatus(Array.isArray(items) ? items : []);
-  }, [authId, campaignsQuery.data]);
+  }, [campaignsQuery.data, isScopeReady]);
 
   const campaignDetailQueries = useQueries({
-    queries: campaigns.map((campaign) => {
-      const campaignId = campaign?.campaign_id || campaign?.id;
-      return {
-        queryKey: ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId],
-        queryFn: () => getGmvMaxCampaign(workspaceId, provider, authId, campaignId),
-        enabled: Boolean(workspaceId && authId && campaignId),
-        staleTime: 60 * 1000,
-      };
-    }),
+    queries: isScopeReady
+      ? campaigns.map((campaign) => {
+          const campaignId = campaign?.campaign_id || campaign?.id;
+          return {
+            queryKey: [
+              'gmvMax',
+              'campaign-detail',
+              workspaceId,
+              provider,
+              authId,
+              businessCenterId,
+              advertiserId,
+              storeId,
+              campaignId,
+            ],
+            queryFn: () => getGmvMaxCampaign(workspaceId, provider, authId, campaignId),
+            enabled: Boolean(workspaceId && authId && campaignId && isScopeReady),
+            staleTime: 60 * 1000,
+          };
+        })
+      : [],
   });
 
   const campaignDetailsById = useMemo(() => {
@@ -1981,14 +1942,14 @@ export default function GmvMaxOverviewPage() {
   }, [campaignDetailQueries]);
 
   const unassignedProducts = useMemo(() => {
-    if (products.length === 0) return [];
+    if (!isScopeReady || products.length === 0) return [];
     return products.filter((product) => {
       const id = getProductIdentifier(product);
       if (!id) return false;
       if (!isProductAvailable(product)) return false;
       return !assignedProductIds.has(id);
     });
-  }, [assignedProductIds, products]);
+  }, [assignedProductIds, isScopeReady, products]);
 
   useEffect(() => {
     setSelectedProductIds((prev) => {
@@ -2053,7 +2014,7 @@ export default function GmvMaxOverviewPage() {
   );
 
   const filteredCampaignCards = useMemo(() => {
-    if (!authId) return [];
+    if (!isScopeReady) return [];
     return campaignCards.filter((card) =>
       matchesCampaignScope(card, {
         businessCenterId,
@@ -2061,7 +2022,7 @@ export default function GmvMaxOverviewPage() {
         storeId,
       }),
     );
-  }, [advertiserId, authId, businessCenterId, campaignCards, storeId]);
+  }, [advertiserId, businessCenterId, campaignCards, isScopeReady, storeId]);
 
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
     onSuccess: () => {
@@ -2070,26 +2031,30 @@ export default function GmvMaxOverviewPage() {
     },
   });
 
-  const canSync = Boolean(authId && storeId);
-  const canCreateSeries = Boolean(authId && storeId);
+  const canSync = Boolean(isScopeReady);
+  const canCreateSeries = Boolean(isScopeReady);
 
   const handleSync = useCallback(async () => {
-    if (!canSync) return;
+    if (!isScopeReady) {
+      setSyncError('Please select business center, advertiser, and store before syncing GMV Max campaigns.');
+      return;
+    }
     setSyncError(null);
     const range = getRecentDateRange(7);
-      const payload = {
-        advertiser_id: advertiserId ? String(advertiserId) : undefined,
-        campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
-        campaign_options: { page_size: clampPageSize(50) },
-        report: {
-          store_ids: storeId ? [String(storeId)] : undefined,
-          start_date: range.start,
-          end_date: range.end,
-          metrics: DEFAULT_REPORT_METRICS,
-          dimensions: ['campaign_id', 'stat_time_day'],
-          enable_total_metrics: true,
-        },
-      };
+    const payload = {
+      owner_bc_id: businessCenterId ? String(businessCenterId) : undefined,
+      advertiser_id: advertiserId ? String(advertiserId) : undefined,
+      campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
+      campaign_options: { page_size: clampPageSize(50) },
+      report: {
+        store_ids: storeId ? [String(storeId)] : undefined,
+        start_date: range.start,
+        end_date: range.end,
+        metrics: DEFAULT_REPORT_METRICS,
+        dimensions: ['campaign_id', 'stat_time_day'],
+        enable_total_metrics: true,
+      },
+    };
     try {
       await syncMutation.mutateAsync(payload);
       await campaignsQuery.refetch();
@@ -2105,8 +2070,9 @@ export default function GmvMaxOverviewPage() {
     }
   }, [
     advertiserId,
-    canSync,
+    businessCenterId,
     campaignsQuery,
+    isScopeReady,
     productsQuery,
     storeId,
     syncMutation,
@@ -2191,10 +2157,8 @@ export default function GmvMaxOverviewPage() {
   const editingDetailError = editingDetailResult?.error;
   const editingDetailRefetch = editingDetailResult?.refetch;
 
-  const campaignsLoading = Boolean(authId) && (campaignsQuery.isLoading || campaignsQuery.isFetching);
-  const productsLoading = productsQuery.isLoading || productsQuery.isFetching;
-
-  const selectedAccountLabel = accountOptions.find((item) => item.value === authId)?.label || '';
+  const campaignsLoading = Boolean(isScopeReady && (campaignsQuery.isLoading || campaignsQuery.isFetching));
+  const productsLoading = Boolean(isScopeReady && (productsQuery.isLoading || productsQuery.isFetching));
 
   return (
     <div className="gmvmax-page">
@@ -2218,15 +2182,7 @@ export default function GmvMaxOverviewPage() {
         <div className="gmvmax-card__body">
           <div className="gmvmax-field-grid">
             <FormField label="Account">
-              <select
-                value={authId}
-                onChange={(event) => {
-                  setAuthId(event.target.value);
-                  setBusinessCenterId('');
-                  setAdvertiserId('');
-                  setStoreId('');
-                }}
-              >
+              <select value={authId} onChange={handleAccountChange}>
                 <option value="">Select account</option>
                 {accountOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -2236,20 +2192,16 @@ export default function GmvMaxOverviewPage() {
                 ))}
               </select>
             </FormField>
-            <FormField label="Business center (optional)">
+            <FormField label="Business center">
               <select
                 value={businessCenterId}
-                onChange={(event) => {
-                  setBusinessCenterId(event.target.value);
-                  setAdvertiserId('');
-                  setStoreId('');
-                }}
-                disabled={!authId}
+                onChange={handleBusinessCenterChange}
+                disabled={!authId || businessCenterOptions.length === 0}
               >
-                <option value="">All business centers</option>
-                {businessCenters.map((bc) => (
-                  <option key={bc.bc_id || bc.id} value={bc.bc_id || bc.id}>
-                    {bc.name || bc.bc_id || bc.id}
+                <option value="">Select business center</option>
+                {businessCenterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -2257,16 +2209,13 @@ export default function GmvMaxOverviewPage() {
             <FormField label="Advertiser">
               <select
                 value={advertiserId}
-                onChange={(event) => {
-                  setAdvertiserId(event.target.value);
-                  setStoreId('');
-                }}
-                disabled={!authId}
+                onChange={handleAdvertiserChange}
+                disabled={!businessCenterId || advertiserOptions.length === 0}
               >
                 <option value="">Select advertiser</option>
-                {advertisers.map((adv) => (
-                  <option key={adv.advertiser_id || adv.id} value={adv.advertiser_id || adv.id}>
-                    {adv.display_name || adv.name || adv.advertiser_id || adv.id}
+                {advertiserOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -2274,16 +2223,57 @@ export default function GmvMaxOverviewPage() {
             <FormField label="Store">
               <select
                 value={storeId}
-                onChange={(event) => setStoreId(event.target.value)}
-                disabled={!advertiserId}
+                onChange={handleStoreChange}
+                disabled={!advertiserId || storeOptions.length === 0}
               >
                 <option value="">Select store</option>
-                {stores.map((store) => (
-                  <option key={store.store_id || store.id} value={store.store_id || store.id}>
-                    {store.name || store.store_name || store.store_id || store.id}
+                {storeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
+            </FormField>
+          </div>
+          <div className="gmvmax-field-grid">
+            <FormField label={`Scope presets (max ${MAX_SCOPE_PRESETS})`}>
+              <div className="gmvmax-presets-row">
+                <select value={selectedPresetId} onChange={handlePresetChange}>
+                  <option value="">Select preset</option>
+                  {scopePresets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="gmvmax-button"
+                  onClick={handleDeletePreset}
+                  disabled={!selectedPresetId}
+                >
+                  Delete
+                </button>
+              </div>
+            </FormField>
+            <FormField label="Save current scope as preset">
+              <div className="gmvmax-presets-row">
+                <input
+                  type="text"
+                  value={presetLabelInput}
+                  onChange={(event) => setPresetLabelInput(event.target.value)}
+                  placeholder={defaultPresetLabel || 'Preset label'}
+                  disabled={!isScopeReady}
+                />
+                <button
+                  type="button"
+                  className="gmvmax-button"
+                  onClick={handleSavePreset}
+                  disabled={!isScopeReady}
+                >
+                  Save preset
+                </button>
+              </div>
             </FormField>
           </div>
           <div className="gmvmax-card__footer">
@@ -2291,7 +2281,7 @@ export default function GmvMaxOverviewPage() {
               type="button"
               className="gmvmax-button gmvmax-button--primary"
               onClick={handleSync}
-              disabled={!canSync || syncMutation.isPending}
+              disabled={syncMutation.isPending}
             >
               {syncMutation.isPending ? 'Syncing…' : 'Sync GMV Max Campaigns'}
             </button>
@@ -2317,10 +2307,16 @@ export default function GmvMaxOverviewPage() {
         </header>
         <div className="gmvmax-card__body">
           {!authId ? <p className="gmvmax-placeholder">Select an account to view products.</p> : null}
-          {authId && !storeId ? (
-            <p className="gmvmax-placeholder">Choose an advertiser and store to load products.</p>
+          {authId && !businessCenterId ? (
+            <p className="gmvmax-placeholder">Select a business center to continue.</p>
           ) : null}
-          {authId && storeId ? (
+          {authId && businessCenterId && !advertiserId ? (
+            <p className="gmvmax-placeholder">Select an advertiser to continue.</p>
+          ) : null}
+          {authId && businessCenterId && advertiserId && !storeId ? (
+            <p className="gmvmax-placeholder">Select a store to load products.</p>
+          ) : null}
+          {isScopeReady ? (
             <>
               <ProductSelectionPanel
                 products={unassignedProducts}
@@ -2340,7 +2336,10 @@ export default function GmvMaxOverviewPage() {
               </p>
             </>
           ) : null}
-          <ErrorBlock error={productsQuery.error} onRetry={productsQuery.refetch} />
+          <ErrorBlock
+            error={isScopeReady ? productsQuery.error : null}
+            onRetry={productsQuery.refetch}
+          />
         </div>
       </section>
 
@@ -2350,41 +2349,46 @@ export default function GmvMaxOverviewPage() {
         </header>
         <div className="gmvmax-card__body">
           <SeriesErrorNotice
-            error={authId ? campaignsQuery.error : null}
+            error={isScopeReady ? campaignsQuery.error : null}
             onRetry={campaignsQuery.refetch}
           />
           {campaignsLoading ? <Loading text="Loading campaigns…" /> : null}
-          {!campaignsLoading && !campaignsQuery.error && (!authId || filteredCampaignCards.length === 0) ? (
-            <p className="gmvmax-placeholder">
-              No GMV Max series found for the selected scope.
-              {!authId ? ' Select an account to get started.' : ''}
-            </p>
+          {!isScopeReady ? (
+            <p className="gmvmax-placeholder">Complete the scope filters to load GMV Max series.</p>
           ) : null}
-          <div className="gmvmax-campaign-grid">
-            {filteredCampaignCards.map(({
-              campaign,
-              detail,
-              detailLoading,
-              detailError,
-              detailRefetch,
-            }) => (
-              <CampaignCard
-                key={campaign.campaign_id || campaign.id}
-                campaign={campaign}
-                detail={detail}
-                detailLoading={detailLoading}
-                detailError={detailError}
-                onRetryDetail={detailRefetch}
-                workspaceId={workspaceId}
-                provider={provider}
-                authId={authId}
-                storeId={storeId}
-                onEdit={handleEditRequest}
-                onManage={handleManage}
-                onDashboard={handleDashboard}
-              />
-            ))}
-          </div>
+          {isScopeReady &&
+          !campaignsLoading &&
+          !campaignsQuery.error &&
+          filteredCampaignCards.length === 0 ? (
+            <p className="gmvmax-placeholder">No GMV Max series found for the selected scope.</p>
+          ) : null}
+          {isScopeReady ? (
+            <div className="gmvmax-campaign-grid">
+              {filteredCampaignCards.map(({
+                campaign,
+                detail,
+                detailLoading,
+                detailError,
+                detailRefetch,
+              }) => (
+                <CampaignCard
+                  key={campaign.campaign_id || campaign.id}
+                  campaign={campaign}
+                  detail={detail}
+                  detailLoading={detailLoading}
+                  detailError={detailError}
+                  onRetryDetail={detailRefetch}
+                  workspaceId={workspaceId}
+                  provider={provider}
+                  authId={authId}
+                  storeId={storeId}
+                  onEdit={handleEditRequest}
+                  onManage={handleManage}
+                  onDashboard={handleDashboard}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 

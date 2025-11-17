@@ -231,6 +231,9 @@ a:hover{ opacity:.95; }
 .gmvmax-card__body{ display:flex; flex-direction:column; gap:16px; }
 .gmvmax-card__footer{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .gmvmax-field-grid{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+.gmvmax-presets-row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.gmvmax-presets-row select, .gmvmax-presets-row input{ flex:1 1 220px; min-width:180px; }
+.gmvmax-presets-row .gmvmax-button{ flex:0 0 auto; }
 .gmvmax-subtext{ margin:4px 0 0; color:var(--muted); }
 .gmvmax-placeholder{ margin:0; padding:12px 16px; border-radius:12px; border:1px dashed var(--border); background:var(--panel-2); color:var(--muted); }
 .gmvmax-inline-error{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-radius:12px; border:1px solid rgba(239,68,68,.35); background:rgba(239,68,68,.12); color:#b91c1c; flex-wrap:wrap; }
