@@ -124,99 +124,102 @@ function addId(target, value) {
   target.add(normalized);
 }
 
-function collectBusinessCenterIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.owner_bc_id);
-  addId(target, campaign.ownerBcId);
-  addId(target, campaign.business_center_id);
-  addId(target, campaign.businessCenterId);
-  addId(target, campaign.bc_id);
+function collectBusinessCenterIdsFromCampaign(campaign, target) {
+  const ids = target ?? new Set();
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.owner_bc_id);
+  addId(ids, campaign.ownerBcId);
+  addId(ids, campaign.business_center_id);
+  addId(ids, campaign.businessCenterId);
+  addId(ids, campaign.bc_id);
 
   const bcList = campaign.business_center_ids || campaign.businessCenterIds;
   if (Array.isArray(bcList)) {
     bcList.forEach((item) => {
       if (item && typeof item === 'object') {
-        addId(target, item.bc_id);
-        addId(target, item.id);
-        addId(target, item.business_center_id);
-        addId(target, item.businessCenterId);
+        addId(ids, item.bc_id);
+        addId(ids, item.id);
+        addId(ids, item.business_center_id);
+        addId(ids, item.businessCenterId);
       } else {
-        addId(target, item);
+        addId(ids, item);
       }
     });
   }
 
   const bcObject = campaign.business_center || campaign.businessCenter;
   if (bcObject && typeof bcObject === 'object') {
-    addId(target, bcObject.bc_id);
-    addId(target, bcObject.id);
-    addId(target, bcObject.business_center_id);
-    addId(target, bcObject.businessCenterId);
+    addId(ids, bcObject.bc_id);
+    addId(ids, bcObject.id);
+    addId(ids, bcObject.business_center_id);
+    addId(ids, bcObject.businessCenterId);
   }
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectBusinessCenterIdsFromCampaign(nested, target);
+    collectBusinessCenterIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectBusinessCenterIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectBusinessCenterIdsFromCampaign(detail.campaign, target);
+function collectBusinessCenterIdsFromDetail(detail, target) {
+  const ids = collectBusinessCenterIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const bcObject = detail.business_center || detail.businessCenter;
   if (bcObject && typeof bcObject === 'object') {
-    addId(target, bcObject.bc_id);
-    addId(target, bcObject.id);
-    addId(target, bcObject.business_center_id);
-    addId(target, bcObject.businessCenterId);
+    addId(ids, bcObject.bc_id);
+    addId(ids, bcObject.id);
+    addId(ids, bcObject.business_center_id);
+    addId(ids, bcObject.businessCenterId);
   }
-  return target;
+  return ids;
 }
 
-function collectAdvertiserIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.advertiser_id);
-  addId(target, campaign.advertiserId);
+function collectAdvertiserIdsFromCampaign(campaign, target) {
+  const ids = target ?? new Set();
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.advertiser_id);
+  addId(ids, campaign.advertiserId);
 
   const advertiserObject = campaign.advertiser || campaign.advertiser_info || campaign.advertiserInfo;
   if (advertiserObject && typeof advertiserObject === 'object') {
-    addId(target, advertiserObject.advertiser_id);
-    addId(target, advertiserObject.advertiserId);
-    addId(target, advertiserObject.id);
+    addId(ids, advertiserObject.advertiser_id);
+    addId(ids, advertiserObject.advertiserId);
+    addId(ids, advertiserObject.id);
   }
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectAdvertiserIdsFromCampaign(nested, target);
+    collectAdvertiserIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectAdvertiserIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectAdvertiserIdsFromCampaign(detail.campaign, target);
+function collectAdvertiserIdsFromDetail(detail, target) {
+  const ids = collectAdvertiserIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const advertiserObject = detail.advertiser || detail.advertiser_info || detail.advertiserInfo;
   if (advertiserObject && typeof advertiserObject === 'object') {
-    addId(target, advertiserObject.advertiser_id);
-    addId(target, advertiserObject.advertiserId);
-    addId(target, advertiserObject.id);
+    addId(ids, advertiserObject.advertiser_id);
+    addId(ids, advertiserObject.advertiserId);
+    addId(ids, advertiserObject.id);
   }
-  return target;
+  return ids;
 }
 
-function collectStoreIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
-  addId(target, campaign.store_id);
-  addId(target, campaign.storeId);
+function collectStoreIdsFromCampaign(campaign, target) {
+  const ids = target ?? new Set();
+  if (!campaign || typeof campaign !== 'object') return ids;
+  addId(ids, campaign.store_id);
+  addId(ids, campaign.storeId);
 
   const storeObject = campaign.store || campaign.store_info || campaign.storeInfo;
   if (storeObject && typeof storeObject === 'object') {
-    addId(target, storeObject.store_id);
-    addId(target, storeObject.storeId);
-    addId(target, storeObject.id);
+    addId(ids, storeObject.store_id);
+    addId(ids, storeObject.storeId);
+    addId(ids, storeObject.id);
   }
 
   const storeLists = [
@@ -230,45 +233,45 @@ function collectStoreIdsFromCampaign(campaign, target = new Set()) {
     if (!Array.isArray(list)) return;
     list.forEach((item) => {
       if (item && typeof item === 'object') {
-        addId(target, item.store_id);
-        addId(target, item.storeId);
-        addId(target, item.id);
+        addId(ids, item.store_id);
+        addId(ids, item.storeId);
+        addId(ids, item.id);
       } else {
-        addId(target, item);
+        addId(ids, item);
       }
     });
   });
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectStoreIdsFromCampaign(nested, target);
+    collectStoreIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectStoreIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
-  collectStoreIdsFromCampaign(detail.campaign, target);
+function collectStoreIdsFromDetail(detail, target) {
+  const ids = collectStoreIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
   const sessions = detail.sessions || detail.session_list || [];
   sessions.forEach((session) => {
     if (!session || typeof session !== 'object') return;
-    addId(target, session.store_id);
-    addId(target, session.storeId);
+    addId(ids, session.store_id);
+    addId(ids, session.storeId);
     const storeObject = session.store || session.store_info || session.storeInfo;
     if (storeObject && typeof storeObject === 'object') {
-      addId(target, storeObject.store_id);
-      addId(target, storeObject.storeId);
-      addId(target, storeObject.id);
+      addId(ids, storeObject.store_id);
+      addId(ids, storeObject.storeId);
+      addId(ids, storeObject.id);
     }
     const products = session.product_list || session.products || [];
     products.forEach((product) => {
       if (!product || typeof product !== 'object') return;
-      addId(target, product.store_id);
-      addId(target, product.storeId);
+      addId(ids, product.store_id);
+      addId(ids, product.storeId);
     });
   });
-  return target;
+  return ids;
 }
 
 function addProductIdentifier(target, value) {
@@ -294,66 +297,68 @@ function addProductIdentifier(target, value) {
   }
 }
 
-function collectProductIdsFromList(list, target = new Set()) {
+function collectProductIdsFromList(list, target) {
+  const ids = target ?? new Set();
   const items = ensureArray(list);
-  items.forEach((value) => addProductIdentifier(target, value));
-  return target;
+  items.forEach((value) => addProductIdentifier(ids, value));
+  return ids;
 }
 
-function collectProductIdsFromCampaign(campaign, target = new Set()) {
-  if (!campaign || typeof campaign !== 'object') return target;
+function collectProductIdsFromCampaign(campaign, target) {
+  const ids = target ?? new Set();
+  if (!campaign || typeof campaign !== 'object') return ids;
 
-  collectProductIdsFromList(campaign.item_group_ids, target);
-  collectProductIdsFromList(campaign.itemGroupIds, target);
-  collectProductIdsFromList(campaign.item_groups, target);
-  collectProductIdsFromList(campaign.itemGroupList, target);
-  collectProductIdsFromList(campaign.item_group_list, target);
-  collectProductIdsFromList(campaign.item_list, target);
-  collectProductIdsFromList(campaign.itemList, target);
-  collectProductIdsFromList(campaign.item_ids, target);
-  collectProductIdsFromList(campaign.itemIds, target);
-  collectProductIdsFromList(campaign.product_ids, target);
-  collectProductIdsFromList(campaign.productIds, target);
-  collectProductIdsFromList(campaign.product_list, target);
-  collectProductIdsFromList(campaign.productList, target);
-  collectProductIdsFromList(campaign.products, target);
+  collectProductIdsFromList(campaign.item_group_ids, ids);
+  collectProductIdsFromList(campaign.itemGroupIds, ids);
+  collectProductIdsFromList(campaign.item_groups, ids);
+  collectProductIdsFromList(campaign.itemGroupList, ids);
+  collectProductIdsFromList(campaign.item_group_list, ids);
+  collectProductIdsFromList(campaign.item_list, ids);
+  collectProductIdsFromList(campaign.itemList, ids);
+  collectProductIdsFromList(campaign.item_ids, ids);
+  collectProductIdsFromList(campaign.itemIds, ids);
+  collectProductIdsFromList(campaign.product_ids, ids);
+  collectProductIdsFromList(campaign.productIds, ids);
+  collectProductIdsFromList(campaign.product_list, ids);
+  collectProductIdsFromList(campaign.productList, ids);
+  collectProductIdsFromList(campaign.products, ids);
 
   const nested = campaign.campaign;
   if (nested && nested !== campaign) {
-    collectProductIdsFromCampaign(nested, target);
+    collectProductIdsFromCampaign(nested, ids);
   }
 
-  return target;
+  return ids;
 }
 
-function collectProductIdsFromDetail(detail, target = new Set()) {
-  if (!detail || typeof detail !== 'object') return target;
+function collectProductIdsFromDetail(detail, target) {
+  const ids = collectProductIdsFromCampaign(detail?.campaign, target);
+  if (!detail || typeof detail !== 'object') return ids;
 
-  collectProductIdsFromCampaign(detail.campaign, target);
-  collectProductIdsFromList(detail.item_group_ids, target);
-  collectProductIdsFromList(detail.itemGroupIds, target);
-  collectProductIdsFromList(detail.item_groups, target);
-  collectProductIdsFromList(detail.itemGroupList, target);
-  collectProductIdsFromList(detail.item_group_list, target);
-  collectProductIdsFromList(detail.item_list, target);
-  collectProductIdsFromList(detail.itemList, target);
-  collectProductIdsFromList(detail.item_ids, target);
-  collectProductIdsFromList(detail.itemIds, target);
-  collectProductIdsFromList(detail.product_ids, target);
-  collectProductIdsFromList(detail.productIds, target);
-  collectProductIdsFromList(detail.product_list, target);
-  collectProductIdsFromList(detail.productList, target);
-  collectProductIdsFromList(detail.products, target);
+  collectProductIdsFromList(detail.item_group_ids, ids);
+  collectProductIdsFromList(detail.itemGroupIds, ids);
+  collectProductIdsFromList(detail.item_groups, ids);
+  collectProductIdsFromList(detail.itemGroupList, ids);
+  collectProductIdsFromList(detail.item_group_list, ids);
+  collectProductIdsFromList(detail.item_list, ids);
+  collectProductIdsFromList(detail.itemList, ids);
+  collectProductIdsFromList(detail.item_ids, ids);
+  collectProductIdsFromList(detail.itemIds, ids);
+  collectProductIdsFromList(detail.product_ids, ids);
+  collectProductIdsFromList(detail.productIds, ids);
+  collectProductIdsFromList(detail.product_list, ids);
+  collectProductIdsFromList(detail.productList, ids);
+  collectProductIdsFromList(detail.products, ids);
 
   const sessions = ensureArray(detail.sessions || detail.session_list);
   sessions.forEach((session) => {
     if (!session || typeof session !== 'object') return;
-    collectProductIdsFromList(session.product_list || session.products, target);
-    collectProductIdsFromList(session.item_group_ids || session.itemGroupIds, target);
-    collectProductIdsFromList(session.items, target);
+    collectProductIdsFromList(session.product_list || session.products, ids);
+    collectProductIdsFromList(session.item_group_ids || session.itemGroupIds, ids);
+    collectProductIdsFromList(session.items, ids);
   });
 
-  return target;
+  return ids;
 }
 
 function buildScopeMatchResult(ids, detailIds, detailLoading, target, options = {}) {
