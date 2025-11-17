@@ -69,6 +69,7 @@ def _insert_metric(db_session, campaign: TTBGmvMaxCampaign, *, stat_date: date, 
     metric = TTBGmvMaxMetricsDaily(
         id=_next_id(db_session, TTBGmvMaxMetricsDaily),
         campaign_id=campaign.id,
+        store_id=campaign.store_id,
         date=stat_date,
         cost_cents=cost_cents,
         net_cost_cents=cost_cents,
