@@ -279,7 +279,7 @@ function buildScopeMatchResult(ids, detailIds, detailLoading, target) {
     return { matches: false, pending: true };
   }
 
-  return { matches: true, pending: false };
+  return { matches: false, pending: false };
 }
 
 function matchesBusinessCenter(campaign, detail, detailLoading, selectedBusinessCenterId) {
