@@ -6,13 +6,13 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Collection, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -30,6 +30,7 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
 )
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaignProduct
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
 from .gmv_max.router_provider import router as gmv_max_provider_router
@@ -794,10 +795,17 @@ def _extract_product_updated_time(row: TTBProduct) -> Optional[str]:
     return None
 
 
-def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
+def _serialize_product(
+    row: TTBProduct, *, assigned_ids: Optional[Collection[str]] = None
+) -> Dict[str, Any]:
     price_range = _extract_product_price_range(row)
     sku_count = _extract_product_sku_count(row.raw_json if isinstance(row.raw_json, dict) else {})
     updated_time = _extract_product_updated_time(row)
+    product_identifier = _as_str(row.product_id)
+    assigned = bool(assigned_ids and product_identifier in assigned_ids)
+    gmv_status = "OCCUPIED" if assigned else _normalize_nullable_str(
+        getattr(row, "gmv_max_ads_status", None)
+    )
     return {
         "product_id": row.product_id,
         "store_id": _as_str(row.store_id),
@@ -814,7 +822,7 @@ def _serialize_product(row: TTBProduct) -> Dict[str, Any]:
         "max_price": float(row.max_price) if row.max_price is not None else None,
         "historical_sales": int(row.historical_sales) if row.historical_sales is not None else None,
         "category": _normalize_nullable_str(getattr(row, "category", None)),
-        "gmv_max_ads_status": _normalize_nullable_str(getattr(row, "gmv_max_ads_status", None)),
+        "gmv_max_ads_status": gmv_status,
         "is_running_custom_shop_ads": (
             bool(row.is_running_custom_shop_ads)
             if row.is_running_custom_shop_ads is not None
@@ -1353,6 +1361,18 @@ def list_account_products(
         .filter(TTBProduct.store_id == str(store_id))
     )
 
+    assignment_stmt = (
+        select(TTBGmvMaxCampaignProduct.item_group_id)
+        .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
+        .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
+        .where(TTBGmvMaxCampaignProduct.store_id == str(store_id))
+    )
+    assigned_ids = {
+        str(item)
+        for item in db.execute(assignment_stmt).scalars().all()
+        if item is not None
+    }
+
     total = base_query.count()
     offset = (page - 1) * page_size
     rows = (
@@ -1362,7 +1382,7 @@ def list_account_products(
         .all()
     )
     return ProductList(
-        items=[ProductItem(**_serialize_product(r)) for r in rows],
+        items=[ProductItem(**_serialize_product(r, assigned_ids=assigned_ids)) for r in rows],
         total=total,
         page=page,
         page_size=page_size,

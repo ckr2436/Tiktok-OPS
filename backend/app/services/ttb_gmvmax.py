@@ -3,15 +3,16 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Any, Callable, Mapping, Optional, TypedDict
+from typing import Any, Callable, Collection, Mapping, Optional, Sequence, TypedDict
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
 from app.data.models.ttb_gmvmax import (
     TTBGmvMaxActionLog,
     TTBGmvMaxCampaign,
+    TTBGmvMaxCampaignProduct,
     TTBGmvMaxMetricsDaily,
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxStrategyConfig,
@@ -179,6 +180,141 @@ def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
         select(func.coalesce(func.max(TTBGmvMaxCampaign.id), 0))
     ).scalar_one()
     row.id = int(next_value or 0) + 1
+
+
+def _collect_product_ids_from_value(source: Any, target: set[str]) -> None:
+    if source is None:
+        return
+    if isinstance(source, (list, tuple, set)):
+        for item in source:
+            _collect_product_ids_from_value(item, target)
+        return
+    if isinstance(source, Mapping):
+        for key in (
+            "item_group_id",
+            "itemGroupId",
+            "spu_id",
+            "spuId",
+            "product_id",
+            "productId",
+            "item_id",
+            "itemId",
+            "id",
+        ):
+            normalized = _normalize_identifier(source.get(key))
+            if normalized:
+                target.add(normalized)
+        for nested_key in (
+            "item_group_ids",
+            "itemGroupIds",
+            "item_groups",
+            "itemGroupList",
+            "item_group_list",
+            "item_list",
+            "itemList",
+            "item_ids",
+            "itemIds",
+            "product_ids",
+            "productIds",
+            "product_list",
+            "productList",
+            "products",
+            "items",
+        ):
+            nested_value = source.get(nested_key)
+            if nested_value is not None and nested_value is not source:
+                _collect_product_ids_from_value(nested_value, target)
+        return
+    normalized = _normalize_identifier(source)
+    if normalized:
+        target.add(normalized)
+
+
+def _extract_item_group_ids_from_payload(payload: Mapping[str, Any] | None) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return []
+    collected: set[str] = set()
+    for key in (
+        "item_group_ids",
+        "itemGroupIds",
+        "item_groups",
+        "itemGroupList",
+        "item_group_list",
+        "item_list",
+        "itemList",
+        "item_ids",
+        "itemIds",
+        "item_id",
+        "itemId",
+        "product_ids",
+        "productIds",
+        "product_list",
+        "productList",
+        "products",
+    ):
+        value = payload.get(key)
+        if value is not None:
+            _collect_product_ids_from_value(value, collected)
+
+    nested_campaign = payload.get("campaign")
+    if isinstance(nested_campaign, Mapping):
+        _collect_product_ids_from_value(nested_campaign, collected)
+
+    sessions = payload.get("sessions") or payload.get("session_list")
+    if isinstance(sessions, Mapping):
+        _collect_product_ids_from_value(sessions, collected)
+    elif isinstance(sessions, (list, tuple, set)):
+        for session in sessions:
+            if isinstance(session, Mapping):
+                _collect_product_ids_from_value(session, collected)
+
+    return sorted(collected)
+
+
+def _sync_campaign_product_assignments(
+    db: Session,
+    *,
+    campaign: TTBGmvMaxCampaign,
+    product_ids: Sequence[str],
+) -> None:
+    if not getattr(campaign, "id", None):
+        return
+    db.execute(
+        delete(TTBGmvMaxCampaignProduct).where(
+            TTBGmvMaxCampaignProduct.campaign_pk == campaign.id
+        )
+    )
+    normalized_status = _normalize_status_value(campaign.operation_status)
+    if normalized_status != "ENABLE":
+        return
+    store_id = _normalize_identifier(campaign.store_id)
+    if not store_id or not product_ids:
+        return
+
+    existing_conflicts = (
+        delete(TTBGmvMaxCampaignProduct)
+        .where(TTBGmvMaxCampaignProduct.workspace_id == campaign.workspace_id)
+        .where(TTBGmvMaxCampaignProduct.auth_id == campaign.auth_id)
+        .where(TTBGmvMaxCampaignProduct.store_id == store_id)
+        .where(TTBGmvMaxCampaignProduct.item_group_id.in_(list(product_ids)))
+    )
+    db.execute(existing_conflicts)
+
+    for product_id in product_ids:
+        normalized = _normalize_identifier(product_id)
+        if not normalized:
+            continue
+        db.add(
+            TTBGmvMaxCampaignProduct(
+                workspace_id=campaign.workspace_id,
+                auth_id=campaign.auth_id,
+                campaign_pk=campaign.id,
+                campaign_id=campaign.campaign_id,
+                store_id=store_id,
+                item_group_id=normalized,
+                operation_status=normalized_status,
+            )
+        )
 
 
 def _lookup_store_id_from_links(
@@ -591,6 +727,10 @@ def upsert_campaign_from_api(
     result.ext_updated_time = _parse_datetime(updated_time)
 
     result.raw_json = payload
+
+    product_ids = _extract_item_group_ids_from_payload(payload)
+    _sync_campaign_product_assignments(db, campaign=result, product_ids=product_ids)
+
     db.flush()
     return result
 
