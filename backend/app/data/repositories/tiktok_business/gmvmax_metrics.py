@@ -103,7 +103,7 @@ def _base_query(
         select(
             TTBGmvMaxMetricsDaily,
             TTBGmvMaxCampaign.campaign_id,
-            TTBGmvMaxCampaign.store_id,
+            TTBGmvMaxMetricsDaily.store_id,
         )
         .join(
             TTBGmvMaxCampaign,
@@ -113,7 +113,7 @@ def _base_query(
         .where(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
-        .where(TTBGmvMaxCampaign.store_id == str(store_id))
+        .where(TTBGmvMaxMetricsDaily.store_id == str(store_id))
         .where(TTBGmvMaxMetricsDaily.date >= start_date)
         .where(TTBGmvMaxMetricsDaily.date <= end_date)
     )
