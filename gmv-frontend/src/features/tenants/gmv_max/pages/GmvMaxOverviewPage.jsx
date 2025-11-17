@@ -2041,13 +2041,17 @@ export default function GmvMaxOverviewPage() {
     }
     setSyncError(null);
     const range = getRecentDateRange(7);
+    const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
+    const normalizedStoreId = storeId ? String(storeId) : undefined;
     const payload = {
-      owner_bc_id: businessCenterId ? String(businessCenterId) : undefined,
+      owner_bc_id: normalizedBcId,
+      bc_id: normalizedBcId,
       advertiser_id: advertiserId ? String(advertiserId) : undefined,
-      campaign_filter: storeId ? { store_ids: [String(storeId)] } : undefined,
+      store_id: normalizedStoreId,
+      campaign_filter: normalizedStoreId ? { store_ids: [normalizedStoreId] } : undefined,
       campaign_options: { page_size: clampPageSize(50) },
       report: {
-        store_ids: storeId ? [String(storeId)] : undefined,
+        store_ids: normalizedStoreId ? [normalizedStoreId] : undefined,
         start_date: range.start,
         end_date: range.end,
         metrics: DEFAULT_REPORT_METRICS,

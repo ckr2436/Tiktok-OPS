@@ -227,6 +227,7 @@ def gmvmax_client_fixture(monkeypatch):
         yield {
             "client": client,
             "stub": stub_client,
+            "session": session,
         }
 
     app.dependency_overrides.clear()
@@ -252,6 +253,32 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
     campaign_ids = [item["campaign_id"] for item in body["campaigns"]]
     assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-extra"]
     assert body["report"]["list"][0]["metrics"]["cost"] == "10"
+
+
+def test_sync_endpoint_persists_campaign_links(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    session = gmvmax_client_fixture["session"]
+    payload = {
+        "report": {
+            "start_date": date(2024, 1, 1).isoformat(),
+            "end_date": date(2024, 1, 2).isoformat(),
+            "metrics": ["cost"],
+            "dimensions": ["campaign_id"],
+        }
+    }
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/sync",
+        json=payload,
+    )
+    assert response.status_code == 200, response.text
+    rows = (
+        session.query(TTBGmvMaxCampaign)
+        .filter(TTBGmvMaxCampaign.campaign_id.in_(["cmp-1", "cmp-restore", "cmp-extra", "cmp-blocked"]))
+        .all()
+    )
+    stored = {row.campaign_id: row.store_id for row in rows}
+    assert stored.keys() >= {"cmp-1", "cmp-restore", "cmp-extra", "cmp-blocked"}
+    assert all(store_id == "store-1" for store_id in stored.values())
 
 
 def test_sync_endpoint_uses_scope_store_id(gmvmax_client_fixture):

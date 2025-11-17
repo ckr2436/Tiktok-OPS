@@ -27,6 +27,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignFiltering,
     GMVMaxCampaignGetRequest,
     GMVMaxCampaignInfoRequest,
+    GMVMaxCampaignListData,
     GMVMaxCampaignActionApplyBody,
     GMVMaxCampaignActionApplyRequest,
     GMVMaxCampaignUpdateBody,
@@ -59,6 +60,10 @@ from app.services.gmvmax_spec import (
     GMVMAX_METRIC_ALIASES,
     GMVMAX_SUPPORTED_DIMENSIONS,
     GMVMAX_SUPPORTED_METRICS,
+)
+from app.services.ttb_gmvmax import (
+    resolve_store_id_from_page_context,
+    upsert_campaign_from_api,
 )
 
 from .schemas import (
@@ -370,6 +375,81 @@ def _filter_campaign_entries(entries: Optional[Sequence[GMVMaxCampaign | Dict[st
     return filtered
 
 
+def _persist_campaign_relations(
+    context: GMVMaxRouteContext,
+    *,
+    advertiser_id: str,
+    response: GMVMaxResponse[GMVMaxCampaignListData],
+    store_scope: Optional[str],
+) -> None:
+    db = getattr(context, "db", None)
+    if db is None:
+        return
+    data = response.data
+    if not data or not data.list:
+        return
+    page_context: Dict[str, Any] = {}
+    if data.links:
+        page_context["links"] = data.links
+    if data.stores:
+        page_context["stores"] = data.stores
+    seen: set[str] = set()
+    for entry in data.list:
+        if isinstance(entry, GMVMaxCampaign):
+            payload = entry.model_dump(exclude_none=False)
+        elif isinstance(entry, dict):
+            payload = dict(entry)
+        else:
+            continue
+        campaign_identifier = payload.get("campaign_id") or payload.get("id")
+        if not campaign_identifier:
+            continue
+        campaign_id = str(campaign_identifier)
+        if campaign_id in seen:
+            continue
+        seen.add(campaign_id)
+        try:
+            store_hint = resolve_store_id_from_page_context(
+                advertiser_id=str(advertiser_id),
+                campaign_payload=payload,
+                page_context=page_context,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to resolve store_id for campaign page entry",
+                exc_info=True,
+                extra={
+                    "workspace_id": context.workspace_id,
+                    "auth_id": context.auth_id,
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign_id,
+                },
+            )
+            store_hint = None
+        if not store_hint:
+            store_hint = store_scope
+        try:
+            upsert_campaign_from_api(
+                db,
+                workspace_id=context.workspace_id,
+                auth_id=context.auth_id,
+                advertiser_id=str(advertiser_id),
+                payload=payload,
+                store_id_hint=store_hint,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to persist gmvmax campaign page entry",
+                exc_info=True,
+                extra={
+                    "workspace_id": context.workspace_id,
+                    "auth_id": context.auth_id,
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign_id,
+                },
+            )
+
+
 def _build_campaign_request(
     advertiser_id: str,
     filtering: Optional[CampaignFilter],
@@ -566,6 +646,7 @@ async def sync_gmvmax_campaigns_provider(
     auth_id: int,
     payload: SyncRequest,
     bc_id_query: Optional[str] = Query(None, alias="bc_id"),
+    owner_bc_id_query: Optional[str] = Query(None, alias="owner_bc_id"),
     advertiser_id_query: Optional[str] = Query(None, alias="advertiser_id"),
     store_id_query: Optional[str] = Query(None, alias="store_id"),
     context: GMVMaxRouteContext = Depends(get_route_context),
@@ -576,8 +657,14 @@ async def sync_gmvmax_campaigns_provider(
         payload.advertiser_id or advertiser_id_query or context.advertiser_id
     )
     store_id = payload.store_id or store_id_query or context.store_id
+    resolved_bc_id = (
+        payload.owner_bc_id
+        or payload.bc_id
+        or owner_bc_id_query
+        or bc_id_query
+    )
     scope_context = {
-        "bc_id": payload.bc_id or bc_id_query,
+        "bc_id": resolved_bc_id,
         "advertiser_id": advertiser_id,
         "store_id": store_id,
     }
@@ -597,6 +684,12 @@ async def sync_gmvmax_campaigns_provider(
         context.client.gmv_max_campaign_get,
         campaign_req,
         _log_context=log_context,
+    )
+    _persist_campaign_relations(
+        context,
+        advertiser_id=advertiser_id,
+        response=campaign_resp,
+        store_scope=store_id,
     )
     filtered_campaigns = _filter_campaign_entries(campaign_resp.data.list)
     report_req = _build_report_request(
@@ -655,6 +748,13 @@ async def list_gmvmax_campaigns_provider(
     options = CampaignListOptions(fields=fields, page=page, page_size=page_size)
     request = _build_campaign_request(adv, filter_obj, options)
     response = await _call_tiktok(context.client.gmv_max_campaign_get, request)
+    store_scope = store_ids[0] if store_ids else context.store_id
+    _persist_campaign_relations(
+        context,
+        advertiser_id=adv,
+        response=response,
+        store_scope=store_scope,
+    )
     filtered_items = _filter_campaign_entries(response.data.list)
     return CampaignListResponse(
         items=filtered_items,
