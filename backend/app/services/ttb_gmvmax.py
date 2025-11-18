@@ -687,21 +687,23 @@ def upsert_campaign_from_api(
     )
     result.name = name_value
 
-    store_identifier = _extract_field_from_sources(
-        ("store_id", "shop_id"), campaign_details, payload
+    store_identifier = _normalize_identifier(
+        _extract_field_from_sources(("store_id", "shop_id"), campaign_details, payload)
     )
     if store_identifier is None:
-        store_identifier = store_id_hint
+        store_identifier = _normalize_identifier(store_id_hint)
     if store_identifier is None:
-        store_identifier = _lookup_store_id_from_links(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=advertiser_id,
-            campaign_payload=payload,
+        store_identifier = _normalize_identifier(
+            _lookup_store_id_from_links(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                campaign_payload=payload,
+            )
         )
     if store_identifier is None:
-        store_identifier = result.store_id
+        store_identifier = _normalize_identifier(result.store_id)
     if store_identifier is None:
         store_identifier = ""
         logger.warning(
