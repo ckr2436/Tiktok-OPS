@@ -169,3 +169,38 @@ def test_apply_campaign_action_updates_and_logs(db_session):
     assert len(logs) == 4
     assert {log.result for log in logs} == {"SUCCESS"}
     assert len(audit_calls) == 4
+
+
+def test_apply_campaign_action_accepts_aliases(db_session):
+    campaign = _setup_campaign(db_session)
+    client = StubTTBClient()
+
+    log_resume = asyncio.run(
+        apply_campaign_action(
+            db_session,
+            client,
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            campaign=campaign,
+            action="resume",
+            performed_by="tester",
+        )
+    )
+    assert log_resume.action == "START"
+    assert campaign.status == "ACTIVE"
+
+    log_disable = asyncio.run(
+        apply_campaign_action(
+            db_session,
+            client,
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            campaign=campaign,
+            action="disable",
+            performed_by="tester",
+        )
+    )
+    assert log_disable.action == "PAUSE"
+    assert campaign.status == "PAUSED"
