@@ -615,6 +615,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
             "/campaign/gmv_max/create/",
@@ -628,6 +629,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
             "/campaign/gmv_max/update/",
@@ -641,6 +643,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxCampaignActionApplyData]:
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
             "/campaign/gmv_max/action/apply/",
@@ -654,6 +657,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxSessionListData]:
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
             "/campaign/gmv_max/session/create/",
@@ -667,6 +671,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxSessionListData]:
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
             "/campaign/gmv_max/session/update/",
@@ -746,6 +751,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxExclusiveAuthorizationData]:
         params = {"advertiser_id": request.advertiser_id}
         body = {
+            "advertiser_id": request.advertiser_id,
             "store_id": request.store_id,
             "store_authorized_bc_id": request.store_authorized_bc_id,
         }
