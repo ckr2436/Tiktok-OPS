@@ -640,13 +640,26 @@ function formatCampaignStatus(status) {
   return map[status] || status;
 }
 
+const ENABLED_STATUS_WHITELIST = new Set([
+  'STATUS_DELIVERY_OK',
+  'STATUS_ENABLE',
+  'STATUS_ENABLED',
+  'STATUS_RUNNING',
+  'STATUS_RUN',
+  'STATUS_ACTIVE',
+  'CAMPAIGN_STATUS_ENABLE',
+  'CAMPAIGN_STATUS_ENABLED',
+  'CAMPAIGN_STATUS_RUNNING',
+]);
+
 function isCampaignEnabledStatus(status) {
   if (!status) return false;
   const normalized = String(status).toUpperCase();
+  if (ENABLED_STATUS_WHITELIST.has(normalized)) return true;
   if (normalized.includes('DISABLE') || normalized.includes('PAUSE') || normalized.includes('ARCHIVE')) {
     return false;
   }
-  if (normalized.includes('ENABLE') || normalized.includes('RUN') || normalized.includes('OK')) {
+  if (normalized.includes('ENABLE') || normalized.includes('RUN') || normalized.includes('ACTIVE')) {
     return true;
   }
   return false;
