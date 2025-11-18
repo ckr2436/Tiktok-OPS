@@ -2007,96 +2007,6 @@ export default function GmvMaxOverviewPage() {
       .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }));
   }, [advertiserId, advertiserToStores, authId, storeList]);
 
-  const productParams = useMemo(
-    () => ({
-      store_id: storeId || undefined,
-      advertiser_id: advertiserId || undefined,
-      owner_bc_id: businessCenterId || undefined,
-      page_size: clampPageSize(50),
-    }),
-    [advertiserId, businessCenterId, storeId],
-  );
-
-  const productsQuery = useProductsQuery(
-    workspaceId,
-    provider,
-    authId,
-    productParams,
-    {
-      enabled: Boolean(workspaceId && provider && isScopeReady),
-    },
-  );
-
-  const campaignParams = useMemo(() => {
-    const params = { page_size: clampPageSize(50) };
-    if (businessCenterId) params.owner_bc_id = businessCenterId;
-    if (advertiserId) params.advertiser_id = advertiserId;
-    if (storeId) params.store_ids = [String(storeId)];
-    return params;
-  }, [advertiserId, businessCenterId, storeId]);
-
-  const campaignsQuery = useGmvMaxCampaignsQuery(
-    workspaceId,
-    provider,
-    authId,
-    campaignParams,
-    {
-      enabled: Boolean(workspaceId && provider && isScopeReady),
-    },
-  );
-
-  const currentScopeKey = useMemo(
-    () => ({
-      businessCenterId,
-      advertiserId,
-      storeId,
-    }),
-    [advertiserId, businessCenterId, storeId],
-  );
-
-  const [campaignScopeSnapshot, setCampaignScopeSnapshot] = useState(null);
-
-  useEffect(() => {
-    if (campaignsQuery.isSuccess && campaignsQuery.dataUpdatedAt) {
-      setCampaignScopeSnapshot(currentScopeKey);
-    }
-  }, [campaignsQuery.dataUpdatedAt, campaignsQuery.isSuccess, currentScopeKey]);
-
-  useEffect(() => {
-    if (!isScopeReady) {
-      setCampaignScopeSnapshot(null);
-    }
-  }, [isScopeReady]);
-
-  const accounts = useMemo(() => {
-    const data = accountsQuery.data;
-    const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
-  }, [accountsQuery.data]);
-
-  const accountOptions = useMemo(
-    () =>
-      accounts.map((account) => ({
-        value: String(account.auth_id ?? account.id ?? ''),
-        label: account.label || account.account_name || `Account ${account.auth_id}`,
-        status: account.status,
-      })),
-    [accounts],
-  );
-
-
-
-
-
-
-  const selectedAccountLabel =
-    accountOptions.find((item) => item.value === authId)?.label || '';
-  const selectedBusinessCenterLabel =
-    businessCenterOptions.find((item) => item.value === businessCenterId)?.label || '';
-  const selectedAdvertiserLabel =
-    advertiserOptions.find((item) => item.value === advertiserId)?.label || '';
-  const selectedStoreLabel = storeOptions.find((item) => item.value === storeId)?.label || '';
-
   const bindingConfig = bindingConfigQuery.data || null;
   const bindingConfigLoading = bindingConfigQuery.isLoading;
   const bindingConfigFetching = bindingConfigQuery.isFetching;
@@ -2133,6 +2043,7 @@ export default function GmvMaxOverviewPage() {
     savedStoreId,
     savedStoreLabel,
   ]);
+  const canDisplayCampaigns = Boolean(isScopeReady && hasSavedBinding);
   const scopeStatus = useMemo(() => {
     if (!authId) {
       return {
@@ -2178,6 +2089,96 @@ export default function GmvMaxOverviewPage() {
     scopeMatchesBinding,
   ]);
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
+
+  const productParams = useMemo(
+    () => ({
+      store_id: storeId || undefined,
+      advertiser_id: advertiserId || undefined,
+      owner_bc_id: businessCenterId || undefined,
+      page_size: clampPageSize(50),
+    }),
+    [advertiserId, businessCenterId, storeId],
+  );
+
+  const productsQuery = useProductsQuery(
+    workspaceId,
+    provider,
+    authId,
+    productParams,
+    {
+      enabled: Boolean(workspaceId && provider && isScopeReady),
+    },
+  );
+
+  const campaignParams = useMemo(() => {
+    const params = { page_size: clampPageSize(50) };
+    if (businessCenterId) params.owner_bc_id = businessCenterId;
+    if (advertiserId) params.advertiser_id = advertiserId;
+    if (storeId) params.store_ids = [String(storeId)];
+    return params;
+  }, [advertiserId, businessCenterId, storeId]);
+
+  const campaignsQuery = useGmvMaxCampaignsQuery(
+    workspaceId,
+    provider,
+    authId,
+    campaignParams,
+    {
+      enabled: Boolean(workspaceId && provider && canDisplayCampaigns),
+    },
+  );
+
+  const currentScopeKey = useMemo(
+    () => ({
+      businessCenterId,
+      advertiserId,
+      storeId,
+    }),
+    [advertiserId, businessCenterId, storeId],
+  );
+
+  const [campaignScopeSnapshot, setCampaignScopeSnapshot] = useState(null);
+
+  useEffect(() => {
+    if (campaignsQuery.isSuccess && campaignsQuery.dataUpdatedAt) {
+      setCampaignScopeSnapshot(currentScopeKey);
+    }
+  }, [campaignsQuery.dataUpdatedAt, campaignsQuery.isSuccess, currentScopeKey]);
+
+  useEffect(() => {
+    if (!canDisplayCampaigns) {
+      setCampaignScopeSnapshot(null);
+    }
+  }, [canDisplayCampaigns]);
+
+  const accounts = useMemo(() => {
+    const data = accountsQuery.data;
+    const items = data?.items || data?.list || data || [];
+    return Array.isArray(items) ? items : [];
+  }, [accountsQuery.data]);
+
+  const accountOptions = useMemo(
+    () =>
+      accounts.map((account) => ({
+        value: String(account.auth_id ?? account.id ?? ''),
+        label: account.label || account.account_name || `Account ${account.auth_id}`,
+        status: account.status,
+      })),
+    [accounts],
+  );
+
+
+
+
+
+
+  const selectedAccountLabel =
+    accountOptions.find((item) => item.value === authId)?.label || '';
+  const selectedBusinessCenterLabel =
+    businessCenterOptions.find((item) => item.value === businessCenterId)?.label || '';
+  const selectedAdvertiserLabel =
+    advertiserOptions.find((item) => item.value === advertiserId)?.label || '';
+  const selectedStoreLabel = storeOptions.find((item) => item.value === storeId)?.label || '';
 
   const defaultPresetLabel = useMemo(() => {
     const parts = [
@@ -2371,14 +2372,14 @@ export default function GmvMaxOverviewPage() {
   }, [isScopeReady, productsQuery.data]);
 
   const campaigns = useMemo(() => {
-    if (!isScopeReady) return [];
+    if (!canDisplayCampaigns) return [];
     const data = campaignsQuery.data;
     const items = data?.items || data?.list || data || [];
     return filterCampaignsByStatus(Array.isArray(items) ? items : []);
-  }, [campaignsQuery.data, isScopeReady]);
+  }, [campaignsQuery.data, canDisplayCampaigns]);
 
   const campaignDetailQueries = useQueries({
-    queries: isScopeReady
+    queries: canDisplayCampaigns
       ? campaigns.map((campaign) => {
           const campaignId = campaign?.campaign_id || campaign?.id;
           return {
@@ -2498,7 +2499,7 @@ export default function GmvMaxOverviewPage() {
   );
 
   const filteredCampaignCards = useMemo(() => {
-    if (!isScopeReady) return [];
+    if (!canDisplayCampaigns) return [];
     return campaignCards.filter((card) => {
       const { matches, pending } = matchesCampaignScope(card, {
         businessCenterId,
@@ -2507,7 +2508,7 @@ export default function GmvMaxOverviewPage() {
       });
       return matches && !pending;
     });
-  }, [advertiserId, businessCenterId, campaignCards, isScopeReady, storeId]);
+  }, [advertiserId, businessCenterId, campaignCards, canDisplayCampaigns, storeId]);
 
   const saveBindingMutation = useUpdateGmvMaxConfigMutation(workspaceId, provider, authId, {
     onSuccess: () => {
@@ -2707,7 +2708,9 @@ export default function GmvMaxOverviewPage() {
   const editingDetailError = editingDetailResult?.error;
   const editingDetailRefetch = editingDetailResult?.refetch;
 
-  const campaignsLoading = Boolean(isScopeReady && (campaignsQuery.isLoading || campaignsQuery.isFetching));
+  const campaignsLoading = Boolean(
+    canDisplayCampaigns && (campaignsQuery.isLoading || campaignsQuery.isFetching),
+  );
   const productsLoading = Boolean(isScopeReady && (productsQuery.isLoading || productsQuery.isFetching));
 
   return (
@@ -2909,20 +2912,25 @@ export default function GmvMaxOverviewPage() {
         </header>
         <div className="gmvmax-card__body">
           <SeriesErrorNotice
-            error={isScopeReady ? campaignsQuery.error : null}
+            error={canDisplayCampaigns ? campaignsQuery.error : null}
             onRetry={campaignsQuery.refetch}
           />
           {campaignsLoading ? <Loading text="Loading campaigns…" /> : null}
           {!isScopeReady ? (
             <p className="gmvmax-placeholder">Complete the scope filters to load GMV Max series.</p>
           ) : null}
-          {isScopeReady &&
+          {isScopeReady && !hasSavedBinding ? (
+            <p className="gmvmax-placeholder">
+              Save the current scope to configure the GMV Max binding before loading series.
+            </p>
+          ) : null}
+          {canDisplayCampaigns &&
           !campaignsLoading &&
           !campaignsQuery.error &&
           filteredCampaignCards.length === 0 ? (
             <p className="gmvmax-placeholder">No GMV Max series found for the selected scope.</p>
           ) : null}
-          {isScopeReady ? (
+          {canDisplayCampaigns ? (
             <div className="gmvmax-campaign-grid">
               {filteredCampaignCards.map(({
                 campaign,
