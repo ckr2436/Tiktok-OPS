@@ -1,7 +1,13 @@
 // src/features/tenants/openai_whisper/components/FileDropZone.jsx
 import { useRef, useState } from 'react'
 
-export default function FileDropZone({ file, onFileChange, disabled }) {
+export default function FileDropZone({
+  file,
+  onFileChange,
+  disabled,
+  uploadProgress,
+  isUploading,
+}) {
   const inputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -65,6 +71,37 @@ export default function FileDropZone({ file, onFileChange, disabled }) {
         <div>
           <p style={{ fontSize: 18, fontWeight: 600 }}>{file.name}</p>
           <p style={{ color: '#6b7280', marginTop: 4 }}>大小：{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+
+          {typeof uploadProgress === 'number' && uploadProgress > 0 ? (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ color: '#4b5563', fontSize: 14 }}>
+                  {isUploading ? '上传中…' : uploadProgress >= 100 ? '上传完成' : '准备上传'}
+                </span>
+                <span style={{ color: '#111827', fontSize: 14 }}>{uploadProgress}%</span>
+              </div>
+              <div
+                style={{
+                  width: '100%',
+                  height: 8,
+                  borderRadius: 999,
+                  background: '#e5e7eb',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${Math.min(uploadProgress, 100)}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    background: '#2563eb',
+                    transition: 'width 0.2s ease',
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+
           <button
             type="button"
             style={{

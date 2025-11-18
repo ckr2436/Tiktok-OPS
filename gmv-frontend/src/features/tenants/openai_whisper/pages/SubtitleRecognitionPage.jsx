@@ -20,6 +20,8 @@ export default function SubtitleRecognitionPage() {
   const [targetLanguage, setTargetLanguage] = useState('')
   const [showBilingual, setShowBilingual] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [isUploading, setIsUploading] = useState(false)
 
   const { job, startPolling, setJob } = useSubtitleJob(wid)
 
@@ -37,6 +39,11 @@ export default function SubtitleRecognitionPage() {
     }
   }, [wid])
 
+  useEffect(() => {
+    setUploadProgress(0)
+    setIsUploading(false)
+  }, [selectedFile])
+
   const languageOptions = useMemo(() => languages ?? [], [languages])
 
   async function handleSubmit(e) {
@@ -52,13 +59,25 @@ export default function SubtitleRecognitionPage() {
     }
     try {
       setLoading(true)
+      setUploadProgress(0)
+      setIsUploading(true)
       const response = await createSubtitleJob(wid, {
         file: selectedFile,
         sourceLanguage: sourceLanguage || null,
         translate,
         targetLanguage: targetLanguage || null,
         showBilingual,
+      }, {
+        onUploadProgress: (event) => {
+          if (!event.total) return
+          const percent = Math.round((event.loaded / event.total) * 100)
+          setUploadProgress(percent)
+          if (percent >= 100) {
+            setIsUploading(false)
+          }
+        },
       })
+      setUploadProgress(100)
       setJob(response)
       startPolling(response.job_id)
     } catch (err) {
@@ -66,10 +85,11 @@ export default function SubtitleRecognitionPage() {
       setErrorMessage(err?.message || '提交任务失败，请稍后再试。')
     } finally {
       setLoading(false)
+      setIsUploading(false)
     }
   }
 
-  const canSubmit = !!selectedFile && (!translate || targetLanguage)
+  const canSubmit = !!selectedFile && (!translate || targetLanguage) && !isUploading
   const showDownloads = job && job.status === 'success'
   const sourceDownloadUrl = job
     ? buildSubtitleDownloadUrl(wid, job.job_id, 'source')
@@ -113,6 +133,8 @@ export default function SubtitleRecognitionPage() {
               file={selectedFile}
               onFileChange={setSelectedFile}
               disabled={loading}
+              uploadProgress={uploadProgress}
+              isUploading={isUploading}
             />
           </div>
 
@@ -236,7 +258,11 @@ export default function SubtitleRecognitionPage() {
               cursor: !canSubmit || loading ? 'not-allowed' : 'pointer',
             }}
           >
-            {loading ? '提交中…' : '开始识别'}
+            {isUploading
+              ? `上传中…${uploadProgress ? ` ${uploadProgress}%` : ''}`
+              : loading
+                ? '正在创建任务…'
+                : '开始识别'}
           </button>
         </form>
 
