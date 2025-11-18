@@ -369,7 +369,16 @@ function collectProductIdsFromDetail(detail, target) {
 }
 
 function buildScopeMatchResult(ids, detailIds, detailLoading, target, options) {
-  const assumeMatchWhenUnknown = Boolean(options?.assumeMatchWhenUnknown);
+  let assumeMatchWhenUnknown = false;
+  let fallbackTarget;
+
+  if (options && typeof options === 'object') {
+    assumeMatchWhenUnknown = Boolean(options.assumeMatchWhenUnknown);
+    fallbackTarget = options.fallbackTarget;
+  } else {
+    fallbackTarget = options;
+  }
+
   if (!target) {
     return { matches: true, pending: false };
   }
@@ -453,8 +462,8 @@ function matchesCampaignScope(card, filters) {
   const { campaign, detail, detailLoading, scopeFallback } = card;
   const { businessCenterId, advertiserId, storeId } = filters;
   const results = [
-    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId),
-    matchesAdvertiser(campaign, detail, detailLoading, advertiserId),
+    matchesBusinessCenter(campaign, detail, detailLoading, businessCenterId, scopeFallback),
+    matchesAdvertiser(campaign, detail, detailLoading, advertiserId, scopeFallback),
     matchesStore(campaign, detail, detailLoading, storeId, {
       assumeMatchWhenUnknown: Boolean(storeId),
     }),
