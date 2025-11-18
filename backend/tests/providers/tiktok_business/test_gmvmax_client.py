@@ -10,6 +10,8 @@ import pytest
 
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
+    GMVMaxCampaignActionApplyBody,
+    GMVMaxCampaignActionApplyRequest,
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
     GMVMaxCampaignFiltering,
@@ -299,6 +301,7 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "/open_api/v1.3/campaign/gmv_max/create/",
             {"advertiser_id": "1"},
             {
+                "advertiser_id": "1",
                 "store_id": "s",
                 "shopping_ads_type": "PRODUCT",
                 "optimization_goal": "VALUE",
@@ -313,7 +316,24 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "gmv_max_campaign_update",
             "/open_api/v1.3/campaign/gmv_max/update/",
             {"advertiser_id": "1"},
-            {"campaign_id": "c", "campaign_name": "updated"},
+            {"advertiser_id": "1", "campaign_id": "c", "campaign_name": "updated"},
+        ),
+        (
+            GMVMaxCampaignActionApplyRequest(
+                advertiser_id="1",
+                body=GMVMaxCampaignActionApplyBody(
+                    campaign_id="c", action_type="PAUSE", target_daily_budget=50.0
+                ),
+            ),
+            "gmv_max_campaign_action_apply",
+            "/open_api/v1.3/campaign/gmv_max/action/apply/",
+            {"advertiser_id": "1"},
+            {
+                "advertiser_id": "1",
+                "campaign_id": "c",
+                "action_type": "PAUSE",
+                "target_daily_budget": 50.0,
+            },
         ),
         (
             GMVMaxSessionCreateRequest(
@@ -329,6 +349,7 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "/open_api/v1.3/campaign/gmv_max/session/create/",
             {"advertiser_id": "1"},
             {
+                "advertiser_id": "1",
                 "campaign_id": "c",
                 "store_id": "s",
                 "session": {"budget": 10.0},
@@ -348,6 +369,7 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "/open_api/v1.3/campaign/gmv_max/session/update/",
             {"advertiser_id": "1"},
             {
+                "advertiser_id": "1",
                 "campaign_id": "c",
                 "session_id": "sid",
                 "session": {"schedule_type": "SCHEDULE_FROM_NOW"},
@@ -360,7 +382,11 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "gmv_max_exclusive_authorization_create",
             "/open_api/v1.3/gmv_max/exclusive_authorization/create/",
             {"advertiser_id": "1"},
-            {"store_id": "s", "store_authorized_bc_id": "bc"},
+            {
+                "advertiser_id": "1",
+                "store_id": "s",
+                "store_authorized_bc_id": "bc",
+            },
         ),
     ],
 )
