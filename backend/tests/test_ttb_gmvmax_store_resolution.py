@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 
 from sqlalchemy import func, select
 
@@ -170,6 +171,7 @@ class _DummyTTBClient:
             "campaign_id": "cmp-1",
             "campaign_name": "Demo",
             "advertiser_id": advertiser_id,
+            "store_id": "store-from-page",
         }, {}
 
     async def get_gmvmax_campaign_info(self, advertiser_id: str, campaign_id: str):
@@ -177,6 +179,7 @@ class _DummyTTBClient:
         return {
             "campaign_id": campaign_id,
             "store_id": "store-from-info",
+            "status": "ENABLE",
         }
 
 
@@ -208,3 +211,58 @@ def test_sync_campaigns_fetches_store_id_from_detail_api(db_session):
     )
     assert campaign.store_id == "store-from-info"
     assert client.info_calls == [("adv-1", "cmp-1")]
+
+
+def test_upsert_campaign_prefers_detail_store_id_over_payload(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+
+    campaign = upsert_campaign_from_api(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        payload={"campaign_id": "cmp-99", "store_id": "store-from-payload"},
+        campaign_details={"campaign_id": "cmp-99", "store_id": "store-from-detail"},
+    )
+
+    assert campaign.store_id == "store-from-detail"
+
+
+def test_upsert_campaign_uses_detail_payload_to_fill_fields(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+
+    detail_payload = {
+        "campaign_id": "cmp-77",
+        "store_id": "store-77",
+        "operation_status": "enable",
+        "status": "enable",
+        "secondary_status": "paused",
+        "shopping_ads_type": "PRODUCT",
+        "optimization_goal": "ROI",
+        "roas_bid": "1.2345",
+        "daily_budget": "123.45",
+        "currency": "USD",
+        "create_time": "2024-01-02T03:04:05Z",
+        "update_time": "2024-01-03T04:05:06Z",
+    }
+
+    campaign = upsert_campaign_from_api(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        payload={"campaign_id": "cmp-77"},
+        campaign_details=detail_payload,
+    )
+
+    assert campaign.store_id == "store-77"
+    assert campaign.status == "ENABLE"
+    assert campaign.secondary_status == "PAUSED"
+    assert campaign.shopping_ads_type == "PRODUCT"
+    assert campaign.optimization_goal == "ROI"
+    assert campaign.roas_bid == Decimal("1.2345")
+    assert campaign.daily_budget_cents == 12345
+    assert campaign.currency == "USD"
+    assert campaign.ext_created_time is not None
+    assert campaign.ext_updated_time is not None
+    assert campaign.raw_json["_campaign_info"]["store_id"] == "store-77"

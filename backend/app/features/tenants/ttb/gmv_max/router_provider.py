@@ -483,13 +483,15 @@ async def _refresh_campaign_snapshot(
         return
 
     try:
+        info_payload = response.data.model_dump(exclude_none=False)
         upsert_campaign_from_api(
             db,
             workspace_id=context.workspace_id,
             auth_id=context.auth_id,
             advertiser_id=str(advertiser_id),
-            payload=response.data.model_dump(exclude_none=False),
+            payload=info_payload,
             store_id_hint=store_hint or context.store_id,
+            campaign_details=info_payload,
         )
         db.flush()
     except Exception:  # noqa: BLE001

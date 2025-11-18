@@ -542,6 +542,16 @@ def _extract_field(container: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _extract_field_from_sources(keys: Sequence[str], *sources: Mapping[str, Any] | None) -> Any:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        value = _extract_field(source, *keys)
+        if value is not None:
+            return value
+    return None
+
+
 def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     serialized: dict[str, Any] = {}
     for key, value in state.items():
@@ -556,12 +566,12 @@ def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     return serialized
 
 
-async def _fetch_store_id_from_campaign_info(
+async def _fetch_campaign_details(
     ttb_client: TTBApiClient,
     *,
     advertiser_id: str,
     campaign_id: str,
-) -> str | None:
+) -> Mapping[str, Any] | None:
     try:
         details = await ttb_client.get_gmvmax_campaign_info(advertiser_id, campaign_id)
     except Exception:  # pragma: no cover - defensive logging
@@ -578,8 +588,7 @@ async def _fetch_store_id_from_campaign_info(
     if not isinstance(details, Mapping):
         return None
 
-    store_identifier = _extract_field(details, "store_id", "shop_id")
-    return _normalize_identifier(store_identifier)
+    return details
 
 
 async def sync_gmvmax_campaigns(
@@ -592,7 +601,7 @@ async def sync_gmvmax_campaigns(
     **filters: Any,
 ) -> dict:
     synced = 0
-    store_hints_by_campaign: dict[str, str | None] = {}
+    details_cache: dict[str, Mapping[str, Any] | None] = {}
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **filters
     ):
@@ -601,21 +610,29 @@ async def sync_gmvmax_campaigns(
         campaign_identifier = _normalize_identifier(
             _extract_field(payload, "campaign_id", "id")
         )
-        resolved_store_id = _resolve_store_id(
-            advertiser_id=advertiser_id,
-            campaign_payload=payload,
-            page_context=page_context,
-        )
-        if not resolved_store_id and campaign_identifier:
-            if campaign_identifier in store_hints_by_campaign:
-                resolved_store_id = store_hints_by_campaign[campaign_identifier]
-            else:
-                resolved_store_id = await _fetch_store_id_from_campaign_info(
+        campaign_details: Mapping[str, Any] | None = None
+        if campaign_identifier:
+            if campaign_identifier not in details_cache:
+                details_cache[campaign_identifier] = await _fetch_campaign_details(
                     ttb_client,
                     advertiser_id=str(advertiser_id),
                     campaign_id=campaign_identifier,
                 )
-                store_hints_by_campaign[campaign_identifier] = resolved_store_id
+            campaign_details = details_cache.get(campaign_identifier)
+
+        resolved_store_id = _extract_field_from_sources(
+            ("store_id", "shop_id"), campaign_details, payload
+        )
+        if not resolved_store_id:
+            resolved_store_id = _resolve_store_id(
+                advertiser_id=advertiser_id,
+                campaign_payload=payload,
+                page_context=page_context,
+            )
+        if not resolved_store_id and campaign_details:
+            resolved_store_id = _extract_field_from_sources(
+                ("store_id", "shop_id"), campaign_details
+            )
         upsert_campaign_from_api(
             db,
             workspace_id=workspace_id,
@@ -623,6 +640,7 @@ async def sync_gmvmax_campaigns(
             advertiser_id=advertiser_id,
             payload=payload,
             store_id_hint=resolved_store_id,
+            campaign_details=campaign_details,
         )
         synced += 1
     db.flush()
@@ -637,6 +655,7 @@ def upsert_campaign_from_api(
     advertiser_id: str,
     payload: dict,
     store_id_hint: str | None = None,
+    campaign_details: Mapping[str, Any] | None = None,
 ) -> TTBGmvMaxCampaign:
     if not isinstance(payload, dict):
         raise ValueError("payload must be dict")
@@ -663,13 +682,14 @@ def upsert_campaign_from_api(
         _assign_sqlite_pk(db, result)
 
     result.advertiser_id = str(advertiser_id)
-    result.name = _extract_field(payload, "campaign_name", "name")
+    name_value = _extract_field_from_sources(
+        ("campaign_name", "name"), payload, campaign_details
+    )
+    result.name = name_value
 
-    # Prefer the store identifier embedded in the payload because TikTok often
-    # supplies the authoritative value there. Only fall back to the
-    # store_id_hint when the payload omits the field to avoid overwriting
-    # correct store links with ambiguous hints.
-    store_identifier = _extract_field(payload, "store_id", "shop_id")
+    store_identifier = _extract_field_from_sources(
+        ("store_id", "shop_id"), campaign_details, payload
+    )
     if store_identifier is None:
         store_identifier = store_id_hint
     if store_identifier is None:
@@ -694,41 +714,74 @@ def upsert_campaign_from_api(
         )
     result.store_id = str(store_identifier)
 
-    operation_status_value = _extract_field(payload, "operation_status")
+    operation_status_value = _extract_field_from_sources(
+        ("operation_status",), payload, campaign_details
+    )
     result.operation_status = _normalize_status_value(operation_status_value)
 
-    status_value = _extract_field(payload, "status", "campaign_status")
+    status_value = _extract_field_from_sources(
+        ("status", "campaign_status"), payload, campaign_details
+    )
     if status_value is None:
-        status_value = _extract_field(payload, "primary_status")
+        status_value = _extract_field_from_sources(
+            ("primary_status",), payload, campaign_details
+        )
     if status_value is None and result.operation_status is not None:
         status_value = result.operation_status
     result.status = _normalize_status_value(status_value)
-    secondary_status_value = _extract_field(payload, "secondary_status")
+    secondary_status_value = _extract_field_from_sources(
+        ("secondary_status",), payload, campaign_details
+    )
     result.secondary_status = _normalize_status_value(secondary_status_value)
-    result.shopping_ads_type = _extract_field(payload, "shopping_ads_type")
-    result.optimization_goal = _extract_field(payload, "optimization_goal")
+    result.shopping_ads_type = _extract_field_from_sources(
+        ("shopping_ads_type",), payload, campaign_details
+    )
+    result.optimization_goal = _extract_field_from_sources(
+        ("optimization_goal",), payload, campaign_details
+    )
 
-    roas_value = _extract_field(payload, "roas_bid", "roi_target")
+    roas_value = _extract_field_from_sources(
+        ("roas_bid", "roi_target"), payload, campaign_details
+    )
     result.roas_bid = _to_decimal(roas_value, quantize=_DECIMAL_FOUR)
 
-    budget_cents_value = _extract_field(payload, "daily_budget_cents")
+    budget_cents_value = _extract_field_from_sources(
+        ("daily_budget_cents",), payload, campaign_details
+    )
     if budget_cents_value is not None:
         result.daily_budget_cents = _to_int(budget_cents_value)
     else:
-        budget_value = _extract_field(payload, "daily_budget", "budget")
+        budget_value = _extract_field_from_sources(
+            ("daily_budget", "budget"), payload, campaign_details
+        )
         result.daily_budget_cents = _to_cents(budget_value)
 
-    currency_value = _extract_field(payload, "currency", "budget_currency")
+    currency_value = _extract_field_from_sources(
+        ("currency", "budget_currency"), payload, campaign_details
+    )
     result.currency = str(currency_value) if currency_value is not None else None
 
-    created_time = _extract_field(payload, "create_time", "created_time", "ext_created_time")
-    updated_time = _extract_field(payload, "update_time", "updated_time", "ext_updated_time")
+    created_time = _extract_field_from_sources(
+        ("create_time", "created_time", "ext_created_time"), payload, campaign_details
+    )
+    updated_time = _extract_field_from_sources(
+        ("update_time", "updated_time", "ext_updated_time"), payload, campaign_details
+    )
     result.ext_created_time = _parse_datetime(created_time)
     result.ext_updated_time = _parse_datetime(updated_time)
 
-    result.raw_json = payload
+    if isinstance(campaign_details, Mapping) and campaign_details:
+        combined_payload = dict(payload)
+        combined_payload["_campaign_info"] = campaign_details
+        result.raw_json = combined_payload
+    else:
+        result.raw_json = payload
 
     product_ids = _extract_item_group_ids_from_payload(payload)
+    if isinstance(campaign_details, Mapping):
+        detail_products = _extract_item_group_ids_from_payload(campaign_details)
+        if detail_products:
+            product_ids = sorted({*product_ids, *detail_products})
     _sync_campaign_product_assignments(db, campaign=result, product_ids=product_ids)
 
     db.flush()
