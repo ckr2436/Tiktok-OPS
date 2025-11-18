@@ -39,6 +39,9 @@ from app.features.tenants.ttb.router import router as tenant_ttb_router
 
 # 新增：kie 相关独立路由
 from app.features.tenants.kie_ai.router_sora2 import router as tenant_kie_ai_router
+from app.features.tenants.openai_whisper.router import (
+    router as tenant_openai_whisper_router,
+)
 
 from app.services.provider_registry import load_builtin_providers
 
@@ -83,6 +86,7 @@ def create_app() -> FastAPI:
 
     # 租户侧 Kie AI 路由
     app.include_router(tenant_kie_ai_router)
+    app.include_router(tenant_openai_whisper_router)
 
     app.include_router(oauth_callback_router)  # /api/oauth/tiktok-business/callback（不版本化）
 

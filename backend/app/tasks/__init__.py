@@ -11,4 +11,5 @@ from __future__ import annotations
 from . import oauth_tasks  # noqa: F401
 from . import ttb_sync_tasks  # noqa: F401
 from . import ttb_gmvmax_tasks  # noqa: F401
+from app.features.tenants.openai_whisper import tasks as openai_whisper_tasks  # noqa: F401
 

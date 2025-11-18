@@ -177,6 +177,11 @@ class Settings(BaseSettings):
     GMV_MAX_OPTIONS_POLL_TIMEOUT_SECONDS: float = 3.0
     GMV_MAX_OPTIONS_POLL_INTERVAL_SECONDS: float = 0.3
 
+    # =========================
+    # Whisper / Subtitle tools
+    # =========================
+    WHISPER_MODEL_NAME: str = "small"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
