@@ -640,22 +640,36 @@ function formatCampaignStatus(status) {
   return map[status] || status;
 }
 
+const ENABLED_STATUS_WHITELIST = new Set([
+  'STATUS_DELIVERY_OK',
+  'STATUS_ENABLE',
+  'STATUS_ENABLED',
+  'STATUS_RUNNING',
+  'STATUS_RUN',
+  'STATUS_ACTIVE',
+  'CAMPAIGN_STATUS_ENABLE',
+  'CAMPAIGN_STATUS_ENABLED',
+  'CAMPAIGN_STATUS_RUNNING',
+]);
+
 function isCampaignEnabledStatus(status) {
   if (!status) return false;
   const normalized = String(status).toUpperCase();
+  if (ENABLED_STATUS_WHITELIST.has(normalized)) return true;
   if (normalized.includes('DISABLE') || normalized.includes('PAUSE') || normalized.includes('ARCHIVE')) {
     return false;
   }
-  if (normalized.includes('ENABLE') || normalized.includes('RUN') || normalized.includes('OK')) {
+  if (normalized.includes('ENABLE') || normalized.includes('RUN') || normalized.includes('ACTIVE')) {
     return true;
   }
   return false;
 }
 
-function extractProductsFromDetail(detail) {
-  if (!detail) return [];
+function extractProductsFromSource(source) {
+  if (!source) return [];
   const products = [];
   const seen = new Set();
+  const visited = new Set();
 
   const pushProduct = (item) => {
     if (!item || typeof item !== 'object') return;
@@ -697,26 +711,36 @@ function extractProductsFromDetail(detail) {
     });
   };
 
-  ingest(detail.products);
-  ingest(detail.product_list);
-  ingest(detail.productList);
-  ingest(detail.item_list);
-  ingest(detail.itemList);
-  ingest(detail.items);
-  ingest(detail.campaign?.product_list);
-  ingest(detail.campaign?.productList);
+  const visit = (node) => {
+    if (!node || typeof node !== 'object' || visited.has(node)) return;
+    visited.add(node);
+    ingest(node.products);
+    ingest(node.product_list);
+    ingest(node.productList);
+    ingest(node.item_list);
+    ingest(node.itemList);
+    ingest(node.items);
 
-  const sessions = ensureArray(
-    detail.sessions || detail.session_list || detail.sessionList || detail.session || detail.sessionInfo,
-  );
-  sessions.forEach((session) => {
-    ingest(session?.product_list);
-    ingest(session?.productList);
-    ingest(session?.products);
-    ingest(session?.items);
-  });
+    if (node.campaign && node.campaign !== node) {
+      visit(node.campaign);
+    }
 
+    const sessions = ensureArray(
+      node.sessions || node.session_list || node.sessionList || node.session || node.sessionInfo,
+    );
+    sessions.forEach((session) => visit(session));
+  };
+
+  visit(source);
   return products;
+}
+
+function extractProductsFromDetail(detail) {
+  return extractProductsFromSource(detail);
+}
+
+function extractProductsFromCampaignData(campaign) {
+  return extractProductsFromSource(campaign);
 }
 
 function setsEqual(a, b) {
@@ -946,7 +970,11 @@ function CampaignCard({
   const productCount = detail ? collectProductIdsFromDetail(detail).size : null;
   const statusLabel = formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
-  const previewProducts = useMemo(() => extractProductsFromDetail(detail), [detail]);
+  const previewProducts = useMemo(() => {
+    const detailProducts = extractProductsFromDetail(detail);
+    if (detailProducts.length > 0) return detailProducts;
+    return extractProductsFromCampaignData(campaign);
+  }, [campaign, detail]);
   const displayedProducts = previewProducts.slice(0, 6);
   const remainingProducts = Math.max(0, previewProducts.length - displayedProducts.length);
   const isEnabled = isCampaignEnabledStatus(
