@@ -57,6 +57,26 @@ class GMVMaxCampaignListData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class CampaignStatusEntry(BaseModel):
+    """Individual campaign status returned by /campaign/status/update/."""
+
+    campaign_id: Optional[str] = None
+    status: Optional[str] = None
+    postback_window_mode: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CampaignStatusUpdateData(BaseModel):
+    """Response payload returned by /campaign/status/update/."""
+
+    campaign_ids: Optional[List[str]] = None
+    status: Optional[str] = None
+    campaign_list: Optional[List[CampaignStatusEntry]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PromotionDaysSetting(BaseModel):
     """Promotion days configuration summary."""
 
@@ -352,6 +372,15 @@ class GMVMaxCampaignUpdateRequest(BaseModel):
     body: GMVMaxCampaignUpdateBody
 
 
+class CampaignStatusUpdateRequest(BaseModel):
+    """Request payload for /campaign/status/update/."""
+
+    advertiser_id: str
+    campaign_ids: List[str]
+    operation_status: str
+    postback_window_mode: Optional[str] = None
+
+
 class GMVMaxCampaignActionApplyBody(BaseModel):
     campaign_id: str
     action_type: str
@@ -637,6 +666,24 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             json_body=_ttb_api._remove_none(body),
         )
         return self._parse_response(payload, GMVMaxCampaignInfoData)
+
+    async def campaign_status_update(
+        self, request: CampaignStatusUpdateRequest
+    ) -> GMVMaxResponse[CampaignStatusUpdateData]:
+        params = {"advertiser_id": request.advertiser_id}
+        body = {
+            "advertiser_id": request.advertiser_id,
+            "campaign_ids": [str(c) for c in request.campaign_ids if str(c).strip()],
+            "operation_status": str(request.operation_status),
+            "postback_window_mode": request.postback_window_mode,
+        }
+        payload = await self._request_json(
+            "POST",
+            "/campaign/status/update/",
+            params=_ttb_api._clean_params_map(params),
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(payload, CampaignStatusUpdateData)
 
     async def gmv_max_campaign_action_apply(
         self, request: GMVMaxCampaignActionApplyRequest

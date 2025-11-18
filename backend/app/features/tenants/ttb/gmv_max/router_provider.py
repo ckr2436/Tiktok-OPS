@@ -22,6 +22,7 @@ from app.data.repositories.tiktok_business.gmvmax_metrics import (
     query_gmvmax_metrics,
 )
 from app.providers.tiktok_business.gmvmax_client import (
+    CampaignStatusUpdateRequest,
     GMVMaxBidRecommendRequest,
     GMVMaxCampaign,
     GMVMaxCampaignFiltering,
@@ -1080,6 +1081,22 @@ async def apply_gmvmax_campaign_action_provider(
 
     action_request = CampaignActionRequest.model_validate(payload)
     adv = advertiser_id or context.advertiser_id
+    if action_request.type in {"pause", "enable"}:
+        operation_status = "DISABLE" if action_request.type == "pause" else "ENABLE"
+        status_request = CampaignStatusUpdateRequest(
+            advertiser_id=adv,
+            campaign_ids=[str(campaign_id)],
+            operation_status=operation_status,
+        )
+        response = await _call_tiktok(
+            context.client.campaign_status_update, status_request
+        )
+        return CampaignActionResponse(
+            type=action_request.type,
+            status="success",
+            response=response.data.model_dump(exclude_none=True),
+            request_id=response.request_id,
+        )
     if action_request.type == "update_strategy" and action_request.payload.get("session_id"):
         body = _build_session_update_body(campaign_id, action_request.payload, context.store_id)
         request = GMVMaxSessionUpdateRequest(advertiser_id=adv, body=body)

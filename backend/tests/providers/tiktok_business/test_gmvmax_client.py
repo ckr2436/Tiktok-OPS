@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from app.providers.tiktok_business.gmvmax_client import (
+    CampaignStatusUpdateRequest,
     GMVMaxBidRecommendRequest,
     GMVMaxCampaignActionApplyBody,
     GMVMaxCampaignActionApplyRequest,
@@ -317,6 +318,21 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
             "/open_api/v1.3/campaign/gmv_max/update/",
             {"advertiser_id": "1"},
             {"advertiser_id": "1", "campaign_id": "c", "campaign_name": "updated"},
+        ),
+        (
+            CampaignStatusUpdateRequest(
+                advertiser_id="1",
+                campaign_ids=["c"],
+                operation_status="DISABLE",
+            ),
+            "campaign_status_update",
+            "/open_api/v1.3/campaign/status/update/",
+            {"advertiser_id": "1"},
+            {
+                "advertiser_id": "1",
+                "campaign_ids": ["c"],
+                "operation_status": "DISABLE",
+            },
         ),
         (
             GMVMaxCampaignActionApplyRequest(

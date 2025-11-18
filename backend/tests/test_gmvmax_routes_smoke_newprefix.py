@@ -16,6 +16,7 @@ from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxMetricsDaily
 from app.data.models.workspaces import Workspace
 from app.providers.tiktok_business.gmvmax_client import (
+    CampaignStatusUpdateData,
     GMVMaxBidRecommendation,
     GMVMaxCampaign,
     GMVMaxCampaignInfoData,
@@ -121,6 +122,18 @@ class StubGMVMaxClient:
                 campaign_name="Primary",
                 advertiser_id=request.advertiser_id,
                 store_id="store-1",
+            ),
+        )
+
+    async def campaign_status_update(self, request):  # noqa: ANN001
+        self.action_calls.append("campaign_status_update")
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="campaign-status",
+            data=CampaignStatusUpdateData(
+                status=request.operation_status,
+                campaign_ids=list(request.campaign_ids),
             ),
         )
 
@@ -369,6 +382,19 @@ def test_campaign_action_session_update(gmvmax_client_fixture):
     assert response.status_code == 200
     assert response.json()["status"] == "success"
     assert "session_update" in gmvmax_client_fixture["stub"].action_calls
+
+
+def test_campaign_pause_uses_status_update(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/actions",
+        json={"type": "pause", "payload": {}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["response"]["status"] == "DISABLE"
+    assert gmvmax_client_fixture["stub"].action_calls.count("campaign_status_update") == 1
 
 
 def test_actions_placeholder_list(gmvmax_client_fixture):
