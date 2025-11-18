@@ -695,6 +695,11 @@ def upsert_campaign_from_api(
         normalized = _normalize_identifier(candidate)
         if not normalized:
             return False
+        # Once a store identifier has been chosen, we should not let lower-priority
+        # sources (e.g. cascade hints) override it. This keeps the authoritative
+        # value resolved from the campaign info locked in place.
+        if store_identifier is not None:
+            return False
         store_identifier = normalized
         store_identifier_source = source
         return True
