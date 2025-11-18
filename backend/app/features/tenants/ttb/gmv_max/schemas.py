@@ -27,7 +27,7 @@ DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
 DEFAULT_METRICS: List[str] = list(GMVMAX_DEFAULT_METRICS)
 DEFAULT_DIMENSIONS: List[str] = list(GMVMAX_DEFAULT_DIMENSIONS)
 
-_ACTION_TYPES = {"pause", "enable", "update_budget", "update_strategy"}
+_ACTION_TYPES = {"pause", "enable", "delete", "update_budget", "update_strategy"}
 _ACTION_ALIASES = {
     "disable": "pause",
     "stop": "pause",
@@ -37,6 +37,8 @@ _ACTION_ALIASES = {
     "resume": "enable",
     "start": "enable",
     "run": "enable",
+    "delete": "delete",
+    "remove": "delete",
     "update_budget": "update_budget",
     "set_budget": "update_budget",
     "budget": "update_budget",
@@ -172,7 +174,7 @@ class MetricsResponse(BaseModel):
 class CampaignActionRequest(BaseModel):
     """Action payload accepted by the campaign actions route."""
 
-    type: Literal["pause", "enable", "update_budget", "update_strategy"] = Field(
+    type: Literal["pause", "enable", "delete", "update_budget", "update_strategy"] = Field(
         validation_alias=AliasChoices("type", "action_type")
     )
     payload: Dict[str, Any] = Field(default_factory=dict)
@@ -192,7 +194,7 @@ class CampaignActionRequest(BaseModel):
 class CampaignActionResponse(BaseModel):
     """Normalized campaign action response."""
 
-    type: Literal["pause", "enable", "update_budget", "update_strategy"]
+    type: Literal["pause", "enable", "delete", "update_budget", "update_strategy"]
     status: Literal["success", "failed"]
     response: Optional[Dict[str, Any]] = None
     request_id: Optional[str] = None

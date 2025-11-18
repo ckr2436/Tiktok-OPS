@@ -424,6 +424,25 @@ def test_campaign_pause_refreshes_local_cache(gmvmax_client_fixture):
     assert row.operation_status == "DISABLE"
 
 
+def test_campaign_delete_uses_status_update(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    session = gmvmax_client_fixture["session"]
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/actions",
+        json={"type": "delete", "payload": {}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["response"]["status"] == "DELETE"
+    row = (
+        session.query(TTBGmvMaxCampaign)
+        .filter(TTBGmvMaxCampaign.campaign_id == "cmp-1")
+        .one()
+    )
+    assert row.operation_status == "DELETE"
+
+
 def test_actions_placeholder_list(gmvmax_client_fixture):
     client: TestClient = gmvmax_client_fixture["client"]
     response = client.get(

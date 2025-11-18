@@ -618,15 +618,26 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         filtering_payload = params.get("filtering")
         if isinstance(filtering_payload, dict):
             normalized_store_ids: List[str] = []
-            normalized_store_ids.extend(_coerce_store_ids(filtering_payload.get("store_ids")))
-            extra_ids = _coerce_store_ids(filtering_payload.pop("store_id", None))
-            if extra_ids:
-                normalized_store_ids.extend(extra_ids)
-            if normalized_store_ids:
-                unique_ids = list(dict.fromkeys(normalized_store_ids))
-                filtering_payload["store_ids"] = unique_ids
-            elif "store_ids" in filtering_payload:
-                filtering_payload.pop("store_ids", None)
+            normalized_store_ids.extend(
+                _coerce_store_ids(filtering_payload.pop("store_ids", None))
+            )
+            normalized_store_ids.extend(
+                _coerce_store_ids(filtering_payload.pop("store_id", None))
+            )
+        else:
+            filtering_payload = None
+            normalized_store_ids = []
+
+        # TikTok expects store_ids as a top-level JSON array instead of inside the
+        # filtering object. Preserve compatibility by accepting store_ids from
+        # either location but always emit a single normalized payload.
+        normalized_store_ids.extend(_coerce_store_ids(params.pop("store_ids", None)))
+        if normalized_store_ids:
+            unique_ids = list(dict.fromkeys(normalized_store_ids))
+            params["store_ids"] = json.dumps(unique_ids, ensure_ascii=False)
+        elif filtering_payload is not None:
+            filtering_payload.pop("store_ids", None)
+
         _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="campaign")
         cleaned = _ttb_api._clean_params_map(params)
         payload = await self._request_json("GET", "/gmv_max/campaign/get/", params=cleaned)

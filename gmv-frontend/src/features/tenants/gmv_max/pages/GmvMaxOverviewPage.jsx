@@ -992,6 +992,13 @@ function CampaignCard({
     actionMutation.mutate({ type: 'pause' });
   }, [actionMutation, campaignId]);
 
+  const handleDelete = useCallback(() => {
+    if (!campaignId) return;
+    const confirmed = window.confirm('Delete this campaign? This action cannot be undone.');
+    if (!confirmed) return;
+    actionMutation.mutate({ type: 'delete' });
+  }, [actionMutation, campaignId]);
+
   return (
     <article className="gmvmax-campaign-card">
       <header className="gmvmax-campaign-card__header">
@@ -1113,6 +1120,14 @@ function CampaignCard({
           onClick={() => onDashboard?.(campaignId)}
         >
           Dashboard
+        </button>
+        <button
+          type="button"
+          className="gmvmax-button gmvmax-button--danger"
+          onClick={handleDelete}
+          disabled={!campaignId || actionMutation.isPending}
+        >
+          Delete
         </button>
       </footer>
     </article>

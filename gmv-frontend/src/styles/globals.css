@@ -252,6 +252,8 @@ a:hover{ opacity:.95; }
 .gmvmax-button--secondary:hover:not(:disabled){ background:rgba(148,163,184,.16); }
 .gmvmax-button--ghost{ border-color:var(--border); color:var(--muted); }
 .gmvmax-button--ghost:hover:not(:disabled){ color:var(--txt); background:var(--panel-2); }
+.gmvmax-button--danger{ background:rgba(248,113,113,.16); border-color:rgba(248,113,113,.6); color:#b91c1c; }
+.gmvmax-button--danger:hover:not(:disabled){ background:rgba(248,113,113,.28); }
 .gmvmax-button--link{ padding:0; border:none; background:transparent; color:var(--accent); min-height:auto; }
 .gmvmax-button--link:hover{ text-decoration:underline; }
 .gmvmax-product-table{ display:flex; flex-direction:column; gap:12px; }

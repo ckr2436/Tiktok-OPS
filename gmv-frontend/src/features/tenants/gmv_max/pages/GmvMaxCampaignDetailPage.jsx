@@ -718,6 +718,12 @@ export default function GmvMaxCampaignDetailPage() {
     applyActionMutation.mutate({ type: 'resume' });
   }, [applyActionMutation]);
 
+  const handleDelete = useCallback(() => {
+    const confirmed = window.confirm('Delete this campaign? This action cannot be undone.');
+    if (!confirmed) return;
+    applyActionMutation.mutate({ type: 'delete' });
+  }, [applyActionMutation]);
+
   const openBudgetDialog = useCallback((mode) => {
     setBudgetDialog({ open: true, mode });
   }, []);
@@ -893,6 +899,9 @@ export default function GmvMaxCampaignDetailPage() {
           </button>
           <button type="button" onClick={handleResume} disabled={applyActionMutation.isPending}>
             Resume
+          </button>
+          <button type="button" onClick={handleDelete} disabled={applyActionMutation.isPending}>
+            Delete
           </button>
           <button type="button" onClick={() => openBudgetDialog('increase')} disabled={applyActionMutation.isPending}>
             Increase Budget

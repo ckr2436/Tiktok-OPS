@@ -347,6 +347,8 @@ def _normalize_status(value: Optional[str]) -> str:
 
 def _should_include_campaign(entry: GMVMaxCampaign) -> bool:
     operation_status = _normalize_status(entry.operation_status)
+    if operation_status == "DELETE":
+        return False
     if operation_status == "ENABLE":
         return True
     if operation_status == "DISABLE":
@@ -1135,8 +1137,13 @@ async def apply_gmvmax_campaign_action_provider(
 
     action_request = CampaignActionRequest.model_validate(payload)
     adv = advertiser_id or context.advertiser_id
-    if action_request.type in {"pause", "enable"}:
-        operation_status = "DISABLE" if action_request.type == "pause" else "ENABLE"
+    if action_request.type in {"pause", "enable", "delete"}:
+        operation_status_map = {
+            "pause": "DISABLE",
+            "enable": "ENABLE",
+            "delete": "DELETE",
+        }
+        operation_status = operation_status_map[action_request.type]
         status_request = CampaignStatusUpdateRequest(
             advertiser_id=adv,
             campaign_ids=[str(campaign_id)],
