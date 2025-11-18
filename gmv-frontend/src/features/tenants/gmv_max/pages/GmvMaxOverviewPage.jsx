@@ -2580,6 +2580,8 @@ export default function GmvMaxOverviewPage() {
     },
   });
 
+  const lastAutoSyncedScopeRef = useRef(null);
+
   const canSync = Boolean(
     isScopeReady &&
       hasSavedBinding &&
@@ -2675,6 +2677,38 @@ export default function GmvMaxOverviewPage() {
     scopeMatchesBinding,
     storeId,
     syncMutation,
+  ]);
+
+  useEffect(() => {
+    if (!canSync) {
+      lastAutoSyncedScopeRef.current = null;
+      return;
+    }
+    if (syncMutation.isPending) return;
+    const signature = [
+      workspaceId,
+      provider,
+      authId,
+      businessCenterId,
+      advertiserId,
+      storeId,
+    ]
+      .map((value) => (value == null ? '' : String(value)))
+      .join('|');
+    if (signature && lastAutoSyncedScopeRef.current !== signature) {
+      lastAutoSyncedScopeRef.current = signature;
+      handleSync();
+    }
+  }, [
+    advertiserId,
+    authId,
+    businessCenterId,
+    canSync,
+    handleSync,
+    provider,
+    storeId,
+    syncMutation.isPending,
+    workspaceId,
   ]);
 
   const handleOpenCreate = useCallback(() => {
