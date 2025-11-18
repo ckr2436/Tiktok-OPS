@@ -34,6 +34,7 @@ from app.services.ttb_sync import TTBSyncService
 
 ttb_router_module = importlib.import_module("app.features.tenants.ttb.router")
 from app.services.crypto import encrypt_text_to_blob
+from app.services.ttb_meta import MetaSyncEnqueueResult
 from app.services.ttb_sync_dispatch import DispatchResult
 
 
@@ -286,6 +287,35 @@ def test_metadata_endpoints_return_items(tenant_app):
     assert "sku_count" in products["items"][0]
     assert "price_range" in products["items"][0]
     assert "updated_time" in products["items"][0]
+
+
+def test_list_accounts_triggers_meta_sync_for_incomplete_account(monkeypatch, tenant_app):
+    client, db_session = tenant_app
+
+    account = OAuthAccountTTB(
+        id=2,
+        workspace_id=1,
+        provider_app_id=1,
+        alias="empty",
+        access_token_cipher=encrypt_text_to_blob("token2", key_version=1, aad_text="token2"),
+        key_version=1,
+        token_fingerprint=b"1" * 32,
+        status="active",
+    )
+    db_session.add(account)
+    db_session.commit()
+
+    triggered: list[tuple[int, int]] = []
+
+    def _fake_enqueue_meta_sync(*, workspace_id: int, auth_id: int, now=None):  # noqa: ANN001
+        triggered.append((workspace_id, auth_id))
+        return MetaSyncEnqueueResult(idempotency_key="auto", task_name="ttb.sync.all")
+
+    monkeypatch.setattr(ttb_router_module, "enqueue_meta_sync", _fake_enqueue_meta_sync)
+
+    resp = client.get("/api/v1/tenants/1/providers/tiktok-business/accounts")
+    assert resp.status_code == 200
+    assert triggered == [(1, int(account.id))]
 
 
 def test_store_and_product_filters_require_ids(tenant_app):

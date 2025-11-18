@@ -29,6 +29,7 @@ from app.data.models.ttb_entities import (
     TTBProduct,
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
+    TTBSyncCursor,
 )
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaignProduct
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
@@ -289,6 +290,79 @@ def _serialize_account_summary(row: OAuthAccountTTB) -> AccountSummary:
     return AccountSummary(auth_id=binding.auth_id, label=binding.label, status=binding.status)
 
 
+def _has_records(db: Session, model: Any, *, workspace_id: int, auth_id: int) -> bool:
+    row = (
+        db.query(model.id)
+        .filter(model.workspace_id == int(workspace_id))
+        .filter(model.auth_id == int(auth_id))
+        .limit(1)
+        .first()
+    )
+    return row is not None
+
+
+def _needs_account_bootstrap(db: Session, *, workspace_id: int, auth_id: int) -> bool:
+    required = {"bc": False, "advertiser": False, "store": False, "product": False}
+    normalization = {"advertisers": "advertiser", "shop": "store", "shops": "store", "products": "product"}
+
+    rows = (
+        db.query(TTBSyncCursor.resource_type, TTBSyncCursor.last_rev)
+        .filter(
+            TTBSyncCursor.workspace_id == int(workspace_id),
+            TTBSyncCursor.auth_id == int(auth_id),
+            TTBSyncCursor.provider == "tiktok-business",
+        )
+        .all()
+    )
+    for resource_type, last_rev in rows:
+        key = normalization.get((resource_type or "").strip().lower(), (resource_type or "").strip().lower())
+        if key in required and (last_rev or "").strip():
+            required[key] = True
+
+    if not required["bc"]:
+        required["bc"] = _has_records(db, TTBBusinessCenter, workspace_id=workspace_id, auth_id=auth_id)
+    if not required["advertiser"]:
+        required["advertiser"] = _has_records(db, TTBAdvertiser, workspace_id=workspace_id, auth_id=auth_id)
+    if not required["store"]:
+        required["store"] = _has_records(db, TTBStore, workspace_id=workspace_id, auth_id=auth_id)
+    if not required["product"]:
+        required["product"] = _has_records(db, TTBProduct, workspace_id=workspace_id, auth_id=auth_id)
+
+    return not all(required.values())
+
+
+def _ensure_account_meta_seeded(db: Session, *, workspace_id: int, account: OAuthAccountTTB) -> None:
+    if account.status != "active":
+        return
+
+    auth_id = int(account.id)
+    workspace_val = int(workspace_id)
+    if not _needs_account_bootstrap(db, workspace_id=workspace_val, auth_id=auth_id):
+        return
+
+    try:
+        result = enqueue_meta_sync(workspace_id=workspace_val, auth_id=auth_id)
+        logger.info(
+            "auto meta sync enqueued from accounts list",
+            extra={
+                "provider": "tiktok-business",
+                "workspace_id": workspace_val,
+                "auth_id": auth_id,
+                "task_name": result.task_name,
+                "idempotency_key": result.idempotency_key,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "failed to enqueue auto meta sync from accounts list",
+            extra={
+                "provider": "tiktok-business",
+                "workspace_id": workspace_val,
+                "auth_id": auth_id,
+            },
+        )
+
+
 def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConfig:
     if not row:
         return GMVMaxBindingConfig(
@@ -404,6 +478,8 @@ def list_provider_accounts(
         .limit(page_size)
         .all()
     )
+    for row in rows:
+        _ensure_account_meta_seeded(db, workspace_id=workspace_id, account=row)
     items = [_serialize_account_summary(row) for row in rows]
     return ProviderAccountListResponse(items=items, page=page, page_size=page_size, total=total)
 
