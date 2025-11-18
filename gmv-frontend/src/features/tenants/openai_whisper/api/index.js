@@ -11,7 +11,7 @@ export async function fetchLanguages(wid) {
   return res.data?.languages ?? []
 }
 
-export async function createSubtitleJob(wid, payload) {
+export async function createSubtitleJob(wid, payload, options = {}) {
   const form = new FormData()
   form.append('file', payload.file)
   if (payload.sourceLanguage) {
@@ -23,7 +23,12 @@ export async function createSubtitleJob(wid, payload) {
   }
   form.append('show_bilingual', payload.showBilingual ? 'true' : 'false')
 
-  const res = await http.post(`${basePath(wid)}/jobs`, form)
+  const config = {}
+  if (typeof options.onUploadProgress === 'function') {
+    config.onUploadProgress = options.onUploadProgress
+  }
+
+  const res = await http.post(`${basePath(wid)}/jobs`, form, config)
   return res.data
 }
 
