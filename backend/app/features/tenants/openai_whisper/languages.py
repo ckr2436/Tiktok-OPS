@@ -1,5 +1,5 @@
 """Language helpers built from openai-whisper tables."""
-"""Language helpers built from openai-whisper tables."""
+
 from __future__ import annotations
 
 from typing import List, Optional
