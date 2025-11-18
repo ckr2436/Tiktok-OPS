@@ -8,6 +8,7 @@ import {
   buildSubtitleDownloadUrl,
   createSubtitleJob,
   fetchLanguages,
+  uploadSubtitleVideo,
 } from '../api/index.js'
 
 export default function SubtitleRecognitionPage() {
@@ -15,6 +16,7 @@ export default function SubtitleRecognitionPage() {
   const [languages, setLanguages] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
+  const [uploadedVideo, setUploadedVideo] = useState(null)
   const [sourceLanguage, setSourceLanguage] = useState('')
   const [translate, setTranslate] = useState(false)
   const [targetLanguage, setTargetLanguage] = useState('')
@@ -40,17 +42,60 @@ export default function SubtitleRecognitionPage() {
   }, [wid])
 
   useEffect(() => {
+    let cancelled = false
+    setUploadedVideo(null)
     setUploadProgress(0)
     setIsUploading(false)
-  }, [selectedFile])
+    if (!selectedFile) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    async function performUpload() {
+      setErrorMessage('')
+      setIsUploading(true)
+      try {
+        const response = await uploadSubtitleVideo(wid, selectedFile, {
+          onUploadProgress: (event) => {
+            if (!event.total) return
+            const percent = Math.round((event.loaded / event.total) * 100)
+            if (!cancelled) {
+              setUploadProgress(percent)
+            }
+          },
+        })
+        if (!cancelled) {
+          setUploadedVideo(response)
+          setUploadProgress(100)
+        }
+      } catch (err) {
+        console.error('upload video failed', err)
+        if (!cancelled) {
+          setErrorMessage(err?.message || '上传视频失败，请稍后再试。')
+          setUploadedVideo(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsUploading(false)
+        }
+      }
+    }
+
+    performUpload()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedFile, wid])
 
   const languageOptions = useMemo(() => languages ?? [], [languages])
 
   async function handleSubmit(e) {
     e.preventDefault()
     setErrorMessage('')
-    if (!selectedFile) {
-      setErrorMessage('请先选择需要识别的视频文件。')
+    if (!uploadedVideo?.upload_id) {
+      setErrorMessage('请先上传需要识别的视频文件。')
       return
     }
     if (translate && !targetLanguage) {
@@ -59,25 +104,13 @@ export default function SubtitleRecognitionPage() {
     }
     try {
       setLoading(true)
-      setUploadProgress(0)
-      setIsUploading(true)
       const response = await createSubtitleJob(wid, {
-        file: selectedFile,
+        uploadId: uploadedVideo.upload_id,
         sourceLanguage: sourceLanguage || null,
         translate,
         targetLanguage: targetLanguage || null,
         showBilingual,
-      }, {
-        onUploadProgress: (event) => {
-          if (!event.total) return
-          const percent = Math.round((event.loaded / event.total) * 100)
-          setUploadProgress(percent)
-          if (percent >= 100) {
-            setIsUploading(false)
-          }
-        },
       })
-      setUploadProgress(100)
       setJob(response)
       startPolling(response.job_id)
     } catch (err) {
@@ -85,11 +118,10 @@ export default function SubtitleRecognitionPage() {
       setErrorMessage(err?.message || '提交任务失败，请稍后再试。')
     } finally {
       setLoading(false)
-      setIsUploading(false)
     }
   }
 
-  const canSubmit = !!selectedFile && (!translate || targetLanguage) && !isUploading
+  const canSubmit = !!uploadedVideo && (!translate || targetLanguage) && !isUploading
   const showDownloads = job && job.status === 'success'
   const sourceDownloadUrl = job
     ? buildSubtitleDownloadUrl(wid, job.job_id, 'source')

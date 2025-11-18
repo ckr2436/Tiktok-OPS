@@ -13,7 +13,11 @@ export async function fetchLanguages(wid) {
 
 export async function createSubtitleJob(wid, payload, options = {}) {
   const form = new FormData()
-  form.append('file', payload.file)
+  if (payload.uploadId) {
+    form.append('upload_id', payload.uploadId)
+  } else if (payload.file) {
+    form.append('file', payload.file)
+  }
   if (payload.sourceLanguage) {
     form.append('source_language', payload.sourceLanguage)
   }
@@ -29,6 +33,19 @@ export async function createSubtitleJob(wid, payload, options = {}) {
   }
 
   const res = await http.post(`${basePath(wid)}/jobs`, form, config)
+  return res.data
+}
+
+export async function uploadSubtitleVideo(wid, file, options = {}) {
+  const form = new FormData()
+  form.append('file', file)
+
+  const config = {}
+  if (typeof options.onUploadProgress === 'function') {
+    config.onUploadProgress = options.onUploadProgress
+  }
+
+  const res = await http.post(`${basePath(wid)}/uploads`, form, config)
   return res.data
 }
 

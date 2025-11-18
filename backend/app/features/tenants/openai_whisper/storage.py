@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -24,6 +25,16 @@ def workspace_dir(workspace_id: int) -> Path:
 
 def job_dir(workspace_id: int, job_id: str) -> Path:
     return _ensure_dir(workspace_dir(workspace_id) / job_id)
+
+
+def uploads_dir(workspace_id: int) -> Path:
+    return _ensure_dir(workspace_dir(workspace_id) / "uploads")
+
+
+def upload_dir(workspace_id: int, upload_id: str) -> Path:
+    directory = uploads_dir(workspace_id) / upload_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
 def metadata_path(job_directory: Path) -> Path:
@@ -49,6 +60,31 @@ def write_metadata(workspace_id: int, job_id: str, payload: Dict[str, Any]) -> D
     payload.setdefault("updated_at", payload["created_at"])
     metadata_path(directory).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
+
+
+def upload_metadata_path(upload_directory: Path) -> Path:
+    return upload_directory / "upload.json"
+
+
+def write_upload_metadata(workspace_id: int, upload_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    directory = upload_dir(workspace_id, upload_id)
+    payload.setdefault("created_at", _utc_now())
+    payload.setdefault("updated_at", payload["created_at"])
+    upload_metadata_path(directory).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
+def load_upload_metadata(workspace_id: int, upload_id: str) -> Dict[str, Any]:
+    directory = uploads_dir(workspace_id) / upload_id
+    metadata_file = upload_metadata_path(directory)
+    if not metadata_file.exists():
+        raise FileNotFoundError(metadata_file)
+    return json.loads(metadata_file.read_text())
+
+
+def delete_upload(workspace_id: int, upload_id: str) -> None:
+    directory = uploads_dir(workspace_id) / upload_id
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def _atomic_update(path: Path, updater: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:

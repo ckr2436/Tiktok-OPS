@@ -13,6 +13,7 @@ from .schemas import (
     LanguageListResponse,
     TranscriptionJobCreatedResponse,
     TranscriptionJobStatusResponse,
+    UploadedVideoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/tenants/{workspace_id}/openai-whisper", tags=["openai-whisper"])
@@ -24,10 +25,24 @@ def list_languages(workspace_id: int, _: SessionUser = Depends(require_tenant_me
     return service.get_languages()
 
 
+@router.post("/uploads", response_model=UploadedVideoResponse)
+async def upload_video(
+    workspace_id: int,
+    file: UploadFile = File(...),
+    me: SessionUser = Depends(require_tenant_member),
+):
+    return await service.upload_video(
+        workspace_id=workspace_id,
+        user_id=me.id,
+        upload=file,
+    )
+
+
 @router.post("/jobs", response_model=TranscriptionJobCreatedResponse)
 async def enqueue_job(
     workspace_id: int,
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    upload_id: Optional[str] = Form(None),
     source_language: Optional[str] = Form(None),
     translate: bool = Form(False),
     target_language: Optional[str] = Form(None),
@@ -38,6 +53,7 @@ async def enqueue_job(
         workspace_id=workspace_id,
         user_id=me.id,
         upload=file,
+        upload_id=upload_id,
         source_language=source_language,
         translate=translate,
         target_language=target_language,

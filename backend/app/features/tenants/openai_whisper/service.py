@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
@@ -16,6 +17,7 @@ from .schemas import (
     LanguageListResponse,
     TranscriptionJobCreatedResponse,
     TranscriptionJobStatusResponse,
+    UploadedVideoResponse,
 )
 
 
@@ -54,29 +56,85 @@ def get_languages() -> LanguageListResponse:
     return LanguageListResponse(languages=list_language_options())
 
 
-async def create_job(
+async def upload_video(
     *,
     workspace_id: int,
     user_id: int,
     upload: UploadFile,
+) -> UploadedVideoResponse:
+    if not upload:
+        raise APIError("FILE_REQUIRED", "请上传需要识别的视频。", 422)
+
+    original_name = os.path.basename(upload.filename or "video.mp4")
+    ext = Path(original_name).suffix or ".mp4"
+    upload_id = uuid.uuid4().hex
+    directory = storage.upload_dir(workspace_id, upload_id)
+    video_path = directory / f"upload{ext}"
+
+    await _save_upload_file(video_path, upload)
+
+    payload: Dict[str, object] = {
+        "upload_id": upload_id,
+        "workspace_id": workspace_id,
+        "user_id": user_id,
+        "filename": original_name,
+        "content_type": upload.content_type,
+        "path": str(video_path),
+        "size": video_path.stat().st_size,
+    }
+    storage.write_upload_metadata(workspace_id, upload_id, payload)
+    return UploadedVideoResponse.model_validate(payload)
+
+
+async def create_job(
+    *,
+    workspace_id: int,
+    user_id: int,
+    upload: Optional[UploadFile],
+    upload_id: Optional[str],
     source_language: Optional[str],
     translate: bool,
     target_language: Optional[str],
     show_bilingual: bool,
 ) -> TranscriptionJobCreatedResponse:
-    if not upload:
+    if not upload and not upload_id:
         raise APIError("FILE_REQUIRED", "请上传需要识别的视频。", 422)
 
     normalized_source = _normalize_language_or_error(source_language, "source_language")
     normalized_target = _validate_options(translate, target_language)
 
-    original_name = os.path.basename(upload.filename or "video.mp4")
-    ext = Path(original_name).suffix or ".mp4"
     job_id = uuid.uuid4().hex
     directory = storage.job_dir(workspace_id, job_id)
-    video_path = directory / f"input{ext}"
+    video_path: Path
+    original_name: str
 
-    await _save_upload_file(video_path, upload)
+    if upload:
+        original_name = os.path.basename(upload.filename or "video.mp4")
+        ext = Path(original_name).suffix or ".mp4"
+        video_path = directory / f"input{ext}"
+        await _save_upload_file(video_path, upload)
+    else:
+        try:
+            upload_meta = storage.load_upload_metadata(workspace_id, upload_id)
+        except FileNotFoundError as exc:
+            raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404) from exc
+
+        raw_path = upload_meta.get("path")
+        if not raw_path:
+            storage.delete_upload(workspace_id, upload_id)
+            raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
+
+        source_path = Path(str(raw_path))
+        if not source_path.exists():
+            storage.delete_upload(workspace_id, upload_id)
+            raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
+
+        original_name = os.path.basename(upload_meta.get("filename") or source_path.name)
+        ext = Path(original_name).suffix or source_path.suffix or ".mp4"
+        video_path = directory / f"input{ext}"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source_path), video_path)
+        storage.delete_upload(workspace_id, upload_id)
 
     metadata: Dict[str, object] = {
         "job_id": job_id,
