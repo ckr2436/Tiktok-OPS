@@ -10,6 +10,7 @@ import {
   revokeBinding,
   hardDeleteBinding,
   createAuthz,
+  triggerBindingSync,
 } from '../service.js';
 
 /* 英文状态 -> 中文 */
@@ -37,6 +38,9 @@ export default function TbAuthDetail() {
 
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState('');
+  const [syncingScope, setSyncingScope] = useState('');
+  const [syncNotice, setSyncNotice] = useState('');
+  const [syncError, setSyncError] = useState('');
 
   const bindingQuery = useQuery({
     queryKey: ['tb-binding', wid, auth_id],
@@ -102,6 +106,11 @@ export default function TbAuthDetail() {
     },
   });
 
+  const manualSyncMutation = useMutation({
+    mutationFn: ({ scope, mode = 'incremental' }) =>
+      triggerBindingSync(wid, { auth_id: Number(auth_id), scope, mode }),
+  });
+
   const binding = bindingQuery.data;
   const advertisers = advertisersQuery.data || [];
   const primaryId = useMemo(
@@ -127,6 +136,45 @@ export default function TbAuthDetail() {
       bindingQuery.refetch(),
       advertisersQuery.refetch(),
     ]);
+  }
+
+  const scopeLabels = {
+    bc: 'Business Center',
+    advertisers: 'Advertiser',
+    stores: 'Store',
+    products: 'Product',
+  };
+
+  function normalizeErrorMessage(err) {
+    if (!err) return '触发同步失败，请稍后重试。';
+    const raw = err?.message || err?.toString?.() || '';
+    if (!raw) return '触发同步失败，请稍后重试。';
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.detail) return parsed.detail;
+      if (parsed?.message) return parsed.message;
+    } catch {}
+    return raw;
+  }
+
+  async function handleManualSync(scope) {
+    if (!scope) return;
+    setSyncError('');
+    setSyncNotice('');
+    setSyncingScope(scope);
+    try {
+      const result = await manualSyncMutation.mutateAsync({ scope });
+      setSyncNotice(
+        `已触发 ${scopeLabels[scope] || scope} 同步，运行 ID #${result?.run_id ?? '-'} · 状态 ${
+          result?.status || 'pending'
+        }。`,
+      );
+      await refreshAll();
+    } catch (err) {
+      setSyncError(normalizeErrorMessage(err));
+    } finally {
+      setSyncingScope('');
+    }
   }
 
   // 操作：冻结/激活/重新授权/移除
@@ -236,6 +284,30 @@ export default function TbAuthDetail() {
             </button>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <div className="text-base font-semibold mb-3">手动同步</div>
+        <p className="small-muted mb-3">针对授权账号手动补全/刷新业务中心、广告主、店铺以及商品数据。</p>
+        {syncNotice ? <div className="alert alert--success mb-3">{syncNotice}</div> : null}
+        {syncError ? <div className="alert alert--error mb-3">{syncError}</div> : null}
+        <div className="flex flex-wrap gap-3">
+          {[
+            { scope: 'bc', label: '同步 BC' },
+            { scope: 'advertisers', label: '同步 Advertiser' },
+            { scope: 'stores', label: '同步 Store' },
+            { scope: 'products', label: '同步 Product' },
+          ].map(({ scope, label }) => (
+            <button
+              key={scope}
+              className="btn"
+              disabled={manualSyncMutation.isPending || !!syncingScope}
+              onClick={() => handleManualSync(scope)}
+            >
+              {syncingScope === scope ? '同步中…' : label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 广告主列表卡 */}
