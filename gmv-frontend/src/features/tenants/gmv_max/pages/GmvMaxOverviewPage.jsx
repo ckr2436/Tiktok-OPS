@@ -8,6 +8,7 @@ import Loading from '@/components/ui/Loading.jsx';
 
 import {
   useAccountsQuery,
+  useApplyGmvMaxActionMutation,
   useCreateGmvMaxCampaignMutation,
   useGmvMaxCampaignsQuery,
   useGmvMaxMetricsQuery,
@@ -639,6 +640,98 @@ function formatCampaignStatus(status) {
   return map[status] || status;
 }
 
+const ENABLED_STATUS_WHITELIST = new Set([
+  'STATUS_DELIVERY_OK',
+  'STATUS_ENABLE',
+  'STATUS_ENABLED',
+  'STATUS_RUNNING',
+  'STATUS_RUN',
+  'STATUS_ACTIVE',
+  'CAMPAIGN_STATUS_ENABLE',
+  'CAMPAIGN_STATUS_ENABLED',
+  'CAMPAIGN_STATUS_RUNNING',
+]);
+
+function isCampaignEnabledStatus(status) {
+  if (!status) return false;
+  const normalized = String(status).toUpperCase();
+  if (ENABLED_STATUS_WHITELIST.has(normalized)) return true;
+  if (normalized.includes('DISABLE') || normalized.includes('PAUSE') || normalized.includes('ARCHIVE')) {
+    return false;
+  }
+  if (normalized.includes('ENABLE') || normalized.includes('RUN') || normalized.includes('ACTIVE')) {
+    return true;
+  }
+  return false;
+}
+
+function extractProductsFromDetail(detail) {
+  if (!detail) return [];
+  const products = [];
+  const seen = new Set();
+
+  const pushProduct = (item) => {
+    if (!item || typeof item !== 'object') return;
+    const id = getProductIdentifier(item);
+    const name =
+      item.product_name ||
+      item.productName ||
+      item.title ||
+      item.name ||
+      item.item_name ||
+      item.itemName ||
+      id ||
+      'Product';
+    const image =
+      item.image_url ||
+      item.imageUrl ||
+      item.cover_url ||
+      item.coverUrl ||
+      item.thumbnail_url ||
+      item.thumbnailUrl ||
+      item.thumb_url ||
+      item.thumbUrl ||
+      item.main_image ||
+      item.mainImage ||
+      null;
+    const key = id || name || `product-${products.length}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    products.push({ id: key, name: name || 'Product', image });
+  };
+
+  const ingest = (list) => {
+    ensureArray(list).forEach((product) => {
+      if (Array.isArray(product)) {
+        product.forEach((entry) => pushProduct(entry));
+      } else {
+        pushProduct(product);
+      }
+    });
+  };
+
+  ingest(detail.products);
+  ingest(detail.product_list);
+  ingest(detail.productList);
+  ingest(detail.item_list);
+  ingest(detail.itemList);
+  ingest(detail.items);
+  ingest(detail.campaign?.product_list);
+  ingest(detail.campaign?.productList);
+
+  const sessions = ensureArray(
+    detail.sessions || detail.session_list || detail.sessionList || detail.session || detail.sessionInfo,
+  );
+  sessions.forEach((session) => {
+    ingest(session?.product_list);
+    ingest(session?.productList);
+    ingest(session?.products);
+    ingest(session?.items);
+  });
+
+  return products;
+}
+
 function setsEqual(a, b) {
   if (a.size !== b.size) return false;
   for (const value of a) {
@@ -837,6 +930,7 @@ function CampaignCard({
 }) {
   const campaignId = campaign?.campaign_id || campaign?.id;
   const { start, end } = useMemo(() => getRecentDateRange(7), []);
+  const queryClient = useQueryClient();
   const metricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
@@ -851,29 +945,104 @@ function CampaignCard({
       enabled: Boolean(workspaceId && authId && campaignId && storeId),
     },
   );
+  const actionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
+      queryClient.invalidateQueries({
+        queryKey: ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId],
+      });
+    },
+  });
 
   const reportPayload = metricsQuery.data?.report ?? metricsQuery.data?.data ?? metricsQuery.data ?? null;
   const metricsSummary = reportPayload ? summariseMetrics(reportPayload) : null;
   const productCount = detail ? collectProductIdsFromDetail(detail).size : null;
   const statusLabel = formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+  const previewProducts = useMemo(() => extractProductsFromDetail(detail), [detail]);
+  const displayedProducts = previewProducts.slice(0, 6);
+  const remainingProducts = Math.max(0, previewProducts.length - displayedProducts.length);
+  const isEnabled = isCampaignEnabledStatus(
+    campaign?.operation_status || campaign?.status || detail?.campaign?.operation_status || detail?.campaign?.status,
+  );
+  const actionError = actionMutation.error ? formatError(actionMutation.error) : null;
+
+  const handleEnable = useCallback(() => {
+    if (!campaignId) return;
+    actionMutation.mutate({ type: 'resume' });
+  }, [actionMutation, campaignId]);
+
+  const handleDisable = useCallback(() => {
+    if (!campaignId) return;
+    actionMutation.mutate({ type: 'pause' });
+  }, [actionMutation, campaignId]);
 
   return (
     <article className="gmvmax-campaign-card">
       <header className="gmvmax-campaign-card__header">
-        <div>
-          <h3>{name}</h3>
+        <div className="gmvmax-campaign-card__title">
+          <h3 title={name}>{name}</h3>
           <p className="gmvmax-campaign-card__status">{statusLabel}</p>
         </div>
+        <div className="gmvmax-campaign-card__toggles" aria-label="Series controls">
+          <button
+            type="button"
+            className={`gmvmax-toggle-button ${isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
+            aria-label="Enable series"
+            aria-pressed={isEnabled}
+            onClick={handleEnable}
+            disabled={isEnabled || actionMutation.isPending}
+            title="Enable"
+          >
+            <span aria-hidden="true">▶</span>
+          </button>
+          <button
+            type="button"
+            className={`gmvmax-toggle-button ${!isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
+            aria-label="Disable series"
+            aria-pressed={!isEnabled}
+            onClick={handleDisable}
+            disabled={!isEnabled || actionMutation.isPending}
+            title="Disable"
+          >
+            <span aria-hidden="true">⏸</span>
+          </button>
+        </div>
       </header>
+      {actionError ? <p className="gmvmax-campaign-card__action-error">{actionError}</p> : null}
       <div className="gmvmax-campaign-card__body">
         {detailLoading ? <Loading text="Loading campaign details…" /> : null}
         <ErrorBlock error={detailError} onRetry={onRetryDetail} />
-        <dl className="gmvmax-campaign-card__stats">
-          <div>
-            <dt>Products</dt>
-            <dd>{productCount ?? '—'}</dd>
+        <div className="gmvmax-campaign-card__products">
+          <div className="gmvmax-campaign-card__products-count">
+            <span>Products</span>
+            <strong>{productCount ?? '—'}</strong>
           </div>
+          {detailLoading ? (
+            <span className="gmvmax-campaign-card__products-placeholder">Loading products…</span>
+          ) : displayedProducts.length === 0 ? (
+            <span className="gmvmax-campaign-card__products-placeholder">Product preview unavailable.</span>
+          ) : (
+            <div className="gmvmax-product-thumbnails" aria-label="Products preview">
+              {displayedProducts.map((product, index) => {
+                const key = product.id || product.name || `product-${index}`;
+                return (
+                  <div key={key} className="gmvmax-product-thumbnail" title={product.name}>
+                    {product.image ? (
+                      <img src={product.image} alt={product.name || 'Product'} />
+                    ) : (
+                      <span aria-hidden="true">📦</span>
+                    )}
+                  </div>
+                );
+              })}
+              {remainingProducts > 0 ? (
+                <span className="gmvmax-product-thumbnail gmvmax-product-thumbnail--more">+{remainingProducts}</span>
+              ) : null}
+            </div>
+          )}
+        </div>
+        <dl className="gmvmax-campaign-card__stats">
           <div>
             <dt>Spend (7d)</dt>
             <dd>
