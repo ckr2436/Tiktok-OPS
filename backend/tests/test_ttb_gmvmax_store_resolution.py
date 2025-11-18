@@ -228,6 +228,54 @@ def test_upsert_campaign_prefers_detail_store_id_over_payload(db_session):
     assert campaign.store_id == "store-from-detail"
 
 
+def test_upsert_campaign_does_not_override_existing_store_with_hint(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    campaign = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-100",
+    )
+    campaign.store_id = "store-authoritative"
+    db_session.flush()
+
+    campaign = upsert_campaign_from_api(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        payload={"campaign_id": "cmp-100"},
+        store_id_hint="store-hint",
+    )
+
+    assert campaign.store_id == "store-authoritative"
+
+
+def test_upsert_campaign_updates_store_when_details_available(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    campaign = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-101",
+    )
+    campaign.store_id = "store-stale"
+    db_session.flush()
+
+    updated = upsert_campaign_from_api(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        payload={"campaign_id": "cmp-101"},
+        campaign_details={"campaign_id": "cmp-101", "store_id": "store-official"},
+    )
+
+    assert updated.store_id == "store-official"
+
+
 def test_upsert_campaign_uses_detail_payload_to_fill_fields(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
 
