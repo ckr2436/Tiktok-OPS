@@ -45,8 +45,9 @@ import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages
 import GmvMaxOverviewPage from '../features/tenants/gmv_max/pages/GmvMaxOverviewPage.jsx';
 import GmvMaxCampaignDetailPage from '../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx';
 
-// 租户 - KIE Sora2 页面
+// 租户 - KIE Sora2 页面 + Whisper 工具
 import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
+import SubtitleRecognitionPage from '../features/tenants/openai_whisper/pages/SubtitleRecognitionPage.jsx';
 
 const router = createBrowserRouter([
   // 登录页
@@ -155,6 +156,15 @@ const router = createBrowserRouter([
             element: (
               <TenantGuard>
                 <Sora2ImageToVideoPage />
+              </TenantGuard>
+            ),
+          },
+
+          {
+            path: 'tenants/:wid/openai-whisper/subtitles',
+            element: (
+              <TenantGuard>
+                <SubtitleRecognitionPage />
               </TenantGuard>
             ),
           },

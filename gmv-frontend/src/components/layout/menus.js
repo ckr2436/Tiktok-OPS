@@ -57,7 +57,13 @@ export function buildMenus(session) {
       {
         title: 'AI视频',
         items: [
-	  { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'Sora2 视频' },
+          { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'Sora2 视频' },
+        ],
+      },
+      {
+        title: '常用工具',
+        items: [
+          { to: `/tenants/${wsId}/openai-whisper/subtitles`, label: '识别字幕' },
         ],
       },
     ];
@@ -71,7 +77,13 @@ export function buildMenus(session) {
         { to: '/dashboard',             label: '仪表盘', exact: true },
         { to: `/tenants/${wsId}/users`, label: '成员' },
         { to: `/tenants/${wsId}/gmvmax`, label: 'GMV Max 管理' },
-	{ to: `/tenants/${wsId}/kie-ai/sora2`, label: 'KIE Sora2 视频' },
+        { to: `/tenants/${wsId}/kie-ai/sora2`, label: 'KIE Sora2 视频' },
+      ],
+    },
+    {
+      title: '常用工具',
+      items: [
+        { to: `/tenants/${wsId}/openai-whisper/subtitles`, label: '识别字幕' },
       ],
     },
   ];
