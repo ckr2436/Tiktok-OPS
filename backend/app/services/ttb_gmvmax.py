@@ -1140,6 +1140,21 @@ def log_campaign_action(
 
 
 _ALLOWED_ACTIONS = {"START", "PAUSE", "SET_BUDGET", "SET_ROAS"}
+_ACTION_NORMALIZATION = {
+    "START": "START",
+    "ENABLE": "START",
+    "RESUME": "START",
+    "RUN": "START",
+    "PAUSE": "PAUSE",
+    "STOP": "PAUSE",
+    "DISABLE": "PAUSE",
+    "SUSPEND": "PAUSE",
+    "SET_BUDGET": "SET_BUDGET",
+    "UPDATE_BUDGET": "SET_BUDGET",
+    "SET_ROAS": "SET_ROAS",
+    "UPDATE_ROAS": "SET_ROAS",
+    "ADJUST_ROI": "SET_ROAS",
+}
 
 
 async def apply_campaign_action(
@@ -1156,7 +1171,8 @@ async def apply_campaign_action(
     performed_by: str = "system",
     audit_hook: Callable[..., Any] | None = None,
 ) -> TTBGmvMaxActionLog:
-    normalized_action = action.upper()
+    requested_action = str(action or "").strip().upper()
+    normalized_action = _ACTION_NORMALIZATION.get(requested_action, requested_action)
     if normalized_action not in _ALLOWED_ACTIONS:
         raise ValueError(f"unsupported action: {action}")
 

@@ -6,7 +6,7 @@ from datetime import date, datetime
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
@@ -26,6 +26,24 @@ from app.services.gmvmax_spec import (
 DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
 DEFAULT_METRICS: List[str] = list(GMVMAX_DEFAULT_METRICS)
 DEFAULT_DIMENSIONS: List[str] = list(GMVMAX_DEFAULT_DIMENSIONS)
+
+_ACTION_TYPES = {"pause", "enable", "update_budget", "update_strategy"}
+_ACTION_ALIASES = {
+    "disable": "pause",
+    "stop": "pause",
+    "suspend": "pause",
+    "pause": "pause",
+    "enable": "enable",
+    "resume": "enable",
+    "start": "enable",
+    "run": "enable",
+    "update_budget": "update_budget",
+    "set_budget": "update_budget",
+    "budget": "update_budget",
+    "update_strategy": "update_strategy",
+    "update_roi": "update_strategy",
+    "set_roi": "update_strategy",
+}
 
 
 class CampaignFilter(BaseModel):
@@ -154,8 +172,21 @@ class MetricsResponse(BaseModel):
 class CampaignActionRequest(BaseModel):
     """Action payload accepted by the campaign actions route."""
 
-    type: Literal["pause", "enable", "update_budget", "update_strategy"]
+    type: Literal["pause", "enable", "update_budget", "update_strategy"] = Field(
+        validation_alias=AliasChoices("type", "action_type")
+    )
     payload: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _normalize_type(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("action type is required")
+        normalized = str(value).strip().lower()
+        canonical = _ACTION_ALIASES.get(normalized, normalized)
+        if canonical not in _ACTION_TYPES:
+            raise ValueError("unsupported action type")
+        return canonical
 
 
 class CampaignActionResponse(BaseModel):

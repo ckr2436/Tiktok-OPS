@@ -63,10 +63,10 @@ class TTBGmvMaxCampaign(Base):
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     name: Mapped[str | None] = mapped_column(String(255), default=None)
-    status: Mapped[str | None] = mapped_column(String(32), default=None)
-    operation_status: Mapped[str | None] = mapped_column(String(32), default=None)
-    secondary_status: Mapped[str | None] = mapped_column(String(32), default=None)
-    shopping_ads_type: Mapped[str | None] = mapped_column(String(32), default=None)
+    status: Mapped[str | None] = mapped_column(String(128), default=None)
+    operation_status: Mapped[str | None] = mapped_column(String(128), default=None)
+    secondary_status: Mapped[str | None] = mapped_column(String(128), default=None)
+    shopping_ads_type: Mapped[str | None] = mapped_column(String(128), default=None)
     optimization_goal: Mapped[str | None] = mapped_column(String(64), default=None)
 
     roas_bid: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
@@ -134,7 +134,7 @@ class TTBGmvMaxCampaignProduct(Base):
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    operation_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    operation_status: Mapped[str | None] = mapped_column(String(128), default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
