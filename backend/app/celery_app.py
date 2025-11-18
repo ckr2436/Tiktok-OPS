@@ -129,4 +129,5 @@ import app.tasks.oauth_tasks  # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401
 import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
 import app.tasks.ttb_gmvmax_tasks  # noqa: F401  # ← 新增：注册 gmvmax 任务
+import app.features.tenants.openai_whisper.tasks  # noqa: F401  # 注册 Whisper 字幕任务
 
