@@ -139,11 +139,29 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             "/open_api/v1.3/gmv_max/campaign/get/",
             {
                 "advertiser_id": "456",
+                "store_ids": json.dumps(["store-123"], ensure_ascii=False),
                 "filtering": json.dumps(
-                    {
-                        "gmv_max_promotion_types": ["PRODUCT_GMV_MAX"],
-                        "store_ids": ["store-123"],
-                    },
+                    {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
+        ),
+        (
+            GMVMaxCampaignGetRequest(
+                advertiser_id="789",
+                filtering=GMVMaxCampaignFiltering(
+                    gmv_max_promotion_types=["LIVE"],
+                    store_ids=["one", "one", "two"],
+                ),
+            ),
+            "gmv_max_campaign_get",
+            "/open_api/v1.3/gmv_max/campaign/get/",
+            {
+                "advertiser_id": "789",
+                "store_ids": json.dumps(["one", "two"], ensure_ascii=False),
+                "filtering": json.dumps(
+                    {"gmv_max_promotion_types": ["LIVE_GMV_MAX"]},
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),

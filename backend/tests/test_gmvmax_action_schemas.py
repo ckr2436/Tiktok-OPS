@@ -13,6 +13,9 @@ def test_campaign_action_request_accepts_aliases() -> None:
     request = CampaignActionRequest(action_type="disable", payload={})
     assert request.type == "pause"
 
+    request = CampaignActionRequest(type="remove", payload={})
+    assert request.type == "delete"
+
 
 def test_campaign_action_request_rejects_unknown() -> None:
     with pytest.raises(ValidationError):
