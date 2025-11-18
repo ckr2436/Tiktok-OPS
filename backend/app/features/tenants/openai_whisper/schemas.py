@@ -18,6 +18,13 @@ class LanguageListResponse(BaseModel):
     languages: List[LanguageOption]
 
 
+class UploadedVideoResponse(BaseModel):
+    upload_id: str
+    filename: str
+    size: int
+    content_type: Optional[str] = None
+
+
 class TranscriptionSegment(BaseModel):
     index: int
     start: float
