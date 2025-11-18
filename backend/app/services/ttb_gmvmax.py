@@ -687,34 +687,67 @@ def upsert_campaign_from_api(
     )
     result.name = name_value
 
-    store_identifier = _normalize_identifier(
-        _extract_field_from_sources(("store_id", "shop_id"), campaign_details, payload)
-    )
-    if store_identifier is None:
-        store_identifier = _normalize_identifier(store_id_hint)
-    if store_identifier is None:
-        store_identifier = _normalize_identifier(
-            _lookup_store_id_from_links(
-                db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=advertiser_id,
-                campaign_payload=payload,
+    store_identifier: str | None = None
+    store_identifier_source: str | None = None
+
+    def _try_set_store(candidate: Any, source: str) -> bool:
+        nonlocal store_identifier, store_identifier_source
+        normalized = _normalize_identifier(candidate)
+        if not normalized:
+            return False
+        store_identifier = normalized
+        store_identifier_source = source
+        return True
+
+    if not _try_set_store(
+        _extract_field_from_sources(("store_id", "shop_id"), campaign_details),
+        "campaign_details",
+    ):
+        if not _try_set_store(
+            _extract_field_from_sources(("store_id", "shop_id"), payload),
+            "payload",
+        ):
+            if not _try_set_store(store_id_hint, "hint"):
+                _try_set_store(
+                    _lookup_store_id_from_links(
+                        db,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=advertiser_id,
+                        campaign_payload=payload,
+                    ),
+                    "store_link",
+                )
+
+    existing_store_id = _normalize_identifier(result.store_id)
+    if store_identifier_source == "campaign_details" and store_identifier is not None:
+        result.store_id = store_identifier
+    else:
+        if existing_store_id and store_identifier and store_identifier != existing_store_id:
+            logger.warning(
+                "ignoring non-authoritative store_id override",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "campaign_id": campaign_id,
+                    "existing_store_id": existing_store_id,
+                    "incoming_store_id": store_identifier,
+                    "store_source": store_identifier_source,
+                },
             )
-        )
-    if store_identifier is None:
-        store_identifier = _normalize_identifier(result.store_id)
-    if store_identifier is None:
-        store_identifier = ""
-        logger.warning(
-            "gmvmax campaign missing store_id; defaulting to empty string",
-            extra={
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-                "campaign_id": campaign_id,
-            },
-        )
-    result.store_id = str(store_identifier)
+        if existing_store_id:
+            store_identifier = existing_store_id
+        if store_identifier is None:
+            store_identifier = ""
+            logger.warning(
+                "gmvmax campaign missing store_id; defaulting to empty string",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "campaign_id": campaign_id,
+                },
+            )
+        result.store_id = str(store_identifier)
 
     operation_status_value = _extract_field_from_sources(
         ("operation_status",), payload, campaign_details
