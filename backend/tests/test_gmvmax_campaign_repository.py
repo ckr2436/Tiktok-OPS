@@ -211,5 +211,5 @@ def test_list_campaigns_respects_operation_status(db_session):
         store_id="store-1",
     )
 
-    assert total == 1
-    assert items[0].campaign_id == "cmp-enabled"
+    assert total == 2
+    assert {item.campaign_id for item in items} == {"cmp-enabled", "cmp-disabled"}

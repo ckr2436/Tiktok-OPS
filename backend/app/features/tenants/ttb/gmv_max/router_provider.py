@@ -349,12 +349,9 @@ def _should_include_campaign(entry: GMVMaxCampaign) -> bool:
     operation_status = _normalize_status(entry.operation_status)
     if operation_status == "DELETE":
         return False
-    if operation_status == "ENABLE":
-        return True
-    if operation_status == "DISABLE":
-        secondary_status = _normalize_status(entry.secondary_status)
-        if secondary_status == "CAMPAIGN_STATUS_DISABLE":
-            return False
+    secondary_status = _normalize_status(entry.secondary_status)
+    if secondary_status == "CAMPAIGN_STATUS_DELETE":
+        return False
     return True
 
 
