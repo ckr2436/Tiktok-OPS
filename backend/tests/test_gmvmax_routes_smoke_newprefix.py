@@ -35,6 +35,8 @@ class StubGMVMaxClient:
         self.campaign_requests: List[Any] = []
         self.report_requests: List[Any] = []
         self.action_calls: List[str] = []
+        self.info_requests: List[Any] = []
+        self.campaign_status: Dict[str, str] = {}
 
     async def gmv_max_campaign_get(self, request):  # noqa: ANN001
         self.campaign_requests.append(request)
@@ -74,6 +76,9 @@ class StubGMVMaxClient:
         )
 
     async def gmv_max_campaign_info(self, request):  # noqa: ANN001
+        self.info_requests.append(request)
+        status = self.campaign_status.get(request.campaign_id, "ENABLE")
+        secondary = "CAMPAIGN_STATUS_DISABLE" if status == "DISABLE" else "CAMPAIGN_STATUS_ENABLE"
         return GMVMaxResponse(
             code=0,
             message="ok",
@@ -85,6 +90,8 @@ class StubGMVMaxClient:
                 store_id="store-1",
                 shopping_ads_type="PRODUCT",
                 optimization_goal="GMV",
+                operation_status=status,
+                secondary_status=secondary,
             ),
         )
 
@@ -127,6 +134,8 @@ class StubGMVMaxClient:
 
     async def campaign_status_update(self, request):  # noqa: ANN001
         self.action_calls.append("campaign_status_update")
+        for campaign_id in request.campaign_ids:
+            self.campaign_status[campaign_id] = request.operation_status
         return GMVMaxResponse(
             code=0,
             message="ok",
@@ -395,6 +404,24 @@ def test_campaign_pause_uses_status_update(gmvmax_client_fixture):
     assert body["status"] == "success"
     assert body["response"]["status"] == "DISABLE"
     assert gmvmax_client_fixture["stub"].action_calls.count("campaign_status_update") == 1
+
+
+def test_campaign_pause_refreshes_local_cache(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    session = gmvmax_client_fixture["session"]
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/actions",
+        json={"type": "pause", "payload": {}},
+    )
+    assert response.status_code == 200
+    stub = gmvmax_client_fixture["stub"]
+    assert stub.info_requests, "campaign info refresh was not triggered"
+    row = (
+        session.query(TTBGmvMaxCampaign)
+        .filter(TTBGmvMaxCampaign.campaign_id == "cmp-1")
+        .one()
+    )
+    assert row.operation_status == "DISABLE"
 
 
 def test_actions_placeholder_list(gmvmax_client_fixture):

@@ -451,6 +451,60 @@ def _persist_campaign_relations(
             )
 
 
+async def _refresh_campaign_snapshot(
+    context: GMVMaxRouteContext,
+    *,
+    advertiser_id: str,
+    campaign_id: str,
+    store_hint: Optional[str] = None,
+) -> None:
+    """Fetch the latest campaign info and persist it locally."""
+
+    db = getattr(context, "db", None)
+    if db is None:
+        return
+    try:
+        response = await _call_tiktok(
+            context.client.gmv_max_campaign_info,
+            GMVMaxCampaignInfoRequest(
+                advertiser_id=str(advertiser_id),
+                campaign_id=str(campaign_id),
+            ),
+        )
+    except HTTPException:
+        logger.warning(
+            "gmvmax campaign refresh failed",
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "campaign_id": campaign_id,
+            },
+            exc_info=True,
+        )
+        return
+
+    try:
+        upsert_campaign_from_api(
+            db,
+            workspace_id=context.workspace_id,
+            auth_id=context.auth_id,
+            advertiser_id=str(advertiser_id),
+            payload=response.data.model_dump(exclude_none=False),
+            store_id_hint=store_hint or context.store_id,
+        )
+        db.flush()
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "failed to persist refreshed gmvmax campaign",
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "campaign_id": campaign_id,
+            },
+            exc_info=True,
+        )
+
+
 def _build_campaign_request(
     advertiser_id: str,
     filtering: Optional[CampaignFilter],
@@ -1091,6 +1145,11 @@ async def apply_gmvmax_campaign_action_provider(
         response = await _call_tiktok(
             context.client.campaign_status_update, status_request
         )
+        await _refresh_campaign_snapshot(
+            context,
+            advertiser_id=adv,
+            campaign_id=str(campaign_id),
+        )
         return CampaignActionResponse(
             type=action_request.type,
             status="success",
@@ -1101,6 +1160,11 @@ async def apply_gmvmax_campaign_action_provider(
         body = _build_session_update_body(campaign_id, action_request.payload, context.store_id)
         request = GMVMaxSessionUpdateRequest(advertiser_id=adv, body=body)
         response = await _call_tiktok(context.client.gmv_max_session_update, request)
+        await _refresh_campaign_snapshot(
+            context,
+            advertiser_id=adv,
+            campaign_id=str(campaign_id),
+        )
         return CampaignActionResponse(
             type=action_request.type,
             status="success",
@@ -1113,6 +1177,11 @@ async def apply_gmvmax_campaign_action_provider(
     body = _build_campaign_update_body(campaign_id, action_request.type, action_request.payload)
     request = GMVMaxCampaignUpdateRequest(advertiser_id=adv, body=body)
     response = await _call_tiktok(context.client.gmv_max_campaign_update, request)
+    await _refresh_campaign_snapshot(
+        context,
+        advertiser_id=adv,
+        campaign_id=str(campaign_id),
+    )
     return CampaignActionResponse(
         type=action_request.type,
         status="success",
