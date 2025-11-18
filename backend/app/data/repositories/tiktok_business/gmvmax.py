@@ -11,7 +11,6 @@ from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 
 
 _BLOCKED_SECONDARY_STATUSES = {
-    "CAMPAIGN_STATUS_DISABLE",
     "CAMPAIGN_STATUS_DELETE",
 }
 
@@ -24,15 +23,10 @@ def _order_desc_nulls_last(col):
 
 
 def _allowed_operation_status_clause():
-    enabled = TTBGmvMaxCampaign.operation_status == "ENABLE"
-    disabled = and_(
-        TTBGmvMaxCampaign.operation_status == "DISABLE",
-        or_(
-            TTBGmvMaxCampaign.secondary_status.is_(None),
-            TTBGmvMaxCampaign.secondary_status != "CAMPAIGN_STATUS_DISABLE",
-        ),
+    return or_(
+        TTBGmvMaxCampaign.operation_status.is_(None),
+        TTBGmvMaxCampaign.operation_status != "DELETE",
     )
-    return or_(enabled, disabled)
 
 
 def _exclude_blocked_secondary_statuses():

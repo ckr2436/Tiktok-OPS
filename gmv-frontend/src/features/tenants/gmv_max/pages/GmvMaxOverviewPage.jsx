@@ -567,13 +567,13 @@ function filterCampaignsByStatus(campaigns) {
     const operationStatus = normalizeStatusValue(
       campaign?.operation_status ?? campaign?.operationStatus,
     );
-    if (operationStatus === 'DISABLE') {
-      const secondaryStatus = normalizeStatusValue(
-        campaign?.secondary_status ?? campaign?.secondaryStatus,
-      );
-      return secondaryStatus !== 'CAMPAIGN_STATUS_DISABLE';
+    if (operationStatus === 'DELETE') {
+      return false;
     }
-    return true;
+    const secondaryStatus = normalizeStatusValue(
+      campaign?.secondary_status ?? campaign?.secondaryStatus,
+    );
+    return secondaryStatus !== 'CAMPAIGN_STATUS_DELETE';
   });
 }
 

@@ -273,7 +273,7 @@ def test_sync_endpoint_returns_combined_payload(gmvmax_client_fixture):
     assert response.status_code == 200, response.text
     body = response.json()
     campaign_ids = [item["campaign_id"] for item in body["campaigns"]]
-    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-extra"]
+    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-blocked", "cmp-extra"]
     assert body["report"]["list"][0]["metrics"]["cost"] == "10"
 
 
@@ -334,7 +334,7 @@ def test_campaign_list_proxy(gmvmax_client_fixture):
     assert response.status_code == 200
     data = response.json()
     campaign_ids = [item["campaign_id"] for item in data["items"]]
-    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-extra"]
+    assert campaign_ids == ["cmp-1", "cmp-restore", "cmp-blocked", "cmp-extra"]
 
 
 def test_campaign_detail_includes_sessions(gmvmax_client_fixture):
