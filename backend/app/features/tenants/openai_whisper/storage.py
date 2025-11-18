@@ -1,4 +1,4 @@
-"""Utility helpers to persist Whisper jobs under /data/gmv_ops."""
+"""Utility helpers to persist Whisper jobs under a configurable directory."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-BASE_DIR = Path("/data/gmv_ops/openai_whisper")
+from app.core.config import settings
+
+BASE_DIR = Path(settings.OPENAI_WHISPER_STORAGE_DIR).expanduser()
 
 
 def _utc_now() -> str:
