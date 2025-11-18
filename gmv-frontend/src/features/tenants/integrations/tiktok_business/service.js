@@ -108,6 +108,10 @@ export async function hardDeleteBinding(wid, auth_id) {
   return apiDelete(`${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}`);
 }
 
+export async function triggerBindingSync(wid, payload = {}) {
+  return apiPost(`${oauthPrefix(wid)}/bind`, payload);
+}
+
 /* ---------- 广告主相关（只读 + 设置主） ---------- */
 export async function advertisersOf(
   wid,
