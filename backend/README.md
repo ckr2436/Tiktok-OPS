@@ -22,6 +22,12 @@ COOKIE_SECURE=True
 COOKIE_SAMESITE=lax
 ```
 
+### Whisper storage directory
+
+- `OPENAI_WHISPER_STORAGE_DIR` controls where Whisper uploads/jobs are persisted on
+  disk (default `/data/gmv_ops/openai_whisper`). Point it to a writable location if
+  the default path is not available in your environment.
+
 ## Migration notes
 
 - **0008_ttb_sync_schedule_stats**: The revision now performs existence checks before
