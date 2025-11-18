@@ -931,6 +931,17 @@ function CampaignCard({
   const campaignId = campaign?.campaign_id || campaign?.id;
   const { start, end } = useMemo(() => getRecentDateRange(7), []);
   const queryClient = useQueryClient();
+  const campaignsQueryKey = useMemo(
+    () => ['gmvMax', 'campaigns', workspaceId, provider, authId],
+    [authId, provider, workspaceId],
+  );
+  const campaignDetailQueryKey = useMemo(
+    () =>
+      campaignId
+        ? ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId]
+        : null,
+    [authId, campaignId, provider, workspaceId],
+  );
   const metricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
@@ -947,10 +958,14 @@ function CampaignCard({
   );
   const actionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
-      queryClient.invalidateQueries({
-        queryKey: ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId],
-      });
+      queryClient.invalidateQueries({ queryKey: campaignsQueryKey, refetchType: 'active' });
+      if (campaignDetailQueryKey) {
+        queryClient.invalidateQueries({ queryKey: campaignDetailQueryKey, refetchType: 'active' });
+      }
+      queryClient.refetchQueries({ queryKey: campaignsQueryKey, type: 'active' });
+      if (campaignDetailQueryKey) {
+        queryClient.refetchQueries({ queryKey: campaignDetailQueryKey, type: 'active' });
+      }
     },
   });
 
