@@ -20,7 +20,7 @@ import {
   useUpdateGmvMaxConfigMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
-import { clampPageSize, getGmvMaxCampaign } from '../api/gmvMaxApi.js';
+import { clampPageSize, getGmvMaxCampaign, getGmvMaxOptions } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
 import {
   MAX_SCOPE_PRESETS,
@@ -39,6 +39,7 @@ const DEFAULT_REPORT_METRICS = [
   'gross_revenue',
   'roi',
 ];
+const EMPTY_QUERY_PARAMS = Object.freeze({});
 
 function formatError(error) {
   if (!error) return null;
@@ -1854,12 +1855,18 @@ export default function GmvMaxOverviewPage() {
   const [scopePresets, setScopePresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetLabelInput, setPresetLabelInput] = useState('');
+  const autoOptionsRefreshAccounts = useRef(new Set());
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
   const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
   const storeId = scope.storeId ? String(scope.storeId) : '';
   const isScopeReady = Boolean(authId && businessCenterId && advertiserId && storeId);
+  const scopeOptionsParams = EMPTY_QUERY_PARAMS;
+  const scopeOptionsQueryKey = useMemo(
+    () => ['gmvMax', 'options', workspaceId, provider, authId, scopeOptionsParams],
+    [authId, provider, scopeOptionsParams, workspaceId],
+  );
 
   useEffect(() => {
     if (!workspaceId) {
@@ -1914,7 +1921,7 @@ export default function GmvMaxOverviewPage() {
   const accountsQuery = useAccountsQuery(
     workspaceId,
     provider,
-    {},
+    EMPTY_QUERY_PARAMS,
     {
       enabled: Boolean(workspaceId),
     },
@@ -1924,7 +1931,7 @@ export default function GmvMaxOverviewPage() {
     workspaceId,
     provider,
     authId,
-    {},
+    scopeOptionsParams,
     {
       enabled: Boolean(workspaceId && authId),
     },
@@ -2006,6 +2013,48 @@ export default function GmvMaxOverviewPage() {
       })
       .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }));
   }, [advertiserId, advertiserToStores, authId, storeList]);
+
+  useEffect(() => {
+    if (!workspaceId || !authId || !scopeOptionsReady) return;
+    if (scopeOptionsQuery.isFetching || scopeOptionsQuery.isRefetching) return;
+    const hasScopeData =
+      businessCenterOptions.length > 0 || advertiserList.length > 0 || storeList.length > 0;
+    if (hasScopeData) return;
+    const accountKey = `${workspaceId}:${provider}:${authId}`;
+    if (autoOptionsRefreshAccounts.current.has(accountKey)) return;
+    let cancelled = false;
+    let completed = false;
+    autoOptionsRefreshAccounts.current.add(accountKey);
+    (async () => {
+      try {
+        const refreshed = await getGmvMaxOptions(workspaceId, provider, authId, { refresh: 1 });
+        if (cancelled) return;
+        queryClient.setQueryData(scopeOptionsQueryKey, refreshed);
+        completed = true;
+      } catch (error) {
+        console.error('Failed to auto-refresh GMV Max options', error);
+        autoOptionsRefreshAccounts.current.delete(accountKey);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (!completed) {
+        autoOptionsRefreshAccounts.current.delete(accountKey);
+      }
+    };
+  }, [
+    advertiserList.length,
+    authId,
+    businessCenterOptions.length,
+    provider,
+    queryClient,
+    scopeOptionsQuery.isFetching,
+    scopeOptionsQuery.isRefetching,
+    scopeOptionsQueryKey,
+    scopeOptionsReady,
+    storeList.length,
+    workspaceId,
+  ]);
 
   const productParams = useMemo(
     () => ({
