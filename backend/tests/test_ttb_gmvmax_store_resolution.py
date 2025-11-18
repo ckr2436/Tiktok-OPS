@@ -162,6 +162,44 @@ def test_upsert_campaign_prefers_store_link_matching_bc(db_session):
     assert campaign.store_id == "store-2"
 
 
+def test_upsert_campaign_does_not_guess_store_when_multiple_links(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_store_link(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+    )
+    _create_store_link(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-2",
+    )
+
+    campaign = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-ambiguous",
+    )
+    campaign.store_id = ""
+    db_session.flush()
+
+    updated = upsert_campaign_from_api(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        payload={"campaign_id": "cmp-ambiguous"},
+    )
+
+    assert updated.store_id == ""
+
+
 class _DummyTTBClient:
     def __init__(self) -> None:
         self.info_calls: list[tuple[str, str]] = []

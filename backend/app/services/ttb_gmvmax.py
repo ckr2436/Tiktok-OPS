@@ -377,18 +377,20 @@ def _lookup_store_id_from_links(
     unique_candidates = list(dict.fromkeys(candidates))
     if not unique_candidates:
         return None
-    if len(unique_candidates) > 1:
-        logger.warning(
-            "ambiguous store link mapping; defaulting to first",
-            extra={
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-                "advertiser_id": advertiser_id,
-                "store_candidates": unique_candidates,
-                "bc_id": normalized_bc,
-            },
-        )
-    return unique_candidates[0]
+    if len(unique_candidates) == 1:
+        return unique_candidates[0]
+
+    logger.warning(
+        "ambiguous store link mapping; skipping auto resolution",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "advertiser_id": advertiser_id,
+            "store_candidates": unique_candidates,
+            "bc_id": normalized_bc,
+        },
+    )
+    return None
 
 
 def _normalize_status_value(value: Any) -> str | None:
