@@ -191,13 +191,29 @@ async def create_job(
     storage.write_metadata(workspace_id, job_id, metadata)
     job_row = repository.create_job(db, metadata)
     db.flush()
+    # Make the job visible to other transactions (Celery workers) before
+    # dispatching the asynchronous task. Otherwise the worker may start
+    # immediately, fail to find the DB row, and never update its status.
+    db.commit()
 
     from . import tasks as whisper_tasks  # Lazy import to avoid circular refs
 
-    async_result = whisper_tasks.transcribe_video.delay(
-        workspace_id=workspace_id,
-        job_id=job_id,
-    )
+    failure_message = "暂时无法提交识别任务，请稍后重试。"
+
+    try:
+        async_result = whisper_tasks.transcribe_video.delay(
+            workspace_id=workspace_id,
+            job_id=job_id,
+        )
+    except Exception as exc:
+        storage.mark_failed(workspace_id, job_id, failure_message)
+        repository.mark_failed(db, workspace_id, job_id, failure_message)
+        db.commit()
+        raise APIError(
+            "WHISPER_TASK_ENQUEUE_FAILED",
+            failure_message,
+            503,
+        ) from exc
 
     def _apply(meta: Dict[str, object]) -> Dict[str, object]:
         meta["celery_task_id"] = async_result.id
