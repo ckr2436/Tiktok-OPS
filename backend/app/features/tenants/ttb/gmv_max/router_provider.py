@@ -957,6 +957,7 @@ async def sync_gmvmax_campaigns_provider(
 ) -> SyncResponse:
     """Trigger a GMV Max campaign + report sync by proxying to TikTok."""
 
+    request_started_at = monotonic()
     advertiser_id = (
         payload.advertiser_id or advertiser_id_query or context.advertiser_id
     )
@@ -977,8 +978,14 @@ async def sync_gmvmax_campaigns_provider(
         "auth_id": context.auth_id,
         "scope": scope_context,
     }
+    products_started_at = monotonic()
     await _ensure_products_ready(
         context, advertiser_id=str(advertiser_id), store_id=str(store_id)
+    )
+    logger.info(
+        "gmvmax.sync products_ready in %.2fs",
+        monotonic() - products_started_at,
+        extra=log_context,
     )
     store_ids_override = [store_id] if store_id else None
     campaign_req = _build_campaign_request(
@@ -987,10 +994,16 @@ async def sync_gmvmax_campaigns_provider(
         payload.campaign_options,
         store_ids_override=store_ids_override,
     )
+    campaign_started_at = monotonic()
     campaign_resp = await _call_tiktok(
         context.client.gmv_max_campaign_get,
         campaign_req,
         _log_context=log_context,
+    )
+    logger.info(
+        "gmvmax.sync campaign_fetch in %.2fs",
+        monotonic() - campaign_started_at,
+        extra=log_context,
     )
     await _persist_campaign_relations(
         context,
@@ -1004,10 +1017,17 @@ async def sync_gmvmax_campaigns_provider(
         payload.report,
         default_store_id=store_id,
     )
+    report_started_at = monotonic()
     report_resp = await _call_tiktok(
         context.client.gmv_max_report_get,
         report_req,
         _log_context=log_context,
+    )
+    logger.info(
+        "gmvmax.sync report_fetch in %.2fs (total: %.2fs)",
+        monotonic() - report_started_at,
+        monotonic() - request_started_at,
+        extra=log_context,
     )
     return SyncResponse(
         campaigns=filtered_campaigns,
