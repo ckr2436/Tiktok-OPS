@@ -116,19 +116,13 @@ function getProductIdentifier(product) {
   return '';
 }
 
-function getProductStatus(product) {
+function getProductAvailabilityStatus(product) {
   if (!product || typeof product !== 'object') return '';
-  return (
-    product.gmv_max_ads_status ||
-    product.status ||
-    product.product_status ||
-    product.state ||
-    ''
-  );
+  return product.status || product.product_status || product.state || '';
 }
 
 function isProductAvailable(product) {
-  const status = String(getProductStatus(product) || '').trim().toUpperCase();
+  const status = String(getProductAvailabilityStatus(product) || '').trim().toUpperCase();
   if (!status) return true;
   if (status.includes('NOT_AVAILABLE')) return false;
   if (status.includes('UNAVAILABLE')) return false;
@@ -915,7 +909,10 @@ function ProductSelectionPanel({
     return new Set();
   }, [selectedIds]);
 
-  const productRows = Array.isArray(products) ? products : [];
+  const productRows = useMemo(() => {
+    if (!Array.isArray(products)) return [];
+    return products.filter((product) => isProductAvailable(product));
+  }, [products]);
   const allIds = useMemo(
     () => productRows.map((product) => getProductIdentifier(product)).filter(Boolean),
     [productRows],
@@ -953,7 +950,8 @@ function ProductSelectionPanel({
             <th>Product</th>
             <th>Product ID</th>
             <th>Store</th>
-            <th>Status</th>
+            <th>GMV Max status</th>
+            <th>Availability</th>
           </tr>
         </thead>
         <tbody>
@@ -965,8 +963,8 @@ function ProductSelectionPanel({
               product.image_url || product.cover_image || product.thumbnail_url || product.imageUrl || null;
             const storeKey = String(product.store_id ?? product.storeId ?? '');
             const storeLabel = storeKey && storeNames?.get(storeKey) ? storeNames.get(storeKey) : storeKey || '—';
-            const status =
-              product.gmv_max_ads_status || product.status || product.product_status || product.state || '—';
+            const gmvMaxStatus = product.gmv_max_ads_status || '—';
+            const availability = isProductAvailable(product) ? 'Available' : 'Not available';
             return (
               <tr key={id}>
                 <td>
@@ -994,7 +992,8 @@ function ProductSelectionPanel({
                 </td>
                 <td>{id}</td>
                 <td>{storeLabel}</td>
-                <td>{status}</td>
+                <td>{gmvMaxStatus}</td>
+                <td>{availability}</td>
               </tr>
             );
           })}
