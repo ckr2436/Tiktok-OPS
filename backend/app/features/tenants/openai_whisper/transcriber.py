@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
-import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -17,12 +15,6 @@ from .languages import get_language_label
 logger = logging.getLogger("gmv.whisper")
 _MODEL_LOCK = threading.Lock()
 _MODEL = None
-
-
-def _candidate_ffmpeg_cmds() -> list[str]:
-    configured = getattr(settings, "OPENAI_WHISPER_FFMPEG_BIN", None)
-    candidates = [configured, "ffmpeg", "/opt/apps/bin/ffmpeg"]
-    return [cmd for cmd in dict.fromkeys(candidates) if cmd]
 
 
 def _load_model():
@@ -42,46 +34,9 @@ def _get_model():
 
 
 def ensure_ffmpeg_available() -> None:
-    """Ensure FFmpeg is available before running Whisper.
+    """Previously ensured FFmpeg availability; now a no-op."""
 
-    Raises:
-        RuntimeError: If FFmpeg cannot be located or executed successfully.
-    """
-
-    errors: list[tuple[str, str]] = []
-    for ffmpeg_cmd in _candidate_ffmpeg_cmds():
-        try:
-            proc = subprocess.run(
-                [ffmpeg_cmd, "-version"], capture_output=True, text=True, timeout=5
-            )
-            if proc.returncode == 0:
-                resolved = shutil.which(ffmpeg_cmd)
-                logger.debug(
-                    "ffmpeg responded to version check",
-                    extra={"ffmpeg_cmd": ffmpeg_cmd, "resolved": resolved},
-                )
-                return
-            error_detail = (proc.stderr or proc.stdout or "unknown error").strip()
-        except FileNotFoundError:
-            error_detail = "command not found"
-        except Exception as exc:  # pragma: no cover - defensive
-            error_detail = str(exc)
-
-        resolved = shutil.which(ffmpeg_cmd)
-        if resolved:
-            logger.debug(
-                "ffmpeg located but version check failed",
-                extra={"ffmpeg_cmd": ffmpeg_cmd, "resolved": resolved},
-            )
-        errors.append((ffmpeg_cmd, error_detail))
-
-    tried_commands = ", ".join(cmd for cmd, _ in errors)
-    error_msgs = "; ".join(f"{cmd}: {detail}" for cmd, detail in errors)
-    raise RuntimeError(
-        "FFmpeg 未安装或不可用，无法执行字幕生成任务。 "
-        "请确认 ffmpeg 在 PATH 中，或设置 OPENAI_WHISPER_FFMPEG_BIN 指向绝对路径。 "
-        f"尝试的命令：{tried_commands}。错误：{error_msgs}"
-    )
+    logger.info("skipping ffmpeg availability check; proceeding without verification")
 
 
 def _format_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
