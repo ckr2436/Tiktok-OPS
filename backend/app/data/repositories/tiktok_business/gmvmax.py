@@ -51,7 +51,6 @@ def list_gmvmax_campaigns(
     query = (
         db.query(TTBGmvMaxCampaign)
         .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .filter(TTBGmvMaxCampaign.store_id == str(store_id))
         .filter(_exclude_blocked_secondary_statuses())

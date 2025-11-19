@@ -213,3 +213,39 @@ def test_list_campaigns_respects_operation_status(db_session):
 
     assert total == 2
     assert {item.campaign_id for item in items} == {"cmp-enabled", "cmp-disabled"}
+
+
+def test_list_campaigns_does_not_require_matching_auth(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    provider = db_session.query(OAuthProviderApp).first()
+    other_auth = OAuthAccountTTB(
+        id=_next_id(db_session, OAuthAccountTTB),
+        workspace_id=workspace_id,
+        provider_app_id=provider.id,
+        alias="Extra",
+        access_token_cipher=b"cipher-2",
+        token_fingerprint=b"g" * 32,
+    )
+    db_session.add(other_auth)
+    db_session.flush()
+
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=other_auth.id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-shared",
+        store_id="store-1",
+        name="Shared",
+    )
+
+    items, total = list_gmvmax_campaigns(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+    )
+
+    assert total == 1
+    assert [item.campaign_id for item in items] == ["cmp-shared"]

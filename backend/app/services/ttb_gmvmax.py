@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable, Collection, Mapping, Optional, Sequence, TypedDict
 
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
@@ -180,6 +180,110 @@ def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
         select(func.coalesce(func.max(TTBGmvMaxCampaign.id), 0))
     ).scalar_one()
     row.id = int(next_value or 0) + 1
+
+
+def _migrate_metric_rows(
+    db: Session,
+    *,
+    model: type[TTBGmvMaxMetricsDaily] | type[TTBGmvMaxMetricsHourly],
+    key_attr: str,
+    source_id: int,
+    target_id: int,
+) -> None:
+    if not source_id or not target_id or source_id == target_id:
+        return
+    key_column = getattr(model, key_attr)
+    existing_keys = set(
+        db.execute(
+            select(key_column).where(model.campaign_id == int(target_id))
+        ).scalars()
+    )
+    source_rows = (
+        db.execute(select(model).where(model.campaign_id == int(source_id)))
+        .scalars()
+        .all()
+    )
+    for row in source_rows:
+        key_value = getattr(row, key_attr)
+        if key_value in existing_keys:
+            db.delete(row)
+            continue
+        row.campaign_id = int(target_id)
+        existing_keys.add(key_value)
+
+
+def _migrate_campaign_products(db: Session, *, source_id: int, target_id: int) -> None:
+    if not source_id or not target_id or source_id == target_id:
+        return
+    stmt = (
+        update(TTBGmvMaxCampaignProduct)
+        .where(TTBGmvMaxCampaignProduct.campaign_pk == int(source_id))
+        .values(campaign_pk=int(target_id))
+    )
+    db.execute(stmt)
+
+
+def _migrate_action_logs(db: Session, *, source_id: int, target_id: int) -> None:
+    if not source_id or not target_id or source_id == target_id:
+        return
+    stmt = (
+        update(TTBGmvMaxActionLog)
+        .where(TTBGmvMaxActionLog.campaign_id == int(source_id))
+        .values(campaign_id=int(target_id))
+    )
+    db.execute(stmt)
+
+
+def _merge_duplicate_campaign_rows(
+    db: Session,
+    *,
+    campaign_rows: Sequence[TTBGmvMaxCampaign],
+) -> TTBGmvMaxCampaign:
+    if not campaign_rows:
+        raise ValueError("campaign_rows must not be empty")
+    primary = campaign_rows[0]
+    if not getattr(primary, "id", None):
+        return primary
+    duplicates = [row for row in campaign_rows[1:] if getattr(row, "id", None)]
+    if not duplicates:
+        return primary
+    logger.warning(
+        "detected duplicate gmvmax campaign rows; merging",  # noqa: G004
+        extra={
+            "workspace_id": primary.workspace_id,
+            "advertiser_id": primary.advertiser_id,
+            "campaign_id": primary.campaign_id,
+            "duplicates": [row.id for row in duplicates],
+            "kept": primary.id,
+        },
+    )
+    for duplicate in duplicates:
+        _migrate_metric_rows(
+            db,
+            model=TTBGmvMaxMetricsDaily,
+            key_attr="date",
+            source_id=int(duplicate.id),
+            target_id=int(primary.id),
+        )
+        _migrate_metric_rows(
+            db,
+            model=TTBGmvMaxMetricsHourly,
+            key_attr="interval_start",
+            source_id=int(duplicate.id),
+            target_id=int(primary.id),
+        )
+        _migrate_campaign_products(
+            db,
+            source_id=int(duplicate.id),
+            target_id=int(primary.id),
+        )
+        _migrate_action_logs(
+            db,
+            source_id=int(duplicate.id),
+            target_id=int(primary.id),
+        )
+        db.delete(duplicate)
+    return primary
 
 
 def _collect_product_ids_from_value(source: Any, target: set[str]) -> None:
@@ -666,24 +770,40 @@ def upsert_campaign_from_api(
         raise ValueError("campaign_id missing in payload")
     campaign_id = str(campaign_identifier)
 
-    stmt = (
+    normalized_advertiser = str(advertiser_id)
+    by_advertiser_stmt = (
         select(TTBGmvMaxCampaign)
         .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
         .where(TTBGmvMaxCampaign.campaign_id == campaign_id)
+        .order_by(TTBGmvMaxCampaign.id.asc())
     )
-    result = db.execute(stmt).scalars().first()
+    rows = db.execute(by_advertiser_stmt).scalars().all()
+    result: TTBGmvMaxCampaign | None = None
+    if rows:
+        result = _merge_duplicate_campaign_rows(db, campaign_rows=rows)
+
+    if result is None:
+        legacy_stmt = (
+            select(TTBGmvMaxCampaign)
+            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+            .where(TTBGmvMaxCampaign.auth_id == auth_id)
+            .where(TTBGmvMaxCampaign.campaign_id == campaign_id)
+        )
+        result = db.execute(legacy_stmt).scalars().first()
+
     if result is None:
         result = TTBGmvMaxCampaign(
             workspace_id=workspace_id,
             auth_id=auth_id,
-            advertiser_id=str(advertiser_id),
+            advertiser_id=normalized_advertiser,
             campaign_id=campaign_id,
         )
         db.add(result)
         _assign_sqlite_pk(db, result)
 
-    result.advertiser_id = str(advertiser_id)
+    result.auth_id = auth_id
+    result.advertiser_id = normalized_advertiser
     name_value = _extract_field_from_sources(
         ("campaign_name", "name"), payload, campaign_details
     )
