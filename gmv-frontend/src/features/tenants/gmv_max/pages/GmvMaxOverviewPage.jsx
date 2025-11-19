@@ -541,6 +541,40 @@ function getBusinessCenterLabel(bc) {
   return bc.name || bc.bc_name || bc.bcName || getBusinessCenterId(bc) || 'Business center';
 }
 
+function getAdvertiserBusinessCenterId(advertiser) {
+  if (!advertiser || typeof advertiser !== 'object') return '';
+  const candidates = [
+    advertiser.bc_id,
+    advertiser.owner_bc_id,
+    advertiser.business_center_id,
+    advertiser.bcId,
+    advertiser.ownerBcId,
+    advertiser.businessCenterId,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeIdValue(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return '';
+}
+
+function collectStoreBusinessCenterCandidates(store) {
+  if (!store || typeof store !== 'object') return [];
+  const candidates = [
+    store.bc_id,
+    store.store_authorized_bc_id,
+    store.authorized_bc_id,
+    store.bc_id_hint,
+    store.bcId,
+    store.storeAuthorizedBcId,
+    store.authorizedBcId,
+    store.bcIdHint,
+  ];
+  return candidates.map((value) => normalizeIdValue(value)).filter(Boolean);
+}
+
 function getAdvertiserId(advertiser) {
   if (!advertiser || typeof advertiser !== 'object') return '';
   return normalizeIdValue(advertiser.advertiser_id ?? advertiser.id ?? advertiser.advertiserId ?? '');
@@ -1973,25 +2007,17 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
+  const bindingConfig = bindingConfigQuery.data || null;
+  const bindingConfigLoading = bindingConfigQuery.isLoading;
+  const bindingConfigFetching = bindingConfigQuery.isFetching;
+  const bindingConfigError = bindingConfigQuery.error;
+  const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
+  const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
+  const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
+  const savedAutoSyncProducts = Boolean(bindingConfig?.auto_sync_products);
+
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
-
-  const businessCenterOptions = useMemo(() => {
-    if (!authId) return [];
-    const list = ensureArray(
-      scopeOptions.bcs ||
-        scopeOptions.business_centers ||
-        scopeOptions.businessCenters ||
-        scopeOptions.bc_list,
-    );
-    return list
-      .map((bc) => {
-        const id = getBusinessCenterId(bc);
-        if (!id) return null;
-        return { value: id, label: getBusinessCenterLabel(bc), data: bc };
-      })
-      .filter(Boolean);
-  }, [authId, scopeOptions]);
 
   const advertiserList = useMemo(() => {
     return ensureArray(scopeOptions.advertisers || scopeOptions.advertiser_list);
@@ -2010,6 +2036,54 @@ export default function GmvMaxOverviewPage() {
     () => extractLinkMap(links, 'advertiser_to_stores', 'advertiserToStores'),
     [links],
   );
+
+  const businessCenterOptions = useMemo(() => {
+    if (!authId) return [];
+    const list = ensureArray(
+      scopeOptions.bcs ||
+        scopeOptions.business_centers ||
+        scopeOptions.businessCenters ||
+        scopeOptions.bc_list,
+    );
+    const options = [];
+    const seen = new Set();
+    const addOptionIfMissing = (value, label) => {
+      const normalized = normalizeIdValue(value);
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      options.push({ value: normalized, label: label || normalized });
+    };
+
+    list.forEach((bc) => {
+      const id = getBusinessCenterId(bc);
+      if (!id) return;
+      addOptionIfMissing(id, getBusinessCenterLabel(bc));
+    });
+
+    bcToAdvertisers.forEach((_, bcId) => addOptionIfMissing(bcId));
+    advertiserList.forEach((adv) => {
+      const candidate = getAdvertiserBusinessCenterId(adv);
+      if (candidate) {
+        addOptionIfMissing(candidate);
+      }
+    });
+    storeList.forEach((store) => {
+      collectStoreBusinessCenterCandidates(store).forEach((candidate) => {
+        addOptionIfMissing(candidate);
+      });
+    });
+    if (savedBusinessCenterId) {
+      addOptionIfMissing(savedBusinessCenterId);
+    }
+    return options;
+  }, [
+    advertiserList,
+    authId,
+    bcToAdvertisers,
+    savedBusinessCenterId,
+    scopeOptions,
+    storeList,
+  ]);
 
   const advertiserOptions = useMemo(() => {
     if (!authId || !businessCenterId) return [];
@@ -2041,14 +2115,6 @@ export default function GmvMaxOverviewPage() {
       .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }));
   }, [advertiserId, advertiserToStores, authId, storeList]);
 
-  const bindingConfig = bindingConfigQuery.data || null;
-  const bindingConfigLoading = bindingConfigQuery.isLoading;
-  const bindingConfigFetching = bindingConfigQuery.isFetching;
-  const bindingConfigError = bindingConfigQuery.error;
-  const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
-  const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
-  const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
-  const savedAutoSyncProducts = Boolean(bindingConfig?.auto_sync_products);
   const hasSavedBinding = Boolean(savedBusinessCenterId && savedAdvertiserId && savedStoreId);
   const scopeMatchesBinding = Boolean(
     hasSavedBinding &&

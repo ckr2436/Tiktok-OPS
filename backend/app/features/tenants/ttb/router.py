@@ -1603,7 +1603,20 @@ def update_gmv_max_config(
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
 
-    bc = _get_business_center(db, workspace_id=workspace_id, auth_id=auth_id, bc_id=payload.bc_id)
+    normalized_bc_id = _normalize_identifier(payload.bc_id)
+    if not normalized_bc_id:
+        raise APIError("BUSINESS_CENTER_NOT_FOUND", "Business center not found.", status.HTTP_404_NOT_FOUND)
+
+    bc: TTBBusinessCenter | None = None
+    try:
+        bc = _get_business_center(
+            db, workspace_id=workspace_id, auth_id=auth_id, bc_id=normalized_bc_id
+        )
+    except APIError as exc:
+        if exc.code != "BUSINESS_CENTER_NOT_FOUND":
+            raise
+
+    expected_bc_id = bc.bc_id if bc else normalized_bc_id
     advertiser = _get_advertiser(
         db, workspace_id=workspace_id, auth_id=auth_id, advertiser_id=payload.advertiser_id
     )
@@ -1612,7 +1625,7 @@ def update_gmv_max_config(
         db=db,
         workspace_id=workspace_id,
         auth_id=auth_id,
-        expected_bc_id=bc.bc_id,
+        expected_bc_id=expected_bc_id,
         advertiser=advertiser,
         store=store,
     )
@@ -1622,7 +1635,7 @@ def update_gmv_max_config(
             db,
             workspace_id=int(workspace_id),
             auth_id=int(auth_id),
-            bc_id=payload.bc_id,
+            bc_id=expected_bc_id,
             advertiser_id=payload.advertiser_id,
             store_id=payload.store_id,
             auto_sync_products=payload.auto_sync_products,
