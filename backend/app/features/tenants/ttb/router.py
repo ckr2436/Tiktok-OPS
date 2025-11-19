@@ -60,6 +60,7 @@ SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
 logger = logging.getLogger("gmv.ttb.meta")
+backfill_logger = logger.getChild("backfill")
 
 
 _RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
