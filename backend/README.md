@@ -27,6 +27,10 @@ COOKIE_SAMESITE=lax
 - `OPENAI_WHISPER_STORAGE_DIR` controls where Whisper uploads/jobs are persisted on
   disk (default `/data/gmv_ops/openai_whisper`). Point it to a writable location if
   the default path is not available in your environment.
+- `OPENAI_WHISPER_TASK_QUEUE` can override which Celery queue handles the subtitle
+  jobs. It falls back to `CELERY_TASK_DEFAULT_QUEUE` (`gmv.tasks.default` by
+  default). Configure this when your workers listen on a non-default queue to avoid
+  jobs getting stuck in `pending`.
 
 ## Migration notes
 
