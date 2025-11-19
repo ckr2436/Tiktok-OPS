@@ -55,6 +55,17 @@ export async function fetchSubtitleJob(wid, jobId) {
   return res.data
 }
 
+export async function fetchSubtitleJobs(wid, options = {}) {
+  const params = new URLSearchParams()
+  const limit = options.limit || 20
+  if (limit) {
+    params.set('limit', String(limit))
+  }
+  const query = params.toString()
+  const res = await http.get(`${basePath(wid)}/jobs${query ? `?${query}` : ''}`)
+  return res.data?.jobs ?? []
+}
+
 export function buildSubtitleDownloadUrl(wid, jobId, variant = 'source') {
   const safeVariant = variant === 'translation' ? 'translation' : 'source'
   return `${apiRoot}${basePath(wid)}/jobs/${encodeURIComponent(jobId)}/subtitles?variant=${safeVariant}`

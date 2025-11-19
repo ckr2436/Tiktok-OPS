@@ -121,6 +121,7 @@ def save_results(workspace_id: int, job_id: str, result_payload: Dict[str, Any])
         meta["result"] = result_payload
         meta["status"] = "success"
         meta["error"] = None
+        meta["completed_at"] = _utc_now()
         return meta
 
     return update_metadata(workspace_id, job_id, _apply)

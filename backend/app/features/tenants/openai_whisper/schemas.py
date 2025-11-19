@@ -37,6 +37,9 @@ class TranscriptionJob(BaseModel):
     workspace_id: int
     status: Literal["pending", "processing", "success", "failed"]
     error: Optional[str] = None
+    filename: Optional[str] = None
+    size: Optional[int] = None
+    content_type: Optional[str] = None
     source_language: Optional[str] = None
     detected_language: Optional[str] = None
     target_language: Optional[str] = None
@@ -46,6 +49,8 @@ class TranscriptionJob(BaseModel):
     celery_task_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     segments: Optional[List[TranscriptionSegment]] = None
     translation_segments: Optional[List[TranscriptionSegment]] = None
 
@@ -60,6 +65,9 @@ class TranscriptionJob(BaseModel):
                 "workspace_id": meta.get("workspace_id"),
                 "status": meta.get("status", "pending"),
                 "error": meta.get("error"),
+                "filename": meta.get("filename"),
+                "size": meta.get("size"),
+                "content_type": meta.get("content_type"),
                 "source_language": meta.get("source_language"),
                 "detected_language": result.get("detected_language")
                 or meta.get("source_language"),
@@ -70,6 +78,8 @@ class TranscriptionJob(BaseModel):
                 "celery_task_id": meta.get("celery_task_id"),
                 "created_at": meta.get("created_at"),
                 "updated_at": meta.get("updated_at"),
+                "started_at": meta.get("started_at"),
+                "completed_at": meta.get("completed_at"),
                 "segments": segments,
                 "translation_segments": translation_segments,
             }
@@ -88,4 +98,25 @@ class TranscriptionJobCreatedResponse(TranscriptionJob):
 
 class TranscriptionJobStatusResponse(TranscriptionJob):
     pass
+
+
+class TranscriptionJobSummary(BaseModel):
+    job_id: str
+    filename: Optional[str] = None
+    status: Literal["pending", "processing", "success", "failed"]
+    error: Optional[str] = None
+    translate: bool = False
+    show_bilingual: bool = False
+    source_language: Optional[str] = None
+    detected_language: Optional[str] = None
+    target_language: Optional[str] = None
+    translation_language: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class TranscriptionJobListResponse(BaseModel):
+    jobs: List[TranscriptionJobSummary]
 

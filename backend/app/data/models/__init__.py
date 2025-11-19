@@ -39,6 +39,7 @@ from .ttb_gmvmax import (
     TTBGmvMaxActionLog,
     TTBGmvMaxStrategyConfig,
 )
+from .openai_whisper import OpenAIWhisperJob
 
 __all__ = [
     "Base",
@@ -75,4 +76,5 @@ __all__ = [
     "TTBGmvMaxCreativeHeating",
     "TTBGmvMaxActionLog",
     "TTBGmvMaxStrategyConfig",
+    "OpenAIWhisperJob",
 ]
