@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -34,9 +35,19 @@ def _get_model():
 
 
 def ensure_ffmpeg_available() -> None:
-    """Previously ensured FFmpeg availability; now a no-op."""
+    """Ensure FFmpeg is available before attempting transcription."""
 
-    logger.info("skipping ffmpeg availability check; proceeding without verification")
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        logger.info("ffmpeg binary found", extra={"ffmpeg_path": ffmpeg_path})
+        return
+
+    message = (
+        "FFmpeg is required for Whisper transcription but was not found in PATH. "
+        "Please install ffmpeg and ensure it is available on the system PATH."
+    )
+    logger.error(message, extra={"error": message})
+    raise FileNotFoundError(message)
 
 
 def _format_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
