@@ -226,6 +226,20 @@ paths:
             maxLength: 64
           required: true
           description: Store id whose products should be returned
+        - in: query
+          name: advertiser_id
+          schema:
+            type: string
+            maxLength: 64
+          required: false
+          description: Optional advertiser filter used to validate store access
+        - in: query
+          name: owner_bc_id
+          schema:
+            type: string
+            maxLength: 64
+          required: false
+          description: Optional business center id used to enforce scope alignment
       responses:
         '200':
           description: Paged products

@@ -1421,7 +1421,10 @@ def list_account_products(
     workspace_id: int,
     provider: str,
     auth_id: int,
+    request: Request,
     store_id: str = Query(..., max_length=64),
+    advertiser_id: Optional[str] = Query(default=None, max_length=64),
+    owner_bc_id: Optional[str] = Query(default=None, max_length=64),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(200, ge=1, le=500),
     _: SessionUser = Depends(require_tenant_member),
@@ -1429,12 +1432,88 @@ def list_account_products(
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
+    if "bc_id" in request.query_params:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bc_id parameter is no longer supported; please use owner_bc_id",
+        )
+
+    normalized_store = _normalize_identifier(store_id)
+    if not normalized_store:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="store_id is required",
+        )
+
+    normalized_adv = _normalize_identifier(advertiser_id)
+    normalized_owner = _normalize_identifier(owner_bc_id)
+
+    store = _get_store(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        store_id=normalized_store,
+    )
+
+    advertiser = None
+    if normalized_adv:
+        advertiser = _get_advertiser(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=normalized_adv,
+        )
+
+    if normalized_owner and not advertiser:
+        store_candidates, _ = _resolve_store_bc_candidates(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            store_id=normalized_store,
+        )
+        store_candidates = _collect_bc_candidates(
+            store.bc_id,
+            store.store_authorized_bc_id,
+            *store_candidates,
+        )
+        if store_candidates and normalized_owner not in store_candidates:
+            raise APIError(
+                "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
+                "Store belongs to a different business center.",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+    if advertiser:
+        expected_bc = normalized_owner or advertiser.bc_id or store.bc_id
+        _validate_bc_alignment(
+            db=db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            expected_bc_id=expected_bc,
+            advertiser=advertiser,
+            store=store,
+        )
+
+        link_exists = (
+            db.query(TTBAdvertiserStoreLink.id)
+            .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+            .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+            .filter(TTBAdvertiserStoreLink.advertiser_id == normalized_adv)
+            .filter(TTBAdvertiserStoreLink.store_id == normalized_store)
+            .first()
+        )
+        if link_exists is None:
+            raise APIError(
+                "ADVERTISER_STORE_LINK_NOT_FOUND",
+                "Store is not linked to the advertiser.",
+                status.HTTP_404_NOT_FOUND,
+            )
 
     base_query = (
         db.query(TTBProduct)
         .filter(TTBProduct.workspace_id == int(workspace_id))
         .filter(TTBProduct.auth_id == int(auth_id))
-        .filter(TTBProduct.store_id == str(store_id))
+        .filter(TTBProduct.store_id == normalized_store)
     )
 
     assignment_stmt = (
