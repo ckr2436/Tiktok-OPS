@@ -191,6 +191,10 @@ async def create_job(
     storage.write_metadata(workspace_id, job_id, metadata)
     job_row = repository.create_job(db, metadata)
     db.flush()
+    # Make the job visible to other transactions (Celery workers) before
+    # dispatching the asynchronous task. Otherwise the worker may start
+    # immediately, fail to find the DB row, and never update its status.
+    db.commit()
 
     from . import tasks as whisper_tasks  # Lazy import to avoid circular refs
 
