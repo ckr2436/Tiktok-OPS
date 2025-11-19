@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.features.tenants.openai_whisper import storage
 
 
@@ -30,3 +32,18 @@ def test_delete_upload_removes_directory(monkeypatch, tmp_path):
 
     storage.delete_upload(3, "deadbeef")
     assert not directory.exists()
+
+
+def test_load_metadata_raises_for_invalid_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "BASE_DIR", tmp_path)
+    job_directory = storage.job_dir(5, "job-123")
+    metadata_file = storage.metadata_path(job_directory)
+    metadata_file.write_text("")
+
+    with pytest.raises(storage.MetadataCorruptedError):
+        storage.load_metadata(5, "job-123")
+
+    metadata_file.write_text("{bad json}")
+
+    with pytest.raises(storage.MetadataCorruptedError):
+        storage.load_metadata(5, "job-123")

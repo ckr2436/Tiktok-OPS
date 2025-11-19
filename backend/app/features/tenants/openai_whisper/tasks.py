@@ -46,6 +46,11 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
             repository.mark_failed(db, workspace_id, job_id, "任务元数据缺失，无法继续。")
             db.commit()
             return job_id
+        except storage.MetadataCorruptedError:
+            logger.error("whisper job metadata corrupted", extra={"workspace_id": workspace_id, "job_id": job_id})
+            repository.mark_failed(db, workspace_id, job_id, "任务元数据损坏，无法继续。")
+            db.commit()
+            return job_id
 
         video_path = Path(metadata.get("video_path") or "")
         if not video_path.exists():
