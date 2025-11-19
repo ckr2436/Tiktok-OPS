@@ -187,6 +187,7 @@ class Settings(BaseSettings):
     # Whisper / Subtitle tools
     # =========================
     WHISPER_MODEL_NAME: str = "small"
+    OPENAI_WHISPER_FFMPEG_BIN: str = "ffmpeg"
     OPENAI_WHISPER_STORAGE_DIR: str = "/data/gmv_ops/openai_whisper"
     OPENAI_WHISPER_TASK_QUEUE: Optional[str] = None
 

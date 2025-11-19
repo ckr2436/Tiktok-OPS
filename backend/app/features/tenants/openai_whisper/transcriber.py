@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,6 +17,10 @@ from .languages import get_language_label
 logger = logging.getLogger("gmv.whisper")
 _MODEL_LOCK = threading.Lock()
 _MODEL = None
+
+
+def _get_ffmpeg_cmd() -> str:
+    return getattr(settings, "OPENAI_WHISPER_FFMPEG_BIN", None) or "ffmpeg"
 
 
 def _load_model():
@@ -41,9 +46,30 @@ def ensure_ffmpeg_available() -> None:
         RuntimeError: If FFmpeg cannot be located in PATH.
     """
 
-    if shutil.which("ffmpeg"):
+    ffmpeg_cmd = _get_ffmpeg_cmd()
+
+    resolved = shutil.which(ffmpeg_cmd)
+    if resolved:
+        logger.debug("ffmpeg located", extra={"ffmpeg_cmd": ffmpeg_cmd, "resolved": resolved})
         return
-    raise RuntimeError("FFmpeg 未安装或不可用，无法执行字幕生成任务。")
+
+    try:
+        proc = subprocess.run(
+            [ffmpeg_cmd, "-version"], capture_output=True, text=True, timeout=5
+        )
+        if proc.returncode == 0:
+            logger.debug("ffmpeg responded to version check", extra={"ffmpeg_cmd": ffmpeg_cmd})
+            return
+        error_detail = (proc.stderr or proc.stdout or "unknown error").strip()
+    except FileNotFoundError:
+        error_detail = "command not found"
+    except Exception as exc:  # pragma: no cover - defensive
+        error_detail = str(exc)
+
+    raise RuntimeError(
+        "FFmpeg 未安装或不可用，无法执行字幕生成任务。 "
+        f"尝试的命令：{ffmpeg_cmd}。错误：{error_detail}"
+    )
 
 
 def _format_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
