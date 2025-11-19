@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import ceil
 from time import monotonic
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from sqlalchemy.orm import Session
@@ -375,7 +375,48 @@ def _filter_campaign_entries(entries: Optional[Sequence[GMVMaxCampaign | Dict[st
     return filtered
 
 
-def _persist_campaign_relations(
+async def _fetch_campaign_info_payload(
+    context: GMVMaxRouteContext,
+    *,
+    advertiser_id: str,
+    campaign_id: str,
+) -> Mapping[str, Any] | None:
+    client = getattr(context, "client", None)
+    if client is None:
+        return None
+    try:
+        response = await _call_tiktok(
+            client.gmv_max_campaign_info,
+            GMVMaxCampaignInfoRequest(
+                advertiser_id=str(advertiser_id), campaign_id=str(campaign_id)
+            ),
+        )
+    except HTTPException:
+        logger.warning(
+            "gmvmax campaign info lookup failed",
+            exc_info=True,
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+            },
+        )
+        return None
+    payload = getattr(response, "data", None)
+    if payload is None:
+        return None
+    if hasattr(payload, "model_dump"):
+        try:
+            return payload.model_dump(exclude_none=False)
+        except Exception:  # pragma: no cover - defensive
+            return None
+    if isinstance(payload, Mapping):
+        return dict(payload)
+    return None
+
+
+async def _persist_campaign_relations(
     context: GMVMaxRouteContext,
     *,
     advertiser_id: str,
@@ -408,6 +449,7 @@ def _persist_campaign_relations(
         if campaign_id in seen:
             continue
         seen.add(campaign_id)
+        campaign_details: Mapping[str, Any] | None = None
         try:
             store_hint = resolve_store_id_from_page_context(
                 advertiser_id=str(advertiser_id),
@@ -427,6 +469,18 @@ def _persist_campaign_relations(
             )
             store_hint = None
         if not store_hint:
+            campaign_details = await _fetch_campaign_info_payload(
+                context,
+                advertiser_id=str(advertiser_id),
+                campaign_id=campaign_id,
+            )
+            if campaign_details:
+                store_hint = (
+                    campaign_details.get("store_id")
+                    or campaign_details.get("shop_id")
+                    or None
+                )
+        if not store_hint:
             store_hint = store_scope
         try:
             upsert_campaign_from_api(
@@ -436,6 +490,7 @@ def _persist_campaign_relations(
                 advertiser_id=str(advertiser_id),
                 payload=payload,
                 store_id_hint=store_hint,
+                campaign_details=campaign_details,
             )
         except Exception:  # noqa: BLE001
             logger.warning(
@@ -741,7 +796,7 @@ async def sync_gmvmax_campaigns_provider(
         campaign_req,
         _log_context=log_context,
     )
-    _persist_campaign_relations(
+    await _persist_campaign_relations(
         context,
         advertiser_id=advertiser_id,
         response=campaign_resp,
@@ -805,7 +860,7 @@ async def list_gmvmax_campaigns_provider(
     request = _build_campaign_request(adv, filter_obj, options)
     response = await _call_tiktok(context.client.gmv_max_campaign_get, request)
     store_scope = store_ids[0] if store_ids else context.store_id
-    _persist_campaign_relations(
+    await _persist_campaign_relations(
         context,
         advertiser_id=adv,
         response=response,
