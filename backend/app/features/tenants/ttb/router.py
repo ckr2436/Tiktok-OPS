@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.core.errors import APIError
-from app.data.db import get_db
+from app.data.db import SessionLocal, get_db
 from app.data.models.oauth_ttb import OAuthAccountTTB
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.data.models.ttb_entities import (
@@ -79,6 +79,8 @@ class SyncRequest(BaseModel):
     bc_id: Optional[str] = Field(default=None, max_length=128)
     product_eligibility: Optional[Literal["gmv_max", "ads", "all"]] = None
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
+    wait_for_completion: bool = False
+    wait_timeout_seconds: Optional[float] = None
 
 
 class MetaSummaryItem(BaseModel):
@@ -275,6 +277,47 @@ def _ensure_account(db: Session, workspace_id: int, auth_id: int) -> OAuthAccoun
     if acc.status not in {"active", "invalid"}:
         raise HTTPException(status_code=400, detail=f"binding status {acc.status} cannot be synced")
     return acc
+
+
+def _wait_for_run_completion(
+    db: Session,
+    *,
+    run_id: int,
+    timeout_seconds: float,
+    interval_seconds: float,
+) -> Optional[ScheduleRun]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with SessionLocal() as polling_db:
+            run = polling_db.get(ScheduleRun, int(run_id))
+            if not run:
+                return None
+            polling_db.expunge(run)
+            if run.status not in {"enqueued", "running"}:
+                return run
+        time.sleep(interval_seconds)
+
+    with SessionLocal() as polling_db:
+        run = polling_db.get(ScheduleRun, int(run_id))
+        if run:
+            polling_db.expunge(run)
+        return run
+
+
+def _extract_sync_summary(run: ScheduleRun) -> Optional[MetaSummary]:
+    if not run or not run.stats_json:
+        return None
+
+    processed = run.stats_json.get("processed") or {}
+    summary_block = processed.get("summary") or {}
+    meta_section = summary_block.get("meta") or summary_block
+    if not isinstance(meta_section, dict):
+        return None
+
+    try:
+        return _meta_summary_from_dict(meta_section)
+    except Exception:
+        return None
 
 
 def _serialize_binding(row: OAuthAccountTTB) -> ProviderAccount:
@@ -585,6 +628,9 @@ def trigger_sync(
     if normalized_mode not in {"incremental", "full"}:
         raise APIError("INVALID_MODE", "mode must be incremental or full.", status.HTTP_400_BAD_REQUEST)
 
+    wait_for_completion = bool(body.wait_for_completion)
+    wait_timeout = body.wait_timeout_seconds or settings.TTB_SYNC_WAIT_TIMEOUT_SECONDS
+
     if body.scope == "meta":
         try:
             result: DispatchResult = dispatch_sync(
@@ -602,14 +648,33 @@ def trigger_sync(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        summary: Optional[MetaSummary] = None
+        status_value = result.status
+        run = result.run
+
+        if wait_for_completion and run:
+            completed = _wait_for_run_completion(
+                db,
+                run_id=int(run.id),
+                timeout_seconds=wait_timeout,
+                interval_seconds=settings.TTB_SYNC_WAIT_INTERVAL_SECONDS,
+            )
+            run = completed or run
+            if completed:
+                status_value = completed.status or status_value
+
+        if run:
+            summary = _extract_sync_summary(run)
+
         return SyncResponse(
-            run_id=int(result.run.id),
-            schedule_id=int(result.run.schedule_id),
+            run_id=int(run.id) if run else None,
+            schedule_id=int(run.schedule_id) if run and run.schedule_id else None,
             task_name=SYNC_TASKS["meta"],
             task_id=result.task_id,
-            status=result.status,
+            status=status_value,
             idempotent=result.idempotent,
-            idempotency_key=result.run.idempotency_key,
+            idempotency_key=result.run.idempotency_key if result.run else None,
+            summary=summary,
         )
 
     if body.scope != "products":
@@ -698,14 +763,28 @@ def trigger_sync(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    status_value = result.status
+    run = result.run
+
+    if wait_for_completion and run:
+        completed = _wait_for_run_completion(
+            db,
+            run_id=int(run.id),
+            timeout_seconds=wait_timeout,
+            interval_seconds=settings.TTB_SYNC_WAIT_INTERVAL_SECONDS,
+        )
+        run = completed or run
+        if completed:
+            status_value = completed.status or status_value
+
     return SyncResponse(
-        run_id=int(result.run.id),
-        schedule_id=int(result.run.schedule_id),
+        run_id=int(run.id) if run else None,
+        schedule_id=int(run.schedule_id) if run and run.schedule_id else None,
         task_name=SYNC_TASKS["products"],
         task_id=result.task_id,
-        status=result.status,
+        status=status_value,
         idempotent=result.idempotent,
-        idempotency_key=result.run.idempotency_key,
+        idempotency_key=result.run.idempotency_key if result.run else None,
     )
 
 
