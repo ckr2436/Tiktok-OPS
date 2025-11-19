@@ -29,6 +29,19 @@ def _read_json_file(path: Path) -> Dict[str, Any]:
         raise MetadataCorruptedError(f"metadata file {path} contains invalid JSON") from exc
 
 
+def _dump_json(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _write_json_file(path: Path, payload: Dict[str, Any]) -> None:
+    """Persist JSON atomically to avoid truncated metadata files."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(path.name + ".tmp")
+    temp_path.write_text(_dump_json(payload))
+    temp_path.replace(path)
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -77,7 +90,7 @@ def write_metadata(workspace_id: int, job_id: str, payload: Dict[str, Any]) -> D
     directory = job_dir(workspace_id, job_id)
     payload.setdefault("created_at", _utc_now())
     payload.setdefault("updated_at", payload["created_at"])
-    metadata_path(directory).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    _write_json_file(metadata_path(directory), payload)
     return payload
 
 
@@ -89,7 +102,7 @@ def write_upload_metadata(workspace_id: int, upload_id: str, payload: Dict[str, 
     directory = upload_dir(workspace_id, upload_id)
     payload.setdefault("created_at", _utc_now())
     payload.setdefault("updated_at", payload["created_at"])
-    upload_metadata_path(directory).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    _write_json_file(upload_metadata_path(directory), payload)
     return payload
 
 
@@ -108,7 +121,7 @@ def _atomic_update(path: Path, updater: Callable[[Dict[str, Any]], Dict[str, Any
     existing = _read_json_file(path)
     updated = updater(existing)
     updated["updated_at"] = _utc_now()
-    path.write_text(json.dumps(updated, ensure_ascii=False, indent=2))
+    _write_json_file(path, updated)
     return updated
 
 
@@ -125,7 +138,7 @@ def load_metadata(workspace_id: int, job_id: str) -> Dict[str, Any]:
 
 def save_results(workspace_id: int, job_id: str, result_payload: Dict[str, Any]) -> Dict[str, Any]:
     directory = job_dir(workspace_id, job_id)
-    result_path(directory).write_text(json.dumps(result_payload, ensure_ascii=False, indent=2))
+    _write_json_file(result_path(directory), result_payload)
 
     def _apply(meta: Dict[str, Any]) -> Dict[str, Any]:
         meta["result"] = result_payload
