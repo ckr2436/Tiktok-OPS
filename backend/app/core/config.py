@@ -182,6 +182,7 @@ class Settings(BaseSettings):
     # =========================
     WHISPER_MODEL_NAME: str = "small"
     OPENAI_WHISPER_STORAGE_DIR: str = "/data/gmv_ops/openai_whisper"
+    OPENAI_WHISPER_TASK_QUEUE: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

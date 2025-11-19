@@ -6,11 +6,16 @@ from pathlib import Path
 from typing import Iterable, List
 
 from app.celery_app import celery_app
+from app.core.config import settings
 from app.data.db import SessionLocal
 
 from . import repository, storage, transcriber
 
 logger = logging.getLogger("gmv.tasks.openai_whisper")
+WHISPER_TASK_QUEUE = (
+    getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None)
+    or getattr(settings, "CELERY_TASK_DEFAULT_QUEUE", "gmv.tasks.default")
+)
 
 
 def _format_timestamp_ms(seconds: float) -> str:
@@ -36,7 +41,7 @@ def _segments_to_srt(segments: Iterable[dict]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-@celery_app.task(name="openai_whisper.transcribe_video", bind=True, queue="gmv.tasks.default")
+@celery_app.task(name="openai_whisper.transcribe_video", bind=True, queue=WHISPER_TASK_QUEUE)
 def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
     with SessionLocal() as db:
         try:
