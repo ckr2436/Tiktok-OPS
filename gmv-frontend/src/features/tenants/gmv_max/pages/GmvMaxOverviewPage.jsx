@@ -2633,7 +2633,13 @@ export default function GmvMaxOverviewPage() {
     return products.map((product) => {
       const id = getProductIdentifier(product);
       if (!id) return product;
-      const computedStatus = assignedProductIds.has(id) ? 'NOT_AVAILABLE' : 'AVAILABLE';
+
+      const isAssigned = assignedProductIds.has(id);
+      if (!isAssigned) {
+        return product;
+      }
+
+      const computedStatus = 'NOT_AVAILABLE';
       const currentStatus = String(product.gmv_max_ads_status || '').trim().toUpperCase();
       if (currentStatus === computedStatus) {
         return product;
