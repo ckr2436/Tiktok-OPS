@@ -2638,6 +2638,12 @@ export default function GmvMaxOverviewPage() {
       if (currentStatus === computedStatus) {
         return product;
       }
+
+      const reflectsAssignment = currentStatus === '' || currentStatus === 'AVAILABLE' || currentStatus === 'NOT_AVAILABLE';
+      if (!reflectsAssignment) {
+        return product;
+      }
+
       return {
         ...product,
         gmv_max_ads_status: computedStatus,
