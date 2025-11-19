@@ -3,15 +3,18 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_member
+from app.data.db import get_db
 
 from . import service
 from .schemas import (
     LanguageListResponse,
     TranscriptionJobCreatedResponse,
+    TranscriptionJobListResponse,
     TranscriptionJobStatusResponse,
     UploadedVideoResponse,
 )
@@ -48,6 +51,7 @@ async def enqueue_job(
     target_language: Optional[str] = Form(None),
     show_bilingual: bool = Form(False),
     me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
     return await service.create_job(
         workspace_id=workspace_id,
@@ -58,7 +62,18 @@ async def enqueue_job(
         translate=translate,
         target_language=target_language,
         show_bilingual=show_bilingual,
+        db=db,
     )
+
+
+@router.get("/jobs", response_model=TranscriptionJobListResponse)
+def list_jobs(
+    workspace_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    return service.list_jobs(workspace_id, limit, db)
 
 
 @router.get("/jobs/{job_id}", response_model=TranscriptionJobStatusResponse)
@@ -66,8 +81,9 @@ def get_job_status(
     workspace_id: int,
     job_id: str,
     _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
-    return service.get_job(workspace_id, job_id)
+    return service.get_job(workspace_id, job_id, db)
 
 
 @router.get("/jobs/{job_id}/subtitles")

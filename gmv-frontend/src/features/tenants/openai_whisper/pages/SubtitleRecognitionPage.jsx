@@ -1,12 +1,14 @@
 // src/features/tenants/openai_whisper/pages/SubtitleRecognitionPage.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import FileDropZone from '../components/FileDropZone.jsx'
 import SubtitleResult from '../components/SubtitleResult.jsx'
+import SubtitleJobHistory from '../components/SubtitleJobHistory.jsx'
 import useSubtitleJob from '../hooks/useSubtitleJob.js'
 import {
   buildSubtitleDownloadUrl,
   createSubtitleJob,
+  fetchSubtitleJobs,
   fetchLanguages,
   uploadSubtitleVideo,
 } from '../api/index.js'
@@ -25,7 +27,37 @@ export default function SubtitleRecognitionPage() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
 
-  const { job, startPolling, setJob } = useSubtitleJob(wid)
+  const { job, startPolling, setJob, stopPolling, refresh } = useSubtitleJob(wid)
+  const [jobHistory, setJobHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const [selectedJobId, setSelectedJobId] = useState(null)
+  const upsertHistory = useCallback((jobData) => {
+    if (!jobData) return
+    setHistoryError('')
+    setJobHistory((prev) => {
+      const summary = {
+        job_id: jobData.job_id,
+        filename: jobData.filename,
+        status: jobData.status,
+        error: jobData.error,
+        translate: jobData.translate,
+        show_bilingual: jobData.show_bilingual,
+        source_language: jobData.source_language,
+        detected_language: jobData.detected_language,
+        translation_language: jobData.translation_language || jobData.target_language,
+        created_at: jobData.created_at,
+        updated_at: jobData.updated_at,
+      }
+      const index = prev.findIndex((item) => item.job_id === summary.job_id)
+      if (index >= 0) {
+        const clone = [...prev]
+        clone[index] = { ...clone[index], ...summary }
+        return clone
+      }
+      return [summary, ...prev].slice(0, 20)
+    })
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -40,6 +72,44 @@ export default function SubtitleRecognitionPage() {
       mounted = false
     }
   }, [wid])
+
+  const refreshHistory = useCallback(async () => {
+    if (!wid) return []
+    setHistoryError('')
+    setHistoryLoading(true)
+    try {
+      const jobs = await fetchSubtitleJobs(wid, { limit: 20 })
+      setJobHistory(jobs)
+      return jobs
+    } catch (err) {
+      console.error('load subtitle jobs failed', err)
+      setHistoryError(err?.message || '加载任务列表失败，请稍后再试。')
+      return []
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [wid])
+
+  useEffect(() => {
+    let cancelled = false
+    async function bootstrapHistory() {
+      const jobs = await refreshHistory()
+      if (cancelled) return
+      if (jobs.length > 0) {
+        const latestId = jobs[0].job_id
+        setSelectedJobId(latestId)
+        await refresh(latestId)
+      } else {
+        setSelectedJobId(null)
+        setJob(null)
+        stopPolling()
+      }
+    }
+    bootstrapHistory()
+    return () => {
+      cancelled = true
+    }
+  }, [refreshHistory, refresh, setJob, stopPolling])
 
   useEffect(() => {
     let cancelled = false
@@ -89,7 +159,49 @@ export default function SubtitleRecognitionPage() {
     }
   }, [selectedFile, wid])
 
+  useEffect(() => {
+    if (job) {
+      setSelectedJobId(job.job_id)
+      upsertHistory(job)
+    }
+  }, [job, upsertHistory])
+
   const languageOptions = useMemo(() => languages ?? [], [languages])
+
+  const handleHistoryRefresh = useCallback(async () => {
+    const jobs = await refreshHistory()
+    if (!jobs.length) {
+      setSelectedJobId(null)
+      setJob(null)
+      stopPolling()
+      return
+    }
+    if (!jobs.some((item) => item.job_id === selectedJobId)) {
+      const nextId = jobs[0].job_id
+      setSelectedJobId(nextId)
+      await refresh(nextId)
+    }
+  }, [refreshHistory, refresh, selectedJobId, setJob, stopPolling])
+
+  const handleSelectHistoryJob = useCallback(
+    async (jobItem) => {
+      if (!jobItem?.job_id) return
+      setSelectedJobId(jobItem.job_id)
+      // stop any existing polling loops so only the newly selected job updates the view
+      stopPolling()
+      const detail = await refresh(jobItem.job_id)
+      if (detail) {
+        upsertHistory(detail)
+        const terminal = new Set(['success', 'failed'])
+        if (terminal.has(String(detail.status || '').toLowerCase())) {
+          stopPolling()
+        } else {
+          startPolling(detail.job_id)
+        }
+      }
+    },
+    [refresh, startPolling, stopPolling, upsertHistory],
+  )
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -112,6 +224,8 @@ export default function SubtitleRecognitionPage() {
         showBilingual,
       })
       setJob(response)
+      upsertHistory(response)
+      setSelectedJobId(response.job_id)
       startPolling(response.job_id)
     } catch (err) {
       console.error('create subtitle job failed', err)
@@ -347,6 +461,15 @@ export default function SubtitleRecognitionPage() {
               </div>
             </div>
           ) : null}
+
+          <SubtitleJobHistory
+            jobs={jobHistory}
+            selectedJobId={selectedJobId}
+            onSelect={handleSelectHistoryJob}
+            onRefresh={handleHistoryRefresh}
+            loading={historyLoading}
+            errorMessage={historyError}
+          />
         </div>
       </div>
     </div>
