@@ -1249,6 +1249,21 @@ class TTBSyncService:
                 if not adv_id:
                     continue
                 pairs.append((str(adv_id), norm_store_id))
+        elif norm_adv_id:
+            # 只给了 advertiser_id：仅遍历与它关联的 store
+            link_rows = (
+                self.db.query(
+                    TTBAdvertiserStoreLink.advertiser_id, TTBAdvertiserStoreLink.store_id
+                )
+                .filter(TTBAdvertiserStoreLink.workspace_id == self.workspace_id)
+                .filter(TTBAdvertiserStoreLink.auth_id == self.auth_id)
+                .filter(TTBAdvertiserStoreLink.advertiser_id == norm_adv_id)
+                .all()
+            )
+            for adv_id, sid in link_rows:
+                if not adv_id or not sid:
+                    continue
+                pairs.append((str(adv_id), str(sid)))
         else:
             # 全量：从 link 表枚举所有 (adv, store) 组合
             link_rows = (
