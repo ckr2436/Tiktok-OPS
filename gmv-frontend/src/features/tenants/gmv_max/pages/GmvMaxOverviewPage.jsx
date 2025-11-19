@@ -132,23 +132,40 @@ function getProductAssignmentStatus(product) {
 
 function isProductAvailable(product) {
   const assignmentStatus = String(getProductAssignmentStatus(product) || '').trim().toUpperCase();
-  if (assignmentStatus) {
-    if (
-      assignmentStatus.includes('NOT_AVAILABLE') ||
-      assignmentStatus.includes('UNAVAILABLE') ||
-      assignmentStatus.includes('OCCUPIED')
-    ) {
-      return false;
-    }
-    if (assignmentStatus.includes('AVAILABLE') || assignmentStatus.includes('UNOCCUPIED')) {
-      return true;
-    }
-  }
+  const productStatus = String(getProductStatus(product) || '').trim().toUpperCase();
 
-  const status = String(getProductStatus(product) || '').trim().toUpperCase();
-  if (!status) return true;
-  if (status.includes('NOT_AVAILABLE')) return false;
-  if (status.includes('UNAVAILABLE')) return false;
+  const interpretAvailability = (status) => {
+    if (!status) {
+      return { known: false, available: null };
+    }
+    if (
+      status.includes('NOT_AVAILABLE') ||
+      status.includes('UNAVAILABLE') ||
+      status.includes('OCCUPIED')
+    ) {
+      return { known: true, available: false };
+    }
+    if (status.includes('AVAILABLE') || status.includes('UNOCCUPIED')) {
+      return { known: true, available: true };
+    }
+    return { known: false, available: null };
+  };
+
+  const assignment = interpretAvailability(assignmentStatus);
+  const product = interpretAvailability(productStatus);
+
+  if (assignment.known && !assignment.available) return false;
+  if (product.known && !product.available) return false;
+
+  if (assignment.known && product.known) {
+    return assignment.available && product.available;
+  }
+  if (assignment.known) {
+    return assignment.available;
+  }
+  if (product.known) {
+    return product.available;
+  }
   return true;
 }
 
