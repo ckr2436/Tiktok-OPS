@@ -166,6 +166,14 @@ async def _sync_products_now(
         "product_eligibility": "gmv_max",
         "advertiser_id": str(advertiser_id),
     }
+    envelope = {
+        "envelope_version": 1,
+        "provider": context.provider,
+        "scope": "products",
+        "workspace_id": int(context.workspace_id),
+        "auth_id": int(context.auth_id),
+        "options": options,
+    }
     sync_logger = logger.getChild("products")
     try:
         task = task_sync_products.apply_async(
@@ -173,7 +181,7 @@ async def _sync_products_now(
                 "workspace_id": int(context.workspace_id),
                 "auth_id": int(context.auth_id),
                 "scope": "products",
-                "params": options,
+                "params": {"envelope": envelope},
             }
         )
         await asyncio.to_thread(task.get, timeout=300)
