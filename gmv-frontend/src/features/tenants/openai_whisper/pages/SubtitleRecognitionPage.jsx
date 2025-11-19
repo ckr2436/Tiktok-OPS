@@ -187,6 +187,8 @@ export default function SubtitleRecognitionPage() {
     async (jobItem) => {
       if (!jobItem?.job_id) return
       setSelectedJobId(jobItem.job_id)
+      // stop any existing polling loops so only the newly selected job updates the view
+      stopPolling()
       const detail = await refresh(jobItem.job_id)
       if (detail) {
         upsertHistory(detail)
