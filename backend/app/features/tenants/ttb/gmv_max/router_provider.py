@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import ceil
 from time import monotonic
+import asyncio
+import logging
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
@@ -14,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.data.db import get_db
+from app.data.models.ttb_entities import TTBProduct
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
@@ -50,6 +53,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     TikTokBusinessGMVMaxClient,
 )
 from app.services.ttb_api import TTBApiError, TTBHttpError
+from app.services.provider_registry import provider_registry
 
 from ._helpers import (
     GMVMaxAccountBinding,
@@ -136,6 +140,103 @@ class _TTLCache:
 
 
 _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
+
+
+def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
+    base_query = (
+        db.query(TTBProduct)
+        .filter(TTBProduct.workspace_id == int(workspace_id))
+        .filter(TTBProduct.auth_id == int(auth_id))
+        .filter(TTBProduct.store_id == str(store_id))
+    )
+    total = int(base_query.count() or 0)
+    missing = int(base_query.filter(TTBProduct.gmv_max_ads_status.is_(None)).count() or 0)
+    return total, missing
+
+
+def _sync_products_now(
+    context: GMVMaxRouteContext,
+    *,
+    advertiser_id: str,
+    store_id: str,
+) -> None:
+    handler = provider_registry.get(context.provider)
+    options: Dict[str, Any] = {
+        "mode": "full",
+        "store_id": str(store_id),
+        "product_eligibility": "gmv_max",
+        "advertiser_id": str(advertiser_id),
+    }
+    envelope = {
+        "envelope_version": 1,
+        "provider": context.provider,
+        "scope": "products",
+        "workspace_id": int(context.workspace_id),
+        "auth_id": int(context.auth_id),
+        "options": options,
+    }
+    sync_logger = logger.getChild("products")
+    try:
+        asyncio.run(
+            handler.run_scope(
+                db=context.db,
+                envelope=envelope,
+                scope="products",
+                logger=sync_logger,
+            )
+        )
+    except RuntimeError as exc:
+        sync_logger.warning("product sync skipped; unable to create event loop: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        sync_logger.exception("product sync failed")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail="GMV Max product sync failed; please retry later.",
+        ) from exc
+
+
+def _ensure_products_ready(
+    context: GMVMaxRouteContext,
+    *,
+    advertiser_id: str,
+    store_id: str,
+) -> None:
+    if not advertiser_id or not store_id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="GMV Max product sync requires advertiser_id and store_id.",
+        )
+
+    db = context.db
+    if db is None:
+        return
+
+    attempts = 0
+    total, missing = _count_products(db, workspace_id=context.workspace_id, auth_id=context.auth_id, store_id=store_id)
+    while attempts < 2 and (total == 0 or missing > 0):
+        attempts += 1
+        _sync_products_now(context, advertiser_id=advertiser_id, store_id=store_id)
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            raise
+        db.expire_all()
+        total, missing = _count_products(
+            db,
+            workspace_id=context.workspace_id,
+            auth_id=context.auth_id,
+            store_id=store_id,
+        )
+
+    if total == 0 or missing > 0:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "GMV Max products are missing eligibility data. "
+                "Please run the product sync again after verifying store and advertiser binding."
+            ),
+        )
 
 
 def _resolve_actor_label(me: SessionUser | None) -> str:
@@ -876,6 +977,7 @@ async def sync_gmvmax_campaigns_provider(
         "auth_id": context.auth_id,
         "scope": scope_context,
     }
+    _ensure_products_ready(context, advertiser_id=str(advertiser_id), store_id=str(store_id))
     store_ids_override = [store_id] if store_id else None
     campaign_req = _build_campaign_request(
         advertiser_id,

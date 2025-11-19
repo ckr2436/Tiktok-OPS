@@ -16,6 +16,7 @@ import {
   useGmvMaxOptionsQuery,
   useProductsQuery,
   useSyncAccountMetadataMutation,
+  useSyncAccountProductsMutation,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxConfigMutation,
@@ -1932,6 +1933,8 @@ export default function GmvMaxOverviewPage() {
   const [syncError, setSyncError] = useState(null);
   const [metaSyncMessage, setMetaSyncMessage] = useState('');
   const [metaSyncError, setMetaSyncError] = useState(null);
+  const [productSyncMessage, setProductSyncMessage] = useState('');
+  const [productSyncError, setProductSyncError] = useState(null);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [scopePresets, setScopePresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
@@ -2764,6 +2767,7 @@ export default function GmvMaxOverviewPage() {
   );
 
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
+  const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
 
   const refreshScopeQueries = useCallback(() => {
@@ -2826,9 +2830,13 @@ export default function GmvMaxOverviewPage() {
       const response = await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
       const summaryText = formatMetaSummary(response?.summary);
       const timestamp = new Date().toLocaleString();
+      const runDetails = [];
+      if (response?.run_id) runDetails.push(`run ${response.run_id}`);
+      if (response?.task_id) runDetails.push(`task ${response.task_id}`);
+      const suffix = runDetails.length ? ` (${runDetails.join(', ')})` : '';
       const nextMessage = summaryText
-        ? `Metadata synced at ${timestamp}. ${summaryText}`
-        : `Metadata synced at ${timestamp}.`;
+        ? `Metadata sync enqueued at ${timestamp}${suffix}. ${summaryText}`
+        : `Metadata sync enqueued at ${timestamp}${suffix}.`;
       setMetaSyncMessage(nextMessage);
       const refetchPromises = [];
       if (typeof accountsQuery.refetch === 'function') {
@@ -2855,6 +2863,56 @@ export default function GmvMaxOverviewPage() {
     queryClient,
     scopeOptionsQuery,
     scopeOptionsQueryKey,
+  ]);
+
+  const handleSyncProducts = useCallback(async () => {
+    if (!isScopeReady) {
+      setProductSyncError('Select business center, advertiser, and store before syncing products.');
+      setProductSyncMessage('');
+      return;
+    }
+    if (!hasSavedBinding || !scopeMatchesBinding) {
+      setProductSyncError('Save the current binding before syncing GMV Max products.');
+      setProductSyncMessage('');
+      return;
+    }
+    setProductSyncError(null);
+    setProductSyncMessage('');
+    try {
+      const response = await productSyncMutation.mutateAsync({
+        scope: 'products',
+        mode: 'full',
+        bc_id: businessCenterId ? String(businessCenterId) : undefined,
+        advertiser_id: advertiserId ? String(advertiserId) : undefined,
+        store_id: storeId ? String(storeId) : undefined,
+        product_eligibility: 'gmv_max',
+      });
+      const timestamp = new Date().toLocaleString();
+      const runParts = [];
+      if (response?.run_id) runParts.push(`run ${response.run_id}`);
+      if (response?.task_id) runParts.push(`task ${response.task_id}`);
+      const suffix = runParts.length ? ` (${runParts.join(', ')})` : '';
+      setProductSyncMessage(`Product sync enqueued at ${timestamp}${suffix}.`);
+      await queryClient.invalidateQueries({
+        queryKey: ['gmvMax', 'products', workspaceId, provider, authId],
+      });
+    } catch (error) {
+      console.error('Failed to sync GMV Max products', error);
+      const message = formatError(error);
+      setProductSyncError(message || 'Product sync failed. Please try again.');
+    }
+  }, [
+    advertiserId,
+    authId,
+    businessCenterId,
+    hasSavedBinding,
+    isScopeReady,
+    productSyncMutation,
+    provider,
+    queryClient,
+    scopeMatchesBinding,
+    storeId,
+    workspaceId,
   ]);
 
   const handleSync = useCallback(async () => {
@@ -3057,14 +3115,29 @@ export default function GmvMaxOverviewPage() {
             <h2>Scope filters</h2>
             <p>Select the account and store context for GMV Max management.</p>
           </div>
-          <button
-            type="button"
-            className="gmvmax-button gmvmax-button--ghost"
-            onClick={handleSyncMetadata}
-            disabled={!authId || metadataSyncMutation.isPending}
-          >
-            {metadataSyncMutation.isPending ? 'Syncing metadata…' : 'Sync account metadata'}
-          </button>
+          <div className="gmvmax-card__actions">
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--ghost"
+              onClick={handleSyncMetadata}
+              disabled={!authId || metadataSyncMutation.isPending}
+            >
+              {metadataSyncMutation.isPending ? 'Syncing metadata…' : 'Sync account metadata'}
+            </button>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--ghost"
+              onClick={handleSyncProducts}
+              disabled={
+                !isScopeReady ||
+                !hasSavedBinding ||
+                !scopeMatchesBinding ||
+                productSyncMutation.isPending
+              }
+            >
+              {productSyncMutation.isPending ? 'Syncing GMV Max products…' : 'Sync GMV Max products'}
+            </button>
+          </div>
         </header>
         <div className="gmvmax-card__body">
           {metaSyncError || metaSyncMessage ? (
@@ -3074,6 +3147,15 @@ export default function GmvMaxOverviewPage() {
               }`}
             >
               {metaSyncError || metaSyncMessage}
+            </div>
+          ) : null}
+          {productSyncError || productSyncMessage ? (
+            <div
+              className={`gmvmax-status-banner ${
+                productSyncError ? 'gmvmax-status-banner--error' : 'gmvmax-status-banner--success'
+              }`}
+            >
+              {productSyncError || productSyncMessage}
             </div>
           ) : null}
           <div className="gmvmax-field-grid">

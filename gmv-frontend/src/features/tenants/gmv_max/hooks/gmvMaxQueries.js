@@ -21,6 +21,7 @@ import {
   listProviders,
   listStores,
   syncAccountMetadata,
+  syncAccountProducts,
   previewGmvMaxStrategy,
   syncGmvMaxCampaigns,
   syncGmvMaxMetrics,
@@ -104,6 +105,13 @@ export function useProductsQuery(workspaceId, provider, authId, params = {}, opt
 export function useSyncAccountMetadataMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => syncAccountMetadata(workspaceId, provider, authId, payload),
+    ...options,
+  });
+}
+
+export function useSyncAccountProductsMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => syncAccountProducts(workspaceId, provider, authId, payload),
     ...options,
   });
 }
