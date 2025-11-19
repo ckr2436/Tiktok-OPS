@@ -332,6 +332,48 @@ def test_store_and_product_filters_require_ids(tenant_app):
     assert resp.status_code == 422
 
 
+def test_account_products_returns_items_and_validates_scope(tenant_app):
+    client, _ = tenant_app
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["product_id"] == "PROD1"
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1", "owner_bc_id": "BC2"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE"
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1", "advertiser_id": "ADV2"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "ADVERTISER_NOT_FOUND"
+
+
+def test_account_products_requires_link_between_store_and_advertiser(tenant_app):
+    client, db_session = tenant_app
+
+    # remove advertiser-store link to trigger validation error
+    link = db_session.query(TTBAdvertiserStoreLink).first()
+    db_session.delete(link)
+    db_session.commit()
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1", "advertiser_id": "ADV1"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "ADVERTISER_STORE_LINK_NOT_FOUND"
+
 def test_legacy_routes_removed(tenant_app):
     client, _ = tenant_app
     resp = client.get("/api/v1/tenants/1/providers/tiktok-business/business-centers")
