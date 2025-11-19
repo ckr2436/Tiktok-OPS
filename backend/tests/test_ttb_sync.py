@@ -755,6 +755,59 @@ def test_provider_defaults_product_eligibility(monkeypatch, tenant_app):
     assert recorded["product_eligibility"] == "gmv_max"
 
 
+def test_product_sync_limits_pairs_to_selected_advertiser(db_session):
+    _seed_data(db_session)
+
+    class DummyClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        async def iter_products(  # noqa: ANN001
+            self, *, store_id, bc_id=None, advertiser_id, page_size, eligibility
+        ):
+            self.calls.append(
+                {
+                    "store_id": store_id,
+                    "bc_id": bc_id,
+                    "advertiser_id": advertiser_id,
+                    "page_size": page_size,
+                    "eligibility": eligibility,
+                }
+            )
+            if False:
+                yield None
+
+        async def aclose(self):  # noqa: ANN001
+            return None
+
+    # seed an extra advertiser/store link unrelated to the requested advertiser
+    adv2 = TTBAdvertiser(workspace_id=1, auth_id=1, advertiser_id="ADV2", bc_id="BC2")
+    store2 = TTBStore(workspace_id=1, auth_id=1, store_id="STORE2", bc_id="BC2")
+    db_session.add_all(
+        [
+            adv2,
+            store2,
+            TTBAdvertiserStoreLink(
+                workspace_id=1,
+                auth_id=1,
+                advertiser_id="ADV2",
+                store_id="STORE2",
+                bc_id_hint="BC2",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = DummyClient()
+    service = TTBSyncService(db_session, client, workspace_id=1, auth_id=1)
+
+    asyncio.run(service.sync_products(advertiser_id="ADV1"))
+
+    assert len(client.calls) == 1
+    assert client.calls[0]["advertiser_id"] == "ADV1"
+    assert client.calls[0]["store_id"] == "STORE1"
+
+
 def test_validate_options_preserves_advertiser_id_for_products():
     provider = TiktokBusinessProvider()
 
