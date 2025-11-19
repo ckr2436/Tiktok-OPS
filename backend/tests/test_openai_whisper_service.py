@@ -3,6 +3,10 @@ import io
 import types
 import sys
 
+import pytest
+
+from app.core.errors import APIError
+
 
 # Stub the optional whisper dependency so the service module can be imported without
 # pulling the heavyweight model (which is not available in CI).
@@ -15,7 +19,12 @@ _dummy_whisper.load_model = lambda name="small": object()
 sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
-from app.features.tenants.openai_whisper import service, storage, tasks as whisper_tasks
+from app.features.tenants.openai_whisper import (
+    repository,
+    service,
+    storage,
+    tasks as whisper_tasks,
+)
 
 
 class _DummyAsyncResult:
@@ -80,3 +89,46 @@ def test_create_job_commits_before_enqueue(monkeypatch, db_session, tmp_path):
     assert events[0] == "commit"
     assert events[1] == "delay"
     assert response.celery_task_id == dummy_result.id
+
+
+def test_create_job_marks_failed_if_enqueue_raises(monkeypatch, db_session, tmp_path):
+    monkeypatch.setattr(storage, "BASE_DIR", tmp_path)
+    upload = _DummyUpload(b"fake video", filename="sample.mp4", content_type="video/mp4")
+
+    def failing_delay(*, workspace_id: int, job_id: str):  # noqa: ARG001 - parity
+        assert workspace_id == 1
+        assert job_id
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(whisper_tasks.transcribe_video, "delay", failing_delay)
+
+    with pytest.raises(APIError) as exc_info:
+        asyncio.run(
+            service.create_job(
+                workspace_id=1,
+                user_id=42,
+                upload=upload,
+                upload_id=None,
+                source_language=None,
+                translate=False,
+                target_language=None,
+                show_bilingual=False,
+                db=db_session,
+            )
+        )
+
+    assert exc_info.value.code == "WHISPER_TASK_ENQUEUE_FAILED"
+    workspace_dir = tmp_path / "workspace_1"
+    job_dirs = [
+        path for path in workspace_dir.iterdir() if path.is_dir() and path.name != "uploads"
+    ]
+    assert job_dirs, "expected a job directory to be created"
+    job_id = job_dirs[0].name
+
+    metadata = storage.load_metadata(1, job_id)
+    assert metadata["status"] == "failed"
+    assert metadata["error"]
+
+    db_job = repository.get_job(db_session, 1, job_id)
+    assert db_job is not None
+    assert db_job.status == "failed"

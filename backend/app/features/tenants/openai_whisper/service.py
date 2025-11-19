@@ -198,10 +198,22 @@ async def create_job(
 
     from . import tasks as whisper_tasks  # Lazy import to avoid circular refs
 
-    async_result = whisper_tasks.transcribe_video.delay(
-        workspace_id=workspace_id,
-        job_id=job_id,
-    )
+    failure_message = "暂时无法提交识别任务，请稍后重试。"
+
+    try:
+        async_result = whisper_tasks.transcribe_video.delay(
+            workspace_id=workspace_id,
+            job_id=job_id,
+        )
+    except Exception as exc:
+        storage.mark_failed(workspace_id, job_id, failure_message)
+        repository.mark_failed(db, workspace_id, job_id, failure_message)
+        db.commit()
+        raise APIError(
+            "WHISPER_TASK_ENQUEUE_FAILED",
+            failure_message,
+            503,
+        ) from exc
 
     def _apply(meta: Dict[str, object]) -> Dict[str, object]:
         meta["celery_task_id"] = async_result.id
