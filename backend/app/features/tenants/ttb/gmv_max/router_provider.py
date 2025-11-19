@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -52,6 +53,7 @@ from app.providers.tiktok_business.gmvmax_client import (
 )
 from app.services.ttb_api import TTBApiError, TTBHttpError
 from app.services.provider_registry import provider_registry
+from app.tasks.ttb_sync_tasks import task_sync_products
 
 from ._helpers import (
     GMVMaxAccountBinding,
@@ -158,29 +160,23 @@ async def _sync_products_now(
     advertiser_id: str,
     store_id: str,
 ) -> None:
-    handler = provider_registry.get(context.provider)
     options: Dict[str, Any] = {
         "mode": "full",
         "store_id": str(store_id),
         "product_eligibility": "gmv_max",
         "advertiser_id": str(advertiser_id),
     }
-    envelope = {
-        "envelope_version": 1,
-        "provider": context.provider,
-        "scope": "products",
-        "workspace_id": int(context.workspace_id),
-        "auth_id": int(context.auth_id),
-        "options": options,
-    }
     sync_logger = logger.getChild("products")
     try:
-        await handler.run_scope(
-            db=context.db,
-            envelope=envelope,
-            scope="products",
-            logger=sync_logger,
+        task = task_sync_products.apply_async(
+            kwargs={
+                "workspace_id": int(context.workspace_id),
+                "auth_id": int(context.auth_id),
+                "scope": "products",
+                "params": options,
+            }
         )
+        await asyncio.to_thread(task.get, timeout=300)
     except Exception as exc:  # noqa: BLE001
         sync_logger.exception("product sync failed")
         raise HTTPException(

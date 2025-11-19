@@ -743,6 +743,19 @@ def _upsert_product(
     historical_sales = _to_int(_pick(item, "historical_sales"))
     category_value = _clean_nullable_str(_pick(item, "category"))
     gmv_status = _clean_nullable_str(_pick(item, "gmv_max_ads_status"))
+    status_value = _clean_str(_pick(item, "status"))
+    if status_value and status_value.upper() in {"OCCUPIED", "UNOCCUPIED"}:
+        existing_row = (
+            db.query(TTBProduct.status)
+            .filter(TTBProduct.workspace_id == int(workspace_id))
+            .filter(TTBProduct.auth_id == int(auth_id))
+            .filter(TTBProduct.product_id == str(product_id))
+            .first()
+        )
+        existing_status = None
+        if existing_row:
+            existing_status = existing_row[0] if isinstance(existing_row, tuple) else existing_row.status
+        status_value = existing_status or ""
     running_custom_ads = _to_boolish(_pick(item, "is_running_custom_shop_ads"))
 
     values = dict(
@@ -752,7 +765,7 @@ def _upsert_product(
         product_id=str(product_id),
         store_id=str(store_id),
         title=_clean_str(_pick(item, "title")),
-        status=_clean_str(_pick(item, "status")),
+        status=status_value,
         currency=_clean_str(_pick(item, "currency")),
         price=price_value,
         # 官方返回里没有 stock，保持为 None 即可
