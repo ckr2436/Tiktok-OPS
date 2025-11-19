@@ -2791,9 +2791,19 @@ export default function GmvMaxOverviewPage() {
     setSelectedProductIds([]);
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'products', workspaceId, provider, authId] });
-    campaignsQuery.refetch();
+    if (campaignsQueryEnabled) {
+      campaignsQuery.refetch();
+    }
     productsQuery.refetch();
-  }, [authId, campaignsQuery, productsQuery, provider, queryClient, workspaceId]);
+  }, [
+    authId,
+    campaignsQuery,
+    campaignsQueryEnabled,
+    productsQuery,
+    provider,
+    queryClient,
+    workspaceId,
+  ]);
 
   const handleEditRequest = useCallback((campaignId) => {
     setEditingCampaignId(String(campaignId));
@@ -2807,9 +2817,19 @@ export default function GmvMaxOverviewPage() {
     setEditingCampaignId('');
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'products', workspaceId, provider, authId] });
-    campaignsQuery.refetch();
+    if (campaignsQueryEnabled) {
+      campaignsQuery.refetch();
+    }
     productsQuery.refetch();
-  }, [authId, campaignsQuery, productsQuery, provider, queryClient, workspaceId]);
+  }, [
+    authId,
+    campaignsQuery,
+    campaignsQueryEnabled,
+    productsQuery,
+    provider,
+    queryClient,
+    workspaceId,
+  ]);
 
   const buildCampaignSearchParams = useCallback(
     (tab) => {
