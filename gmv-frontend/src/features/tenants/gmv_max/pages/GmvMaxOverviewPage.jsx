@@ -117,20 +117,55 @@ function getProductIdentifier(product) {
 
 function getProductStatus(product) {
   if (!product || typeof product !== 'object') return '';
+  return product.status || product.product_status || product.state || '';
+}
+
+function getProductAssignmentStatus(product) {
+  if (!product || typeof product !== 'object') return '';
   return (
+    product.gmv_max_assignment_status ||
+    product.assignment_status ||
     product.gmv_max_ads_status ||
-    product.status ||
-    product.product_status ||
-    product.state ||
     ''
   );
 }
 
 function isProductAvailable(product) {
-  const status = String(getProductStatus(product) || '').trim().toUpperCase();
-  if (!status) return true;
-  if (status.includes('NOT_AVAILABLE')) return false;
-  if (status.includes('UNAVAILABLE')) return false;
+  const assignmentStatus = String(getProductAssignmentStatus(product) || '').trim().toUpperCase();
+  const productStatus = String(getProductStatus(product) || '').trim().toUpperCase();
+
+  const interpretAvailability = (status) => {
+    if (!status) {
+      return { known: false, available: null };
+    }
+    if (
+      status.includes('NOT_AVAILABLE') ||
+      status.includes('UNAVAILABLE') ||
+      status.includes('OCCUPIED')
+    ) {
+      return { known: true, available: false };
+    }
+    if (status.includes('AVAILABLE') || status.includes('UNOCCUPIED')) {
+      return { known: true, available: true };
+    }
+    return { known: false, available: null };
+  };
+
+  const assignment = interpretAvailability(assignmentStatus);
+  const product = interpretAvailability(productStatus);
+
+  if (assignment.known && !assignment.available) return false;
+  if (product.known && !product.available) return false;
+
+  if (assignment.known && product.known) {
+    return assignment.available && product.available;
+  }
+  if (assignment.known) {
+    return assignment.available;
+  }
+  if (product.known) {
+    return product.available;
+  }
   return true;
 }
 
@@ -965,7 +1000,7 @@ function ProductSelectionPanel({
             const storeKey = String(product.store_id ?? product.storeId ?? '');
             const storeLabel = storeKey && storeNames?.get(storeKey) ? storeNames.get(storeKey) : storeKey || '—';
             const status =
-              product.gmv_max_ads_status || product.status || product.product_status || product.state || '—';
+              getProductStatus(product) || getProductAssignmentStatus(product) || '—';
             return (
               <tr key={id}>
                 <td>
@@ -2634,19 +2669,20 @@ export default function GmvMaxOverviewPage() {
       const id = getProductIdentifier(product);
       if (!id) return product;
       const computedStatus = assignedProductIds.has(id) ? 'NOT_AVAILABLE' : 'AVAILABLE';
-      const currentStatus = String(product.gmv_max_ads_status || '').trim().toUpperCase();
+      const currentStatus = String(getProductAssignmentStatus(product) || '').trim().toUpperCase();
       if (currentStatus === computedStatus) {
         return product;
       }
 
-      const reflectsAssignment = currentStatus === '' || currentStatus === 'AVAILABLE' || currentStatus === 'NOT_AVAILABLE';
+      const reflectsAssignment =
+        currentStatus === '' || currentStatus === 'AVAILABLE' || currentStatus === 'NOT_AVAILABLE';
       if (!reflectsAssignment) {
         return product;
       }
 
       return {
         ...product,
-        gmv_max_ads_status: computedStatus,
+        gmv_max_assignment_status: computedStatus,
       };
     });
   }, [assignedProductIds, isScopeReady, products]);
