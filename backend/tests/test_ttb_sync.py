@@ -2,6 +2,8 @@ import asyncio
 import base64
 import importlib
 import logging
+import sys
+import types
 from datetime import datetime, timedelta, timezone
 from typing import Dict
 
@@ -17,6 +19,8 @@ from app.data.models import (
     TaskCatalog,
     OAuthProviderApp,
     OAuthAccountTTB,
+    TTBGmvMaxCampaign,
+    TTBGmvMaxCampaignProduct,
 )
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.data.models.ttb_entities import (
@@ -28,6 +32,16 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
 )
+# Stub the optional whisper dependency to allow router imports without the package installed.
+_dummy_whisper = types.ModuleType("whisper")
+_dummy_tokenizer = types.ModuleType("whisper.tokenizer")
+_dummy_tokenizer.LANGUAGES = {}
+_dummy_tokenizer.TO_LANGUAGE_CODE = {}
+_dummy_whisper.tokenizer = _dummy_tokenizer
+_dummy_whisper.load_model = lambda name="small": object()
+sys.modules.setdefault("whisper", _dummy_whisper)
+sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
+
 from app.features.tenants.ttb.router import router as ttb_router
 from app.services import ttb_sync
 from app.services.policy_engine import PolicyLimits
@@ -375,6 +389,90 @@ def test_account_products_requires_link_between_store_and_advertiser(tenant_app)
     )
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "ADVERTISER_STORE_LINK_NOT_FOUND"
+
+
+def test_product_assignment_respects_enabled_campaigns(tenant_app):
+    client, db_session = tenant_app
+
+    product_enabled = TTBProduct(
+        workspace_id=1,
+        auth_id=1,
+        product_id="PROD_ENABLED",
+        store_id="STORE1",
+        title="Alpha",
+        status="ON_SALE",
+        currency="USD",
+        price=9.9,
+    )
+    product_disabled = TTBProduct(
+        workspace_id=1,
+        auth_id=1,
+        product_id="PROD_DISABLED",
+        store_id="STORE1",
+        title="Beta",
+        status="ON_SALE",
+        currency="USD",
+        price=19.9,
+    )
+
+    campaign_enabled = TTBGmvMaxCampaign(
+        id=100,
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="ADV1",
+        campaign_id="CMP_ENABLED",
+        store_id="STORE1",
+        status="enable",
+    )
+    campaign_disabled = TTBGmvMaxCampaign(
+        id=101,
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="ADV1",
+        campaign_id="CMP_DISABLED",
+        store_id="STORE1",
+        status="disable",
+    )
+
+    db_session.add_all(
+        [product_enabled, product_disabled, campaign_enabled, campaign_disabled]
+    )
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            TTBGmvMaxCampaignProduct(
+                id=200,
+                workspace_id=1,
+                auth_id=1,
+                campaign_pk=campaign_enabled.id,
+                campaign_id=campaign_enabled.campaign_id,
+                store_id="STORE1",
+                item_group_id=product_enabled.product_id,
+            ),
+            TTBGmvMaxCampaignProduct(
+                id=201,
+                workspace_id=1,
+                auth_id=1,
+                campaign_pk=campaign_disabled.id,
+                campaign_id=campaign_disabled.campaign_id,
+                store_id="STORE1",
+                item_group_id=product_disabled.product_id,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resp = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={"store_id": "STORE1"},
+    )
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    status_map = {item["product_id"]: item["gmv_max_ads_status"] for item in items}
+
+    assert status_map["PROD_ENABLED"] == "OCCUPIED"
+    assert status_map["PROD_DISABLED"] is None
 
 def test_legacy_routes_removed(tenant_app):
     client, _ = tenant_app
