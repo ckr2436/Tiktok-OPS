@@ -709,6 +709,21 @@ def trigger_sync(
         store_id=str(store_id),
     )
 
+    link_exists = (
+        db.query(TTBAdvertiserStoreLink.id)
+        .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .filter(TTBAdvertiserStoreLink.advertiser_id == str(advertiser_id))
+        .filter(TTBAdvertiserStoreLink.store_id == str(store_id))
+        .first()
+    )
+    if not link_exists:
+        raise APIError(
+            "ADVERTISER_NOT_LINKED_TO_STORE",
+            "The advertiser is not linked to the specified store.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     bc_hint = body.bc_id
     bc_id = _normalize_identifier(bc_hint) or store.bc_id or advertiser.bc_id
     _validate_bc_alignment(

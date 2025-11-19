@@ -439,6 +439,36 @@ def test_product_sync_bc_mismatch(tenant_app):
     db_session.commit()
 
 
+def test_product_sync_requires_link_between_advertiser_and_store(tenant_app):
+    client, db_session = tenant_app
+
+    orphan_adv = TTBAdvertiser(
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="ADV2",
+        bc_id="BC1",
+        name="Orphan Advertiser",
+        status="ENABLE",
+        currency="USD",
+        timezone="Asia/Shanghai",
+        country_code="CN",
+    )
+    db_session.add(orphan_adv)
+    db_session.commit()
+
+    resp = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
+        json={
+            "scope": "products",
+            "advertiser_id": "ADV2",
+            "store_id": "STORE1",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "ADVERTISER_NOT_LINKED_TO_STORE"
+
+
 def test_product_sync_rate_limited(monkeypatch, tenant_app):
     client, db_session = tenant_app
     schedule = Schedule(
