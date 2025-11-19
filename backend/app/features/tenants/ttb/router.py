@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.core.errors import APIError
-from app.data.db import get_db
+from app.data.db import SessionLocal, get_db
 from app.data.models.oauth_ttb import OAuthAccountTTB
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.data.models.ttb_entities import (
@@ -288,16 +288,20 @@ def _wait_for_run_completion(
 ) -> Optional[ScheduleRun]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        db.expire_all()
-        run = db.get(ScheduleRun, int(run_id))
-        if not run:
-            return None
-        if run.status not in {"enqueued", "running"}:
-            return run
+        with SessionLocal() as polling_db:
+            run = polling_db.get(ScheduleRun, int(run_id))
+            if not run:
+                return None
+            polling_db.expunge(run)
+            if run.status not in {"enqueued", "running"}:
+                return run
         time.sleep(interval_seconds)
 
-    db.expire_all()
-    return db.get(ScheduleRun, int(run_id))
+    with SessionLocal() as polling_db:
+        run = polling_db.get(ScheduleRun, int(run_id))
+        if run:
+            polling_db.expunge(run)
+        return run
 
 
 def _extract_sync_summary(run: ScheduleRun) -> Optional[MetaSummary]:
