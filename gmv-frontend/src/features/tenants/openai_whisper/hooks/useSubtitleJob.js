@@ -56,6 +56,17 @@ export default function useSubtitleJob(wid) {
     }
   }, [])
 
+  const refresh = useCallback(
+    async (targetId) => {
+      const id = targetId || jobId
+      if (!wid || !id) return null
+      const data = await fetchSubtitleJob(wid, id)
+      setJob(data)
+      return data
+    },
+    [jobId, wid],
+  )
+
   return {
     jobId,
     job,
@@ -63,13 +74,7 @@ export default function useSubtitleJob(wid) {
     isPolling,
     startPolling,
     stopPolling,
-    async refresh(targetId) {
-      const id = targetId || jobId
-      if (!wid || !id) return null
-      const data = await fetchSubtitleJob(wid, id)
-      setJob(data)
-      return data
-    },
+    refresh,
   }
 }
 
