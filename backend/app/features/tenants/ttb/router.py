@@ -587,13 +587,30 @@ def trigger_sync(
 
     if body.scope == "meta":
         try:
-            summary_payload = _perform_meta_sync(db, workspace_id=workspace_id, auth_id=auth_id)
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        response_payload = SyncResponse(status="success", summary=_meta_summary_from_dict(summary_payload))
-        return JSONResponse(status_code=status.HTTP_200_OK, content=jsonable_encoder(response_payload))
+            result: DispatchResult = dispatch_sync(
+                db,
+                workspace_id=int(workspace_id),
+                provider=normalized_provider,
+                auth_id=int(auth_id),
+                scope="meta",
+                params={"mode": normalized_mode, "page_size": 200},
+                actor_user_id=int(me.id),
+                actor_workspace_id=int(me.workspace_id),
+                actor_ip=request.client.host if request.client else None,
+                idempotency_key=requested_idempotency,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return SyncResponse(
+            run_id=int(result.run.id),
+            schedule_id=int(result.run.schedule_id),
+            task_name=SYNC_TASKS["meta"],
+            task_id=result.task_id,
+            status=result.status,
+            idempotent=result.idempotent,
+            idempotency_key=result.run.idempotency_key,
+        )
 
     if body.scope != "products":
         raise APIError("UNSUPPORTED_SCOPE", f"Scope {body.scope} is not supported.", status.HTTP_400_BAD_REQUEST)
