@@ -230,7 +230,6 @@ def _load_campaign(
     stmt: Select[TTBGmvMaxCampaign] = (
         select(TTBGmvMaxCampaign)
         .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.auth_id == auth_id)
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
     )
     return db.execute(stmt).scalars().first()

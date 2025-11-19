@@ -62,7 +62,6 @@ def _ensure_campaign(
     query = (
         select(TTBGmvMaxCampaign)
         .where(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .where(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
     )
     if advertiser_id:

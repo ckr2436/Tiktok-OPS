@@ -110,7 +110,6 @@ def _base_query(
             TTBGmvMaxCampaign.id == TTBGmvMaxMetricsDaily.campaign_id,
         )
         .where(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .where(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
         .where(TTBGmvMaxMetricsDaily.store_id == str(store_id))
