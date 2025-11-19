@@ -60,6 +60,7 @@ SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 
 logger = logging.getLogger("gmv.ttb.meta")
+backfill_logger = logger.getChild("backfill")
 
 
 _RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
@@ -329,6 +330,81 @@ def _needs_account_bootstrap(db: Session, *, workspace_id: int, auth_id: int) ->
         required["product"] = _has_records(db, TTBProduct, workspace_id=workspace_id, auth_id=auth_id)
 
     return not all(required.values())
+
+
+def _run_provider_scope_now(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    scope: Literal["meta", "products"],
+    options: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Synchronously run a provider scope to backfill missing data."""
+
+    handler = provider_registry.get("tiktok-business")
+    if handler is None:
+        backfill_logger.error("provider handler not registered; cannot backfill scope=%s", scope)
+        return None
+
+    envelope = {
+        "envelope_version": 1,
+        "provider": "tiktok-business",
+        "scope": scope,
+        "workspace_id": int(workspace_id),
+        "auth_id": int(auth_id),
+        "options": options or {},
+    }
+
+    try:
+        return asyncio.run(
+            handler.run_scope(
+                db=db,
+                envelope=envelope,
+                scope=scope,
+                logger=backfill_logger,
+            )
+        )
+    except RuntimeError as exc:
+        backfill_logger.warning("backfill skipped; unable to create event loop: %s", exc)
+    except Exception:  # noqa: BLE001 - best-effort backfill
+        backfill_logger.exception("backfill scope=%s failed", scope)
+    return None
+
+
+def _backfill_meta_if_needed(db: Session, *, workspace_id: int, auth_id: int) -> None:
+    _run_provider_scope_now(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope="meta",
+        options={"page_size": 200},
+    )
+
+
+def _backfill_products_if_needed(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    store_id: str,
+    advertiser_id: Optional[str],
+) -> None:
+    options: Dict[str, Any] = {
+        "mode": "full",
+        "store_id": str(store_id),
+        "product_eligibility": "gmv_max",
+    }
+    if advertiser_id:
+        options["advertiser_id"] = str(advertiser_id)
+
+    _run_provider_scope_now(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope="products",
+        options=options,
+    )
 
 
 def _ensure_account_meta_seeded(db: Session, *, workspace_id: int, account: OAuthAccountTTB) -> None:
@@ -1218,13 +1294,16 @@ def list_account_business_centers(
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    rows = (
+    query = (
         db.query(TTBBusinessCenter)
         .filter(TTBBusinessCenter.workspace_id == int(workspace_id))
         .filter(TTBBusinessCenter.auth_id == int(auth_id))
-        .order_by(TTBBusinessCenter.name.asc(), TTBBusinessCenter.bc_id.asc())
-        .all()
     )
+    rows = query.order_by(TTBBusinessCenter.name.asc(), TTBBusinessCenter.bc_id.asc()).all()
+    if not rows:
+        _backfill_meta_if_needed(db, workspace_id=workspace_id, auth_id=auth_id)
+        db.expire_all()
+        rows = query.order_by(TTBBusinessCenter.name.asc(), TTBBusinessCenter.bc_id.asc()).all()
     return BusinessCenterList(items=[BusinessCenterItem(**_serialize_bc(r)) for r in rows])
 
 
@@ -1265,6 +1344,10 @@ def list_account_advertisers(
             or_(TTBAdvertiser.advertiser_id.in_(link_subquery), TTBAdvertiser.bc_id == normalized_owner)
         )
     rows = query.order_by(TTBAdvertiser.display_name.asc(), TTBAdvertiser.advertiser_id.asc()).all()
+    if not rows:
+        _backfill_meta_if_needed(db, workspace_id=workspace_id, auth_id=auth_id)
+        db.expire_all()
+        rows = query.order_by(TTBAdvertiser.display_name.asc(), TTBAdvertiser.advertiser_id.asc()).all()
 
     advertiser_ids = [str(row.advertiser_id) for row in rows if row and row.advertiser_id]
     bc_hints: dict[str, tuple[int, str]] = {}
@@ -1383,12 +1466,22 @@ def list_account_stores_query(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="bc_id parameter is no longer supported; please use owner_bc_id",
         )
-    return _build_account_store_list(
+    stores = _build_account_store_list(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
     )
+    if not stores.items:
+        _backfill_meta_if_needed(db, workspace_id=workspace_id, auth_id=auth_id)
+        db.expire_all()
+        stores = _build_account_store_list(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+        )
+    return stores
 
 
 @router.get(
@@ -1405,12 +1498,22 @@ def list_account_stores(
 ):
     _normalize_provider(provider)
     _ensure_account(db, workspace_id, auth_id)
-    return _build_account_store_list(
+    stores = _build_account_store_list(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
     )
+    if not stores.items:
+        _backfill_meta_if_needed(db, workspace_id=workspace_id, auth_id=auth_id)
+        db.expire_all()
+        stores = _build_account_store_list(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+        )
+    return stores
 
 
 @router.get(
@@ -1509,33 +1612,48 @@ def list_account_products(
                 status.HTTP_404_NOT_FOUND,
             )
 
-    base_query = (
-        db.query(TTBProduct)
-        .filter(TTBProduct.workspace_id == int(workspace_id))
-        .filter(TTBProduct.auth_id == int(auth_id))
-        .filter(TTBProduct.store_id == normalized_store)
-    )
-
-    assignment_stmt = (
-        select(TTBGmvMaxCampaignProduct.item_group_id)
-        .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
-        .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
-        .where(TTBGmvMaxCampaignProduct.store_id == str(store_id))
-    )
-    assigned_ids = {
-        str(item)
-        for item in db.execute(assignment_stmt).scalars().all()
-        if item is not None
-    }
-
-    total = base_query.count()
     offset = (page - 1) * page_size
-    rows = (
-        base_query.order_by(TTBProduct.title.asc(), TTBProduct.product_id.asc())
-        .offset(offset)
-        .limit(page_size)
-        .all()
-    )
+
+    def _load_products() -> tuple[int, list[TTBProduct], set[str]]:
+        base_query = (
+            db.query(TTBProduct)
+            .filter(TTBProduct.workspace_id == int(workspace_id))
+            .filter(TTBProduct.auth_id == int(auth_id))
+            .filter(TTBProduct.store_id == normalized_store)
+        )
+
+        assignment_stmt = (
+            select(TTBGmvMaxCampaignProduct.item_group_id)
+            .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
+            .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
+            .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
+        )
+        assigned_ids = {
+            str(item)
+            for item in db.execute(assignment_stmt).scalars().all()
+            if item is not None
+        }
+
+        total_rows = base_query.count()
+        rows = (
+            base_query.order_by(TTBProduct.title.asc(), TTBProduct.product_id.asc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+        return total_rows, rows, assigned_ids
+
+    total, rows, assigned_ids = _load_products()
+    if total == 0:
+        _backfill_products_if_needed(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            store_id=normalized_store,
+            advertiser_id=normalized_adv,
+        )
+        db.expire_all()
+        total, rows, assigned_ids = _load_products()
     return ProductList(
         items=[ProductItem(**_serialize_product(r, assigned_ids=assigned_ids)) for r in rows],
         total=total,
