@@ -233,11 +233,15 @@ class TiktokBusinessProvider:
             if limits.max_entities_per_run is not None:
                 product_page_size = min(product_page_size, int(limits.max_entities_per_run))
 
+            product_eligibility = options.get("product_eligibility")
+            if product_eligibility is None:
+                product_eligibility = "gmv_max"
+
             stats = await service.sync_products(
                 page_size=product_page_size,
                 store_id=options.get("store_id"),
                 advertiser_id=options.get("advertiser_id"),
-                product_eligibility=options.get("product_eligibility"),  # 'gmv_max' | 'ads' | 'all' | None
+                product_eligibility=product_eligibility,  # 'gmv_max' | 'ads' | 'all'
             )
         else:
             raise ValueError(f"unsupported scope: {scope}")
