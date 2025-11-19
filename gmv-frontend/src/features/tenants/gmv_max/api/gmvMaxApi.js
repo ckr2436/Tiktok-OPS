@@ -90,6 +90,10 @@ export async function listProducts(workspaceId, provider, authId, params, config
   return get(`${accountPrefix(workspaceId, provider, authId)}/products`, axiosConfig);
 }
 
+export async function syncAccountMetadata(workspaceId, provider, authId, payload = {}, config) {
+  return post(`${accountPrefix(workspaceId, provider, authId)}/sync`, payload, config);
+}
+
 export async function getGmvMaxOptions(workspaceId, provider, authId, params, config) {
   const axiosConfig = mergeConfig(config, params);
   return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/options`, axiosConfig);

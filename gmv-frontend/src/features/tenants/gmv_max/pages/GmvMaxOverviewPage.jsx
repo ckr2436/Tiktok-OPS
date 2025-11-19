@@ -15,6 +15,7 @@ import {
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
   useProductsQuery,
+  useSyncAccountMetadataMutation,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxConfigMutation,
@@ -40,6 +41,23 @@ const DEFAULT_REPORT_METRICS = [
   'roi',
 ];
 const EMPTY_QUERY_PARAMS = Object.freeze({});
+
+function formatMetaSummary(summary) {
+  if (!summary || typeof summary !== 'object') return '';
+  const describe = (label, item) => {
+    if (!item || typeof item !== 'object') return null;
+    const added = Number.isFinite(Number(item.added)) ? Number(item.added) : 0;
+    const removed = Number.isFinite(Number(item.removed)) ? Number(item.removed) : 0;
+    const unchanged = Number.isFinite(Number(item.unchanged)) ? Number(item.unchanged) : 0;
+    return `${label} +${added}/-${removed} (unchanged ${unchanged})`;
+  };
+  const parts = [
+    describe('Business centers', summary.bc),
+    describe('Advertisers', summary.advertisers),
+    describe('Stores', summary.stores),
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
 
 function formatError(error) {
   if (!error) return null;
@@ -1912,6 +1930,8 @@ export default function GmvMaxOverviewPage() {
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
+  const [metaSyncMessage, setMetaSyncMessage] = useState('');
+  const [metaSyncError, setMetaSyncError] = useState(null);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [scopePresets, setScopePresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
@@ -1927,6 +1947,10 @@ export default function GmvMaxOverviewPage() {
   const scopeOptionsQueryKey = useMemo(
     () => ['gmvMax', 'options', workspaceId, provider, authId, scopeOptionsParams],
     [authId, provider, scopeOptionsParams, workspaceId],
+  );
+  const accountsQueryKey = useMemo(
+    () => ['gmvMax', 'accounts', workspaceId, provider, EMPTY_QUERY_PARAMS],
+    [provider, workspaceId],
   );
 
   useEffect(() => {
@@ -1949,6 +1973,11 @@ export default function GmvMaxOverviewPage() {
     }
     setHasLoadedScope(true);
   }, [provider, workspaceId]);
+
+  useEffect(() => {
+    setMetaSyncMessage('');
+    setMetaSyncError(null);
+  }, [authId]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -2705,6 +2734,7 @@ export default function GmvMaxOverviewPage() {
       (!hasSavedBinding || !scopeMatchesBinding),
   );
 
+  const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
@@ -2745,6 +2775,49 @@ export default function GmvMaxOverviewPage() {
     saveBindingMutation,
     savedAutoSyncProducts,
     storeId,
+  ]);
+
+  const handleSyncMetadata = useCallback(async () => {
+    if (!authId) {
+      setMetaSyncError('Select an account before syncing metadata.');
+      setMetaSyncMessage('');
+      return;
+    }
+    setMetaSyncError(null);
+    setMetaSyncMessage('');
+    try {
+      const response = await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
+      const summaryText = formatMetaSummary(response?.summary);
+      const timestamp = new Date().toLocaleString();
+      const nextMessage = summaryText
+        ? `Metadata synced at ${timestamp}. ${summaryText}`
+        : `Metadata synced at ${timestamp}.`;
+      setMetaSyncMessage(nextMessage);
+      const refetchPromises = [];
+      if (typeof accountsQuery.refetch === 'function') {
+        refetchPromises.push(accountsQuery.refetch());
+      }
+      if (typeof scopeOptionsQuery.refetch === 'function') {
+        refetchPromises.push(scopeOptionsQuery.refetch());
+      }
+      if (refetchPromises.length > 0) {
+        await Promise.all(refetchPromises);
+      }
+      queryClient.invalidateQueries({ queryKey: scopeOptionsQueryKey });
+      queryClient.invalidateQueries({ queryKey: accountsQueryKey });
+    } catch (error) {
+      console.error('Failed to sync TikTok Business metadata', error);
+      const message = formatError(error);
+      setMetaSyncError(message || 'Metadata sync failed. Please try again.');
+    }
+  }, [
+    accountsQuery,
+    accountsQueryKey,
+    authId,
+    metadataSyncMutation,
+    queryClient,
+    scopeOptionsQuery,
+    scopeOptionsQueryKey,
   ]);
 
   const handleSync = useCallback(async () => {
@@ -2965,8 +3038,25 @@ export default function GmvMaxOverviewPage() {
             <h2>Scope filters</h2>
             <p>Select the account and store context for GMV Max management.</p>
           </div>
+          <button
+            type="button"
+            className="gmvmax-button gmvmax-button--ghost"
+            onClick={handleSyncMetadata}
+            disabled={!authId || metadataSyncMutation.isPending}
+          >
+            {metadataSyncMutation.isPending ? 'Syncing metadata…' : 'Sync account metadata'}
+          </button>
         </header>
         <div className="gmvmax-card__body">
+          {metaSyncError || metaSyncMessage ? (
+            <div
+              className={`gmvmax-status-banner ${
+                metaSyncError ? 'gmvmax-status-banner--error' : 'gmvmax-status-banner--success'
+              }`}
+            >
+              {metaSyncError || metaSyncMessage}
+            </div>
+          ) : null}
           <div className="gmvmax-field-grid">
             <FormField label="Account">
               <select value={authId} onChange={handleAccountChange}>
