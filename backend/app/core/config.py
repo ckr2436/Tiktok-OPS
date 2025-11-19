@@ -178,6 +178,12 @@ class Settings(BaseSettings):
     GMV_MAX_OPTIONS_POLL_INTERVAL_SECONDS: float = 0.3
 
     # =========================
+    # Sync wait helpers
+    # =========================
+    TTB_SYNC_WAIT_TIMEOUT_SECONDS: float = 30.0
+    TTB_SYNC_WAIT_INTERVAL_SECONDS: float = 0.5
+
+    # =========================
     # Whisper / Subtitle tools
     # =========================
     WHISPER_MODEL_NAME: str = "small"
