@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,22 @@ from typing import Any, Callable, Dict, Optional
 from app.core.config import settings
 
 BASE_DIR = Path(settings.OPENAI_WHISPER_STORAGE_DIR).expanduser()
+
+
+class MetadataCorruptedError(RuntimeError):
+    """Raised when a metadata JSON file cannot be decoded."""
+
+
+def _read_json_file(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(path)
+    raw = path.read_text()
+    if not raw.strip():
+        raise MetadataCorruptedError(f"metadata file {path} is empty")
+    try:
+        return json.loads(raw)
+    except JSONDecodeError as exc:
+        raise MetadataCorruptedError(f"metadata file {path} contains invalid JSON") from exc
 
 
 def _utc_now() -> str:
@@ -79,9 +96,7 @@ def write_upload_metadata(workspace_id: int, upload_id: str, payload: Dict[str, 
 def load_upload_metadata(workspace_id: int, upload_id: str) -> Dict[str, Any]:
     directory = uploads_dir(workspace_id) / upload_id
     metadata_file = upload_metadata_path(directory)
-    if not metadata_file.exists():
-        raise FileNotFoundError(metadata_file)
-    return json.loads(metadata_file.read_text())
+    return _read_json_file(metadata_file)
 
 
 def delete_upload(workspace_id: int, upload_id: str) -> None:
@@ -90,9 +105,7 @@ def delete_upload(workspace_id: int, upload_id: str) -> None:
 
 
 def _atomic_update(path: Path, updater: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:
-    if not path.exists():
-        raise FileNotFoundError(path)
-    existing = json.loads(path.read_text())
+    existing = _read_json_file(path)
     updated = updater(existing)
     updated["updated_at"] = _utc_now()
     path.write_text(json.dumps(updated, ensure_ascii=False, indent=2))
@@ -107,10 +120,7 @@ def update_metadata(workspace_id: int, job_id: str, updater: Callable[[Dict[str,
 def load_metadata(workspace_id: int, job_id: str) -> Dict[str, Any]:
     directory = BASE_DIR / f"workspace_{workspace_id}" / job_id
     meta_file = metadata_path(directory)
-    if not meta_file.exists():
-        raise FileNotFoundError(meta_file)
-    data = json.loads(meta_file.read_text())
-    return data
+    return _read_json_file(meta_file)
 
 
 def save_results(workspace_id: int, job_id: str, result_payload: Dict[str, Any]) -> Dict[str, Any]:
