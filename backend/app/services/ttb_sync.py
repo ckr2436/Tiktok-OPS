@@ -1219,6 +1219,21 @@ class TTBSyncService:
         norm_adv_id = _normalize_identifier(advertiser_id)
 
         if norm_store_id and norm_adv_id:
+            link_exists = (
+                self.db.query(TTBAdvertiserStoreLink.id)
+                .filter(TTBAdvertiserStoreLink.workspace_id == self.workspace_id)
+                .filter(TTBAdvertiserStoreLink.auth_id == self.auth_id)
+                .filter(TTBAdvertiserStoreLink.advertiser_id == norm_adv_id)
+                .filter(TTBAdvertiserStoreLink.store_id == norm_store_id)
+                .first()
+            )
+
+            if not link_exists:
+                raise ValueError(
+                    f"advertiser {norm_adv_id} is not linked to store {norm_store_id}"
+                )
+
+        if norm_store_id and norm_adv_id:
             # 显式指定了一对 (adv, store)，通常是 GMV Max 同步路径
             pairs.append((norm_adv_id, norm_store_id))
         elif norm_store_id:
