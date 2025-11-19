@@ -2735,12 +2735,20 @@ export default function GmvMaxOverviewPage() {
   );
 
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
-  const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, {
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'products', workspaceId, provider, authId] });
-    },
-  });
+  const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
+
+  const refreshScopeQueries = useCallback(() => {
+    if (!workspaceId || !provider || !authId) {
+      return Promise.resolve();
+    }
+    const invalidateCampaigns = queryClient.invalidateQueries({
+      queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId],
+    });
+    const invalidateProducts = queryClient.invalidateQueries({
+      queryKey: ['gmvMax', 'products', workspaceId, provider, authId],
+    });
+    return Promise.all([invalidateCampaigns, invalidateProducts]);
+  }, [authId, provider, queryClient, workspaceId]);
 
   const lastAutoSyncedScopeRef = useRef(null);
 
@@ -2859,8 +2867,7 @@ export default function GmvMaxOverviewPage() {
     };
     try {
       await syncMutation.mutateAsync(payload);
-      await campaignsQuery.refetch();
-      await productsQuery.refetch();
+      await refreshScopeQueries();
     } catch (error) {
       console.error('Failed to sync GMV Max campaigns', error);
       const message = formatError(error);
@@ -2875,10 +2882,9 @@ export default function GmvMaxOverviewPage() {
     bindingConfigFetching,
     bindingConfigLoading,
     businessCenterId,
-    campaignsQuery,
     hasSavedBinding,
     isScopeReady,
-    productsQuery,
+    refreshScopeQueries,
     scopeMatchesBinding,
     storeId,
     syncMutation,
@@ -2928,19 +2934,11 @@ export default function GmvMaxOverviewPage() {
   const handleSeriesCreated = useCallback(() => {
     setCreateModalOpen(false);
     setSelectedProductIds([]);
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'products', workspaceId, provider, authId] });
-    if (campaignsQueryEnabled) {
-      campaignsQuery.refetch();
-    }
-    productsQuery.refetch();
+    refreshScopeQueries();
   }, [
     authId,
-    campaignsQuery,
-    campaignsQueryEnabled,
-    productsQuery,
     provider,
-    queryClient,
+    refreshScopeQueries,
     workspaceId,
   ]);
 
@@ -2954,19 +2952,11 @@ export default function GmvMaxOverviewPage() {
 
   const handleSeriesUpdated = useCallback(() => {
     setEditingCampaignId('');
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaigns', workspaceId, provider, authId] });
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'products', workspaceId, provider, authId] });
-    if (campaignsQueryEnabled) {
-      campaignsQuery.refetch();
-    }
-    productsQuery.refetch();
+    refreshScopeQueries();
   }, [
     authId,
-    campaignsQuery,
-    campaignsQueryEnabled,
-    productsQuery,
     provider,
-    queryClient,
+    refreshScopeQueries,
     workspaceId,
   ]);
 

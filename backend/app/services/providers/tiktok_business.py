@@ -236,6 +236,7 @@ class TiktokBusinessProvider:
             stats = await service.sync_products(
                 page_size=product_page_size,
                 store_id=options.get("store_id"),
+                advertiser_id=options.get("advertiser_id"),
                 product_eligibility=options.get("product_eligibility"),  # 'gmv_max' | 'ads' | 'all' | None
             )
         else:

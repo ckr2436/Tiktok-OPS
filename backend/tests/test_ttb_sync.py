@@ -1,9 +1,9 @@
 import asyncio
 import base64
+import importlib
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict
-
-import importlib
 
 import pytest
 from fastapi import FastAPI
@@ -30,6 +30,8 @@ from app.data.models.ttb_entities import (
 )
 from app.features.tenants.ttb.router import router as ttb_router
 from app.services import ttb_sync
+from app.services.policy_engine import PolicyLimits
+from app.services.providers.tiktok_business import TiktokBusinessProvider
 from app.services.ttb_sync import TTBSyncService
 
 ttb_router_module = importlib.import_module("app.features.tenants.ttb.router")
@@ -511,6 +513,64 @@ def test_product_sync_dispatch(monkeypatch, tenant_app):
     assert dispatched["params"]["mode"] == "full"
     body = resp.json()
     assert body["idempotency_key"] == "fake-key"
+
+
+def test_provider_passes_advertiser_id_to_product_sync(monkeypatch, tenant_app):
+    _, db_session = tenant_app
+    provider = TiktokBusinessProvider()
+
+    recorded: Dict[str, object] = {}
+
+    async def fake_sync_products(
+        self, *, page_size, store_id, advertiser_id=None, product_eligibility=None
+    ):  # noqa: ANN001
+        recorded.update(
+            page_size=page_size,
+            store_id=store_id,
+            advertiser_id=advertiser_id,
+            product_eligibility=product_eligibility,
+        )
+        return {"resource": "products", "fetched": 0, "upserts": 0, "skipped": 0, "cursor": {}}
+
+    class DummyClient:
+        async def aclose(self):  # noqa: ANN001
+            return None
+
+    monkeypatch.setattr(TTBSyncService, "sync_products", fake_sync_products)
+    monkeypatch.setattr(
+        TiktokBusinessProvider,
+        "_build_client",
+        lambda self, db, auth_id, limits: DummyClient(),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        TiktokBusinessProvider,
+        "_policy_limits",
+        lambda self, db, workspace_id, auth_id: PolicyLimits(),  # noqa: ARG005
+    )
+
+    async def _run():
+        return await provider.run_scope(
+            db=db_session,
+            envelope={
+                "workspace_id": 1,
+                "auth_id": 1,
+                "options": {
+                    "advertiser_id": "ADV1",
+                    "store_id": "STORE1",
+                    "product_eligibility": "gmv_max",
+                    "page_size": 25,
+                },
+            },
+            scope="products",
+            logger=logging.getLogger("test"),
+        )
+
+    result = asyncio.run(_run())
+
+    assert recorded["advertiser_id"] == "ADV1"
+    assert recorded["store_id"] == "STORE1"
+    assert recorded["product_eligibility"] == "gmv_max"
+    assert result["phases"][0]["stats"]["resource"] == "products"
 
 
 def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
