@@ -46,6 +46,26 @@ from app.features.tenants.openai_whisper.router import (
 from app.services.provider_registry import load_builtin_providers
 
 
+def _dedupe_tags(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove duplicate tag entries while preserving order."""
+
+    tags = schema.get("tags")
+    if not tags:
+        return schema
+
+    seen: set[str] = set()
+    unique_tags: list[dict[str, Any]] = []
+    for tag in tags:
+        name = tag.get("name")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        unique_tags.append(tag)
+
+    schema["tags"] = unique_tags
+    return schema
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
@@ -90,6 +110,22 @@ def create_app() -> FastAPI:
 
     app.include_router(oauth_callback_router)  # /api/oauth/tiktok-business/callback（不版本化）
 
+    def _custom_openapi() -> Dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=settings.APP_VERSION,
+            routes=app.routes,
+            description="GMV Ops API",
+        )
+
+        app.openapi_schema = _dedupe_tags(schema)
+        return app.openapi_schema
+
+    app.openapi = _custom_openapi  # type: ignore[assignment]
+
     # Static & Admin Docs
     base_dir = Path(__file__).resolve().parent
     static_dir = base_dir / "static"
@@ -107,29 +143,7 @@ def create_app() -> FastAPI:
 
         @lru_cache(maxsize=1)
         def _openapi_schema() -> Dict[str, Any]:
-            schema = get_openapi(
-                title=app.title,
-                version=settings.APP_VERSION,
-                routes=app.routes,
-                description="GMV Ops API",
-            )
-
-            # Swagger UI shows duplicate sections when the tag list contains
-            # repeated entries. FastAPI can accumulate duplicate tag objects
-            # when multiple routers reuse the same tag name, so we deduplicate
-            # them here while preserving order.
-            if "tags" in schema:
-                seen: set[str] = set()
-                unique_tags: list[dict[str, Any]] = []
-                for tag in schema["tags"] or []:
-                    name = tag.get("name")
-                    if not name or name in seen:
-                        continue
-                    seen.add(name)
-                    unique_tags.append(tag)
-                schema["tags"] = unique_tags
-
-            return schema
+            return app.openapi()
 
         @app.get("/api/admin-docs/openapi.json", response_class=JSONResponse, tags=["admin-docs"])
         async def openapi_json(_: Any = Depends(require_platform_admin)):
