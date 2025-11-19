@@ -9,10 +9,12 @@ from time import monotonic
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_tenant_admin, require_tenant_member
+from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.data.db import get_db
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
     upsert_creative_heating,
@@ -63,6 +65,7 @@ from app.services.gmvmax_spec import (
     GMVMAX_SUPPORTED_METRICS,
 )
 from app.services.ttb_gmvmax import (
+    log_campaign_action,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
 )
@@ -95,6 +98,14 @@ from .schemas import (
 router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
 
+_ACTION_LOG_TYPES = {
+    "pause": "PAUSE",
+    "enable": "START",
+    "delete": "DELETE",
+    "update_budget": "SET_BUDGET",
+    "update_strategy": "UPDATE_STRATEGY",
+}
+
 
 class _TTLCache:
     """Simple per-process TTL cache for metrics queries."""
@@ -125,6 +136,87 @@ class _TTLCache:
 
 
 _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
+
+
+def _resolve_actor_label(me: SessionUser | None) -> str:
+    if me is None:
+        return "system"
+    for candidate in (me.email, me.display_name, me.username):
+        if candidate:
+            return str(candidate)
+    return f"user:{me.id}"
+
+
+def _load_campaign_row(
+    context: GMVMaxRouteContext,
+    campaign_id: str,
+) -> TTBGmvMaxCampaign | None:
+    db = getattr(context, "db", None)
+    if db is None or not hasattr(db, "execute"):
+        return None
+    stmt = (
+        select(TTBGmvMaxCampaign)
+        .where(TTBGmvMaxCampaign.workspace_id == int(context.workspace_id))
+        .where(TTBGmvMaxCampaign.auth_id == int(context.auth_id))
+        .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
+    )
+    return db.execute(stmt).scalars().first()
+
+
+def _snapshot_campaign_state(
+    campaign: TTBGmvMaxCampaign | None,
+) -> Dict[str, Any]:
+    if campaign is None:
+        return {}
+    return {
+        "status": getattr(campaign, "status", None),
+        "daily_budget_cents": getattr(campaign, "daily_budget_cents", None),
+        "roas_bid": getattr(campaign, "roas_bid", None),
+    }
+
+
+def _log_action_entry(
+    context: GMVMaxRouteContext,
+    *,
+    campaign_id: str,
+    campaign: TTBGmvMaxCampaign | None,
+    action: str,
+    actor: str,
+    before: Mapping[str, Any] | None,
+    after: Mapping[str, Any] | None,
+    result: str,
+    reason: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    db = getattr(context, "db", None)
+    if db is None or campaign is None:
+        return
+    try:
+        log_campaign_action(
+            db,
+            workspace_id=context.workspace_id,
+            auth_id=context.auth_id,
+            campaign=campaign,
+            action=action,
+            reason=reason,
+            before=dict(before or {}),
+            after=dict(after or {}),
+            performed_by=actor,
+            result=result,
+            error_message=error_message,
+        )
+        db.flush()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "gmvmax campaign action log failed",
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "campaign_id": campaign_id,
+                "action": action,
+                "result": result,
+            },
+        )
 
 
 def _dto_to_report_entry(row: GMVMaxMetricDTO) -> GMVMaxReportEntry:
@@ -1075,7 +1167,10 @@ async def _apply_creative_heating_action(
     context: GMVMaxRouteContext,
     campaign_id: str,
     request: CreativeHeatingActionRequest,
+    performed_by: str,
 ) -> CreativeHeatingActionResponse:
+    campaign_row = _load_campaign_row(context, campaign_id)
+    before_state = _snapshot_campaign_state(campaign_row)
     heating_row = await upsert_creative_heating(
         context.db,
         workspace_id=context.workspace_id,
@@ -1136,6 +1231,18 @@ async def _apply_creative_heating_action(
             error_message=_extract_error_message(detail),
         )
         context.db.flush()
+        _log_action_entry(
+            context,
+            campaign_id=str(campaign_id),
+            campaign=campaign_row,
+            action="BOOST_CREATIVE",
+            actor=performed_by,
+            before=before_state,
+            after=before_state,
+            result="FAILED",
+            reason=request.note,
+            error_message=_extract_error_message(detail),
+        )
         raise
 
     updated_row = await update_heating_action_result(
@@ -1150,6 +1257,20 @@ async def _apply_creative_heating_action(
     )
     context.db.flush()
 
+    after_row = _load_campaign_row(context, campaign_id)
+    after_state = _snapshot_campaign_state(after_row)
+    _log_action_entry(
+        context,
+        campaign_id=str(campaign_id),
+        campaign=after_row or campaign_row,
+        action="BOOST_CREATIVE",
+        actor=performed_by,
+        before=before_state,
+        after=after_state or before_state,
+        result="SUCCESS",
+        reason=request.note,
+    )
+
     return CreativeHeatingActionResponse(
         action_type="BOOST_CREATIVE",
         heating=_serialize_heating_row(updated_row),
@@ -1161,7 +1282,6 @@ async def _apply_creative_heating_action(
 @router.post(
     "/{campaign_id}/actions",
     response_model=Union[CampaignActionResponse, CreativeHeatingActionResponse],
-    dependencies=[Depends(require_tenant_admin)],
 )
 async def apply_gmvmax_campaign_action_provider(
     workspace_id: int,
@@ -1170,9 +1290,15 @@ async def apply_gmvmax_campaign_action_provider(
     campaign_id: str,
     payload: Dict[str, Any] = Body(...),
     advertiser_id: Optional[str] = Query(None),
+    me: SessionUser = Depends(require_tenant_admin),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> Union[CampaignActionResponse, CreativeHeatingActionResponse]:
     """Apply a GMV Max campaign action and return the TikTok response."""
+
+    actor_label = _resolve_actor_label(me)
+    normalized_campaign_id = str(campaign_id)
+    campaign_before = _load_campaign_row(context, normalized_campaign_id)
+    before_state = _snapshot_campaign_state(campaign_before)
 
     raw_type = payload.get("action_type")
     if raw_type is None and "type" in payload:
@@ -1185,70 +1311,116 @@ async def apply_gmvmax_campaign_action_provider(
         heating_request = CreativeHeatingActionRequest.model_validate(candidate)
         return await _apply_creative_heating_action(
             context=context,
-            campaign_id=str(campaign_id),
+            campaign_id=normalized_campaign_id,
             request=heating_request,
+            performed_by=actor_label,
         )
 
     action_request = CampaignActionRequest.model_validate(payload)
+    action_label = _ACTION_LOG_TYPES.get(
+        action_request.type, action_request.type.upper()
+    )
     adv = advertiser_id or context.advertiser_id
-    if action_request.type in {"pause", "enable", "delete"}:
-        operation_status_map = {
-            "pause": "DISABLE",
-            "enable": "ENABLE",
-            "delete": "DELETE",
-        }
-        operation_status = operation_status_map[action_request.type]
-        status_request = CampaignStatusUpdateRequest(
-            advertiser_id=adv,
-            campaign_ids=[str(campaign_id)],
-            operation_status=operation_status,
+
+    def _log_success() -> None:
+        campaign_after = _load_campaign_row(context, normalized_campaign_id)
+        after_state = _snapshot_campaign_state(campaign_after)
+        _log_action_entry(
+            context,
+            campaign_id=normalized_campaign_id,
+            campaign=campaign_after or campaign_before,
+            action=action_label,
+            actor=actor_label,
+            before=before_state,
+            after=after_state or before_state,
+            result="SUCCESS",
         )
-        response = await _call_tiktok(
-            context.client.campaign_status_update, status_request
+
+    def _log_failure(detail: Any) -> None:
+        _log_action_entry(
+            context,
+            campaign_id=normalized_campaign_id,
+            campaign=campaign_before,
+            action=action_label,
+            actor=actor_label,
+            before=before_state,
+            after=before_state,
+            result="FAILED",
+            error_message=_extract_error_message(detail),
         )
+
+    try:
+        if action_request.type in {"pause", "enable", "delete"}:
+            operation_status_map = {
+                "pause": "DISABLE",
+                "enable": "ENABLE",
+                "delete": "DELETE",
+            }
+            operation_status = operation_status_map[action_request.type]
+            status_request = CampaignStatusUpdateRequest(
+                advertiser_id=adv,
+                campaign_ids=[normalized_campaign_id],
+                operation_status=operation_status,
+            )
+            response = await _call_tiktok(
+                context.client.campaign_status_update, status_request
+            )
+            await _refresh_campaign_snapshot(
+                context,
+                advertiser_id=adv,
+                campaign_id=normalized_campaign_id,
+            )
+            _log_success()
+            return CampaignActionResponse(
+                type=action_request.type,
+                status="success",
+                response=response.data.model_dump(exclude_none=True),
+                request_id=response.request_id,
+            )
+        if (
+            action_request.type == "update_strategy"
+            and action_request.payload.get("session_id")
+        ):
+            body = _build_session_update_body(
+                normalized_campaign_id, action_request.payload, context.store_id
+            )
+            request = GMVMaxSessionUpdateRequest(advertiser_id=adv, body=body)
+            response = await _call_tiktok(context.client.gmv_max_session_update, request)
+            await _refresh_campaign_snapshot(
+                context,
+                advertiser_id=adv,
+                campaign_id=normalized_campaign_id,
+            )
+            _log_success()
+            return CampaignActionResponse(
+                type=action_request.type,
+                status="success",
+                response={
+                    "sessions": [item.model_dump() for item in response.data.list],
+                },
+                request_id=response.request_id,
+            )
+
+        body = _build_campaign_update_body(
+            normalized_campaign_id, action_request.type, action_request.payload
+        )
+        request = GMVMaxCampaignUpdateRequest(advertiser_id=adv, body=body)
+        response = await _call_tiktok(context.client.gmv_max_campaign_update, request)
         await _refresh_campaign_snapshot(
             context,
             advertiser_id=adv,
-            campaign_id=str(campaign_id),
+            campaign_id=normalized_campaign_id,
         )
+        _log_success()
         return CampaignActionResponse(
             type=action_request.type,
             status="success",
             response=response.data.model_dump(exclude_none=True),
             request_id=response.request_id,
         )
-    if action_request.type == "update_strategy" and action_request.payload.get("session_id"):
-        body = _build_session_update_body(campaign_id, action_request.payload, context.store_id)
-        request = GMVMaxSessionUpdateRequest(advertiser_id=adv, body=body)
-        response = await _call_tiktok(context.client.gmv_max_session_update, request)
-        await _refresh_campaign_snapshot(
-            context,
-            advertiser_id=adv,
-            campaign_id=str(campaign_id),
-        )
-        return CampaignActionResponse(
-            type=action_request.type,
-            status="success",
-            response={
-                "sessions": [item.model_dump() for item in response.data.list],
-            },
-            request_id=response.request_id,
-        )
-
-    body = _build_campaign_update_body(campaign_id, action_request.type, action_request.payload)
-    request = GMVMaxCampaignUpdateRequest(advertiser_id=adv, body=body)
-    response = await _call_tiktok(context.client.gmv_max_campaign_update, request)
-    await _refresh_campaign_snapshot(
-        context,
-        advertiser_id=adv,
-        campaign_id=str(campaign_id),
-    )
-    return CampaignActionResponse(
-        type=action_request.type,
-        status="success",
-        response=response.data.model_dump(exclude_none=True),
-        request_id=response.request_id,
-    )
+    except HTTPException as exc:
+        _log_failure(exc.detail)
+        raise
 
 
 @router.get(

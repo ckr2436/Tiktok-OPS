@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
+from app.core.deps import SessionUser
 from app.features.tenants.ttb.gmv_max import router_provider
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignActionApplyData,
@@ -96,6 +97,18 @@ def test_apply_boost_creative_action(monkeypatch):
         db=DummySession(),
     )
 
+    me = SessionUser(
+        id=123,
+        email="tester@example.com",
+        username="tester",
+        display_name="Tester",
+        usercode=None,
+        is_platform_admin=False,
+        workspace_id=workspace_id,
+        role="owner",
+        is_active=True,
+    )
+
     payload = {
         "action_type": "BOOST_CREATIVE",
         "creative_id": "cr-55",
@@ -114,6 +127,7 @@ def test_apply_boost_creative_action(monkeypatch):
             campaign_id=campaign_id,
             payload=payload,
             advertiser_id=None,
+            me=me,
             context=context,
         )
     )
