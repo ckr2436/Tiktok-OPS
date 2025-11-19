@@ -129,6 +129,18 @@ function isProductAvailable(product) {
   return true;
 }
 
+function getAvailableProductIds(products) {
+  const ids = new Set();
+  (products || []).forEach((product) => {
+    if (!isProductAvailable(product)) return;
+    const id = getProductIdentifier(product);
+    if (id) {
+      ids.add(id);
+    }
+  });
+  return ids;
+}
+
 function normalizeIdValue(value) {
   if (value === undefined || value === null) return '';
   const stringValue = String(value).trim();
@@ -1278,7 +1290,7 @@ function CreateSeriesModal({
 
   useEffect(() => {
     if (!open) return;
-    const allowed = new Set((products || []).map((product) => getProductIdentifier(product)).filter(Boolean));
+    const allowed = getAvailableProductIds(products);
     setLocalSelectedIds((prev) => {
       const next = new Set();
       prev.forEach((id) => {
@@ -1705,6 +1717,8 @@ function EditSeriesModal({
     return Array.from(map.values());
   }, [detailProducts, products]);
 
+  const availableProductIds = useMemo(() => getAvailableProductIds(mergedProducts), [mergedProducts]);
+
   useEffect(() => {
     if (!open) return;
     if (!detail) return;
@@ -1735,6 +1749,19 @@ function EditSeriesModal({
       return next;
     });
   }, [initialProductSet, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setLocalSelectedIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (availableProductIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [availableProductIds, open]);
 
   const toggleProduct = useCallback((id) => {
     setLocalSelectedIds((prev) => {
