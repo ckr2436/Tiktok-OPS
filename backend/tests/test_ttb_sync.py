@@ -755,6 +755,26 @@ def test_provider_defaults_product_eligibility(monkeypatch, tenant_app):
     assert recorded["product_eligibility"] == "gmv_max"
 
 
+def test_validate_options_preserves_advertiser_id_for_products():
+    provider = TiktokBusinessProvider()
+
+    opts = provider.validate_options(
+        scope="products",
+        options={"advertiser_id": "123", "store_id": "456"},
+    )
+
+    assert opts["advertiser_id"] == "123"
+    assert opts["store_id"] == "456"
+
+
+def test_validate_options_strips_advertiser_outside_product_scopes():
+    provider = TiktokBusinessProvider()
+
+    opts = provider.validate_options(scope="meta", options={"advertiser_id": "123"})
+
+    assert "advertiser_id" not in opts
+
+
 def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
     _, db_session = tenant_app
 

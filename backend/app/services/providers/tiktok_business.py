@@ -77,6 +77,10 @@ class TiktokBusinessProvider:
         if product_ps is not None:
             normalized["product_page_size"] = self._clamp_int(product_ps, default=50, lo=1, hi=2000)
 
+        advertiser_id = options.get("advertiser_id")
+        if advertiser_id:
+            normalized["advertiser_id"] = str(advertiser_id)
+
         # store_id 仅在 products/all 有效
         store_id = options.get("store_id")
         if store_id:
@@ -103,6 +107,7 @@ class TiktokBusinessProvider:
             normalized.pop("product_page_size", None)
             normalized.pop("store_id", None)
             normalized.pop("product_eligibility", None)
+            normalized.pop("advertiser_id", None)
 
         return normalized
 
