@@ -31,6 +31,12 @@ export async function createSubtitleJob(wid, payload, options = {}) {
   if (typeof options.onUploadProgress === 'function') {
     config.onUploadProgress = options.onUploadProgress
   }
+  if (options.timeout !== undefined) {
+    config.timeout = options.timeout
+  } else if (payload.file) {
+    // 文件直传场景体积较大，15s 的默认超时会导致请求在浏览器端被中断
+    config.timeout = 10 * 60 * 1000
+  }
 
   const res = await http.post(`${basePath(wid)}/jobs`, form, config)
   return res.data
@@ -43,6 +49,11 @@ export async function uploadSubtitleVideo(wid, file, options = {}) {
   const config = {}
   if (typeof options.onUploadProgress === 'function') {
     config.onUploadProgress = options.onUploadProgress
+  }
+  if (options.timeout !== undefined) {
+    config.timeout = options.timeout
+  } else {
+    config.timeout = 10 * 60 * 1000
   }
 
   const res = await http.post(`${basePath(wid)}/uploads`, form, config)
