@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,6 +34,18 @@ def _get_model():
     return _MODEL
 
 
+def ensure_ffmpeg_available() -> None:
+    """Ensure FFmpeg is available before running Whisper.
+
+    Raises:
+        RuntimeError: If FFmpeg cannot be located in PATH.
+    """
+
+    if shutil.which("ffmpeg"):
+        return
+    raise RuntimeError("FFmpeg 未安装或不可用，无法执行字幕生成任务。")
+
+
 def _format_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized = []
     for idx, seg in enumerate(raw_segments or []):
@@ -62,6 +75,7 @@ def transcribe(
     translate: bool = False,
     target_language: Optional[str] = None,
 ) -> Dict[str, Any]:
+    ensure_ffmpeg_available()
     model = _get_model()
     options: Dict[str, Any] = {}
     if source_language:
