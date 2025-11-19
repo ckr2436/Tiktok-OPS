@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import ceil
 from time import monotonic
-import asyncio
-import logging
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
@@ -154,7 +152,7 @@ def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: s
     return total, missing
 
 
-def _sync_products_now(
+async def _sync_products_now(
     context: GMVMaxRouteContext,
     *,
     advertiser_id: str,
@@ -177,16 +175,12 @@ def _sync_products_now(
     }
     sync_logger = logger.getChild("products")
     try:
-        asyncio.run(
-            handler.run_scope(
-                db=context.db,
-                envelope=envelope,
-                scope="products",
-                logger=sync_logger,
-            )
+        await handler.run_scope(
+            db=context.db,
+            envelope=envelope,
+            scope="products",
+            logger=sync_logger,
         )
-    except RuntimeError as exc:
-        sync_logger.warning("product sync skipped; unable to create event loop: %s", exc)
     except Exception as exc:  # noqa: BLE001
         sync_logger.exception("product sync failed")
         raise HTTPException(
@@ -195,7 +189,7 @@ def _sync_products_now(
         ) from exc
 
 
-def _ensure_products_ready(
+async def _ensure_products_ready(
     context: GMVMaxRouteContext,
     *,
     advertiser_id: str,
@@ -215,7 +209,9 @@ def _ensure_products_ready(
     total, missing = _count_products(db, workspace_id=context.workspace_id, auth_id=context.auth_id, store_id=store_id)
     while attempts < 2 and (total == 0 or missing > 0):
         attempts += 1
-        _sync_products_now(context, advertiser_id=advertiser_id, store_id=store_id)
+        await _sync_products_now(
+            context, advertiser_id=advertiser_id, store_id=store_id
+        )
         try:
             db.commit()
         except Exception:  # noqa: BLE001
@@ -977,7 +973,9 @@ async def sync_gmvmax_campaigns_provider(
         "auth_id": context.auth_id,
         "scope": scope_context,
     }
-    _ensure_products_ready(context, advertiser_id=str(advertiser_id), store_id=str(store_id))
+    await _ensure_products_ready(
+        context, advertiser_id=str(advertiser_id), store_id=str(store_id)
+    )
     store_ids_override = [store_id] if store_id else None
     campaign_req = _build_campaign_request(
         advertiser_id,
