@@ -1874,6 +1874,9 @@ router.include_router(
     prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}",
     tags=["gmvmax"],
 )
+# NOTE: The GMV Max routes live only in gmv_max/router_provider.py and the
+# binding/config endpoints above share the same prefix. There is a single set of
+# GMV Max routes; this inclusion simply mounts them under the tenant scope.
 
 
 # -------------------------- 旧路由废弃 --------------------------
