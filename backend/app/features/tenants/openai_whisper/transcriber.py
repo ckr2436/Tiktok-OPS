@@ -48,11 +48,6 @@ def ensure_ffmpeg_available() -> None:
 
     ffmpeg_cmd = _get_ffmpeg_cmd()
 
-    resolved = shutil.which(ffmpeg_cmd)
-    if resolved:
-        logger.debug("ffmpeg located", extra={"ffmpeg_cmd": ffmpeg_cmd, "resolved": resolved})
-        return
-
     try:
         proc = subprocess.run(
             [ffmpeg_cmd, "-version"], capture_output=True, text=True, timeout=5
@@ -65,6 +60,10 @@ def ensure_ffmpeg_available() -> None:
         error_detail = "command not found"
     except Exception as exc:  # pragma: no cover - defensive
         error_detail = str(exc)
+
+    resolved = shutil.which(ffmpeg_cmd)
+    if resolved:
+        logger.debug("ffmpeg located", extra={"ffmpeg_cmd": ffmpeg_cmd, "resolved": resolved})
 
     raise RuntimeError(
         "FFmpeg 未安装或不可用，无法执行字幕生成任务。 "
