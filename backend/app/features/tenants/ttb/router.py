@@ -31,7 +31,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiserStoreLink,
     TTBSyncCursor,
 )
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaignProduct
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
 from app.services.provider_registry import provider_registry, load_builtin_providers
 from .gmv_max.router_provider import router as gmv_max_provider_router
@@ -1735,9 +1735,14 @@ def list_account_products(
 
         assignment_stmt = (
             select(TTBGmvMaxCampaignProduct.item_group_id)
+            .join(
+                TTBGmvMaxCampaign,
+                TTBGmvMaxCampaign.id == TTBGmvMaxCampaignProduct.campaign_pk,
+            )
             .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
             .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
             .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
+            .where(func.lower(TTBGmvMaxCampaign.status) == "enable")
         )
         assigned_ids = {
             str(item)
