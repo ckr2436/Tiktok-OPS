@@ -107,12 +107,29 @@ def create_app() -> FastAPI:
 
         @lru_cache(maxsize=1)
         def _openapi_schema() -> Dict[str, Any]:
-            return get_openapi(
+            schema = get_openapi(
                 title=app.title,
                 version=settings.APP_VERSION,
                 routes=app.routes,
                 description="GMV Ops API",
             )
+
+            # Swagger UI shows duplicate sections when the tag list contains
+            # repeated entries. FastAPI can accumulate duplicate tag objects
+            # when multiple routers reuse the same tag name, so we deduplicate
+            # them here while preserving order.
+            if "tags" in schema:
+                seen: set[str] = set()
+                unique_tags: list[dict[str, Any]] = []
+                for tag in schema["tags"] or []:
+                    name = tag.get("name")
+                    if not name or name in seen:
+                        continue
+                    seen.add(name)
+                    unique_tags.append(tag)
+                schema["tags"] = unique_tags
+
+            return schema
 
         @app.get("/api/admin-docs/openapi.json", response_class=JSONResponse, tags=["admin-docs"])
         async def openapi_json(_: Any = Depends(require_platform_admin)):
