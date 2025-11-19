@@ -2628,15 +2628,38 @@ export default function GmvMaxOverviewPage() {
     return ids;
   }, [campaignDetailQueries, campaigns]);
 
-  const unassignedProducts = useMemo(() => {
+  const productsWithAvailability = useMemo(() => {
     if (!isScopeReady || products.length === 0) return [];
-    return products.filter((product) => {
+    return products.map((product) => {
       const id = getProductIdentifier(product);
-      if (!id) return false;
-      if (!isProductAvailable(product)) return false;
-      return !assignedProductIds.has(id);
+      if (!id) return product;
+      const computedStatus = assignedProductIds.has(id) ? 'NOT_AVAILABLE' : 'AVAILABLE';
+      const currentStatus = String(product.gmv_max_ads_status || '').trim().toUpperCase();
+      if (currentStatus === computedStatus) {
+        return product;
+      }
+
+      const reflectsAssignment = currentStatus === '' || currentStatus === 'AVAILABLE' || currentStatus === 'NOT_AVAILABLE';
+      if (!reflectsAssignment) {
+        return product;
+      }
+
+      return {
+        ...product,
+        gmv_max_ads_status: computedStatus,
+      };
     });
   }, [assignedProductIds, isScopeReady, products]);
+
+  const unassignedProducts = useMemo(() => {
+    if (!isScopeReady || productsWithAvailability.length === 0) return [];
+    return productsWithAvailability.filter((product) => {
+      const id = getProductIdentifier(product);
+      if (!id) return false;
+      if (assignedProductIds.has(id)) return false;
+      return isProductAvailable(product);
+    });
+  }, [assignedProductIds, isScopeReady, productsWithAvailability]);
 
   useEffect(() => {
     setSelectedProductIds((prev) => {
@@ -3177,7 +3200,7 @@ export default function GmvMaxOverviewPage() {
             type="button"
             className="gmvmax-button gmvmax-button--primary"
             onClick={handleOpenCreate}
-            disabled={!canCreateSeries || products.length === 0}
+            disabled={!canCreateSeries || unassignedProducts.length === 0}
           >
             Create GMV Max Series
           </button>
