@@ -2882,6 +2882,8 @@ export default function GmvMaxOverviewPage() {
 
   const lastAutoSyncedScopeRef = useRef(null);
 
+  const lastAutoSyncedScopeRef = useRef(null);
+
   const canSync = Boolean(
     isScopeReady &&
       hasSavedBinding &&
