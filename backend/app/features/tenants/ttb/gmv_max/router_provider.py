@@ -10,13 +10,13 @@ from time import monotonic
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.data.db import get_db
 from app.data.models.ttb_entities import TTBProduct
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
     upsert_creative_heating,
@@ -72,6 +72,7 @@ from app.services.ttb_gmvmax import (
     log_campaign_action,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
+    _extract_item_group_ids_from_payload,
 )
 
 from .schemas import (
@@ -913,6 +914,142 @@ def _extract_item_group_ids(sessions: Sequence[GMVMaxSession]) -> List[str]:
     return list(dict.fromkeys(results))
 
 
+async def _resolve_campaign_product_ids(
+    context: GMVMaxRouteContext,
+    campaign: TTBGmvMaxCampaign | None,
+    advertiser_id: str,
+) -> list[str]:
+    """Load product bindings for a campaign, refreshing from TikTok if needed."""
+
+    payload: Mapping[str, Any] | None = None
+    if isinstance(getattr(campaign, "raw_json", None), Mapping):
+        payload = campaign.raw_json
+
+    product_ids = _extract_item_group_ids_from_payload(payload)
+    if product_ids:
+        return product_ids
+
+    try:
+        response = await _call_tiktok(
+            context.client.gmv_max_campaign_info,
+            GMVMaxCampaignInfoRequest(
+                advertiser_id=str(advertiser_id),
+                campaign_id=str(getattr(campaign, "campaign_id", "")),
+            ),
+        )
+        payload = response.data.model_dump(exclude_none=False)
+        product_ids = _extract_item_group_ids_from_payload(payload)
+    except HTTPException:
+        logger.warning(
+            "failed to fetch campaign info for product bindings",
+            exc_info=True,
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "campaign_id": getattr(campaign, "campaign_id", None),
+            },
+        )
+        return []
+
+    db = getattr(context, "db", None)
+    if db is not None and payload is not None:
+        try:
+            upsert_campaign_from_api(
+                db,
+                workspace_id=context.workspace_id,
+                auth_id=context.auth_id,
+                advertiser_id=str(advertiser_id),
+                payload=payload,
+                store_id_hint=context.store_id,
+                campaign_details=payload,
+            )
+            db.flush()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to persist refreshed campaign payload",
+                exc_info=True,
+                extra={
+                    "workspace_id": context.workspace_id,
+                    "auth_id": context.auth_id,
+                    "campaign_id": getattr(campaign, "campaign_id", None),
+                },
+            )
+
+    return product_ids
+
+
+async def _ensure_campaign_products_available(
+    context: GMVMaxRouteContext,
+    *,
+    campaign: TTBGmvMaxCampaign | None,
+    advertiser_id: str,
+) -> None:
+    """Verify that campaign product bindings are not occupied by other campaigns."""
+
+    if campaign is None:
+        return
+
+    product_ids = await _resolve_campaign_product_ids(
+        context, campaign=campaign, advertiser_id=advertiser_id
+    )
+    if not product_ids:
+        return
+
+    store_id = getattr(campaign, "store_id", None) or context.store_id
+    if not store_id:
+        return
+
+    db = getattr(context, "db", None)
+    if db is None:
+        return
+
+    conflict_stmt = (
+        select(
+            TTBGmvMaxCampaignProduct.item_group_id,
+            TTBGmvMaxCampaignProduct.campaign_id,
+        )
+        .join(
+            TTBGmvMaxCampaign,
+            TTBGmvMaxCampaign.id == TTBGmvMaxCampaignProduct.campaign_pk,
+        )
+        .where(TTBGmvMaxCampaignProduct.workspace_id == int(context.workspace_id))
+        .where(TTBGmvMaxCampaignProduct.auth_id == int(context.auth_id))
+        .where(TTBGmvMaxCampaignProduct.store_id == str(store_id))
+        .where(TTBGmvMaxCampaignProduct.item_group_id.in_(product_ids))
+        .where(func.lower(TTBGmvMaxCampaign.operation_status) == "enable")
+    )
+    if getattr(campaign, "id", None) is not None:
+        conflict_stmt = conflict_stmt.where(
+            TTBGmvMaxCampaignProduct.campaign_pk != int(campaign.id)
+        )
+
+    conflicts = db.execute(conflict_stmt).all()
+    if conflicts:
+        occupied_products = sorted(
+            {
+                str(getattr(row, "item_group_id", None))
+                for row in conflicts
+                if getattr(row, "item_group_id", None) is not None
+            }
+        )
+        conflicting_campaigns = sorted(
+            {
+                str(getattr(row, "campaign_id", None))
+                for row in conflicts
+                if getattr(row, "campaign_id", None)
+            }
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "gmvmax_products_occupied",
+                "message": "Existing products are occupied by other GMV Max campaigns.",
+                "occupied_products": occupied_products,
+                "conflicting_campaigns": conflicting_campaigns,
+            },
+        )
+
+
 def get_route_context(
     workspace_id: int,
     provider: str,
@@ -1475,6 +1612,10 @@ async def apply_gmvmax_campaign_action_provider(
 
     try:
         if action_request.type in {"pause", "enable", "delete"}:
+            if action_request.type == "enable":
+                await _ensure_campaign_products_available(
+                    context, campaign=campaign_before, advertiser_id=str(adv)
+                )
             operation_status_map = {
                 "pause": "DISABLE",
                 "enable": "ENABLE",

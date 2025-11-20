@@ -1742,7 +1742,7 @@ def list_account_products(
             .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
             .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
             .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
-            .where(func.lower(TTBGmvMaxCampaign.status) == "enable")
+            .where(func.lower(TTBGmvMaxCampaign.operation_status) == "enable")
         )
         assigned_ids = {
             str(item)
