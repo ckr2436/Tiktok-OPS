@@ -1028,6 +1028,7 @@ function CampaignCard({
   onEdit,
   onManage,
   onDashboard,
+  products,
 }) {
   const campaignId = campaign?.campaign_id || campaign?.id;
   const { start, end } = useMemo(() => getRecentDateRange(7), []);
@@ -1072,10 +1073,63 @@ function CampaignCard({
 
   const reportPayload = metricsQuery.data?.report ?? metricsQuery.data?.data ?? metricsQuery.data ?? null;
   const metricsSummary = reportPayload ? summariseMetrics(reportPayload) : null;
-  const productCount = detail ? collectProductIdsFromDetail(detail).size : null;
+  const productCount = useMemo(() => {
+    // 如果有详情信息，则从详情中统计产品数量
+    if (detail) {
+      return collectProductIdsFromDetail(detail).size;
+    }
+    // 否则从 campaign 对象中统计产品数量
+    return collectProductIdsFromCampaign(campaign).size;
+  }, [detail, campaign]);
   const statusLabel = formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
-  const previewProducts = useMemo(() => extractProductsFromDetail(detail), [detail]);
+  const previewProducts = useMemo(() => {
+    // 优先从详情中提取产品信息
+    const extracted = extractProductsFromDetail(detail);
+    if (Array.isArray(extracted) && extracted.length > 0) {
+      return extracted;
+    }
+    // 如果详情中没有产品信息，则从 campaign 中提取产品 ID，并在传入的 products 列表中查找对应产品以生成预览
+    const ids = new Set();
+    collectProductIdsFromCampaign(campaign, ids);
+    const result = [];
+    // 构建一个映射用于快速查找产品信息
+    const productMap = new Map();
+    (products || []).forEach((item) => {
+      const pid = getProductIdentifier(item);
+      if (pid) {
+        productMap.set(pid, item);
+      }
+    });
+    ids.forEach((pid) => {
+      const item = productMap.get(pid);
+      if (item) {
+        const name =
+          item.title ||
+          item.name ||
+          item.product_name ||
+          item.productName ||
+          item.item_name ||
+          item.itemName ||
+          pid ||
+          'Product';
+        const image =
+          item.image_url ||
+          item.imageUrl ||
+          item.cover_url ||
+          item.coverUrl ||
+          item.thumbnail_url ||
+          item.thumbnailUrl ||
+          item.thumb_url ||
+          item.thumbUrl ||
+          item.main_image ||
+          item.mainImage ||
+          null;
+        result.push({ id: pid, name, image });
+      }
+    });
+    return result;
+  }, [detail, campaign, products]);
   const displayedProducts = previewProducts.slice(0, 6);
   const remainingProducts = Math.max(0, previewProducts.length - displayedProducts.length);
   const isEnabled = isCampaignEnabledStatus(
@@ -2644,57 +2698,74 @@ export default function GmvMaxOverviewPage() {
     return map;
   }, [campaignDetailQueries, campaigns]);
 
-  const assignedProductIds = useMemo(() => {
+  // 根据 GMV Max 系列的启用状态收集被占用的产品 ID。
+  // 只有当系列的 operation_status 为启用（通过 isCampaignEnabledStatus 判断）时，
+  // 才认为其中的产品被占用。否则即便产品在该系列下，也视为未占用。
+  const occupiedProductIds = useMemo(() => {
     const ids = new Set();
+    // 遍历当前范围内的所有系列，只收集启用系列中的产品 ID。
     campaigns.forEach((campaign) => {
-      collectProductIdsFromCampaign(campaign, ids);
+      // campaign.operation_status 或 campaign.operationStatus 表示系列是否启用
+      const status = campaign?.operation_status ?? campaign?.operationStatus;
+      if (isCampaignEnabledStatus(status)) {
+        collectProductIdsFromCampaign(campaign, ids);
+      }
     });
+    // 同样地，从详情结果中收集启用系列中的产品 ID
     campaignDetailQueries.forEach((result) => {
       const detail = result?.data;
       if (!detail) return;
-      collectProductIdsFromDetail(detail, ids);
+      const detailStatus =
+        detail?.campaign?.operation_status ?? detail?.campaign?.operationStatus;
+      if (isCampaignEnabledStatus(detailStatus)) {
+        collectProductIdsFromDetail(detail, ids);
+      }
     });
     return ids;
   }, [campaignDetailQueries, campaigns]);
 
   const productsWithAvailability = useMemo(() => {
     if (!isScopeReady || products.length === 0) return [];
+
     return products.map((product) => {
-      const id = getProductIdentifier(product);
-      if (!id) return product;
+      const id = getProductIdentifier(product); // 获取产品标识
+      if (!id) return product; // 如果没有标识符则跳过该产品
 
-      const isAssigned = assignedProductIds.has(id);
-      if (!isAssigned) {
-        return product;
+    // 判断产品是否已被 GMV Max 占用（仅在启用的系列中才视为占用）
+      const isOccupied = occupiedProductIds.has(id);
+      const nextAdsStatus = isOccupied ? 'OCCUPIED' : 'UNOCCUPIED';  // 设定占用状态
+
+      // 如果当前状态已经是正确的 GMV Max 占用状态，无需更改
+      if (String(product.gmv_max_ads_status || '').toUpperCase() === nextAdsStatus) {
+        return product; // 如果状态一致，直接返回原产品
       }
 
-      const computedStatus = 'NOT_AVAILABLE';
-      const currentStatus = String(product.gmv_max_ads_status || '').trim().toUpperCase();
-      if (currentStatus === computedStatus) {
-        return product;
-      }
-
-      const reflectsAssignment = currentStatus === '' || currentStatus === 'AVAILABLE' || currentStatus === 'NOT_AVAILABLE';
-      if (!reflectsAssignment) {
-        return product;
-      }
-
+      // 返回修改后的产品对象
       return {
         ...product,
-        gmv_max_ads_status: computedStatus,
+        gmv_max_ads_status: nextAdsStatus,  // 修改 GMV Max 占用状态
       };
     });
-  }, [assignedProductIds, isScopeReady, products]);
+  }, [occupiedProductIds, isScopeReady, products]);
 
   const unassignedProducts = useMemo(() => {
     if (!isScopeReady || productsWithAvailability.length === 0) return [];
+
     return productsWithAvailability.filter((product) => {
-      const id = getProductIdentifier(product);
-      if (!id) return false;
-      if (assignedProductIds.has(id)) return false;
-      return isProductAvailable(product);
+      const id = getProductIdentifier(product); // 获取产品标识
+      if (!id) return false;  // 如果没有标识符则跳过该产品
+
+      // 判断产品是否未被 GMV Max 占用
+      const isNotOccupied = product.gmv_max_ads_status === 'UNOCCUPIED';
+
+      // 判断产品是否可用
+      const isAvailable = isProductAvailable(product);
+
+      // 只有未被占用且可用的产品才会被视为有效
+      return isNotOccupied && isAvailable;
     });
-  }, [assignedProductIds, isScopeReady, productsWithAvailability]);
+  // 依赖项中不需要 occupiedProductIds，因为占用状态已经体现在 productsWithAvailability 中
+  }, [isScopeReady, productsWithAvailability]);
 
   useEffect(() => {
     setSelectedProductIds((prev) => {
@@ -3402,6 +3473,7 @@ export default function GmvMaxOverviewPage() {
                   onEdit={handleEditRequest}
                   onManage={handleManage}
                   onDashboard={handleDashboard}
+                  products={products}
                 />
               ))}
             </div>
@@ -3444,4 +3516,3 @@ export default function GmvMaxOverviewPage() {
     </div>
   );
 }
-
