@@ -19,7 +19,7 @@ from .schemas import (
     UploadedVideoResponse,
 )
 
-router = APIRouter(prefix="/api/v1/tenants/{workspace_id}/openai-whisper", tags=["openai-whisper"])
+router = APIRouter(prefix="/api/v1/tenants/{workspace_id}/openai-whisper", tags=["Tenant / openai-whisper"])
 
 
 @router.get("/languages", response_model=LanguageListResponse)
