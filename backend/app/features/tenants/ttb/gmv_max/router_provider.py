@@ -10,10 +10,12 @@ from time import monotonic
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from celery.result import AsyncResult
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
+from app.celery_app import celery_app
 from app.data.db import get_db
 from app.data.models.ttb_entities import TTBProduct
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
@@ -110,7 +112,8 @@ from .schemas import (
     StrategyUpdateRequest,
     StrategyUpdateResponse,
     SyncRequest,
-    SyncResponse,
+    SyncTaskResponse,
+    SyncTaskStateResponse,
     GMVMaxPrecheckRequest,
     GMVMaxPrecheckResponse,
 )
@@ -1163,7 +1166,7 @@ def _is_binding_candidate_ready(candidate: AutoBindingCandidate) -> bool:
 
 @router.post(
     "/sync",
-    response_model=SyncResponse,
+    response_model=SyncTaskResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
 async def sync_gmvmax_campaigns_provider(
@@ -1176,10 +1179,9 @@ async def sync_gmvmax_campaigns_provider(
     advertiser_id_query: Optional[str] = Query(None, alias="advertiser_id"),
     store_id_query: Optional[str] = Query(None, alias="store_id"),
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> SyncResponse:
-    """Trigger a GMV Max campaign + report sync by proxying to TikTok."""
+) -> SyncTaskResponse:
+    """Enqueue a GMV Max sync job to Celery instead of blocking FastAPI."""
 
-    request_started_at = monotonic()
     advertiser_id = (
         payload.advertiser_id or advertiser_id_query or context.advertiser_id
     )
@@ -1200,64 +1202,80 @@ async def sync_gmvmax_campaigns_provider(
         "auth_id": context.auth_id,
         "scope": scope_context,
     }
-    products_started_at = monotonic()
-    await _ensure_products_ready(
-        context, advertiser_id=str(advertiser_id), store_id=str(store_id)
+
+    filters: Dict[str, Any] = {}
+    if payload.campaign_filter:
+        filters.update(
+            payload.campaign_filter.model_dump(exclude_none=True, by_alias=True)
+        )
+    if payload.campaign_options:
+        filters.update(
+            payload.campaign_options.model_dump(exclude_none=True, by_alias=True)
+        )
+    if store_id:
+        filters.setdefault("store_ids", [str(store_id)])
+
+    task_kwargs: Dict[str, Any] = {
+        "workspace_id": context.workspace_id,
+        "auth_id": context.auth_id,
+        "advertiser_id": str(advertiser_id),
+    }
+    if filters:
+        task_kwargs["filters"] = filters
+
+    params_payload = payload.model_dump(exclude_none=True, by_alias=True)
+    if params_payload:
+        task_kwargs["params"] = params_payload
+
+    async_res = celery_app.send_task(
+        "gmvmax.sync_campaigns",
+        kwargs=task_kwargs,
+        queue="gmvmax",
     )
+    task_id = async_res.id or ""
     logger.info(
-        "gmvmax.sync products_ready in %.2fs",
-        monotonic() - products_started_at,
-        extra=log_context,
+        "gmvmax.sync enqueued", extra={**log_context, "task_id": task_id}
     )
-    store_ids_override = [store_id] if store_id else None
-    campaign_req = _build_campaign_request(
-        advertiser_id,
-        payload.campaign_filter,
-        payload.campaign_options,
-        store_ids_override=store_ids_override,
+    status_url = (
+        f"/tenants/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/sync/{task_id}"
+        if task_id
+        else None
     )
-    campaign_started_at = monotonic()
-    campaign_resp = await _call_tiktok(
-        context.client.gmv_max_campaign_get,
-        campaign_req,
-        _log_context=log_context,
-    )
+
+    return SyncTaskResponse(task_id=task_id, state=str(async_res.state), status_url=status_url)
+
+
+@router.get(
+    "/sync/{task_id}",
+    response_model=SyncTaskStateResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+def get_sync_task_state(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    task_id: str = Path(..., description="Celery task identifier"),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> SyncTaskStateResponse:
+    """Return Celery task status for GMV Max sync jobs."""
+
+    res: AsyncResult = AsyncResult(task_id, app=celery_app)
+    state = str(res.state)
+    info = res.info if isinstance(res.info, dict) else {}
+    error = info.get("error") if state in {"FAILURE", "RETRY"} else None
+    result = info.get("result") if state == "SUCCESS" else None
+
     logger.info(
-        "gmvmax.sync campaign_fetch in %.2fs",
-        monotonic() - campaign_started_at,
-        extra=log_context,
+        "gmvmax.sync polled",
+        extra={
+            "workspace_id": context.workspace_id,
+            "auth_id": context.auth_id,
+            "task_id": task_id,
+            "state": state,
+        },
     )
-    await _persist_campaign_relations(
-        context,
-        advertiser_id=advertiser_id,
-        response=campaign_resp,
-        store_scope=store_id,
-    )
-    filtered_campaigns = _filter_campaign_entries(campaign_resp.data.list)
-    report_req = _build_report_request(
-        advertiser_id,
-        payload.report,
-        default_store_id=store_id,
-    )
-    report_started_at = monotonic()
-    report_resp = await _call_tiktok(
-        context.client.gmv_max_report_get,
-        report_req,
-        _log_context=log_context,
-    )
-    logger.info(
-        "gmvmax.sync report_fetch in %.2fs (total: %.2fs)",
-        monotonic() - report_started_at,
-        monotonic() - request_started_at,
-        extra=log_context,
-    )
-    return SyncResponse(
-        campaigns=filtered_campaigns,
-        campaigns_page_info=campaign_resp.data.page_info,
-        report=report_resp.data,
-        campaign_request_id=campaign_resp.request_id,
-        report_request_id=report_resp.request_id,
-    )
+
+    return SyncTaskStateResponse(task_id=task_id, state=state, result=result, error=error)
 
 
 @router.post(

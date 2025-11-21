@@ -115,6 +115,13 @@ export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
 }
 
+export async function getGmvMaxSyncStatus(workspaceId, provider, authId, taskId, config) {
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync/${encode(taskId)}`,
+    config,
+  );
+}
+
 export async function listGmvMaxCampaigns(workspaceId, provider, authId, params, config) {
   const sanitizedParams = params && 'page_size' in params
     ? { ...params, page_size: clampPageSize(params.page_size) }

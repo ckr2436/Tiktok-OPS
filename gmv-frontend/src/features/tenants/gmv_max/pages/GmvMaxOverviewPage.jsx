@@ -22,7 +22,12 @@ import {
   useUpdateGmvMaxConfigMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
-import { clampPageSize, getGmvMaxCampaign, getGmvMaxOptions } from '../api/gmvMaxApi.js';
+import {
+  clampPageSize,
+  getGmvMaxCampaign,
+  getGmvMaxOptions,
+  getGmvMaxSyncStatus,
+} from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
 import {
   MAX_SCOPE_PRESETS,
@@ -107,6 +112,7 @@ export default function GmvMaxOverviewPage() {
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
+  const [isSyncPolling, setIsSyncPolling] = useState(false);
   const [metaSyncMessage, setMetaSyncMessage] = useState('');
   const [metaSyncError, setMetaSyncError] = useState(null);
   const [productSyncMessage, setProductSyncMessage] = useState('');
@@ -1070,16 +1076,17 @@ export default function GmvMaxOverviewPage() {
     return Promise.all([invalidateCampaigns, invalidateProducts]);
   }, [authId, provider, queryClient, workspaceId]);
 
-  const lastAutoSyncedScopeRef = useRef(null);
-
   const canSync = Boolean(
     isScopeReady &&
       hasSavedBinding &&
       scopeMatchesBinding &&
       !isSavingBinding &&
       !bindingConfigLoading &&
-      !bindingConfigFetching,
+      !bindingConfigFetching &&
+      !syncMutation.isPending &&
+      !isSyncPolling,
   );
+  const isSyncing = syncMutation.isPending || isSyncPolling;
   const canCreateSeries = Boolean(isScopeReady);
 
   const handleSaveBinding = useCallback(async () => {
@@ -1220,6 +1227,7 @@ export default function GmvMaxOverviewPage() {
       return;
     }
     setSyncError(null);
+    setIsSyncPolling(true);
     const range = getRecentDateRange(7);
     const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
     const normalizedStoreId = storeId ? String(storeId) : undefined;
@@ -1240,8 +1248,30 @@ export default function GmvMaxOverviewPage() {
       },
     };
     try {
-      await syncMutation.mutateAsync(payload);
-      await refreshScopeQueries();
+      const response = await syncMutation.mutateAsync(payload);
+      const taskId = response?.task_id || response?.taskId;
+      if (!taskId) {
+        throw new Error('Sync task was not enqueued.');
+      }
+
+      const maxAttempts = 90;
+      const delayMs = 2000;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const status = await getGmvMaxSyncStatus(workspaceId, provider, authId, taskId);
+        const state = status?.state || '';
+        if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(state)) {
+          if (state === 'SUCCESS') {
+            await refreshScopeQueries();
+            setSyncError(null);
+          } else {
+            const message = formatError(status?.error) || 'Sync failed. Please try again.';
+            setSyncError(message);
+          }
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      setSyncError('Sync is taking longer than expected. Please check the task status later.');
     } catch (error) {
       console.error('Failed to sync GMV Max campaigns', error);
       const message = formatError(error);
@@ -1250,6 +1280,8 @@ export default function GmvMaxOverviewPage() {
           ? 'Sync failed. Please try again.'
           : message,
       );
+    } finally {
+      setIsSyncPolling(false);
     }
   }, [
     advertiserId,
@@ -1258,41 +1290,11 @@ export default function GmvMaxOverviewPage() {
     businessCenterId,
     hasSavedBinding,
     isScopeReady,
+    provider,
     refreshScopeQueries,
     scopeMatchesBinding,
     storeId,
     syncMutation,
-  ]);
-
-  useEffect(() => {
-    if (!canSync) {
-      lastAutoSyncedScopeRef.current = null;
-      return;
-    }
-    if (syncMutation.isPending) return;
-    const signature = [
-      workspaceId,
-      provider,
-      authId,
-      businessCenterId,
-      advertiserId,
-      storeId,
-    ]
-      .map((value) => (value == null ? '' : String(value)))
-      .join('|');
-    if (signature && lastAutoSyncedScopeRef.current !== signature) {
-      lastAutoSyncedScopeRef.current = signature;
-      handleSync();
-    }
-  }, [
-    advertiserId,
-    authId,
-    businessCenterId,
-    canSync,
-    handleSync,
-    provider,
-    storeId,
-    syncMutation.isPending,
     workspaceId,
   ]);
 
@@ -1556,9 +1558,9 @@ export default function GmvMaxOverviewPage() {
               type="button"
               className="gmvmax-button gmvmax-button--primary"
               onClick={handleSync}
-              disabled={!canSync || syncMutation.isPending}
+              disabled={!canSync || isSyncing}
             >
-              {syncMutation.isPending ? 'Syncing…' : 'Sync GMV Max Campaigns'}
+              {isSyncing ? 'Syncing…' : 'Sync GMV Max Campaigns'}
             </button>
             {syncError ? <p className="gmvmax-inline-error-text">{syncError}</p> : null}
           </div>
