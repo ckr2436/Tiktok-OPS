@@ -8,6 +8,7 @@ import ProductSelectionPanel from './ProductSelectionPanel.jsx';
 import {
   extractChoiceList,
   formatError,
+  formatMoney,
   getAvailableProductIds,
   getProductIdentifier,
   parseOptionalFloat,

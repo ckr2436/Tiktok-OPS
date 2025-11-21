@@ -310,5 +310,3 @@ export default function EditSeriesModal({
     </Modal>
   );
 }
-
-export default function GmvMaxOverviewPage() {
