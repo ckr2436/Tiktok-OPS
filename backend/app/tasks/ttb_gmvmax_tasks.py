@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,13 +26,20 @@ from app.services.ttb_gmvmax import (
 logger = logging.getLogger("gmv.tasks.gmvmax")
 
 
-def _close_client(client: Any | None) -> None:
-    if client is None:
-        return
-    try:
-        asyncio.run(client.aclose())
-    except Exception:  # noqa: BLE001
-        logger.warning("gmvmax client close failed", exc_info=True)
+T = TypeVar("T")
+
+def _run_with_client(db: Session, auth_id: int, fn: Callable[[Any], Awaitable[T]]) -> T:
+    async def _runner() -> T:
+        client = build_ttb_client(db, auth_id=auth_id)
+        try:
+            return await fn(client)
+        finally:
+            try:
+                await client.aclose()
+            except Exception:  # noqa: BLE001
+                logger.warning("gmvmax client close failed", exc_info=True)
+
+    return asyncio.run(_runner())
 
 
 def _db_session() -> Session:
@@ -94,22 +101,22 @@ def task_gmvmax_sync_campaigns(
 ) -> dict:
     """同步 GMV Max Campaign 列表到本地 DB（幂等）。"""
     db = _db_session()
-    client = None
     try:
         payload_filters = dict(filters or {})
         if not payload_filters and params and isinstance(params, dict):
             payload_filters = dict(params.get("filters") or {})
 
-        client = build_ttb_client(db, auth_id=auth_id)
-        result = asyncio.run(
-            sync_gmvmax_campaigns(
+        result = _run_with_client(
+            db,
+            auth_id,
+            lambda client: sync_gmvmax_campaigns(
                 db,
                 client,
                 workspace_id=workspace_id,
                 auth_id=auth_id,
                 advertiser_id=str(advertiser_id),
                 **payload_filters,
-            )
+            ),
         )
         db.commit()
         logger.info(
@@ -140,7 +147,6 @@ def task_gmvmax_sync_campaigns(
         )
         raise
     finally:
-        _close_client(client)
         _close_session(db)
 
 
@@ -172,7 +178,6 @@ def task_gmvmax_sync_metrics(
 ) -> dict:
     """按粒度同步 GMV Max 指标（幂等，底层 upsert）。"""
     db = _db_session()
-    client = None
     try:
         row = _find_campaign_row(
             db,
@@ -183,34 +188,31 @@ def task_gmvmax_sync_metrics(
         if not row:
             raise RuntimeError(f"campaign not found: {campaign_id}")
 
-        client = build_ttb_client(db, auth_id=auth_id)
+        def _sync(client: Any) -> Awaitable[dict]:
+            if str(granularity).upper() == "DAY":
+                return sync_gmvmax_metrics_daily(
+                    db,
+                    client,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=str(advertiser_id),
+                    campaign=row,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
 
-        if str(granularity).upper() == "DAY":
-            result = asyncio.run(
-                sync_gmvmax_metrics_daily(
-                    db,
-                    client,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    advertiser_id=str(advertiser_id),
-                    campaign=row,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
+            return sync_gmvmax_metrics_hourly(
+                db,
+                client,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+                campaign=row,
+                start_date=start_date,
+                end_date=end_date,
             )
-        else:
-            result = asyncio.run(
-                sync_gmvmax_metrics_hourly(
-                    db,
-                    client,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    advertiser_id=str(advertiser_id),
-                    campaign=row,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-            )
+
+        result = _run_with_client(db, auth_id, _sync)
 
         db.commit()
         logger.info(
@@ -245,7 +247,6 @@ def task_gmvmax_sync_metrics(
         )
         raise
     finally:
-        _close_client(client)
         _close_session(db)
 
 
@@ -278,7 +279,6 @@ def task_gmvmax_apply_action(
 ) -> dict:
     """对指定 Campaign 执行动作；成功会落 TTBGmvMaxActionLog（见 services.ttb_gmvmax）。"""
     db = _db_session()
-    client = None
     try:
         row = _find_campaign_row(
             db,
@@ -289,9 +289,10 @@ def task_gmvmax_apply_action(
         if not row:
             raise RuntimeError(f"campaign not found: {campaign_id}")
 
-        client = build_ttb_client(db, auth_id=auth_id)
-        result_log = asyncio.run(
-            apply_campaign_action(
+        result_log = _run_with_client(
+            db,
+            auth_id,
+            lambda client: apply_campaign_action(
                 db,
                 client,
                 workspace_id=workspace_id,
@@ -302,7 +303,7 @@ def task_gmvmax_apply_action(
                 payload=payload or {},
                 reason=reason,
                 performed_by=performed_by,
-            )
+            ),
         )
         db.commit()
         logger.info(
@@ -337,7 +338,6 @@ def task_gmvmax_apply_action(
         )
         raise
     finally:
-        _close_client(client)
         _close_session(db)
 
 
@@ -365,7 +365,6 @@ def task_gmvmax_evaluate_strategy(
     **extra: Any,
 ) -> dict:
     db = _db_session()
-    client = None
     try:
         row = _find_campaign_row(
             db,
@@ -407,9 +406,10 @@ def task_gmvmax_evaluate_strategy(
         if not decision:
             return {"skipped": True, "reason": "no_decision", "metrics": metrics}
 
-        client = build_ttb_client(db, auth_id=auth_id)
-        log_row = asyncio.run(
-            apply_campaign_action(
+        log_row = _run_with_client(
+            db,
+            auth_id,
+            lambda client: apply_campaign_action(
                 db,
                 client,
                 workspace_id=workspace_id,
@@ -420,7 +420,7 @@ def task_gmvmax_evaluate_strategy(
                 payload=decision.get("payload") or {},
                 reason=decision.get("reason"),
                 performed_by="auto-strategy",
-            )
+            ),
         )
         db.commit()
         logger.info(
@@ -458,7 +458,6 @@ def task_gmvmax_evaluate_strategy(
         )
         raise
     finally:
-        _close_client(client)
         _close_session(db)
 
 
