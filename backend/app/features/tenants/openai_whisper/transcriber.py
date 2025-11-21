@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import whisper
+from googletrans import Translator
 
 from app.core.config import settings
 
@@ -16,6 +17,7 @@ from .languages import get_language_label
 logger = logging.getLogger("gmv.whisper")
 _MODEL_LOCK = threading.Lock()
 _MODEL = None
+_TRANSLATOR = Translator()
 
 
 def _load_model():
@@ -72,6 +74,49 @@ def _build_prompt(target_language: Optional[str]) -> Optional[str]:
     return f"Translate the audio content into {label}."
 
 
+def _normalize_google_language(code: str) -> str:
+    """Map Whisper language codes to googletrans codes when they differ."""
+
+    if not code:
+        return code
+
+    lowered = code.lower()
+    mapping = {
+        "zh": "zh-cn",
+        "zh-cn": "zh-cn",
+        "zh-hans": "zh-cn",
+        "zh-hant": "zh-tw",
+    }
+    return mapping.get(lowered, lowered)
+
+
+def _translate_segments(segments: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
+    """Translate transcribed text into the requested language.
+
+    Whisper's built-in translate task only supports translating into English. To
+    respect the user's selection (e.g. zh, ja, es), we translate the already
+    aligned segments so that timing information is preserved.
+    """
+
+    if not segments:
+        return []
+
+    translated_segments: List[Dict[str, Any]] = []
+    dest_language = _normalize_google_language(target_language)
+    try:
+        responses = _TRANSLATOR.translate([seg.get("text") or "" for seg in segments], dest=dest_language)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "translation via googletrans failed; falling back to Whisper English output",
+            extra={"target_language": target_language, "error": str(exc)},
+        )
+        return []
+
+    for seg, translated in zip(segments, responses):
+        translated_segments.append({**seg, "text": translated.text})
+    return translated_segments
+
+
 def transcribe(
     video_path: Path,
     *,
@@ -101,15 +146,23 @@ def transcribe(
     translation_segments = None
     translation_language = None
     if translate:
-        translate_options: Dict[str, Any] = {"task": "translate"}
-        if source_language:
-            translate_options["language"] = source_language
-        prompt = _build_prompt(target_language)
-        if prompt:
-            translate_options["initial_prompt"] = prompt
-        translated = model.transcribe(str(video_path), **translate_options)
-        translation_segments = _format_segments(translated.get("segments", []))
-        translation_language = target_language or "en"
+        preferred_language = target_language or "en"
+        if target_language and target_language.lower() != "en":
+            translation_segments = _translate_segments(segments, target_language)
+            translation_language = target_language if translation_segments else None
+
+        if not translation_segments:
+            translate_options: Dict[str, Any] = {"task": "translate"}
+            if source_language:
+                translate_options["language"] = source_language
+            prompt = _build_prompt(preferred_language)
+            if prompt:
+                translate_options["initial_prompt"] = prompt
+            translated = model.transcribe(str(video_path), **translate_options)
+            translation_segments = _format_segments(translated.get("segments", []))
+            translation_language = (
+                "en" if target_language and target_language.lower() != "en" else preferred_language
+            )
 
     payload = {
         "segments": segments,
