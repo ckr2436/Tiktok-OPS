@@ -89,7 +89,13 @@ export default function ProductSelectionPanel({
                 </td>
                 <td>
                   <div className="gmvmax-product-name">
-                    {imageUrl ? <img src={imageUrl} alt="" aria-hidden="true" /> : <span aria-hidden="true">📦</span>}
+                    <div className="gmvmax-product-thumb" aria-hidden="true">
+                      {imageUrl ? (
+                        <img src={imageUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="gmvmax-product-thumb--empty">📦</span>
+                      )}
+                    </div>
                     <span>{product.title || product.name || product.product_name || product.productName || id}</span>
                   </div>
                 </td>
