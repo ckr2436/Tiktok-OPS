@@ -133,6 +133,23 @@ class SyncResponse(BaseModel):
     report_request_id: Optional[str] = None
 
 
+class SyncTaskResponse(BaseModel):
+    """Async sync trigger response with Celery task metadata."""
+
+    task_id: str
+    state: str
+    status_url: Optional[str] = None
+
+
+class SyncTaskStateResponse(BaseModel):
+    """Status payload for GMV Max sync Celery tasks."""
+
+    task_id: str
+    state: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[Dict[str, Any]] = None
+
+
 class CampaignListResponse(BaseModel):
     """Response returned by the campaign list route."""
 
