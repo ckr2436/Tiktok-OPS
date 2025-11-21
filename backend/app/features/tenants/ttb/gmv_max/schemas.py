@@ -12,10 +12,13 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
     GMVMaxCampaign,
     GMVMaxCampaignInfoData,
+    GMVMaxIdentity,
     GMVMaxReportData,
+    GMVMaxOccupiedListData,
     GMVMaxSession,
     GMVMaxSessionProduct,
     GMVMaxSessionSettings,
+    GMVMaxStoreAdUsageCheckData,
     PageInfo,
 )
 from app.services.gmvmax_spec import (
@@ -338,6 +341,57 @@ class ActionLogEntry(BaseModel):
     """Placeholder action log representation (empty for now)."""
 
     entries: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AutoBindingRequest(BaseModel):
+    """Request payload for automatic GMV Max binding discovery."""
+
+    advertiser_id: Optional[str] = None
+    store_id: Optional[str] = None
+    persist: bool = True
+
+
+class AutoBindingCandidate(BaseModel):
+    """Candidate binding derived from TikTok GMV Max metadata."""
+
+    advertiser_id: str
+    store_id: str
+    store_name: Optional[str] = None
+    store_authorized_bc_id: Optional[str] = None
+    authorization_status: Optional[str] = None
+    is_gmv_max_available: Optional[bool] = None
+    promote_all_products_allowed: Optional[bool] = None
+    is_running_custom_shop_ads: Optional[bool] = None
+    request_id: Optional[str] = None
+    source: Optional[Dict[str, Any]] = None
+
+
+class AutoBindingResponse(BaseModel):
+    """Result of automatic binding discovery and optional persistence."""
+
+    selected: Optional[AutoBindingCandidate] = None
+    candidates: List[AutoBindingCandidate] = Field(default_factory=list)
+    persisted: bool = False
+
+
+class GMVMaxPrecheckRequest(BaseModel):
+    """Request payload for GMV Max asset preflight checks."""
+
+    store_id: str
+    store_authorized_bc_id: str
+    advertiser_id: Optional[str] = None
+    identity_id: Optional[str] = None
+    product_item_group_ids: Optional[List[str]] = None
+    occupied_asset_type: Optional[str] = None
+
+
+class GMVMaxPrecheckResponse(BaseModel):
+    """Aggregated payload combining store, identity, and occupancy checks."""
+
+    store_usage: Optional[GMVMaxStoreAdUsageCheckData] = None
+    identities: List[GMVMaxIdentity] = Field(default_factory=list)
+    occupancy: Optional[GMVMaxOccupiedListData] = None
+    request_ids: Dict[str, Optional[str]] = Field(default_factory=dict)
 
 
 async def _schemas_async_marker() -> None:  # pragma: no cover - helper for verify script
