@@ -1105,6 +1105,7 @@ def _extract_store_metadata(store: Any) -> Dict[str, Any]:
 def _build_auto_binding_candidate(
     store: Any,
     *,
+    advertiser_id: str,
     authorization_data: Any,
     usage_data: Any,
     request_ids: Dict[str, Optional[str]],
@@ -1114,7 +1115,9 @@ def _build_auto_binding_candidate(
         payload.get("store_id") or getattr(store, "store_id", None)
     )
     advertiser_id = _normalize_identifier(
-        payload.get("advertiser_id") or getattr(store, "advertiser_id", None)
+        payload.get("advertiser_id")
+        or getattr(store, "advertiser_id", None)
+        or advertiser_id
     )
     bc_id = _normalize_identifier(
         payload.get("store_authorized_bc_id")
@@ -1323,6 +1326,7 @@ async def auto_bind_gmvmax_account(
 
         candidate = _build_auto_binding_candidate(
             store,
+            advertiser_id=str(advertiser_id),
             authorization_data=auth_resp.data if auth_resp else None,
             usage_data=usage_resp.data,
             request_ids=request_ids,
