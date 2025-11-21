@@ -197,6 +197,40 @@ class GMVMaxIdentityListData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class GMVMaxStore(BaseModel):
+    """Store entry returned by ``gmv_max/store/list``."""
+
+    store_id: Optional[str] = None
+    store_name: Optional[str] = None
+    store_region: Optional[str] = None
+    store_authorized_bc_id: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    advertiser_name: Optional[str] = None
+    is_gmv_max_available: Optional[bool] = None
+    gmv_max_authorization_status: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxStoreListData(BaseModel):
+    """Payload for ``gmv_max/store/list``."""
+
+    store_list: List[GMVMaxStore] = Field(default_factory=list)
+    page_info: Optional[PageInfo] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxStoreAdUsageCheckData(BaseModel):
+    """Result of ``gmv_max/store/shop_ad_usage_check``."""
+
+    store_id: Optional[str] = None
+    promote_all_products_allowed: Optional[bool] = None
+    is_running_custom_shop_ads: Optional[bool] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class GMVMaxOccupiedAd(BaseModel):
     """Represents an occupied ad entity returned by occupancy checks."""
 
@@ -262,6 +296,7 @@ class GMVMaxExclusiveAuthorizationData(BaseModel):
 
     store_id: Optional[str] = None
     store_authorized_bc_id: Optional[str] = None
+    authorization_status: Optional[str] = None
     is_authorized: Optional[bool] = None
     authorized_time: Optional[str] = None
 
@@ -444,6 +479,22 @@ class GMVMaxIdentityGetRequest(BaseModel):
     advertiser_id: str
     store_id: str
     store_authorized_bc_id: str
+
+
+class GMVMaxStoreListRequest(BaseModel):
+    advertiser_id: str
+    page: Optional[int] = None
+    page_size: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxStoreAdUsageCheckRequest(BaseModel):
+    advertiser_id: str
+    store_id: str
+    store_authorized_bc_id: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class GMVMaxOccupiedCustomShopAdsListRequest(BaseModel):
@@ -759,6 +810,28 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             params=_ttb_api._clean_params_map(params),
         )
         return self._parse_response(payload, GMVMaxIdentityListData)
+
+    async def gmv_max_store_list(
+        self, request: GMVMaxStoreListRequest
+    ) -> GMVMaxResponse[GMVMaxStoreListData]:
+        params = request.model_dump(exclude_none=True)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/store/list/",
+            params=_ttb_api._clean_params_map(params),
+        )
+        return self._parse_response(payload, GMVMaxStoreListData)
+
+    async def gmv_max_store_shop_ad_usage_check(
+        self, request: GMVMaxStoreAdUsageCheckRequest
+    ) -> GMVMaxResponse[GMVMaxStoreAdUsageCheckData]:
+        params = request.model_dump(exclude_none=True)
+        payload = await self._request_json(
+            "GET",
+            "/gmv_max/store/shop_ad_usage_check/",
+            params=_ttb_api._clean_params_map(params),
+        )
+        return self._parse_response(payload, GMVMaxStoreAdUsageCheckData)
 
     async def gmv_max_occupied_custom_shop_ads_list(
         self, request: GMVMaxOccupiedCustomShopAdsListRequest
