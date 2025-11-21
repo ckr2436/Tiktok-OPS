@@ -265,6 +265,8 @@ a:hover{ opacity:.95; }
 .gmvmax-product-table__actions{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .gmvmax-product-table__actions label{ display:inline-flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; }
 .gmvmax-product-table__count{ color:var(--muted); font-size:.95rem; }
+.gmvmax-product-name{ display:flex; align-items:center; gap:12px; min-width:0; }
+.gmvmax-product-name span:last-child{ min-width:0; word-break:break-word; }
 .gmvmax-table{ width:100%; border-collapse:collapse; border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--panel); }
 .gmvmax-table thead{ background:var(--panel-2); }
 .gmvmax-table th, .gmvmax-table td{ padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); }
