@@ -382,18 +382,16 @@ export default function GmvMaxOverviewPage() {
 
   const storeOptions = useMemo(() => {
     if (!authId) return [];
-    const allowed = advertiserId ? advertiserToStores.get(advertiserId) : null;
-    const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
-    const hasLinks = advertiserId ? advertiserToStores.size > 0 : false;
+    const seen = new Set();
     return storeList
-      .filter((store) => {
-        const id = getStoreId(store);
-        if (!id) return false;
-        if (allowedSet) return allowedSet.has(id);
-        return hasLinks ? false : true;
-      })
-      .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }));
-  }, [advertiserId, advertiserToStores, authId, storeList]);
+      .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }))
+      .filter((option) => {
+        if (!option.value) return false;
+        if (seen.has(option.value)) return false;
+        seen.add(option.value);
+        return true;
+      });
+  }, [authId, storeList]);
 
   useEffect(() => {
     if (!authId || !storeId || !scopeOptionsReady) return;
@@ -635,7 +633,7 @@ export default function GmvMaxOverviewPage() {
     if (!hasSavedBinding) {
       return {
         variant: 'warning',
-        message: 'Advertiser not configured. Save the current scope to enable GMV Max syncing.',
+        message: 'Store binding not configured. Save the current scope to enable GMV Max syncing.',
       };
     }
     if (scopeMatchesBinding) {
@@ -688,31 +686,12 @@ export default function GmvMaxOverviewPage() {
     setSelectedPresetId('');
   }, []);
 
-  const handleBusinessCenterChange = useCallback((event) => {
-    const value = event?.target?.value || '';
-    setScope((prev) => ({
-      ...prev,
-      bcId: value ? String(value) : null,
-      advertiserId: null,
-      storeId: null,
-    }));
-    setSelectedPresetId('');
-  }, []);
-
-  const handleAdvertiserChange = useCallback((event) => {
-    const value = event?.target?.value || '';
-    setScope((prev) => ({
-      ...prev,
-      advertiserId: value ? String(value) : null,
-      storeId: null,
-    }));
-    setSelectedPresetId('');
-  }, []);
-
   const handleStoreChange = useCallback((event) => {
     const value = event?.target?.value || '';
     setScope((prev) => ({
       ...prev,
+      advertiserId: null,
+      bcId: null,
       storeId: value ? String(value) : null,
     }));
     setSelectedPresetId('');
@@ -1161,7 +1140,7 @@ export default function GmvMaxOverviewPage() {
 
   const handleSyncProducts = useCallback(async () => {
     if (!isScopeReady) {
-      setProductSyncError('Select business center, advertiser, and store before syncing products.');
+      setProductSyncError('Select a store before syncing products.');
       setProductSyncMessage('');
       return;
     }
@@ -1211,7 +1190,7 @@ export default function GmvMaxOverviewPage() {
 
   const handleSync = useCallback(async () => {
     if (!isScopeReady) {
-      setSyncError('Please select business center, advertiser, and store before syncing GMV Max campaigns.');
+      setSyncError('Please select a store before syncing GMV Max campaigns.');
       return;
     }
     if (bindingConfigLoading || bindingConfigFetching) {
@@ -1402,7 +1381,7 @@ export default function GmvMaxOverviewPage() {
         <header className="gmvmax-card__header">
           <div>
             <h2>Scope filters</h2>
-            <p>Select the account and store context for GMV Max management.</p>
+            <p>Select the account and store context for GMV Max management. Business center and advertiser will be auto-detected from the store.</p>
           </div>
           <div className="gmvmax-card__actions">
             <button
@@ -1459,34 +1438,6 @@ export default function GmvMaxOverviewPage() {
                 ))}
               </select>
             </FormField>
-            <FormField label="Business center">
-              <select
-                value={businessCenterId}
-                onChange={handleBusinessCenterChange}
-                disabled={!authId || businessCenterOptions.length === 0}
-              >
-                <option value="">Select business center</option>
-                {businessCenterOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Advertiser">
-              <select
-                value={advertiserId}
-                onChange={handleAdvertiserChange}
-                disabled={!businessCenterId || advertiserOptions.length === 0}
-              >
-                <option value="">Select advertiser</option>
-                {advertiserOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FormField>
             <FormField label="Store">
               <select
                 value={storeId}
@@ -1500,6 +1451,22 @@ export default function GmvMaxOverviewPage() {
                   </option>
                 ))}
               </select>
+            </FormField>
+            <FormField label="Business center (auto-detected)">
+              <input
+                className="gmvmax-readonly-input"
+                type="text"
+                readOnly
+                value={selectedBusinessCenterLabel || 'Auto-detected after selecting a store'}
+              />
+            </FormField>
+            <FormField label="Advertiser (auto-detected)">
+              <input
+                className="gmvmax-readonly-input"
+                type="text"
+                readOnly
+                value={selectedAdvertiserLabel || 'Auto-detected after selecting a store'}
+              />
             </FormField>
           </div>
           <div className="gmvmax-field-grid">
@@ -1584,13 +1551,7 @@ export default function GmvMaxOverviewPage() {
         </header>
         <div className="gmvmax-card__body">
           {!authId ? <p className="gmvmax-placeholder">Select an account to view products.</p> : null}
-          {authId && !businessCenterId ? (
-            <p className="gmvmax-placeholder">Select a business center to continue.</p>
-          ) : null}
-          {authId && businessCenterId && !advertiserId ? (
-            <p className="gmvmax-placeholder">Select an advertiser to continue.</p>
-          ) : null}
-          {authId && businessCenterId && advertiserId && !storeId ? (
+          {authId && !storeId ? (
             <p className="gmvmax-placeholder">Select a store to load products.</p>
           ) : null}
           {isScopeReady ? (
