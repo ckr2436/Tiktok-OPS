@@ -1231,7 +1231,22 @@ export default function GmvMaxOverviewPage() {
         });
         if (cancelled) return;
         const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
-        const selected = response?.selected || candidates[0] || null;
+        const selected = (() => {
+          if (response?.selected) return response.selected;
+          const effectiveCandidate = candidates.find(
+            (candidate) => (candidate?.authorization_status || '').toUpperCase() === 'EFFECTIVE',
+          );
+          const matchDerived = candidates.find(
+            (candidate) =>
+              derivedAdvertiserId &&
+              String(candidate?.advertiser_id) === String(derivedAdvertiserId) &&
+              (candidate?.authorization_status || '').toUpperCase() !== 'UNAUTHORIZED',
+          );
+          const authorizedCandidate = candidates.find(
+            (candidate) => (candidate?.authorization_status || '').toUpperCase() !== 'UNAUTHORIZED',
+          );
+          return effectiveCandidate || matchDerived || authorizedCandidate || candidates[0] || null;
+        })();
         if (!selected) {
           setAutoBindingStatus({
             variant: 'warning',
