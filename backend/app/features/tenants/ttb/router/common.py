@@ -422,6 +422,19 @@ def _run_provider_scope_now(
 def _backfill_meta_if_needed(db: Session, *, workspace_id: int, auth_id: int) -> None:
     """Enqueue a meta sync task if the account appears to be missing meta data."""
     try:
+        _run_provider_scope_now(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            scope="meta",
+            options={"page_size": 200},
+        )
+    except Exception:
+        backfill_logger.exception(
+            "failed to backfill meta synchronously",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id},
+        )
+    try:
         enqueue_meta_sync(workspace_id=int(workspace_id), auth_id=int(auth_id))
     except Exception:
         backfill_logger.exception("failed to enqueue meta backfill", extra={"workspace_id": workspace_id, "auth_id": auth_id})
