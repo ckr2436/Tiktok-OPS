@@ -112,6 +112,21 @@ def _translate_segments(
 ) -> List[Dict[str, Any]]:
     source_lang = (source_language or "en").lower()
     target_lang = (target_language or "en").lower()
+    if source_lang == target_lang:
+        logger.info(
+            "skipping translation for identical language pair",
+            extra={"source": source_lang, "target": target_lang},
+        )
+        return [
+            {
+                "index": int(seg.get("index", seg.get("id", 0))),
+                "start": float(seg.get("start", 0.0)),
+                "end": float(seg.get("end", 0.0)),
+                "text": (seg.get("text") or "").strip(),
+            }
+            for seg in segments or []
+        ]
+
     translator = _get_translation_pipeline(source_lang, target_lang)
     translated_segments: List[Dict[str, Any]] = []
 

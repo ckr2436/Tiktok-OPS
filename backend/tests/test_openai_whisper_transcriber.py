@@ -57,3 +57,26 @@ def test_ensure_ffmpeg_available_missing(monkeypatch, caplog):
 
     assert "FFmpeg is required for Whisper transcription" in " ".join(caplog.messages)
 
+
+def test_translate_segments_same_language_short_circuits(monkeypatch):
+    segments = [
+        {"id": 0, "start": 0.0, "end": 1.0, "text": "Hello"},
+        {"id": 1, "start": 1.0, "end": 2.0, "text": "World"},
+    ]
+
+    def _fail_get_translator(*_args, **_kwargs):  # noqa: ANN001, ANN202
+        raise AssertionError("translator should not be called for identical languages")
+
+    monkeypatch.setattr(transcriber, "_get_translation_pipeline", _fail_get_translator)
+
+    translated = transcriber._translate_segments(  # noqa: SLF001 - testing internal helper
+        segments,
+        source_language="en",
+        target_language="en",
+    )
+
+    assert translated == [
+        {"index": 0, "start": 0.0, "end": 1.0, "text": "Hello"},
+        {"index": 1, "start": 1.0, "end": 2.0, "text": "World"},
+    ]
+
