@@ -75,7 +75,6 @@ from app.tasks.ttb_sync_tasks import task_sync_products
 from ._helpers import (
     GMVMaxAccountBinding,
     get_gmvmax_client_for_account,
-    get_optional_route_context,
     normalize_provider,
     resolve_account_binding,
 )
