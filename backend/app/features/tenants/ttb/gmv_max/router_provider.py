@@ -20,6 +20,7 @@ from app.data.db import get_db
 from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBAdvertiserStoreLink,
+    TTBBCAdvertiserLink,
     TTBProduct,
 )
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
@@ -1330,6 +1331,87 @@ def _dedupe_append(target: list[str], value: Optional[str], seen: set[str]) -> N
         target.append(normalized)
 
 
+def _select_binding_from_links(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    target_store: Optional[str],
+    target_advertiser: Optional[str],
+    target_bc: Optional[str],
+) -> AutoBindingCandidate | None:
+    """Try to derive a single binding tuple from cached link tables.
+
+    Prefers the most recently seen advertiser-store link that is consistent with a
+    business center relationship, and only returns a candidate when the triple is
+    unique after normalization and optional targeting filters.
+    """
+
+    normalized_bc = _normalize_identifier(target_bc)
+    normalized_store = _normalize_identifier(target_store)
+    normalized_adv = _normalize_identifier(target_advertiser)
+
+    bc_link_rows = (
+        db.query(TTBBCAdvertiserLink.bc_id, TTBBCAdvertiserLink.advertiser_id)
+        .filter(TTBBCAdvertiserLink.workspace_id == int(workspace_id))
+        .filter(TTBBCAdvertiserLink.auth_id == int(auth_id))
+        .order_by(TTBBCAdvertiserLink.last_seen_at.desc())
+        .all()
+    )
+    bc_pairs = {
+        (_normalize_identifier(bc_id), _normalize_identifier(adv_id))
+        for bc_id, adv_id in bc_link_rows
+        if _normalize_identifier(bc_id) and _normalize_identifier(adv_id)
+    }
+
+    query = (
+        db.query(TTBAdvertiserStoreLink)
+        .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+    )
+    if normalized_store:
+        query = query.filter(TTBAdvertiserStoreLink.store_id == normalized_store)
+    if normalized_adv:
+        query = query.filter(TTBAdvertiserStoreLink.advertiser_id == normalized_adv)
+
+    rows = (
+        query.order_by(TTBAdvertiserStoreLink.last_seen_at.desc())
+        .filter(TTBAdvertiserStoreLink.store_authorized_bc_id.isnot(None))
+        .all()
+    )
+
+    candidates: list[AutoBindingCandidate] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        store_id = _normalize_identifier(row.store_id)
+        adv_id = _normalize_identifier(row.advertiser_id)
+        bc_id = _normalize_identifier(row.store_authorized_bc_id or row.bc_id_hint)
+        if not store_id or not adv_id or not bc_id:
+            continue
+        if normalized_bc and bc_id != normalized_bc:
+            continue
+        if bc_pairs and (bc_id, adv_id) not in bc_pairs:
+            continue
+        key = (store_id, adv_id, bc_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(
+            AutoBindingCandidate(
+                advertiser_id=adv_id,
+                store_id=store_id,
+                store_authorized_bc_id=bc_id,
+                authorization_status="EFFECTIVE",
+                request_id=None,
+                source=row.raw_json if hasattr(row, "raw_json") else None,
+            )
+        )
+
+    if len(candidates) != 1:
+        return None
+    return candidates[0]
+
+
 @router.post(
     "/binding/auto",
     response_model=AutoBindingResponse,
@@ -1346,11 +1428,58 @@ async def auto_bind_gmvmax_account(
     """Discover GMV Max store bindings via TikTok APIs and optionally persist them."""
 
     target_store = _normalize_identifier(payload.store_id)
+    target_bc = None
     advertiser_candidates: List[str] = []
     seen_advertisers: set[str] = set()
 
     _dedupe_append(advertiser_candidates, payload.advertiser_id, seen_advertisers)
     _dedupe_append(advertiser_candidates, context.advertiser_id, seen_advertisers)
+
+    db_candidate = _select_binding_from_links(
+        context.db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        target_store=target_store,
+        target_advertiser=payload.advertiser_id or context.advertiser_id,
+        target_bc=target_bc,
+    )
+    if db_candidate:
+        persisted = False
+        if payload.persist:
+            try:
+                upsert_binding_config(
+                    context.db,
+                    workspace_id=int(workspace_id),
+                    auth_id=int(auth_id),
+                    bc_id=db_candidate.store_authorized_bc_id,
+                    advertiser_id=db_candidate.advertiser_id,
+                    store_id=db_candidate.store_id,
+                    auto_sync_products=True,
+                    actor_user_id=int(me.id),
+                )
+                _upsert_store_link(
+                    context.db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=db_candidate.advertiser_id,
+                    store_id=db_candidate.store_id,
+                    store_authorized_bc_id=db_candidate.store_authorized_bc_id,
+                )
+                context.db.commit()
+                persisted = True
+            except BindingConfigStorageNotReady as exc:
+                raise HTTPException(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "GMV Max binding configuration storage is not initialized; "
+                        "please run database migrations."
+                    ),
+                ) from exc
+        return AutoBindingResponse(
+            selected=db_candidate,
+            candidates=[db_candidate],
+            persisted=persisted,
+        )
 
     if target_store:
         link_rows = (
