@@ -14,6 +14,7 @@ import {
   useGmvMaxConfigQuery,
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
+  useGmvMaxAutoBindingMutation,
   useProductsQuery,
   useSyncAccountMetadataMutation,
   useSyncAccountProductsMutation,
@@ -117,11 +118,13 @@ export default function GmvMaxOverviewPage() {
   const [metaSyncError, setMetaSyncError] = useState(null);
   const [productSyncMessage, setProductSyncMessage] = useState('');
   const [productSyncError, setProductSyncError] = useState(null);
+  const [autoBindingStatus, setAutoBindingStatus] = useState(null);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [scopePresets, setScopePresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetLabelInput, setPresetLabelInput] = useState('');
   const autoOptionsRefreshAccounts = useRef(new Set());
+  const autoBindingKeyRef = useRef('');
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
@@ -1041,6 +1044,105 @@ export default function GmvMaxOverviewPage() {
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
+  const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
+
+  useEffect(() => {
+    if (!workspaceId || !provider || !authId || !storeId) {
+      setAutoBindingStatus(null);
+      autoBindingKeyRef.current = '';
+      return;
+    }
+    if (!scopeOptionsReady) {
+      setAutoBindingStatus(null);
+      autoBindingKeyRef.current = '';
+      return;
+    }
+    const derivedAdvertiserId = advertiserId || storeToAdvertiserId.get(storeId) || '';
+    if (!derivedAdvertiserId) {
+      setAutoBindingStatus({
+        variant: 'warning',
+        message: 'Unable to derive advertiser for the selected store; authorization not checked.',
+      });
+      autoBindingKeyRef.current = '';
+      return;
+    }
+    const key = `${storeId}:${derivedAdvertiserId}`;
+    if (autoBindingMutation.isPending) {
+      return;
+    }
+    if (autoBindingKeyRef.current === key && !autoBindingMutation.isError) {
+      return;
+    }
+    autoBindingKeyRef.current = key;
+    let cancelled = false;
+    setAutoBindingStatus({ variant: 'muted', message: 'Checking GMV Max exclusive authorization…' });
+    (async () => {
+      try {
+        const response = await autoBindingMutation.mutateAsync({
+          store_id: storeId,
+          advertiser_id: derivedAdvertiserId,
+          persist: false,
+        });
+        if (cancelled) return;
+        const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
+        const selected = response?.selected || candidates[0] || null;
+        if (!selected) {
+          setAutoBindingStatus({
+            variant: 'warning',
+            message: 'Unable to confirm GMV Max exclusive authorization for the selected store.',
+          });
+          return;
+        }
+        const nextAdvertiserId = selected.advertiser_id || derivedAdvertiserId;
+        const nextBusinessCenterId = selected.store_authorized_bc_id || businessCenterId;
+        setScope((prev) => {
+          const updatedAdvertiser = nextAdvertiserId || prev.advertiserId;
+          const updatedBcId = nextBusinessCenterId || prev.bcId;
+          if (updatedAdvertiser === prev.advertiserId && updatedBcId === prev.bcId) {
+            return prev;
+          }
+          return {
+            ...prev,
+            advertiserId: updatedAdvertiser || null,
+            bcId: updatedBcId || null,
+          };
+        });
+        const normalizedStatus = (selected.authorization_status || '').toUpperCase();
+        if (normalizedStatus && normalizedStatus !== 'EFFECTIVE') {
+          setAutoBindingStatus({
+            variant: 'warning',
+            message: `GMV Max exclusive authorization is ${normalizedStatus.toLowerCase()} for advertiser ${nextAdvertiserId}.`,
+          });
+          return;
+        }
+        setAutoBindingStatus({
+          variant: 'success',
+          message: `Confirmed GMV Max exclusive authorization for advertiser ${nextAdvertiserId}.`,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setAutoBindingStatus({
+          variant: 'error',
+          message: `Failed to check GMV Max exclusive authorization: ${formatError(error)}`,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    advertiserId,
+    authId,
+    autoBindingMutation.isError,
+    autoBindingMutation.isPending,
+    autoBindingMutation.mutateAsync,
+    businessCenterId,
+    provider,
+    scopeOptionsReady,
+    storeId,
+    storeToAdvertiserId,
+    workspaceId,
+  ]);
 
   const refreshScopeQueries = useCallback(() => {
     if (!workspaceId || !provider || !authId) {
@@ -1424,6 +1526,17 @@ export default function GmvMaxOverviewPage() {
               }`}
             >
               {productSyncError || productSyncMessage}
+            </div>
+          ) : null}
+          {autoBindingStatus ? (
+            <div
+              className={`gmvmax-status-banner ${
+                autoBindingStatus.variant
+                  ? `gmvmax-status-banner--${autoBindingStatus.variant}`
+                  : 'gmvmax-status-banner--muted'
+              }`}
+            >
+              {autoBindingStatus.message}
             </div>
           ) : null}
           <div className="gmvmax-field-grid">
