@@ -1067,7 +1067,10 @@ export default function GmvMaxOverviewPage() {
       return;
     }
     const key = `${storeId}:${derivedAdvertiserId}`;
-    if (autoBindingKeyRef.current === key && !autoBindingMutation.isError && !autoBindingMutation.isPending) {
+    if (autoBindingMutation.isPending) {
+      return;
+    }
+    if (autoBindingKeyRef.current === key && !autoBindingMutation.isError) {
       return;
     }
     autoBindingKeyRef.current = key;
@@ -1130,7 +1133,9 @@ export default function GmvMaxOverviewPage() {
   }, [
     advertiserId,
     authId,
-    autoBindingMutation,
+    autoBindingMutation.isError,
+    autoBindingMutation.isPending,
+    autoBindingMutation.mutateAsync,
     businessCenterId,
     provider,
     scopeOptionsReady,
