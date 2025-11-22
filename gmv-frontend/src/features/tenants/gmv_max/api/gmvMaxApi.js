@@ -111,6 +111,14 @@ export async function updateGmvMaxConfig(workspaceId, provider, authId, payload,
   return put(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/config`, payload, config);
 }
 
+export async function autoDiscoverGmvMaxBinding(workspaceId, provider, authId, payload, config) {
+  return post(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/binding/auto`,
+    payload,
+    config,
+  );
+}
+
 export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload, config) {
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
 }

@@ -8,6 +8,7 @@ import {
   getGmvMaxCampaign,
   getGmvMaxConfig,
   getGmvMaxMetrics,
+  autoDiscoverGmvMaxBinding,
   getGmvMaxOptions,
   getGmvMaxStrategy,
   listAccounts,
@@ -200,6 +201,13 @@ export function useGmvMaxCampaignCreativesQuery(
     queryFn: () => listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     ...rest,
+  });
+}
+
+export function useGmvMaxAutoBindingMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => autoDiscoverGmvMaxBinding(workspaceId, provider, authId, payload),
+    ...options,
   });
 }
 
