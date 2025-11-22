@@ -19,6 +19,29 @@ _dummy_whisper.load_model = lambda name="small": object()
 sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
+_dummy_yt_dlp = types.ModuleType("yt_dlp")
+
+
+class _FakeYoutubeDL:
+    def __init__(self, *args, **kwargs):  # noqa: ANN002, D401 - test stub
+        """Dummy downloader."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001, ANN202
+        return False
+
+    def extract_info(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        return {"url": "http://example.com/video.mp4", "ext": "mp4"}
+
+    def download(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        return None
+
+
+_dummy_yt_dlp.YoutubeDL = _FakeYoutubeDL
+sys.modules.setdefault("yt_dlp", _dummy_yt_dlp)
+
 from app.features.tenants.openai_whisper import (
     repository,
     service,
@@ -77,6 +100,7 @@ def test_create_job_commits_before_enqueue(monkeypatch, db_session, tmp_path):
             workspace_id=1,
             user_id=42,
             upload=upload,
+            share_url=None,
             upload_id=None,
             source_language=None,
             translate=False,
@@ -108,6 +132,7 @@ def test_create_job_marks_failed_if_enqueue_raises(monkeypatch, db_session, tmp_
                 workspace_id=1,
                 user_id=42,
                 upload=upload,
+                share_url=None,
                 upload_id=None,
                 source_language=None,
                 translate=False,
