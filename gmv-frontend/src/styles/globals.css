@@ -231,6 +231,7 @@ a:hover{ opacity:.95; }
 .gmvmax-card__body{ display:flex; flex-direction:column; gap:16px; }
 .gmvmax-card__footer{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .gmvmax-field-grid{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+.gmvmax-readonly-input{ width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--panel-2); color:var(--muted); }
 .gmvmax-presets-row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .gmvmax-presets-row select, .gmvmax-presets-row input{ flex:1 1 220px; min-width:180px; }
 .gmvmax-presets-row .gmvmax-button{ flex:0 0 auto; }
