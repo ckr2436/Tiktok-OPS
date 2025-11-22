@@ -729,12 +729,6 @@ export default function GmvMaxOverviewPage() {
     }
   }, [isScopeReady]);
 
-  const accounts = useMemo(() => {
-    const data = accountsQuery.data;
-    const items = data?.items || data?.list || data || [];
-    return Array.isArray(items) ? items : [];
-  }, [accountsQuery.data]);
-
   const accountOptions = useMemo(
     () =>
       accounts.map((account) => ({
