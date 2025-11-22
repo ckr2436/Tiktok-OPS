@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { store } from './app/store.js'
 import router from './routes/index.jsx'
 import './styles/globals.css'
+import HealthGate from './core/HealthGate.jsx'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +22,9 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <Provider store={store}>
-        <RouterProvider router={router} />
+        <HealthGate>
+          <RouterProvider router={router} />
+        </HealthGate>
       </Provider>
     </QueryClientProvider>
   </React.StrictMode>,
