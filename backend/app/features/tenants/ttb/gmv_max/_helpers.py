@@ -25,7 +25,7 @@ class GMVMaxAccountBinding:
     """Resolved tenant binding information for a GMV Max account."""
 
     account: OAuthAccountTTB
-    advertiser_id: str
+    advertiser_id: Optional[str]
     store_id: Optional[str]
 
 
@@ -103,7 +103,12 @@ def get_gmvmax_client_for_account(
 
 
 def resolve_account_binding(
-    db: Session, workspace_id: int, provider: str, auth_id: int
+    db: Session,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    *,
+    allow_missing_advertiser: bool = False,
 ) -> GMVMaxAccountBinding:
     """Resolve advertiser and store configuration for the tenant binding."""
 
@@ -121,7 +126,7 @@ def resolve_account_binding(
     if not advertiser_id and binding and binding.advertiser_id:
         advertiser_id = binding.advertiser_id
 
-    if not advertiser_id:
+    if not advertiser_id and not allow_missing_advertiser:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Advertiser not configured",
@@ -129,7 +134,7 @@ def resolve_account_binding(
 
     return GMVMaxAccountBinding(
         account=account,
-        advertiser_id=str(advertiser_id),
+        advertiser_id=str(advertiser_id) if advertiser_id else None,
         store_id=str(binding.store_id) if binding and binding.store_id else None,
     )
 

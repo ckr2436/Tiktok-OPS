@@ -75,6 +75,7 @@ from app.tasks.ttb_sync_tasks import task_sync_products
 from ._helpers import (
     GMVMaxAccountBinding,
     get_gmvmax_client_for_account,
+    get_optional_route_context,
     normalize_provider,
     resolve_account_binding,
 )
@@ -480,7 +481,7 @@ class GMVMaxRouteContext:
     workspace_id: int
     provider: str
     auth_id: int
-    advertiser_id: str
+    advertiser_id: Optional[str]
     store_id: Optional[str]
     binding: GMVMaxAccountBinding
     client: TikTokBusinessGMVMaxClient
@@ -1074,14 +1075,22 @@ async def _ensure_campaign_products_available(
         )
 
 
-def get_route_context(
+def _build_route_context(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    db: Session = Depends(get_db),
+    db: Session,
+    *,
+    allow_missing_advertiser: bool,
 ) -> GMVMaxRouteContext:
     normalized_provider = normalize_provider(provider)
-    binding = resolve_account_binding(db, workspace_id, normalized_provider, auth_id)
+    binding = resolve_account_binding(
+        db,
+        workspace_id,
+        normalized_provider,
+        auth_id,
+        allow_missing_advertiser=allow_missing_advertiser,
+    )
     client = get_gmvmax_client_for_account(
         db,
         workspace_id,
@@ -1097,6 +1106,36 @@ def get_route_context(
         binding=binding,
         client=client,
         db=db,
+    )
+
+
+def get_route_context(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    db: Session = Depends(get_db),
+) -> GMVMaxRouteContext:
+    return _build_route_context(
+        workspace_id,
+        provider,
+        auth_id,
+        db,
+        allow_missing_advertiser=False,
+    )
+
+
+def get_optional_route_context(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    db: Session = Depends(get_db),
+) -> GMVMaxRouteContext:
+    return _build_route_context(
+        workspace_id,
+        provider,
+        auth_id,
+        db,
+        allow_missing_advertiser=True,
     )
 
 
@@ -1423,7 +1462,7 @@ async def auto_bind_gmvmax_account(
     auth_id: int,
     payload: AutoBindingRequest,
     me: SessionUser = Depends(require_tenant_admin),
-    context: GMVMaxRouteContext = Depends(get_route_context),
+    context: GMVMaxRouteContext = Depends(get_optional_route_context),
 ) -> AutoBindingResponse:
     """Discover GMV Max store bindings via TikTok APIs and optionally persist them."""
 
