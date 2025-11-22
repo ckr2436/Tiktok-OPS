@@ -11,6 +11,7 @@ from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, DataError
 
+from app.celery_app import celery_app
 from app.core.config import settings
 from app.core.errors import APIError
 from app.data.models.oauth_ttb import (
@@ -83,6 +84,32 @@ def _normalize_alias(alias: str | None) -> str | None:
         return None
     s = alias.strip()
     return s if s else None
+
+
+def _enqueue_bootstrap_after_binding(*, workspace_id: int, auth_id: int, state: str | None = None) -> None:
+    """
+    在自动绑定完成后，后台直接触发全量引导同步（含商品），减少前端确认步骤。
+
+    - 使用 OAuth state 作为幂等提示，避免重复回调时重复入队
+    - countdown 留出事务提交时间，避免任务抢先读取不到新记录
+    """
+    try:
+        idem = (state or f"binding-{workspace_id}-{auth_id}")[:255]
+        celery_app.send_task(
+            "tenant.ttb.sync.bootstrap_orchestrator",
+            kwargs={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "idempotency_key": idem,
+            },
+            queue="gmv.tasks.default",
+            countdown=3,
+        )
+        logger.info(
+            "TTB binding bootstrap queued workspace=%s auth_id=%s idem=%s", workspace_id, auth_id, idem
+        )
+    except Exception:
+        logger.exception("failed to enqueue bootstrap sync for binding auth_id=%s", auth_id)
 
 
 # ---------- provider app mgmt ----------
@@ -359,6 +386,11 @@ async def handle_callback_and_bind_token(
     sess.consumed_at = datetime.utcnow()
     db.add(sess)
     db.flush()
+
+    # 触发后端引导同步（含商品），无需等待前端手动确认
+    _enqueue_bootstrap_after_binding(
+        workspace_id=int(sess.workspace_id), auth_id=int(account.id), state=getattr(sess, "state", None)
+    )
 
     return account, sess
 
