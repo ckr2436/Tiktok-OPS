@@ -1444,6 +1444,45 @@ async def auto_bind_gmvmax_account(
         target_bc=target_bc,
     )
     if db_candidate:
+        request_ids: Dict[str, Optional[str]] = {}
+        auth_resp = await _call_tiktok(
+            context.client.gmv_max_exclusive_authorization_get,
+            GMVMaxExclusiveAuthorizationGetRequest(
+                advertiser_id=str(db_candidate.advertiser_id),
+                store_id=str(db_candidate.store_id),
+                store_authorized_bc_id=str(db_candidate.store_authorized_bc_id),
+            ),
+        )
+        request_ids["authorization"] = auth_resp.request_id
+        usage_resp = await _call_tiktok(
+            context.client.gmv_max_store_shop_ad_usage_check,
+            GMVMaxStoreAdUsageCheckRequest(
+                advertiser_id=str(db_candidate.advertiser_id),
+                store_id=str(db_candidate.store_id or ""),
+                store_authorized_bc_id=str(db_candidate.store_authorized_bc_id),
+            ),
+        )
+        request_ids["usage"] = usage_resp.request_id
+
+        refreshed_candidate = _build_auto_binding_candidate(
+            {
+                "store_id": db_candidate.store_id,
+                "store_authorized_bc_id": db_candidate.store_authorized_bc_id,
+                "advertiser_id": db_candidate.advertiser_id,
+            },
+            advertiser_id=db_candidate.advertiser_id,
+            authorization_data=auth_resp.data if auth_resp else None,
+            usage_data=usage_resp.data if usage_resp else None,
+            request_ids=request_ids,
+        )
+        candidate = refreshed_candidate or db_candidate
+        if payload.persist and not _is_binding_candidate_ready(candidate):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cached GMV Max binding failed authorization or usage checks; cannot persist binding."
+                ),
+            )
         persisted = False
         if payload.persist:
             try:
@@ -1451,9 +1490,9 @@ async def auto_bind_gmvmax_account(
                     context.db,
                     workspace_id=int(workspace_id),
                     auth_id=int(auth_id),
-                    bc_id=db_candidate.store_authorized_bc_id,
-                    advertiser_id=db_candidate.advertiser_id,
-                    store_id=db_candidate.store_id,
+                    bc_id=candidate.store_authorized_bc_id,
+                    advertiser_id=candidate.advertiser_id,
+                    store_id=candidate.store_id,
                     auto_sync_products=True,
                     actor_user_id=int(me.id),
                 )
@@ -1461,9 +1500,9 @@ async def auto_bind_gmvmax_account(
                     context.db,
                     workspace_id=workspace_id,
                     auth_id=auth_id,
-                    advertiser_id=db_candidate.advertiser_id,
-                    store_id=db_candidate.store_id,
-                    store_authorized_bc_id=db_candidate.store_authorized_bc_id,
+                    advertiser_id=candidate.advertiser_id,
+                    store_id=candidate.store_id,
+                    store_authorized_bc_id=candidate.store_authorized_bc_id,
                 )
                 context.db.commit()
                 persisted = True
@@ -1476,8 +1515,8 @@ async def auto_bind_gmvmax_account(
                     ),
                 ) from exc
         return AutoBindingResponse(
-            selected=db_candidate,
-            candidates=[db_candidate],
+            selected=candidate,
+            candidates=[candidate],
             persisted=persisted,
         )
 
