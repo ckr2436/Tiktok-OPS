@@ -690,6 +690,8 @@ export default function GmvMaxOverviewPage() {
     const value = event?.target?.value || '';
     setScope((prev) => ({
       ...prev,
+      advertiserId: null,
+      bcId: null,
       storeId: value ? String(value) : null,
     }));
     setSelectedPresetId('');
