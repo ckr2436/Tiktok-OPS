@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import whisper
+from transformers import MarianMTModel, MarianTokenizer, pipeline
+from transformers.pipelines import TranslationPipeline
 
 from app.core.config import settings
 
@@ -16,6 +18,8 @@ from .languages import get_language_label
 logger = logging.getLogger("gmv.whisper")
 _MODEL_LOCK = threading.Lock()
 _MODEL = None
+_TRANSLATORS: Dict[tuple[str, str], TranslationPipeline] = {}
+_TRANSLATOR_LOCK = threading.Lock()
 
 
 def _load_model():
@@ -32,6 +36,34 @@ def _get_model():
         if _MODEL is None:
             _MODEL = _load_model()
     return _MODEL
+
+
+def _load_translation_pipeline(
+    source_language: str, target_language: str
+) -> TranslationPipeline:
+    model_name = f"Helsinki-NLP/opus-mt-{source_language}-{target_language}"
+    logger.info(
+        "loading MarianMT translation model",
+        extra={"model": model_name, "source": source_language, "target": target_language},
+    )
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+    return pipeline("translation", model=model, tokenizer=tokenizer)
+
+
+def _get_translation_pipeline(
+    source_language: str, target_language: str
+) -> TranslationPipeline:
+    key = (source_language, target_language)
+    translator = _TRANSLATORS.get(key)
+    if translator:
+        return translator
+
+    with _TRANSLATOR_LOCK:
+        translator = _TRANSLATORS.get(key)
+        if translator is None:
+            _TRANSLATORS[key] = _load_translation_pipeline(source_language, target_language)
+        return _TRANSLATORS[key]
 
 
 def ensure_ffmpeg_available() -> None:
@@ -72,6 +104,56 @@ def _build_prompt(target_language: Optional[str]) -> Optional[str]:
     return f"Translate the audio content into {label}."
 
 
+def _translate_segments(
+    segments: List[Dict[str, Any]],
+    *,
+    source_language: str,
+    target_language: str,
+) -> List[Dict[str, Any]]:
+    source_lang = (source_language or "en").lower()
+    target_lang = (target_language or "en").lower()
+    if source_lang == target_lang:
+        logger.info(
+            "skipping translation for identical language pair",
+            extra={"source": source_lang, "target": target_lang},
+        )
+        return [
+            {
+                "index": int(seg.get("index", seg.get("id", 0))),
+                "start": float(seg.get("start", 0.0)),
+                "end": float(seg.get("end", 0.0)),
+                "text": (seg.get("text") or "").strip(),
+            }
+            for seg in segments or []
+        ]
+
+    translator = _get_translation_pipeline(source_lang, target_lang)
+    translated_segments: List[Dict[str, Any]] = []
+
+    for seg in segments or []:
+        text = (seg.get("text") or "").strip()
+        if text:
+            translated = translator(
+                text,
+                max_length=512,
+                clean_up_tokenization_spaces=True,
+            )
+            translated_text = (translated[0].get("translation_text") or "").strip()
+        else:
+            translated_text = ""
+
+        translated_segments.append(
+            {
+                "index": int(seg.get("index", seg.get("id", 0))),
+                "start": float(seg.get("start", 0.0)),
+                "end": float(seg.get("end", 0.0)),
+                "text": translated_text,
+            }
+        )
+
+    return translated_segments
+
+
 def transcribe(
     video_path: Path,
     *,
@@ -101,15 +183,16 @@ def transcribe(
     translation_segments = None
     translation_language = None
     if translate:
-        translate_options: Dict[str, Any] = {"task": "translate"}
-        if source_language:
-            translate_options["language"] = source_language
+        translation_language = target_language or "en"
+        translation_source = source_language or detected_language or "en"
         prompt = _build_prompt(target_language)
         if prompt:
-            translate_options["initial_prompt"] = prompt
-        translated = model.transcribe(str(video_path), **translate_options)
-        translation_segments = _format_segments(translated.get("segments", []))
-        translation_language = target_language or "en"
+            logger.info("whisper translation prompt", extra={"prompt": prompt})
+        translation_segments = _translate_segments(
+            segments,
+            source_language=translation_source,
+            target_language=translation_language,
+        )
 
     payload = {
         "segments": segments,

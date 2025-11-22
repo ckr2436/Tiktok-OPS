@@ -14,6 +14,28 @@ _dummy_whisper.tokenizer = _dummy_tokenizer
 sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
+_dummy_transformers = types.ModuleType("transformers")
+_dummy_transformers.MarianMTModel = object
+_dummy_transformers.MarianTokenizer = object
+
+
+def _dummy_pipeline(task="translation", model=None, tokenizer=None):  # noqa: ANN001, ANN202
+    def _translator(text, *args, **kwargs):  # noqa: ANN001, ANN202
+        if isinstance(text, str):
+            items = [text]
+        else:
+            items = list(text)
+        return [{"translation_text": f"translated:{item}"} for item in items]
+
+    return _translator
+
+
+_dummy_transformers.pipeline = _dummy_pipeline
+_dummy_pipelines = types.ModuleType("transformers.pipelines")
+_dummy_pipelines.TranslationPipeline = object
+sys.modules.setdefault("transformers", _dummy_transformers)
+sys.modules.setdefault("transformers.pipelines", _dummy_pipelines)
+
 from app.features.tenants.openai_whisper import transcriber  # noqa: E402  - stubbed above
 
 
@@ -34,4 +56,27 @@ def test_ensure_ffmpeg_available_missing(monkeypatch, caplog):
             transcriber.ensure_ffmpeg_available()
 
     assert "FFmpeg is required for Whisper transcription" in " ".join(caplog.messages)
+
+
+def test_translate_segments_same_language_short_circuits(monkeypatch):
+    segments = [
+        {"id": 0, "start": 0.0, "end": 1.0, "text": "Hello"},
+        {"id": 1, "start": 1.0, "end": 2.0, "text": "World"},
+    ]
+
+    def _fail_get_translator(*_args, **_kwargs):  # noqa: ANN001, ANN202
+        raise AssertionError("translator should not be called for identical languages")
+
+    monkeypatch.setattr(transcriber, "_get_translation_pipeline", _fail_get_translator)
+
+    translated = transcriber._translate_segments(  # noqa: SLF001 - testing internal helper
+        segments,
+        source_language="en",
+        target_language="en",
+    )
+
+    assert translated == [
+        {"index": 0, "start": 0.0, "end": 1.0, "text": "Hello"},
+        {"index": 1, "start": 1.0, "end": 2.0, "text": "World"},
+    ]
 

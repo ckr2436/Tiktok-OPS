@@ -11,6 +11,28 @@ _dummy_whisper.load_model = lambda name="small": object()
 sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
+_dummy_transformers = types.ModuleType("transformers")
+_dummy_transformers.MarianMTModel = object
+_dummy_transformers.MarianTokenizer = object
+
+
+def _dummy_pipeline(task="translation", model=None, tokenizer=None):  # noqa: ANN001, ANN202
+    def _translator(text, *args, **kwargs):  # noqa: ANN001, ANN202
+        if isinstance(text, str):
+            items = [text]
+        else:
+            items = list(text)
+        return [{"translation_text": f"translated:{item}"} for item in items]
+
+    return _translator
+
+
+_dummy_transformers.pipeline = _dummy_pipeline
+_dummy_pipelines = types.ModuleType("transformers.pipelines")
+_dummy_pipelines.TranslationPipeline = object
+sys.modules.setdefault("transformers", _dummy_transformers)
+sys.modules.setdefault("transformers.pipelines", _dummy_pipelines)
+
 _dummy_yt_dlp = types.ModuleType("yt_dlp")
 _dummy_yt_dlp.YoutubeDL = None  # placeholder, patched per-test
 sys.modules.setdefault("yt_dlp", _dummy_yt_dlp)
