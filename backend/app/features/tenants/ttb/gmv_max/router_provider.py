@@ -201,7 +201,8 @@ async def _sync_products_now(
                 "auth_id": int(context.auth_id),
                 "scope": "products",
                 "params": {"envelope": envelope},
-            }
+            },
+            queue="gmvmax",
         )
         await asyncio.to_thread(task.get, timeout=300)
     except Exception as exc:  # noqa: BLE001

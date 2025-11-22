@@ -440,7 +440,7 @@ def enqueue_meta_sync(
     stamp = moment.strftime("%Y%m%d%H%M")
     idempotency_key = f"bind-init-meta-{workspace_id}-{auth_id}-{stamp}"
 
-    queue_name = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
+    queue_name = "gmvmax"
     from app.celery_app import celery_app  # noqa: WPS433
 
     # --- primary: run "all"
