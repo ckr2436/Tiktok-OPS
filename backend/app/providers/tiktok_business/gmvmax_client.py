@@ -540,6 +540,7 @@ class GMVMaxCustomAnchorVideoListGetRequest(BaseModel):
 class GMVMaxExclusiveAuthorizationGetRequest(BaseModel):
     advertiser_id: str
     store_id: str
+    store_authorized_bc_id: str
 
 
 class GMVMaxExclusiveAuthorizationCreateRequest(BaseModel):

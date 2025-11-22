@@ -230,10 +230,12 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             {"advertiser_id": "1", "campaign_id": "cmp", "page_size": "10"},
         ),
         (
-            GMVMaxExclusiveAuthorizationGetRequest(advertiser_id="1", store_id="s"),
+            GMVMaxExclusiveAuthorizationGetRequest(
+                advertiser_id="1", store_id="s", store_authorized_bc_id="bc"
+            ),
             "gmv_max_exclusive_authorization_get",
             "/open_api/v1.3/gmv_max/exclusive_authorization/get/",
-            {"advertiser_id": "1", "store_id": "s"},
+            {"advertiser_id": "1", "store_id": "s", "store_authorized_bc_id": "bc"},
         ),
         (
             GMVMaxBidRecommendRequest(
@@ -525,7 +527,9 @@ async def test_gmvmax_client_post_requests(
             "gmv_max_custom_anchor_video_list_get",
         ),
         (
-            GMVMaxExclusiveAuthorizationGetRequest(advertiser_id="1", store_id="s"),
+            GMVMaxExclusiveAuthorizationGetRequest(
+                advertiser_id="1", store_id="s", store_authorized_bc_id="bc"
+            ),
             "gmv_max_exclusive_authorization_get",
         ),
         (
