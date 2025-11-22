@@ -1319,6 +1319,10 @@ async def auto_bind_gmvmax_account(
             continue
         if not store_id:
             continue
+        if not bc_id:
+            # Without a business center ID TikTok APIs reject usage checks, and the
+            # binding cannot be persisted anyway.
+            continue
 
         request_ids: Dict[str, Optional[str]] = {"store_list": store_resp.request_id}
 
