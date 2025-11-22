@@ -215,6 +215,23 @@ export default function GmvMaxOverviewPage() {
     },
   );
 
+  const accounts = useMemo(() => {
+    const items = accountsQuery.data?.items || accountsQuery.data?.list || accountsQuery.data || [];
+    return Array.isArray(items) ? items : [];
+  }, [accountsQuery.data]);
+
+  const allAccountOptionQueries = useQueries({
+    queries: accounts.map((account) => {
+      const accountAuthId = account?.auth_id ?? account?.authId;
+      return {
+        queryKey: ['gmvMax', 'options', workspaceId, provider, String(accountAuthId || ''), scopeOptionsParams],
+        queryFn: () => getGmvMaxOptions(workspaceId, provider, accountAuthId, scopeOptionsParams),
+        enabled: Boolean(workspaceId && provider && accountAuthId),
+        staleTime: 5 * 60 * 1000,
+      };
+    }),
+  });
+
   const bindingConfigQuery = useGmvMaxConfigQuery(
     workspaceId,
     provider,
@@ -235,6 +252,114 @@ export default function GmvMaxOverviewPage() {
 
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
+
+  const aggregatedStoreOptions = useMemo(() => {
+    const combined = new Map();
+    accounts.forEach((account, index) => {
+      const accountAuthId = normalizeIdValue(account?.auth_id ?? account?.authId);
+      if (!accountAuthId) return;
+      const optionQuery = allAccountOptionQueries[index];
+      const optionData = optionQuery?.data || {};
+      const advertisers = ensureArray(optionData.advertisers || optionData.advertiser_list);
+      const stores = ensureArray(optionData.stores || optionData.store_list);
+      if (stores.length === 0) return;
+
+      const bcLinks = extractLinkMap(optionData.links || {}, 'bc_to_advertisers', 'bcToAdvertisers');
+      const advertiserLinks = extractLinkMap(
+        optionData.links || {},
+        'advertiser_to_stores',
+        'advertiserToStores',
+      );
+
+      const advertiserById = new Map();
+      advertisers.forEach((adv) => {
+        const id = getAdvertiserId(adv);
+        if (id) {
+          advertiserById.set(id, adv);
+        }
+      });
+
+      const advertiserToBusinessCenter = new Map();
+      bcLinks.forEach((advIds, bcId) => {
+        advIds.forEach((advId) => {
+          if (advId && !advertiserToBusinessCenter.has(advId)) {
+            advertiserToBusinessCenter.set(advId, bcId);
+          }
+        });
+      });
+      advertisers.forEach((adv) => {
+        const advId = getAdvertiserId(adv);
+        const bcId = getAdvertiserBusinessCenterId(adv);
+        if (advId && bcId && !advertiserToBusinessCenter.has(advId)) {
+          advertiserToBusinessCenter.set(advId, bcId);
+        }
+      });
+
+      stores.forEach((store) => {
+        const storeId = getStoreId(store);
+        if (!storeId) return;
+        const candidates = new Set();
+        const directAdvertiser = getStoreAdvertiserId(store);
+        if (directAdvertiser) {
+          candidates.add(directAdvertiser);
+        }
+        const linked = advertiserLinks.get(storeId) || [];
+        linked.forEach((candidate) => {
+          if (candidate) {
+            candidates.add(candidate);
+          }
+        });
+
+        let selectedAdvertiserId = '';
+        let selectedStatus = '';
+        for (const advId of candidates) {
+          const advertiser = advertiserById.get(advId);
+          const status = normalizeStatusValue(
+            advertiser?.authorization_status || advertiser?.auth_status || advertiser?.status,
+          );
+          if (!selectedAdvertiserId) {
+            selectedAdvertiserId = advId;
+            selectedStatus = status;
+          }
+          if (status === 'EFFECTIVE') {
+            selectedAdvertiserId = advId;
+            selectedStatus = status;
+            break;
+          }
+        }
+
+        let bcId = collectStoreBusinessCenterCandidates(store)[0] || '';
+        if (!bcId && selectedAdvertiserId) {
+          bcId = advertiserToBusinessCenter.get(selectedAdvertiserId) || '';
+        }
+
+        const option = {
+          value: storeId,
+          label: getStoreLabel(store),
+          authId: accountAuthId,
+          advertiserId: selectedAdvertiserId,
+          bcId: bcId || '',
+          advertiserStatus: selectedStatus,
+          needsAuthorization: selectedStatus !== 'EFFECTIVE',
+        };
+
+        const existing = combined.get(storeId);
+        if (!existing) {
+          combined.set(storeId, option);
+          return;
+        }
+        if (existing.advertiserStatus === 'EFFECTIVE') return;
+        if (option.advertiserStatus === 'EFFECTIVE') {
+          combined.set(storeId, option);
+          return;
+        }
+        if (!existing.advertiserId && option.advertiserId) {
+          combined.set(storeId, option);
+        }
+      });
+    });
+    return Array.from(combined.values());
+  }, [accounts, allAccountOptionQueries]);
 
   const advertiserList = useMemo(() => {
     return ensureArray(scopeOptions.advertisers || scopeOptions.advertiser_list);
@@ -384,6 +509,9 @@ export default function GmvMaxOverviewPage() {
   }, [advertiserToBusinessCenter, advertiserToStores, storeList, storeToAdvertiserId]);
 
   const storeOptions = useMemo(() => {
+    if (aggregatedStoreOptions.length > 0) {
+      return aggregatedStoreOptions;
+    }
     if (!authId) return [];
     const seen = new Set();
     return storeList
@@ -394,11 +522,24 @@ export default function GmvMaxOverviewPage() {
         seen.add(option.value);
         return true;
       });
-  }, [authId, storeList]);
+  }, [aggregatedStoreOptions, authId, storeList]);
+
+  useEffect(() => {
+    if (authId || !storeId) return;
+    const matched = storeOptions.find((option) => option.value === storeId);
+    if (matched?.authId) {
+      setScope((prev) => ({
+        ...prev,
+        accountAuthId: matched.authId,
+        advertiserId: matched.advertiserId || prev.advertiserId,
+        bcId: matched.bcId || prev.bcId,
+      }));
+    }
+  }, [authId, storeId, storeOptions]);
 
   useEffect(() => {
     if (!authId || !storeId || !scopeOptionsReady) return;
-    const derivedAdvertiserId = storeToAdvertiserId.get(storeId) || '';
+    const derivedAdvertiserId = advertiserId || storeToAdvertiserId.get(storeId) || '';
     const derivedBusinessCenterId =
       storeToBusinessCenter.get(storeId) ||
       (derivedAdvertiserId ? advertiserToBusinessCenter.get(derivedAdvertiserId) : '');
@@ -618,10 +759,10 @@ export default function GmvMaxOverviewPage() {
   const selectedStoreLabel = storeOptions.find((item) => item.value === storeId)?.label || '';
 
   const scopeStatus = useMemo(() => {
-    if (!authId) {
+    if (!storeId) {
       return {
         variant: 'muted',
-        message: 'Select an account to configure the GMV Max binding.',
+        message: 'Select a store to configure the GMV Max binding.',
       };
     }
     if (bindingConfigLoading) {
@@ -659,6 +800,7 @@ export default function GmvMaxOverviewPage() {
     bindingConfigLoading,
     hasSavedBinding,
     savedBindingSummary,
+    storeId,
     scopeMatchesBinding,
   ]);
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
@@ -691,14 +833,24 @@ export default function GmvMaxOverviewPage() {
 
   const handleStoreChange = useCallback((event) => {
     const value = event?.target?.value || '';
+    const matched = storeOptions.find((option) => option.value === value);
+    if (matched?.needsAuthorization) {
+      setAutoBindingStatus({
+        variant: 'warning',
+        message: `Store ${matched.label} has no effective advertiser authorization. Please authorize an advertiser.`,
+      });
+    } else {
+      setAutoBindingStatus(null);
+    }
     setScope((prev) => ({
       ...prev,
-      advertiserId: null,
-      bcId: null,
+      accountAuthId: matched?.authId || prev.accountAuthId,
+      advertiserId: matched?.advertiserId ? String(matched.advertiserId) : null,
+      bcId: matched?.bcId ? String(matched.bcId) : null,
       storeId: value ? String(value) : null,
     }));
     setSelectedPresetId('');
-  }, []);
+  }, [storeOptions]);
 
   const handlePresetChange = useCallback(
     (event) => {
@@ -1081,7 +1233,7 @@ export default function GmvMaxOverviewPage() {
         const response = await autoBindingMutation.mutateAsync({
           store_id: storeId,
           advertiser_id: derivedAdvertiserId,
-          persist: false,
+          persist: true,
         });
         if (cancelled) return;
         const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
@@ -1195,7 +1347,7 @@ export default function GmvMaxOverviewPage() {
 
   const handleSyncMetadata = useCallback(async () => {
     if (!authId) {
-      setMetaSyncError('Select an account before syncing metadata.');
+      setMetaSyncError('Select a store before syncing metadata.');
       setMetaSyncMessage('');
       return;
     }
@@ -1483,7 +1635,7 @@ export default function GmvMaxOverviewPage() {
         <header className="gmvmax-card__header">
           <div>
             <h2>Scope filters</h2>
-            <p>Select the account and store context for GMV Max management. Business center and advertiser will be auto-detected from the store.</p>
+            <p>Select a store for GMV Max management. Business center and advertiser are auto-detected and hidden.</p>
           </div>
           <div className="gmvmax-card__actions">
             <button
@@ -1540,22 +1692,11 @@ export default function GmvMaxOverviewPage() {
             </div>
           ) : null}
           <div className="gmvmax-field-grid">
-            <FormField label="Account">
-              <select value={authId} onChange={handleAccountChange}>
-                <option value="">Select account</option>
-                {accountOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                    {option.status === 'invalid' ? ' (invalid)' : ''}
-                  </option>
-                ))}
-              </select>
-            </FormField>
             <FormField label="Store">
               <select
                 value={storeId}
                 onChange={handleStoreChange}
-                disabled={!authId || storeOptions.length === 0}
+                disabled={storeOptions.length === 0}
               >
                 <option value="">Select store</option>
                 {storeOptions.map((option) => (
@@ -1564,22 +1705,6 @@ export default function GmvMaxOverviewPage() {
                   </option>
                 ))}
               </select>
-            </FormField>
-            <FormField label="Business center (auto-detected)">
-              <input
-                className="gmvmax-readonly-input"
-                type="text"
-                readOnly
-                value={selectedBusinessCenterLabel || 'Auto-detected after selecting a store'}
-              />
-            </FormField>
-            <FormField label="Advertiser (auto-detected)">
-              <input
-                className="gmvmax-readonly-input"
-                type="text"
-                readOnly
-                value={selectedAdvertiserLabel || 'Auto-detected after selecting a store'}
-              />
             </FormField>
           </div>
           <div className="gmvmax-field-grid">
@@ -1663,7 +1788,7 @@ export default function GmvMaxOverviewPage() {
           </button>
         </header>
         <div className="gmvmax-card__body">
-          {!authId ? <p className="gmvmax-placeholder">Select an account to view products.</p> : null}
+          {!authId ? <p className="gmvmax-placeholder">Select a store to view products.</p> : null}
           {authId && !storeId ? (
             <p className="gmvmax-placeholder">Select a store to load products.</p>
           ) : null}
