@@ -107,6 +107,28 @@ def mark_completed(
     return job
 
 
+def update_downloaded_file(
+    db: Session,
+    *,
+    workspace_id: int,
+    job_id: str,
+    filename: str | None,
+    file_size: int | None,
+    content_type: str | None,
+    video_path: str | None,
+) -> Optional[OpenAIWhisperJob]:
+    job = _ensure_job(db, workspace_id, job_id)
+    if not job:
+        return None
+    job.filename = filename or job.filename
+    job.file_size = file_size if file_size is not None else job.file_size
+    job.content_type = content_type or job.content_type
+    job.video_path = video_path or job.video_path
+    job.updated_at = _utcnow()
+    db.add(job)
+    return job
+
+
 def list_jobs(db: Session, workspace_id: int, limit: int) -> Iterable[OpenAIWhisperJob]:
     stmt = (
         select(OpenAIWhisperJob)

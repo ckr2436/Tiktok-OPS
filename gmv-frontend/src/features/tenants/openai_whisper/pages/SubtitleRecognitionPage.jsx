@@ -374,7 +374,7 @@ export default function SubtitleRecognitionPage() {
               </button>
             </div>
             <p style={{ color: '#6b7280', marginTop: 8, marginBottom: 0 }}>
-              我们会先用 yt-dlp 预检并生成下载链接，无法解析将提示链接不正确。
+              提交后将在后台使用 yt-dlp 下载并识别视频，如链接需登录授权会在结果中提示。
             </p>
           </div>
 
