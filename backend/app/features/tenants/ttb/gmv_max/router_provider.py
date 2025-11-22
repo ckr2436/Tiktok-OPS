@@ -1201,11 +1201,8 @@ def _build_auto_binding_candidate(
 
 def _is_binding_candidate_ready(candidate: AutoBindingCandidate) -> bool:
     auth_status = (candidate.authorization_status or "").upper()
-    auth_ok = not auth_status or auth_status == "EFFECTIVE"
-    availability_ok = candidate.is_gmv_max_available is not False
-    usage_ok = candidate.promote_all_products_allowed is not False
-    occupancy_ok = candidate.is_running_custom_shop_ads is not True
-    return bool(candidate.store_authorized_bc_id) and auth_ok and availability_ok and usage_ok and occupancy_ok
+    auth_ok = auth_status == "EFFECTIVE"
+    return bool(candidate.store_authorized_bc_id) and auth_ok
 
 
 @router.post(
@@ -1518,7 +1515,7 @@ async def auto_bind_gmvmax_account(
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "Cached GMV Max binding failed authorization or usage checks; cannot persist binding."
+                    "Cached GMV Max binding is not EFFECTIVE in exclusive authorization; cannot persist binding."
                 ),
             )
         persisted = False
@@ -1552,6 +1549,20 @@ async def auto_bind_gmvmax_account(
                         "please run database migrations."
                     ),
                 ) from exc
+        else:
+            try:
+                _upsert_store_link(
+                    context.db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=candidate.advertiser_id,
+                    store_id=candidate.store_id,
+                    store_authorized_bc_id=candidate.store_authorized_bc_id,
+                )
+                context.db.commit()
+            except Exception:
+                context.db.rollback()
+                raise
         return AutoBindingResponse(
             selected=candidate,
             candidates=[candidate],
@@ -1650,12 +1661,20 @@ async def auto_bind_gmvmax_account(
         ]
         selected = authorized_candidates[0] if authorized_candidates else None
 
+    if selected is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="未找到授权的广告户，请在店铺后台进行绑定。",
+        )
+
     persisted = False
     if payload.persist and selected:
         if not _is_binding_candidate_ready(selected):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                detail="No GMV Max binding candidates passed usage or occupancy checks; cannot persist binding.",
+                detail=(
+                    "No GMV Max binding candidates passed exclusive authorization checks; cannot persist binding."
+                ),
             )
         if not selected.store_authorized_bc_id:
             raise HTTPException(
@@ -1689,6 +1708,20 @@ async def auto_bind_gmvmax_account(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="GMV Max binding configuration storage is not initialized; please run database migrations.",
             ) from exc
+        except Exception:
+            context.db.rollback()
+            raise
+    elif selected:
+        try:
+            _upsert_store_link(
+                context.db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=selected.advertiser_id,
+                store_id=selected.store_id,
+                store_authorized_bc_id=selected.store_authorized_bc_id,
+            )
+            context.db.commit()
         except Exception:
             context.db.rollback()
             raise
