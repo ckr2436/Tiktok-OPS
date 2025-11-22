@@ -1446,6 +1446,11 @@ async def auto_bind_gmvmax_account(
 
     persisted = False
     if payload.persist and selected:
+        if not _is_binding_candidate_ready(selected):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="No GMV Max binding candidates passed usage or occupancy checks; cannot persist binding.",
+            )
         if not selected.store_authorized_bc_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
