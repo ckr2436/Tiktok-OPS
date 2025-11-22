@@ -126,6 +126,19 @@ export default function GmvMaxOverviewPage() {
   const autoOptionsRefreshAccounts = useRef(new Set());
   const autoBindingKeyRef = useRef('');
 
+  useEffect(() => {
+    const handleHttpError = (event) => {
+      const url = event?.detail?.context?.error?.config?.url || '';
+      if (typeof url === 'string' && url.includes('/gmvmax/binding/auto')) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('http:error', handleHttpError);
+    return () => {
+      window.removeEventListener('http:error', handleHttpError);
+    };
+  }, []);
+
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
   const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
