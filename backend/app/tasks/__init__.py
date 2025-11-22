@@ -11,5 +11,18 @@ from __future__ import annotations
 from . import oauth_tasks  # noqa: F401
 from . import ttb_sync_tasks  # noqa: F401
 from . import ttb_gmvmax_tasks  # noqa: F401
-from app.features.tenants.openai_whisper import tasks as openai_whisper_tasks  # noqa: F401
+
+# Whisper 任务依赖 yt_dlp 等第三方库，缺失时不应阻断其它任务的注册。
+import logging
+
+
+try:
+    from app.features.tenants.openai_whisper import tasks as openai_whisper_tasks  # noqa: F401
+except ModuleNotFoundError as exc:  # pragma: no cover - 环境依赖可选
+    if exc.name == "yt_dlp":
+        logging.getLogger(__name__).warning(
+            "skip registering Whisper tasks: missing optional dependency %s", exc.name
+        )
+    else:
+        raise
 

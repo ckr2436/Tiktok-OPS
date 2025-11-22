@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Sequence
 from urllib.parse import urlparse
@@ -129,5 +130,17 @@ import app.tasks.oauth_tasks  # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401
 import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
 import app.tasks.ttb_gmvmax_tasks  # noqa: F401  # ← 新增：注册 gmvmax 任务
-import app.features.tenants.openai_whisper.tasks  # noqa: F401  # 注册 Whisper 字幕任务
+
+# Whisper 字幕任务依赖第三方库（yt_dlp），在某些环境下可能未安装。
+# 为了避免整个应用的模块导入失败，这里容错处理缺失依赖，
+# 仅跳过相关任务注册并打印警告日志。
+try:
+    import app.features.tenants.openai_whisper.tasks  # noqa: F401  # 注册 Whisper 字幕任务
+except ModuleNotFoundError as exc:
+    if exc.name == "yt_dlp":
+        logging.getLogger(__name__).warning(
+            "skip registering Whisper tasks: missing optional dependency %s", exc.name
+        )
+    else:
+        raise
 
