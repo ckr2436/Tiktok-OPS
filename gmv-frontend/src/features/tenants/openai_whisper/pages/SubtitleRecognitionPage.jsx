@@ -19,6 +19,7 @@ export default function SubtitleRecognitionPage() {
   const [loading, setLoading] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [uploadedVideo, setUploadedVideo] = useState(null)
+  const [shareLink, setShareLink] = useState('')
   const [sourceLanguage, setSourceLanguage] = useState('')
   const [translate, setTranslate] = useState(false)
   const [targetLanguage, setTargetLanguage] = useState('')
@@ -32,6 +33,7 @@ export default function SubtitleRecognitionPage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [selectedJobId, setSelectedJobId] = useState(null)
+  const [isPasting, setIsPasting] = useState(false)
   const upsertHistory = useCallback((jobData) => {
     if (!jobData) return
     setHistoryError('')
@@ -72,6 +74,37 @@ export default function SubtitleRecognitionPage() {
       mounted = false
     }
   }, [wid])
+
+  useEffect(() => {
+    if (shareLink) {
+      setSelectedFile(null)
+      setUploadedVideo(null)
+      setUploadProgress(0)
+      setIsUploading(false)
+    }
+  }, [shareLink])
+
+  const handlePasteShareLink = useCallback(async () => {
+    if (!navigator?.clipboard?.readText) {
+      setErrorMessage('当前浏览器不支持读取剪贴板，请手动粘贴链接。')
+      return
+    }
+    try {
+      setIsPasting(true)
+      const text = await navigator.clipboard.readText()
+      if (!text) {
+        setErrorMessage('剪贴板为空，请复制短视频分享链接后重试。')
+        return
+      }
+      setShareLink(text.trim())
+      setErrorMessage('')
+    } catch (err) {
+      console.error('read clipboard failed', err)
+      setErrorMessage('无法读取剪贴板，请检查浏览器权限或手动粘贴链接。')
+    } finally {
+      setIsPasting(false)
+    }
+  }, [])
 
   const refreshHistory = useCallback(async () => {
     if (!wid) return []
@@ -206,8 +239,9 @@ export default function SubtitleRecognitionPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     setErrorMessage('')
-    if (!uploadedVideo?.upload_id) {
-      setErrorMessage('请先上传需要识别的视频文件。')
+    const trimmedLink = shareLink.trim()
+    if (!trimmedLink && !uploadedVideo?.upload_id) {
+      setErrorMessage('请先上传需要识别的视频文件，或粘贴有效的短视频分享链接。')
       return
     }
     if (translate && !targetLanguage) {
@@ -217,7 +251,8 @@ export default function SubtitleRecognitionPage() {
     try {
       setLoading(true)
       const response = await createSubtitleJob(wid, {
-        uploadId: uploadedVideo.upload_id,
+        uploadId: trimmedLink ? null : uploadedVideo?.upload_id,
+        shareUrl: trimmedLink || null,
         sourceLanguage: sourceLanguage || null,
         translate,
         targetLanguage: targetLanguage || null,
@@ -235,7 +270,8 @@ export default function SubtitleRecognitionPage() {
     }
   }
 
-  const canSubmit = !!uploadedVideo && (!translate || targetLanguage) && !isUploading
+  const canSubmit =
+    (!!uploadedVideo || !!shareLink.trim()) && (!translate || targetLanguage) && !isUploading
   const showDownloads = job && job.status === 'success'
   const sourceDownloadUrl = job
     ? buildSubtitleDownloadUrl(wid, job.job_id, 'source')
@@ -277,11 +313,69 @@ export default function SubtitleRecognitionPage() {
             <h2 style={{ fontSize: 18, margin: '0 0 12px' }}>上传视频</h2>
             <FileDropZone
               file={selectedFile}
-              onFileChange={setSelectedFile}
-              disabled={loading}
+              onFileChange={(file) => {
+                setShareLink('')
+                setSelectedFile(file)
+              }}
+              disabled={loading || !!shareLink}
               uploadProgress={uploadProgress}
               isUploading={isUploading}
             />
+          </div>
+
+          <div
+            style={{
+              border: '1px dashed #d1d5db',
+              borderRadius: 12,
+              padding: 16,
+              background: '#f9fafb',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+                  或粘贴短视频分享链接
+                </label>
+                <input
+                  type="text"
+                  value={shareLink}
+                  onChange={(e) => {
+                    setErrorMessage('')
+                    setShareLink(e.target.value)
+                  }}
+                  placeholder="支持抖音、快手等平台的公开分享链接"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                  }}
+                  disabled={loading}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handlePasteShareLink}
+                disabled={loading || isPasting}
+                style={{
+                  whiteSpace: 'nowrap',
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  border: '1px solid #2563eb',
+                  background: '#2563eb',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  height: 44,
+                  alignSelf: 'flex-end',
+                }}
+              >
+                {isPasting ? '读取中…' : '一键粘贴'}
+              </button>
+            </div>
+            <p style={{ color: '#6b7280', marginTop: 8, marginBottom: 0 }}>
+              我们会先用 yt-dlp 预检并生成下载链接，无法解析将提示链接不正确。
+            </p>
           </div>
 
           <div>
