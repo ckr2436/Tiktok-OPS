@@ -1,16 +1,19 @@
 """Service layer for tenant facing Whisper subtitle APIs."""
 from __future__ import annotations
 
+import mimetypes
 import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.errors import APIError
+
+from yt_dlp import YoutubeDL
 
 from . import repository, storage
 from .languages import list_language_options, normalize_language_code
@@ -84,6 +87,65 @@ def _merge_db_job_metadata(meta: Dict[str, object], job) -> Dict[str, object]:
     return meta
 
 
+def _pick_entry(info: Dict[str, object]) -> Dict[str, object]:
+    entries = info.get("entries") or []
+    if entries:
+        for entry in entries:
+            if entry:
+                return entry
+    return info
+
+
+def _probe_downloadable(share_url: str) -> Tuple[Dict[str, object], str]:
+    options = {"quiet": True, "skip_download": True, "noplaylist": True}
+    try:
+        with YoutubeDL(options) as ydl:
+            info = ydl.extract_info(share_url, download=False)
+    except Exception as exc:  # noqa: BLE001
+        raise APIError("INVALID_SHARE_LINK", "无法解析分享链接，请检查链接是否正确。", 422) from exc
+
+    entry = _pick_entry(info or {})
+    download_url = entry.get("url")
+    if not download_url:
+        for fmt in reversed(entry.get("formats") or []):
+            if fmt.get("url"):
+                download_url = fmt.get("url")
+                break
+    if not download_url:
+        raise APIError("INVALID_SHARE_LINK", "分享链接无法生成下载地址，请更换链接。", 422)
+
+    ext = entry.get("ext") or "mp4"
+    return entry, ext
+
+
+def _download_shared_video(workspace_id: int, job_id: str, share_url: str) -> Tuple[Path, str, Optional[str]]:
+    entry, ext = _probe_downloadable(share_url)
+    directory = storage.job_dir(workspace_id, job_id)
+    filename = entry.get("title") or entry.get("id") or "shared-video"
+    output_name = f"input.{ext}"
+    target_path = directory / output_name
+    content_type, _ = mimetypes.guess_type(f"{filename}.{ext}")
+
+    options = {
+        "outtmpl": str(target_path),
+        "quiet": True,
+        "noplaylist": True,
+        "merge_output_format": ext,
+    }
+
+    try:
+        with YoutubeDL(options) as ydl:
+            ydl.download([share_url])
+    except Exception as exc:  # noqa: BLE001
+        raise APIError("VIDEO_DOWNLOAD_FAILED", "视频下载失败，请稍后重试或更换链接。", 502) from exc
+
+    if not target_path.exists():
+        raise APIError("VIDEO_DOWNLOAD_FAILED", "视频下载失败，请稍后重试或更换链接。", 502)
+
+    final_name = f"{filename}.{ext}" if not filename.endswith(ext) else filename
+    return target_path, final_name, content_type
+
+
 def get_languages() -> LanguageListResponse:
     return LanguageListResponse(languages=list_language_options())
 
@@ -124,14 +186,18 @@ async def create_job(
     user_id: int,
     upload: Optional[UploadFile],
     upload_id: Optional[str],
+    share_url: Optional[str],
     source_language: Optional[str],
     translate: bool,
     target_language: Optional[str],
     show_bilingual: bool,
     db: Session,
 ) -> TranscriptionJobCreatedResponse:
-    if not upload and not upload_id:
-        raise APIError("FILE_REQUIRED", "请上传需要识别的视频。", 422)
+    share_url = (share_url or "").strip()
+    if share_url and (upload or upload_id):
+        raise APIError("FILE_REQUIRED", "请仅上传文件或粘贴分享链接中的一种。", 422)
+    if not upload and not upload_id and not share_url:
+        raise APIError("FILE_REQUIRED", "请上传需要识别的视频，或提供分享链接。", 422)
 
     normalized_source = _normalize_language_or_error(source_language, "source_language")
     normalized_target = _validate_options(translate, target_language)
@@ -142,7 +208,15 @@ async def create_job(
     original_name: str
 
     content_type: Optional[str] = None
-    if upload:
+    if share_url:
+        try:
+            video_path, original_name, content_type = _download_shared_video(
+                workspace_id, job_id, share_url
+            )
+        except Exception:
+            shutil.rmtree(directory, ignore_errors=True)
+            raise
+    elif upload:
         original_name = os.path.basename(upload.filename or "video.mp4")
         ext = Path(original_name).suffix or ".mp4"
         video_path = directory / f"input{ext}"
@@ -185,6 +259,8 @@ async def create_job(
         "filename": original_name,
         "video_path": str(video_path),
     }
+    if share_url:
+        metadata["share_url"] = share_url
     metadata["size"] = video_path.stat().st_size
     if content_type:
         metadata["content_type"] = content_type

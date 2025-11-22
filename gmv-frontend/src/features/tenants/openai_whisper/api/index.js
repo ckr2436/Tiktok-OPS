@@ -15,6 +15,8 @@ export async function createSubtitleJob(wid, payload, options = {}) {
   const form = new FormData()
   if (payload.uploadId) {
     form.append('upload_id', payload.uploadId)
+  } else if (payload.shareUrl) {
+    form.append('share_url', payload.shareUrl)
   } else if (payload.file) {
     form.append('file', payload.file)
   }
