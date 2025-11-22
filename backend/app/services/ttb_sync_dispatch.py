@@ -253,7 +253,7 @@ def dispatch_sync(
     }
     from app.celery_app import celery_app  # noqa: WPS433 (lazy import to avoid cycles)
 
-    queue_name = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
+    queue_name = "gmvmax"
     task = celery_app.send_task(task_name, kwargs=payload, queue=queue_name)
 
     persisted_run = db.get(ScheduleRun, run_id)
