@@ -1204,15 +1204,7 @@ export default function GmvMaxOverviewPage() {
       return;
     }
     const derivedAdvertiserId = advertiserId || storeToAdvertiserId.get(storeId) || '';
-    if (!derivedAdvertiserId) {
-      setAutoBindingStatus({
-        variant: 'warning',
-        message: 'Unable to derive advertiser for the selected store; authorization not checked.',
-      });
-      autoBindingKeyRef.current = '';
-      return;
-    }
-    const key = `${storeId}:${derivedAdvertiserId}`;
+    const key = storeId ? `store:${storeId}` : '';
     if (autoBindingMutation.isPending) {
       return;
     }
@@ -1221,31 +1213,31 @@ export default function GmvMaxOverviewPage() {
     }
     autoBindingKeyRef.current = key;
     let cancelled = false;
-    setAutoBindingStatus({ variant: 'muted', message: 'Checking GMV Max exclusive authorization…' });
+    setAutoBindingStatus({ variant: 'muted', message: 'Auto-detecting GMV Max binding…' });
     (async () => {
       try {
         const response = await autoBindingMutation.mutateAsync({
           store_id: storeId,
-          advertiser_id: derivedAdvertiserId,
           persist: true,
         });
         if (cancelled) return;
         const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
         const selected = (() => {
           if (response?.selected) return response.selected;
+          const ready = candidates.find((candidate) => {
+            const status = (candidate?.authorization_status || '').toUpperCase();
+            const hasBc = Boolean(candidate?.store_authorized_bc_id);
+            const usageAllowed = candidate?.promote_all_products_allowed !== false;
+            const occupancyOk = candidate?.is_running_custom_shop_ads !== true;
+            return hasBc && usageAllowed && occupancyOk && (status === 'EFFECTIVE' || !status);
+          });
           const effectiveCandidate = candidates.find(
             (candidate) => (candidate?.authorization_status || '').toUpperCase() === 'EFFECTIVE',
-          );
-          const matchDerived = candidates.find(
-            (candidate) =>
-              derivedAdvertiserId &&
-              String(candidate?.advertiser_id) === String(derivedAdvertiserId) &&
-              (candidate?.authorization_status || '').toUpperCase() !== 'UNAUTHORIZED',
           );
           const authorizedCandidate = candidates.find(
             (candidate) => (candidate?.authorization_status || '').toUpperCase() !== 'UNAUTHORIZED',
           );
-          return effectiveCandidate || matchDerived || authorizedCandidate || candidates[0] || null;
+          return ready || effectiveCandidate || authorizedCandidate || candidates[0] || null;
         })();
         if (!selected) {
           setAutoBindingStatus({

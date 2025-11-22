@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
 from app.celery_app import celery_app
 from app.data.db import get_db
-from app.data.models.ttb_entities import TTBProduct
+from app.data.models.ttb_entities import (
+    TTBAdvertiser,
+    TTBAdvertiserStoreLink,
+    TTBProduct,
+)
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
@@ -1279,6 +1283,53 @@ def get_sync_task_state(
     return SyncTaskStateResponse(task_id=task_id, state=state, result=result, error=error)
 
 
+def _upsert_store_link(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    store_authorized_bc_id: Optional[str],
+) -> None:
+    row = (
+        db.query(TTBAdvertiserStoreLink)
+        .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .filter(TTBAdvertiserStoreLink.advertiser_id == str(advertiser_id))
+        .filter(TTBAdvertiserStoreLink.store_id == str(store_id))
+        .first()
+    )
+    if row is None:
+        row = TTBAdvertiserStoreLink(
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            relation_type="AUTHORIZER",
+            store_authorized_bc_id=_normalize_identifier(store_authorized_bc_id),
+            bc_id_hint=_normalize_identifier(store_authorized_bc_id),
+            source="gmvmax.auto_bind",
+        )
+    else:
+        if not row.relation_type:
+            row.relation_type = "AUTHORIZER"
+        if not row.store_authorized_bc_id:
+            row.store_authorized_bc_id = _normalize_identifier(store_authorized_bc_id)
+        if not row.bc_id_hint:
+            row.bc_id_hint = _normalize_identifier(store_authorized_bc_id)
+        if not row.source:
+            row.source = "gmvmax.auto_bind"
+    db.add(row)
+
+
+def _dedupe_append(target: list[str], value: Optional[str], seen: set[str]) -> None:
+    normalized = _normalize_identifier(value)
+    if normalized and normalized not in seen:
+        seen.add(normalized)
+        target.append(normalized)
+
+
 @router.post(
     "/binding/auto",
     response_model=AutoBindingResponse,
@@ -1294,40 +1345,66 @@ async def auto_bind_gmvmax_account(
 ) -> AutoBindingResponse:
     """Discover GMV Max store bindings via TikTok APIs and optionally persist them."""
 
-    advertiser_id = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
-    if not advertiser_id:
+    target_store = _normalize_identifier(payload.store_id)
+    advertiser_candidates: List[str] = []
+    seen_advertisers: set[str] = set()
+
+    _dedupe_append(advertiser_candidates, payload.advertiser_id, seen_advertisers)
+    _dedupe_append(advertiser_candidates, context.advertiser_id, seen_advertisers)
+
+    if target_store:
+        link_rows = (
+            context.db.query(TTBAdvertiserStoreLink.advertiser_id)
+            .filter(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+            .filter(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+            .filter(TTBAdvertiserStoreLink.store_id == target_store)
+            .order_by(TTBAdvertiserStoreLink.last_seen_at.desc())
+            .all()
+        )
+        for (adv_id,) in link_rows:
+            _dedupe_append(advertiser_candidates, adv_id, seen_advertisers)
+
+    advertiser_rows = (
+        context.db.query(TTBAdvertiser.advertiser_id)
+        .filter(TTBAdvertiser.workspace_id == int(workspace_id))
+        .filter(TTBAdvertiser.auth_id == int(auth_id))
+        .order_by(TTBAdvertiser.last_seen_at.desc())
+        .all()
+    )
+    for (adv_id,) in advertiser_rows:
+        _dedupe_append(advertiser_candidates, adv_id, seen_advertisers)
+
+    if not advertiser_candidates:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail="advertiser_id is required for GMV Max binding discovery",
+            detail="No advertisers available for GMV Max binding discovery",
         )
-
-    store_resp = await _call_tiktok(
-        context.client.gmv_max_store_list,
-        GMVMaxStoreListRequest(advertiser_id=str(advertiser_id)),
-    )
 
     candidates: List[AutoBindingCandidate] = []
-    target_store = _normalize_identifier(payload.store_id)
-    for store in store_resp.data.store_list:
-        store_meta = _extract_store_metadata(store)
-        store_id = _normalize_identifier(store_meta.get("store_id") or getattr(store, "store_id", None))
-        bc_id = _normalize_identifier(
-            store_meta.get("store_authorized_bc_id")
-            or getattr(store, "store_authorized_bc_id", None)
+    for advertiser_id in advertiser_candidates:
+        store_resp = await _call_tiktok(
+            context.client.gmv_max_store_list,
+            GMVMaxStoreListRequest(advertiser_id=str(advertiser_id)),
         )
-        if target_store and store_id != target_store:
-            continue
-        if not store_id:
-            continue
-        if not bc_id:
-            # Without a business center ID TikTok APIs reject usage checks, and the
-            # binding cannot be persisted anyway.
-            continue
 
-        request_ids: Dict[str, Optional[str]] = {"store_list": store_resp.request_id}
+        for store in store_resp.data.store_list:
+            store_meta = _extract_store_metadata(store)
+            store_id = _normalize_identifier(store_meta.get("store_id") or getattr(store, "store_id", None))
+            bc_id = _normalize_identifier(
+                store_meta.get("store_authorized_bc_id")
+                or getattr(store, "store_authorized_bc_id", None)
+            )
+            if target_store and store_id != target_store:
+                continue
+            if not store_id:
+                continue
+            if not bc_id:
+                # Without a business center ID TikTok APIs reject usage checks, and the
+                # binding cannot be persisted anyway.
+                continue
 
-        auth_resp = None
-        if store_id and bc_id:
+            request_ids: Dict[str, Optional[str]] = {"store_list": store_resp.request_id}
+
             auth_resp = await _call_tiktok(
                 context.client.gmv_max_exclusive_authorization_get,
                 GMVMaxExclusiveAuthorizationGetRequest(
@@ -1337,29 +1414,43 @@ async def auto_bind_gmvmax_account(
                 ),
             )
             request_ids["authorization"] = auth_resp.request_id
-        usage_resp = await _call_tiktok(
-            context.client.gmv_max_store_shop_ad_usage_check,
-            GMVMaxStoreAdUsageCheckRequest(
+            usage_resp = await _call_tiktok(
+                context.client.gmv_max_store_shop_ad_usage_check,
+                GMVMaxStoreAdUsageCheckRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(store_id or ""),
+                    store_authorized_bc_id=bc_id,
+                ),
+            )
+            request_ids["usage"] = usage_resp.request_id
+
+            candidate = _build_auto_binding_candidate(
+                store,
                 advertiser_id=str(advertiser_id),
-                store_id=str(store_id or ""),
-                store_authorized_bc_id=bc_id,
-            ),
-        )
-        request_ids["usage"] = usage_resp.request_id
+                authorization_data=auth_resp.data if auth_resp else None,
+                usage_data=usage_resp.data,
+                request_ids=request_ids,
+            )
+            if candidate:
+                candidates.append(candidate)
 
-        candidate = _build_auto_binding_candidate(
-            store,
-            advertiser_id=str(advertiser_id),
-            authorization_data=auth_resp.data if auth_resp else None,
-            usage_data=usage_resp.data,
-            request_ids=request_ids,
-        )
-        if candidate:
-            candidates.append(candidate)
+    ready_candidates = [c for c in candidates if _is_binding_candidate_ready(c)]
+    selected = ready_candidates[0] if ready_candidates else None
+    if selected is None:
+        authorized_candidates = [
+            c
+            for c in candidates
+            if (c.authorization_status or "").upper() not in {"UNAUTHORIZED", "REJECTED"}
+        ]
+        selected = authorized_candidates[0] if authorized_candidates else None
 
-    selected = next((c for c in candidates if _is_binding_candidate_ready(c)), None)
     persisted = False
     if payload.persist and selected:
+        if not _is_binding_candidate_ready(selected):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="No GMV Max binding candidates passed usage or occupancy checks; cannot persist binding.",
+            )
         if not selected.store_authorized_bc_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -1375,6 +1466,14 @@ async def auto_bind_gmvmax_account(
                 store_id=selected.store_id,
                 auto_sync_products=True,
                 actor_user_id=int(me.id),
+            )
+            _upsert_store_link(
+                context.db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=selected.advertiser_id,
+                store_id=selected.store_id,
+                store_authorized_bc_id=selected.store_authorized_bc_id,
             )
             context.db.commit()
             persisted = True
