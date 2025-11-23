@@ -141,6 +141,10 @@ class SyncTaskResponse(BaseModel):
     status_url: Optional[str] = None
 
 
+# Alias for async operations that fetch external data via Celery workers.
+AsyncTaskResponse = SyncTaskResponse
+
+
 class SyncTaskStateResponse(BaseModel):
     """Status payload for GMV Max sync Celery tasks."""
 
