@@ -277,6 +277,39 @@ export default function GmvMaxOverviewPage() {
     advertiserId,
   });
 
+  useEffect(() => {
+    if (!bindingConfig || !savedStoreId) return;
+    if (storeId && storeId !== savedStoreId) return;
+
+    setScope((prev) => {
+      const nextStoreId = savedStoreId || prev.storeId;
+      const nextBcId = savedBusinessCenterId || prev.bcId;
+      const nextAdvertiserId = savedAdvertiserId || prev.advertiserId;
+
+      if (
+        prev.storeId === nextStoreId &&
+        prev.bcId === nextBcId &&
+        prev.advertiserId === nextAdvertiserId
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        storeId: nextStoreId || null,
+        bcId: nextBcId || null,
+        advertiserId: nextAdvertiserId || null,
+      };
+    });
+  }, [
+    advertiserId,
+    bindingConfig,
+    savedAdvertiserId,
+    savedBusinessCenterId,
+    savedStoreId,
+    storeId,
+  ]);
+
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
 
