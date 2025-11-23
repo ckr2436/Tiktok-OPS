@@ -1234,7 +1234,8 @@ export default function GmvMaxOverviewPage() {
           };
         });
         const normalizedStatus = (selected.authorization_status || '').toUpperCase();
-        if (normalizedStatus && normalizedStatus !== 'EFFECTIVE') {
+        const effectiveStatuses = new Set(['EFFECTIVE', 'AUTHORIZED']);
+        if (normalizedStatus && !effectiveStatuses.has(normalizedStatus)) {
           setAutoBindingStatus({
             variant: 'warning',
             message: `GMV Max exclusive authorization is ${normalizedStatus.toLowerCase()} for advertiser ${nextAdvertiserId}.`,
