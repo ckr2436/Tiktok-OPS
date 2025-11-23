@@ -101,6 +101,17 @@ import CampaignCard from './gmvMaxOverview/CampaignCard.jsx';
 import CreateSeriesModal from './gmvMaxOverview/CreateSeriesModal.jsx';
 import EditSeriesModal from './gmvMaxOverview/EditSeriesModal.jsx';
 
+const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertiserId }) => {
+  if (!config || !storeId) return false;
+  const normalizedStore = String(config.store_id || '');
+  const normalizedBc = config.bc_id ? String(config.bc_id) : '';
+  const normalizedAdvertiser = config.advertiser_id ? String(config.advertiser_id) : '';
+  if (!normalizedStore || normalizedStore !== String(storeId)) return false;
+  if (businessCenterId && normalizedBc !== String(businessCenterId)) return false;
+  if (advertiserId && normalizedAdvertiser !== String(advertiserId)) return false;
+  return Boolean(normalizedBc && normalizedAdvertiser && normalizedStore);
+};
+
 export default function GmvMaxOverviewPage() {
   const { wid: workspaceId } = useParams();
   const navigate = useNavigate();
@@ -260,6 +271,11 @@ export default function GmvMaxOverviewPage() {
   const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
   const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
   const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
+  const bindingConfigMatchedScope = bindingConfigMatchesScope(bindingConfig, {
+    storeId,
+    businessCenterId,
+    advertiserId,
+  });
 
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
@@ -576,7 +592,8 @@ export default function GmvMaxOverviewPage() {
     storeToBusinessCenter,
   ]);
 
-  const autoBindingVerified = autoBindingStatus?.variant === 'success';
+  const autoBindingVerified =
+    autoBindingStatus?.variant === 'success' || bindingConfigMatchedScope === true;
 
   const campaignsQueryEnabled = shouldFetchGmvMaxSeries({
     workspaceId,
@@ -1133,6 +1150,20 @@ export default function GmvMaxOverviewPage() {
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
   const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
+
+  useEffect(() => {
+    if (!bindingConfigMatchedScope || autoBindingMutation.isPending) return;
+    setAutoBindingStatus((prev) => {
+      if (prev?.variant === 'success') return prev;
+      return {
+        variant: 'success',
+        message: 'Confirmed GMV Max binding from saved configuration. You can sync GMV Max now.',
+      };
+    });
+    if (!autoBindingKeyRef.current && storeId) {
+      autoBindingKeyRef.current = `store:${storeId}`;
+    }
+  }, [autoBindingMutation.isPending, bindingConfigMatchedScope, storeId]);
 
   useEffect(() => {
     if (!workspaceId || !provider || !authId || !storeId) {
