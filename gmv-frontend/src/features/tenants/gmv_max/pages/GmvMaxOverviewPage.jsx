@@ -755,13 +755,19 @@ export default function GmvMaxOverviewPage() {
         message: 'Select a store to configure the GMV Max binding.',
       };
     }
-    if (bindingConfigLoading) {
+    if (bindingConfigLoading || bindingConfigFetching) {
       return { variant: 'muted', message: 'Loading binding configuration…' };
     }
     if (bindingConfigError) {
       return {
         variant: 'error',
         message: `Failed to load binding configuration: ${formatError(bindingConfigError)}`,
+      };
+    }
+    if (autoBindingStatus) {
+      return {
+        variant: autoBindingStatus.variant || 'muted',
+        message: autoBindingStatus.message || 'Auto binding status unavailable. Please retry.',
       };
     }
     if (!autoBindingVerified) {
@@ -772,7 +778,9 @@ export default function GmvMaxOverviewPage() {
     }
     return { variant: 'success', message: 'Auto binding verified. You can sync GMV Max now.' };
   }, [
+    autoBindingStatus,
     bindingConfigError,
+    bindingConfigFetching,
     bindingConfigLoading,
     autoBindingVerified,
     storeId,
