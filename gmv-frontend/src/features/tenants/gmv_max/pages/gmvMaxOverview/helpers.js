@@ -120,8 +120,7 @@ export function shouldFetchGmvMaxSeries(options = {}) {
     provider,
     authId,
     isScopeReady,
-    hasSavedBinding,
-    scopeMatchesBinding,
+    autoBindingVerified,
     bindingConfigLoading,
     bindingConfigFetching,
   } = options;
@@ -132,10 +131,7 @@ export function shouldFetchGmvMaxSeries(options = {}) {
   if (bindingConfigLoading || bindingConfigFetching) {
     return false;
   }
-  if (!hasSavedBinding) {
-    return false;
-  }
-  if (!scopeMatchesBinding) {
+  if (!autoBindingVerified) {
     return false;
   }
   return true;
