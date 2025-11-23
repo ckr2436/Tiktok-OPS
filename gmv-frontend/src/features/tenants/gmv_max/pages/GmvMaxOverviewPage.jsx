@@ -20,7 +20,6 @@ import {
   useSyncAccountProductsMutation,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
-  useUpdateGmvMaxConfigMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
 import {
@@ -261,7 +260,6 @@ export default function GmvMaxOverviewPage() {
   const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
   const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
   const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
-  const savedAutoSyncProducts = Boolean(bindingConfig?.auto_sync_products);
 
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
@@ -578,42 +576,14 @@ export default function GmvMaxOverviewPage() {
     storeToBusinessCenter,
   ]);
 
-  const hasSavedBinding = Boolean(savedBusinessCenterId && savedAdvertiserId && savedStoreId);
-  const scopeMatchesBinding = Boolean(
-    hasSavedBinding &&
-      businessCenterId &&
-      advertiserId &&
-      storeId &&
-      savedBusinessCenterId === businessCenterId &&
-      savedAdvertiserId === advertiserId &&
-      savedStoreId === storeId,
-  );
-  const savedBusinessCenterLabel = getOptionLabel(businessCenterOptions, savedBusinessCenterId);
-  const savedAdvertiserLabel = getOptionLabel(advertiserOptions, savedAdvertiserId);
-  const savedStoreLabel = getOptionLabel(storeOptions, savedStoreId);
-  const savedBindingSummary = useMemo(() => {
-    const summaryParts = [
-      savedBusinessCenterLabel || savedBusinessCenterId,
-      savedAdvertiserLabel || savedAdvertiserId,
-      savedStoreLabel || savedStoreId,
-    ].filter(Boolean);
-    return summaryParts.join(' / ');
-  }, [
-    savedAdvertiserId,
-    savedAdvertiserLabel,
-    savedBusinessCenterId,
-    savedBusinessCenterLabel,
-    savedStoreId,
-    savedStoreLabel,
-  ]);
+  const autoBindingVerified = autoBindingStatus?.variant === 'success';
 
   const campaignsQueryEnabled = shouldFetchGmvMaxSeries({
     workspaceId,
     provider,
     authId,
     isScopeReady,
-    hasSavedBinding,
-    scopeMatchesBinding,
+    autoBindingVerified,
     bindingConfigLoading,
     bindingConfigFetching,
   });
@@ -623,20 +593,16 @@ export default function GmvMaxOverviewPage() {
     if (bindingConfigLoading || bindingConfigFetching) {
       return 'Loading binding configuration…';
     }
-    if (!hasSavedBinding) {
-      return 'Save the GMV Max binding to load series.';
-    }
-    if (!scopeMatchesBinding) {
-      return 'Current scope does not match the saved binding. Save it to refresh the GMV Max series.';
+    if (!autoBindingVerified) {
+      return 'Waiting for auto binding verification before loading GMV Max series…';
     }
     return '';
   }, [
     bindingConfigFetching,
     bindingConfigLoading,
     campaignsQueryEnabled,
-    hasSavedBinding,
+    autoBindingVerified,
     isScopeReady,
-    scopeMatchesBinding,
   ]);
 
   useEffect(() => {
@@ -781,34 +747,18 @@ export default function GmvMaxOverviewPage() {
         message: `Failed to load binding configuration: ${formatError(bindingConfigError)}`,
       };
     }
-    if (!hasSavedBinding) {
+    if (!autoBindingVerified) {
       return {
         variant: 'warning',
-        message: 'Store binding not configured. Save the current scope to enable GMV Max syncing.',
+        message: 'Auto binding in progress. Verification is required before syncing.',
       };
     }
-    if (scopeMatchesBinding) {
-      return {
-        variant: 'success',
-        message: savedBindingSummary
-          ? `Current scope matches saved binding (${savedBindingSummary}).`
-          : 'Current scope matches saved binding.',
-      };
-    }
-    return {
-      variant: 'warning',
-      message: savedBindingSummary
-        ? `Saved binding: ${savedBindingSummary}. Save the current scope to update it.`
-        : 'Saved binding does not match the selected scope. Save the current scope to update it.',
-    };
+    return { variant: 'success', message: 'Auto binding verified. You can sync GMV Max now.' };
   }, [
-    authId,
     bindingConfigError,
     bindingConfigLoading,
-    hasSavedBinding,
-    savedBindingSummary,
+    autoBindingVerified,
     storeId,
-    scopeMatchesBinding,
   ]);
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
 
@@ -969,12 +919,6 @@ export default function GmvMaxOverviewPage() {
   useEffect(() => {
     setSyncError(null);
   }, [advertiserId, authId, businessCenterId, storeId]);
-
-  useEffect(() => {
-    if (hasSavedBinding && scopeMatchesBinding) {
-      setSyncError(null);
-    }
-  }, [hasSavedBinding, scopeMatchesBinding]);
 
   const storeNameById = useMemo(() => {
     const map = new Map();
@@ -1185,21 +1129,6 @@ export default function GmvMaxOverviewPage() {
     storeId,
   ]);
 
-  const saveBindingMutation = useUpdateGmvMaxConfigMutation(workspaceId, provider, authId, {
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'config', workspaceId, provider, authId] });
-    },
-  });
-  const isSavingBinding = saveBindingMutation.isPending;
-  const saveBindingError = saveBindingMutation.error ? formatError(saveBindingMutation.error) : null;
-  const canSaveBinding = Boolean(
-    isScopeReady &&
-      !isSavingBinding &&
-      !bindingConfigLoading &&
-      !bindingConfigFetching &&
-      (!hasSavedBinding || !scopeMatchesBinding),
-  );
-
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
@@ -1285,6 +1214,7 @@ export default function GmvMaxOverviewPage() {
           variant: 'success',
           message: `Confirmed GMV Max exclusive authorization for advertiser ${nextAdvertiserId}.`,
         });
+        queryClient.invalidateQueries({ queryKey: ['gmvMax', 'config', workspaceId, provider, authId] });
       } catch (error) {
         if (cancelled) return;
         setAutoBindingStatus({
@@ -1303,6 +1233,7 @@ export default function GmvMaxOverviewPage() {
     autoBindingMutation.isPending,
     autoBindingMutation.mutateAsync,
     businessCenterId,
+    queryClient,
     provider,
     scopeOptionsReady,
     storeId,
@@ -1325,9 +1256,8 @@ export default function GmvMaxOverviewPage() {
 
   const canSync = Boolean(
     isScopeReady &&
-      hasSavedBinding &&
-      scopeMatchesBinding &&
-      !isSavingBinding &&
+      autoBindingVerified &&
+      !autoBindingMutation.isPending &&
       !bindingConfigLoading &&
       !bindingConfigFetching &&
       !syncMutation.isPending &&
@@ -1335,29 +1265,6 @@ export default function GmvMaxOverviewPage() {
   );
   const isSyncing = syncMutation.isPending || isSyncPolling;
   const canCreateSeries = Boolean(isScopeReady);
-
-  const handleSaveBinding = useCallback(async () => {
-    if (!isScopeReady || !businessCenterId || !advertiserId || !storeId) {
-      return;
-    }
-    try {
-      await saveBindingMutation.mutateAsync({
-        bc_id: String(businessCenterId),
-        advertiser_id: String(advertiserId),
-        store_id: String(storeId),
-        auto_sync_products: savedAutoSyncProducts,
-      });
-    } catch (error) {
-      // handled via mutation state
-    }
-  }, [
-    advertiserId,
-    businessCenterId,
-    isScopeReady,
-    saveBindingMutation,
-    savedAutoSyncProducts,
-    storeId,
-  ]);
 
   const handleSyncMetadata = useCallback(async () => {
     if (!authId) {
@@ -1412,8 +1319,8 @@ export default function GmvMaxOverviewPage() {
       setProductSyncMessage('');
       return;
     }
-    if (!hasSavedBinding || !scopeMatchesBinding) {
-      setProductSyncError('Save the current binding before syncing GMV Max products.');
+    if (!autoBindingVerified) {
+      setProductSyncError('Wait for auto binding verification before syncing GMV Max products.');
       setProductSyncMessage('');
       return;
     }
@@ -1445,13 +1352,12 @@ export default function GmvMaxOverviewPage() {
   }, [
     advertiserId,
     authId,
+    autoBindingVerified,
     businessCenterId,
-    hasSavedBinding,
     isScopeReady,
     productSyncMutation,
     provider,
     queryClient,
-    scopeMatchesBinding,
     storeId,
     workspaceId,
   ]);
@@ -1465,12 +1371,8 @@ export default function GmvMaxOverviewPage() {
       setSyncError('Binding configuration is still loading. Please wait before syncing.');
       return;
     }
-    if (!hasSavedBinding) {
-      setSyncError('Please save the current scope before syncing GMV Max campaigns.');
-      return;
-    }
-    if (!scopeMatchesBinding) {
-      setSyncError('The selected scope does not match the saved binding. Save it before syncing.');
+    if (!autoBindingVerified) {
+      setSyncError('Auto binding must finish verification before syncing GMV Max campaigns.');
       return;
     }
     setSyncError(null);
@@ -1535,11 +1437,10 @@ export default function GmvMaxOverviewPage() {
     bindingConfigFetching,
     bindingConfigLoading,
     businessCenterId,
-    hasSavedBinding,
+    autoBindingVerified,
     isScopeReady,
     provider,
     refreshScopeQueries,
-    scopeMatchesBinding,
     storeId,
     syncMutation,
     workspaceId,
@@ -1666,8 +1567,8 @@ export default function GmvMaxOverviewPage() {
               onClick={handleSyncProducts}
               disabled={
                 !isScopeReady ||
-                !hasSavedBinding ||
-                !scopeMatchesBinding ||
+                !autoBindingVerified ||
+                autoBindingMutation.isPending ||
                 productSyncMutation.isPending
               }
             >
@@ -1763,16 +1664,7 @@ export default function GmvMaxOverviewPage() {
             </FormField>
           </div>
           <div className={scopeStatusClassName}>{scopeStatus.message}</div>
-          {saveBindingError ? <p className="gmvmax-inline-error-text">{saveBindingError}</p> : null}
           <div className="gmvmax-card__footer">
-            <button
-              type="button"
-              className="gmvmax-button gmvmax-button--secondary"
-              onClick={handleSaveBinding}
-              disabled={!canSaveBinding}
-            >
-              {isSavingBinding ? 'Saving…' : hasSavedBinding ? 'Update binding' : 'Save binding'}
-            </button>
             <button
               type="button"
               className="gmvmax-button gmvmax-button--primary"
