@@ -1661,6 +1661,20 @@ async def auto_bind_gmvmax_account(
         ]
         selected = authorized_candidates[0] if authorized_candidates else None
 
+    logger.info(
+        "gmvmax.auto_bind selection",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "target_store": target_store,
+            "target_advertiser": payload.advertiser_id or context.advertiser_id,
+            "target_bc": target_bc,
+            "candidate_count": len(candidates),
+            "ready_candidates": len(ready_candidates),
+            "selected": selected.model_dump(exclude_none=True) if selected else None,
+        },
+    )
+
     if selected is None:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
