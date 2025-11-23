@@ -36,6 +36,7 @@ class StubGMVMaxClient:
         self.report_requests: List[Any] = []
         self.action_calls: List[str] = []
         self.info_requests: List[Any] = []
+        self.session_requests: List[Any] = []
         self.campaign_status: Dict[str, str] = {}
 
     async def gmv_max_campaign_get(self, request):  # noqa: ANN001
@@ -96,6 +97,7 @@ class StubGMVMaxClient:
         )
 
     async def gmv_max_session_list(self, request):  # noqa: ANN001
+        self.session_requests.append(request)
         session = GMVMaxSession(
             session_id="session-1",
             campaign_id=request.campaign_id,
@@ -339,6 +341,7 @@ def test_campaign_list_proxy(gmvmax_client_fixture):
 
 def test_campaign_detail_includes_sessions(gmvmax_client_fixture):
     client: TestClient = gmvmax_client_fixture["client"]
+    stub = gmvmax_client_fixture["stub"]
     response = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
     )
@@ -346,6 +349,26 @@ def test_campaign_detail_includes_sessions(gmvmax_client_fixture):
     body = response.json()
     assert body["campaign"]["campaign_id"] == "cmp-1"
     assert body["sessions"][0]["session_id"] == "session-1"
+    assert body["request_id"] == "campaign-info"
+    assert body["sessions_request_id"] == "session-list"
+    assert stub.info_requests
+    assert stub.session_requests
+
+
+def test_campaign_detail_respects_include_sessions_flag(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    stub = gmvmax_client_fixture["stub"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
+        params={"include_sessions": "false"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["campaign"]["campaign_id"] == "cmp-1"
+    assert body["sessions"] == []
+    assert body["sessions_request_id"] is None
+    assert stub.info_requests
+    assert stub.session_requests == []
 
 
 def test_metrics_sync_returns_report(gmvmax_client_fixture):

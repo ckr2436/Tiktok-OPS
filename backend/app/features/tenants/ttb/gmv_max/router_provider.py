@@ -53,6 +53,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxReportGetRequest,
     GMVMaxResponse,
     PageInfo,
+    GMVMaxSessionListData,
     GMVMaxSessionListRequest,
     GMVMaxSession,
     GMVMaxSessionProduct,
@@ -1893,21 +1894,44 @@ async def get_gmvmax_campaign_provider(
     """Retrieve a single GMV Max campaign for this advertiser account."""
 
     adv = advertiser_id or context.advertiser_id
-    info_resp = await _call_tiktok(
-        context.client.gmv_max_campaign_info,
-        GMVMaxCampaignInfoRequest(advertiser_id=adv, campaign_id=str(campaign_id)),
+    info_request = asyncio.create_task(
+        _call_tiktok(
+            context.client.gmv_max_campaign_info,
+            GMVMaxCampaignInfoRequest(advertiser_id=adv, campaign_id=str(campaign_id)),
+        )
     )
-    session_resp = None
+    session_request: asyncio.Task[GMVMaxResponse[GMVMaxSessionListData]] | None = None
+    if include_sessions:
+        session_request = asyncio.create_task(
+            _call_tiktok(
+                context.client.gmv_max_session_list,
+                GMVMaxSessionListRequest(
+                    advertiser_id=adv,
+                    campaign_id=str(campaign_id),
+                ),
+            )
+        )
+
+    info_resp = await info_request
+    if context.db is not None:
+        upsert_campaign_from_api(
+            context.db,
+            workspace_id=context.workspace_id,
+            auth_id=context.auth_id,
+            advertiser_id=adv,
+            payload=info_resp.data.model_dump(exclude_none=True),
+            store_id_hint=info_resp.data.store_id,
+            campaign_details={
+                "campaign_id": info_resp.data.campaign_id,
+                "store_id": info_resp.data.store_id,
+            },
+        )
+        context.db.flush()
+
+    session_resp = await session_request if session_request else None
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
-    if include_sessions:
-        session_resp = await _call_tiktok(
-            context.client.gmv_max_session_list,
-            GMVMaxSessionListRequest(
-                advertiser_id=adv,
-                campaign_id=str(campaign_id),
-            ),
-        )
+    if session_resp:
         sessions = session_resp.data.list
         sessions_page_info = session_resp.data.page_info
     return CampaignDetailResponse(
