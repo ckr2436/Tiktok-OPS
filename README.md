@@ -95,3 +95,5 @@ curl -H 'Authorization: Bearer <token>' \
   ```bash
   python tools/gunicorn_log_summary.py /var/log/gunicorn/access.log --top 10
   ```
+
+  Add `--show-unparsable` when you need to inspect lines that did not match the parser; the summary always reports how many were hidden.

@@ -96,13 +96,15 @@ def print_summary(summary: LogSummary, top_n: int, show_unparsable: bool) -> Non
     else:
         print("(none)")
 
-    if show_unparsable:
-        print("\nUnparsable lines:")
-        if summary.unparsable:
-            for line in summary.unparsable:
-                print(f"- {line}")
-        else:
-            print("(none)")
+    unparsable_count = len(summary.unparsable)
+    print("\nUnparsable lines:")
+    if unparsable_count == 0:
+        print("(none)")
+    elif show_unparsable:
+        for line in summary.unparsable:
+            print(f"- {line}")
+    else:
+        print(f"(hidden) {unparsable_count} line(s) could not be parsed; rerun with --show-unparsable to inspect")
 
 
 def main() -> None:
