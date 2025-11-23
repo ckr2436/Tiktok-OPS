@@ -1160,10 +1160,10 @@ export default function GmvMaxOverviewPage() {
         message: 'Confirmed GMV Max binding from saved configuration. You can sync GMV Max now.',
       };
     });
-    if (!autoBindingKeyRef.current && storeId) {
-      autoBindingKeyRef.current = `store:${storeId}`;
+    if (!autoBindingKeyRef.current && authId && storeId) {
+      autoBindingKeyRef.current = `${authId}:store:${storeId}`;
     }
-  }, [autoBindingMutation.isPending, bindingConfigMatchedScope, storeId]);
+  }, [authId, autoBindingMutation.isPending, bindingConfigMatchedScope, storeId]);
 
   useEffect(() => {
     if (!workspaceId || !provider || !authId || !storeId) {
@@ -1177,7 +1177,7 @@ export default function GmvMaxOverviewPage() {
       return;
     }
     const derivedAdvertiserId = advertiserId || storeToAdvertiserId.get(storeId) || '';
-    const key = storeId ? `store:${storeId}` : '';
+    const key = storeId && authId ? `${authId}:store:${storeId}` : '';
     if (autoBindingMutation.isPending) {
       return;
     }
