@@ -87,3 +87,13 @@ curl -H 'Authorization: Bearer <token>' \
 
   The script prints the number of API batches, updated advertisers, and how many `bc_id` fields were inferred from link
   evidence. It is safe to rerun and only touches rows missing `name`, `timezone`, or `bc_id`.
+
+## Operational tooling
+
+- `tools/gunicorn_log_summary.py`: Summarizes Gunicorn access logs and highlights non-OK statuses.
+
+  ```bash
+  python tools/gunicorn_log_summary.py /var/log/gunicorn/access.log --top 10
+  ```
+
+  Add `--show-unparsable` when you need to inspect lines that did not match the parser; the summary always reports how many were hidden.
