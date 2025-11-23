@@ -764,6 +764,18 @@ export default function GmvMaxOverviewPage() {
         message: `Failed to load binding configuration: ${formatError(bindingConfigError)}`,
       };
     }
+    if (bindingConfig && savedStoreId && savedStoreId !== storeId) {
+      const parts = [
+        savedStoreId ? `store ${savedStoreId}` : '',
+        savedBusinessCenterId ? `BC ${savedBusinessCenterId}` : '',
+        savedAdvertiserId ? `advertiser ${savedAdvertiserId}` : '',
+      ].filter(Boolean);
+      const savedScope = parts.length ? parts.join(' / ') : 'a different scope';
+      return {
+        variant: 'warning',
+        message: `A saved binding exists for ${savedScope}. Select that store or run auto-binding for the current scope.`,
+      };
+    }
     if (autoBindingStatus) {
       return {
         variant: autoBindingStatus.variant || 'muted',
@@ -782,6 +794,9 @@ export default function GmvMaxOverviewPage() {
     bindingConfigError,
     bindingConfigFetching,
     bindingConfigLoading,
+    savedAdvertiserId,
+    savedBusinessCenterId,
+    savedStoreId,
     autoBindingVerified,
     storeId,
   ]);
