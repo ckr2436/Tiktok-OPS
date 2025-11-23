@@ -1208,17 +1208,12 @@ export default function GmvMaxOverviewPage() {
           const ready = candidates.find((candidate) => {
             const status = (candidate?.authorization_status || '').toUpperCase();
             const hasBc = Boolean(candidate?.store_authorized_bc_id);
-            const usageAllowed = candidate?.promote_all_products_allowed !== false;
-            const occupancyOk = candidate?.is_running_custom_shop_ads !== true;
-            return hasBc && usageAllowed && occupancyOk && (status === 'EFFECTIVE' || !status);
+            return hasBc && status === 'EFFECTIVE';
           });
           const effectiveCandidate = candidates.find(
             (candidate) => (candidate?.authorization_status || '').toUpperCase() === 'EFFECTIVE',
           );
-          const authorizedCandidate = candidates.find(
-            (candidate) => (candidate?.authorization_status || '').toUpperCase() !== 'UNAUTHORIZED',
-          );
-          return ready || effectiveCandidate || authorizedCandidate || candidates[0] || null;
+          return ready || effectiveCandidate || null;
         })();
         if (!selected) {
           setAutoBindingStatus({
@@ -1242,7 +1237,8 @@ export default function GmvMaxOverviewPage() {
           };
         });
         const normalizedStatus = (selected.authorization_status || '').toUpperCase();
-        if (normalizedStatus && normalizedStatus !== 'EFFECTIVE') {
+        const effectiveStatuses = new Set(['EFFECTIVE', 'AUTHORIZED']);
+        if (normalizedStatus && !effectiveStatuses.has(normalizedStatus)) {
           setAutoBindingStatus({
             variant: 'warning',
             message: `GMV Max exclusive authorization is ${normalizedStatus.toLowerCase()} for advertiser ${nextAdvertiserId}.`,
