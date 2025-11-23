@@ -117,6 +117,7 @@ from .schemas import (
     StrategyUpdateRequest,
     StrategyUpdateResponse,
     SyncRequest,
+    AsyncTaskResponse,
     SyncTaskResponse,
     SyncTaskStateResponse,
     GMVMaxPrecheckRequest,
@@ -125,6 +126,22 @@ from .schemas import (
 
 router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
+
+
+def _build_task_response(
+    async_res: AsyncResult,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+) -> AsyncTaskResponse:
+    task_id = async_res.id or ""
+    status_url = (
+        f"/tenants/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/tasks/{task_id}"
+        if task_id
+        else None
+    )
+    return AsyncTaskResponse(task_id=task_id, state=str(async_res.state), status_url=status_url)
 
 _ACTION_LOG_TYPES = {
     "pause": "PAUSE",
@@ -164,6 +181,38 @@ class _TTLCache:
 
 
 _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
+
+
+def _campaign_row_to_schema(row: TTBGmvMaxCampaign) -> GMVMaxCampaign:
+    if row.raw_json:
+        try:
+            return GMVMaxCampaign.model_validate(row.raw_json)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax campaign raw_json parse failed",
+                exc_info=True,
+                extra={"campaign_id": row.campaign_id, "workspace_id": row.workspace_id},
+            )
+
+    payload: Dict[str, Any] = {
+        "campaign_id": row.campaign_id,
+        "campaign_name": row.name,
+        "advertiser_id": row.advertiser_id,
+        "store_id": row.store_id,
+        "operation_status": row.operation_status,
+        "secondary_status": row.secondary_status,
+        "shopping_ads_type": row.shopping_ads_type,
+        "optimization_goal": row.optimization_goal,
+        "roas_bid": row.roas_bid,
+        "currency": row.currency,
+    }
+    if row.ext_created_time:
+        payload["create_time"] = row.ext_created_time
+    if row.ext_updated_time:
+        payload["update_time"] = row.ext_updated_time
+    if row.daily_budget_cents is not None:
+        payload["daily_budget"] = row.daily_budget_cents
+    return GMVMaxCampaign.model_validate(payload)
 
 
 def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
@@ -1304,10 +1353,47 @@ def get_sync_task_state(
     state = str(res.state)
     info = res.info if isinstance(res.info, dict) else {}
     error = info.get("error") if state in {"FAILURE", "RETRY"} else None
-    result = info.get("result") if state == "SUCCESS" else None
+    result = None
+    if state == "SUCCESS":
+        result = info.get("result") if info else res.result
 
     logger.info(
         "gmvmax.sync polled",
+        extra={
+            "workspace_id": context.workspace_id,
+            "auth_id": context.auth_id,
+            "task_id": task_id,
+            "state": state,
+        },
+    )
+
+    return SyncTaskStateResponse(task_id=task_id, state=state, result=result, error=error)
+
+
+@router.get(
+    "/tasks/{task_id}",
+    response_model=SyncTaskStateResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+def get_async_task_state(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    task_id: str = Path(..., description="Celery task identifier"),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> SyncTaskStateResponse:
+    """Return Celery task status for GMV Max async API fetches."""
+
+    res: AsyncResult = AsyncResult(task_id, app=celery_app)
+    state = str(res.state)
+    info = res.info if isinstance(res.info, dict) else {}
+    error = info.get("error") if state in {"FAILURE", "RETRY"} else None
+    result = None
+    if state == "SUCCESS":
+        result = info.get("result") if info else res.result
+
+    logger.info(
+        "gmvmax.async_task polled",
         extra={
             "workspace_id": context.workspace_id,
             "auth_id": context.auth_id,
@@ -1749,7 +1835,7 @@ async def auto_bind_gmvmax_account(
 
 @router.post(
     "/precheck",
-    response_model=GMVMaxPrecheckResponse,
+    response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
 async def gmvmax_precheck(
@@ -1758,8 +1844,8 @@ async def gmvmax_precheck(
     auth_id: int,
     payload: GMVMaxPrecheckRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> GMVMaxPrecheckResponse:
-    """Run store availability, identity listing, and occupancy checks before GMV Max creation."""
+) -> AsyncTaskResponse:
+    """Enqueue GMV Max precheck against external APIs via Celery."""
 
     advertiser_id = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
     if not advertiser_id:
@@ -1773,54 +1859,34 @@ async def gmvmax_precheck(
             detail="store_authorized_bc_id is required",
         )
 
-    request_ids: Dict[str, Optional[str]] = {}
-    usage_resp = await _call_tiktok(
-        context.client.gmv_max_store_shop_ad_usage_check,
-        GMVMaxStoreAdUsageCheckRequest(
-            advertiser_id=str(advertiser_id),
-            store_id=str(payload.store_id),
-            store_authorized_bc_id=payload.store_authorized_bc_id,
-        ),
+    async_res = celery_app.send_task(
+        "gmvmax.precheck",
+        kwargs={
+            "auth_id": context.auth_id,
+            "advertiser_id": str(advertiser_id),
+            "store_id": str(payload.store_id),
+            "store_authorized_bc_id": payload.store_authorized_bc_id,
+            "identity_id": payload.identity_id,
+            "product_item_group_ids": payload.product_item_group_ids,
+            "occupied_asset_type": payload.occupied_asset_type,
+        },
+        queue="gmvmax",
     )
-    request_ids["store_usage"] = usage_resp.request_id
-
-    identity_resp = await _call_tiktok(
-        context.client.gmv_max_identity_get,
-        GMVMaxIdentityGetRequest(
-            advertiser_id=str(advertiser_id),
-            store_id=str(payload.store_id),
-            store_authorized_bc_id=str(payload.store_authorized_bc_id),
-        ),
+    logger.info(
+        "gmvmax.precheck enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "advertiser_id": advertiser_id,
+            "store_id": payload.store_id,
+            "task_id": async_res.id,
+        },
     )
-    request_ids["identities"] = identity_resp.request_id
-
-    occupancy_resp = None
-    asset_ids: List[str] = []
-    if payload.identity_id:
-        asset_ids.append(str(payload.identity_id))
-    if payload.product_item_group_ids:
-        asset_ids.extend([str(item) for item in payload.product_item_group_ids])
-    asset_ids = [item for item in asset_ids if item.strip()]
-    if asset_ids:
-        asset_type = payload.occupied_asset_type or (
-            "IDENTITY" if payload.identity_id else "SPU"
-        )
-        occupancy_resp = await _call_tiktok(
-            context.client.gmv_max_occupied_custom_shop_ads_list,
-            GMVMaxOccupiedCustomShopAdsListRequest(
-                advertiser_id=str(advertiser_id),
-                store_id=str(payload.store_id),
-                occupied_asset_type=str(asset_type),
-                asset_ids=asset_ids,
-            ),
-        )
-        request_ids["occupancy"] = occupancy_resp.request_id
-
-    return GMVMaxPrecheckResponse(
-        store_usage=usage_resp.data,
-        identities=identity_resp.data.identity_list,
-        occupancy=occupancy_resp.data if occupancy_resp else None,
-        request_ids=request_ids,
+    return _build_task_response(
+        async_res,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
     )
 
 
@@ -1846,34 +1912,37 @@ async def list_gmvmax_campaigns_provider(
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignListResponse:
-    """List GMV Max campaigns for this advertiser account."""
+    """List GMV Max campaigns for this advertiser account from local cache."""
 
     adv = advertiser_id or context.advertiser_id
-    filter_obj = CampaignFilter(
-        gmv_max_promotion_types=gmv_max_promotion_types or list(DEFAULT_PROMOTION_TYPES),
-        store_ids=store_ids,
-        campaign_ids=campaign_ids,
-        campaign_name=campaign_name,
-        primary_status=primary_status,
-        creation_filter_start_time=creation_filter_start_time,
-        creation_filter_end_time=creation_filter_end_time,
+    page_value = page or 1
+    page_size_value = page_size or 20
+
+    query = (
+        context.db.query(TTBGmvMaxCampaign)
+        .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
+        .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
+        .filter(TTBGmvMaxCampaign.advertiser_id == str(adv))
     )
-    options = CampaignListOptions(fields=fields, page=page, page_size=page_size)
-    request = _build_campaign_request(adv, filter_obj, options)
-    response = await _call_tiktok(context.client.gmv_max_campaign_get, request)
-    store_scope = store_ids[0] if store_ids else context.store_id
-    await _persist_campaign_relations(
-        context,
-        advertiser_id=adv,
-        response=response,
-        store_scope=store_scope,
+    if store_ids:
+        query = query.filter(TTBGmvMaxCampaign.store_id.in_([str(item) for item in store_ids]))
+    if campaign_ids:
+        query = query.filter(TTBGmvMaxCampaign.campaign_id.in_([str(item) for item in campaign_ids]))
+    if campaign_name:
+        query = query.filter(TTBGmvMaxCampaign.name.ilike(f"%{campaign_name}%"))
+    if primary_status:
+        query = query.filter(TTBGmvMaxCampaign.status == str(primary_status))
+
+    total = query.count()
+    rows = (
+        query.order_by(TTBGmvMaxCampaign.updated_at.desc())
+        .offset((page_value - 1) * page_size_value)
+        .limit(page_size_value)
+        .all()
     )
-    filtered_items = _filter_campaign_entries(response.data.list)
-    return CampaignListResponse(
-        items=filtered_items,
-        page_info=response.data.page_info,
-        request_id=response.request_id,
-    )
+    items = [_campaign_row_to_schema(row) for row in rows]
+    page_info = PageInfo(page=page_value, page_size=page_size_value, total_number=total)
+    return CampaignListResponse(items=items, page_info=page_info, request_id=None)
 
 
 @router.get(
@@ -1892,36 +1961,32 @@ async def get_gmvmax_campaign_provider(
 ) -> CampaignDetailResponse:
     """Retrieve a single GMV Max campaign for this advertiser account."""
 
-    adv = advertiser_id or context.advertiser_id
-    info_resp = await _call_tiktok(
-        context.client.gmv_max_campaign_info,
-        GMVMaxCampaignInfoRequest(advertiser_id=adv, campaign_id=str(campaign_id)),
+    row = (
+        context.db.query(TTBGmvMaxCampaign)
+        .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
+        .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
+        .filter(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
+        .first()
     )
-    session_resp = None
-    sessions: List[GMVMaxSession] = []
-    sessions_page_info = None
-    if include_sessions:
-        session_resp = await _call_tiktok(
-            context.client.gmv_max_session_list,
-            GMVMaxSessionListRequest(
-                advertiser_id=adv,
-                campaign_id=str(campaign_id),
-            ),
+    if row is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "campaign_not_found", "message": "Campaign not found"},
         )
-        sessions = session_resp.data.list
-        sessions_page_info = session_resp.data.page_info
+
+    campaign = _campaign_row_to_schema(row)
     return CampaignDetailResponse(
-        campaign=info_resp.data,
-        sessions=sessions,
-        sessions_page_info=sessions_page_info,
-        request_id=info_resp.request_id,
-        sessions_request_id=session_resp.request_id if session_resp else None,
+        campaign=campaign,
+        sessions=[],
+        sessions_page_info=None,
+        request_id=None,
+        sessions_request_id=None,
     )
 
 
 @router.post(
     "/{campaign_id}/metrics/sync",
-    response_model=MetricsResponse,
+    response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
 async def sync_gmvmax_metrics_provider(
@@ -1932,8 +1997,8 @@ async def sync_gmvmax_metrics_provider(
     payload: MetricsRequest,
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> MetricsResponse:
-    """Trigger a metrics sync for the specified GMV Max campaign."""
+) -> AsyncTaskResponse:
+    """Trigger a metrics sync for the specified GMV Max campaign via Celery."""
 
     adv = advertiser_id or context.advertiser_id
     report_req = _build_report_request(
@@ -1942,8 +2007,29 @@ async def sync_gmvmax_metrics_provider(
         default_store_id=context.store_id,
         campaign_id=campaign_id,
     )
-    response = await _call_tiktok(context.client.gmv_max_report_get, report_req)
-    return MetricsResponse(report=response.data, request_id=response.request_id)
+    async_res = celery_app.send_task(
+        "gmvmax.report_get",
+        kwargs={
+            "auth_id": context.auth_id,
+            "report_request": report_req.model_dump(exclude_none=True, by_alias=True),
+        },
+        queue="gmvmax",
+    )
+    logger.info(
+        "gmvmax.metrics report enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "campaign_id": campaign_id,
+            "task_id": async_res.id,
+        },
+    )
+    return _build_task_response(
+        async_res,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+    )
 
 
 @router.get(
@@ -2474,7 +2560,7 @@ async def update_gmvmax_strategy_provider(
 
 @router.post(
     "/{campaign_id}/strategies/preview",
-    response_model=StrategyPreviewResponse,
+    response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
 async def preview_gmvmax_strategy_provider(
@@ -2485,8 +2571,9 @@ async def preview_gmvmax_strategy_provider(
     payload: StrategyPreviewRequest,
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> StrategyPreviewResponse:
-    """Preview the GMV Max optimization strategy for the campaign."""
+
+) -> AsyncTaskResponse:
+    """Preview the GMV Max optimization strategy for the campaign via Celery."""
 
     adv = advertiser_id or context.advertiser_id
     store_id = payload.store_id or context.store_id
@@ -2513,10 +2600,27 @@ async def preview_gmvmax_strategy_provider(
         item_group_ids=[str(item) for item in payload.item_group_ids],
         identity_id=payload.identity_id,
     )
-    response = await _call_tiktok(context.client.gmv_max_bid_recommend, request)
-    return StrategyPreviewResponse(
-        status="success",
-        recommendation=response.data,
-        request_id=response.request_id,
+    async_res = celery_app.send_task(
+        "gmvmax.strategy_preview",
+        kwargs={
+            "auth_id": context.auth_id,
+            "bid_request": request.model_dump(exclude_none=True, by_alias=True),
+        },
+        queue="gmvmax",
+    )
+    logger.info(
+        "gmvmax.strategy_preview enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "campaign_id": campaign_id,
+            "task_id": async_res.id,
+        },
+    )
+    return _build_task_response(
+        async_res,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
     )
 
