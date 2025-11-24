@@ -2000,15 +2000,17 @@ async def get_gmvmax_campaign_provider(
     session_resp = await session_request if session_request else None
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
+    sessions_request_id: str | None = None
     if session_resp:
         sessions = session_resp.data.list
         sessions_page_info = session_resp.data.page_info
+        sessions_request_id = session_resp.request_id
     return CampaignDetailResponse(
-        campaign=campaign,
-        sessions=[],
-        sessions_page_info=None,
-        request_id=None,
-        sessions_request_id=None,
+        campaign=info_resp.data,
+        sessions=sessions,
+        sessions_page_info=sessions_page_info,
+        request_id=info_resp.request_id,
+        sessions_request_id=sessions_request_id,
     )
 
 
