@@ -238,6 +238,14 @@ a:hover{ opacity:.95; }
 .gmvmax-page__header h1{ margin:0; }
 .gmvmax-page__subtitle{ margin:6px 0 0; color:var(--muted); max-width:520px; }
 .gmvmax-provider-badge{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--panel-2); font-weight:600; color:var(--muted); }
+.gmvmax-page__header-actions{ display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; justify-content:flex-end; min-width:320px; }
+.gmvmax-balance-chip{ padding:12px 14px; border-radius:12px; border:1px dashed var(--border); background:var(--panel-2); display:flex; flex-direction:column; gap:10px; min-width:320px; }
+.gmvmax-balance-chip__row{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.gmvmax-balance-chip__title{ margin:0; font-weight:700; }
+.gmvmax-balance-chip__timestamp{ margin:2px 0 0; color:var(--muted); font-size:.95rem; }
+.gmvmax-balance-chip__values{ display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); }
+.gmvmax-balance-chip__placeholder{ color:var(--muted); font-weight:600; }
+.gmvmax-inline-success-text{ margin:0; color:#166534; font-weight:600; }
 .gmvmax-card{ background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:16px; }
 .gmvmax-card__header{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .gmvmax-card__header h2{ margin:0; font-size:1.15rem; }

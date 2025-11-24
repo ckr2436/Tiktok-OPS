@@ -17,6 +17,7 @@ import {
   useGmvMaxAutoBindingMutation,
   useProductsQuery,
   useSyncAccountMetadataMutation,
+  useSyncAdvertiserBalanceMutation,
   useSyncAccountProductsMutation,
   useSyncGmvMaxCampaignsMutation,
   useUpdateGmvMaxCampaignMutation,
@@ -128,6 +129,8 @@ export default function GmvMaxOverviewPage() {
   const [metaSyncError, setMetaSyncError] = useState(null);
   const [productSyncMessage, setProductSyncMessage] = useState('');
   const [productSyncError, setProductSyncError] = useState(null);
+  const [balanceSyncMessage, setBalanceSyncMessage] = useState('');
+  const [balanceSyncError, setBalanceSyncError] = useState(null);
   const [autoBindingStatus, setAutoBindingStatus] = useState(null);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [scopePresets, setScopePresets] = useState([]);
@@ -189,6 +192,11 @@ export default function GmvMaxOverviewPage() {
     setMetaSyncMessage('');
     setMetaSyncError(null);
   }, [authId]);
+
+  useEffect(() => {
+    setBalanceSyncMessage('');
+    setBalanceSyncError(null);
+  }, [authId, advertiserId, storeId]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -1206,6 +1214,7 @@ export default function GmvMaxOverviewPage() {
 
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
+  const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
   const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
 
@@ -1350,6 +1359,46 @@ export default function GmvMaxOverviewPage() {
   );
   const isSyncing = syncMutation.isPending || isSyncPolling;
   const canCreateSeries = Boolean(isScopeReady);
+  const canSyncBalance = Boolean(
+    authId &&
+      storeId &&
+      bindingConfigMatchedScope &&
+      savedBusinessCenterId &&
+      savedAdvertiserId &&
+      !bindingConfigLoading &&
+      !bindingConfigFetching,
+  );
+  const balanceSyncing = balanceSyncMutation.isPending;
+
+  const handleSyncBalance = useCallback(async () => {
+    if (!canSyncBalance) return;
+
+    setBalanceSyncError(null);
+    setBalanceSyncMessage('');
+    try {
+      await balanceSyncMutation.mutateAsync({
+        bc_id: savedBusinessCenterId,
+        advertiser_id: savedAdvertiserId,
+        store_id: storeId,
+      });
+      setBalanceSyncMessage('Balance synchronized.');
+      await queryClient.invalidateQueries({
+        queryKey: ['gmvMax', 'config', workspaceId, provider, authId],
+      });
+    } catch (error) {
+      setBalanceSyncError(formatError(error));
+    }
+  }, [
+    authId,
+    balanceSyncMutation,
+    canSyncBalance,
+    provider,
+    queryClient,
+    savedAdvertiserId,
+    savedBusinessCenterId,
+    storeId,
+    workspaceId,
+  ]);
 
   const handleSyncMetadata = useCallback(async () => {
     if (!authId) {
@@ -1618,6 +1667,8 @@ export default function GmvMaxOverviewPage() {
     campaignsQueryEnabled && (campaignsQuery.isLoading || campaignsQuery.isFetching),
   );
   const productsLoading = Boolean(isScopeReady && (productsQuery.isLoading || productsQuery.isFetching));
+  const balanceTimestamp = advertiserBalance?.fetched_at;
+  const canDisplayBalance = Boolean(storeId && bindingConfigMatchedScope);
 
   return (
     <div className="gmvmax-page">
@@ -1628,7 +1679,65 @@ export default function GmvMaxOverviewPage() {
             Monitor TikTok Business performance and manage GMV Max series.
           </p>
         </div>
-        <span className="gmvmax-provider-badge">Provider: {PROVIDER_LABEL}</span>
+        <div className="gmvmax-page__header-actions">
+          <span className="gmvmax-provider-badge">Provider: {PROVIDER_LABEL}</span>
+          <div className="gmvmax-balance-chip">
+            <div className="gmvmax-balance-chip__row">
+              <div>
+                <p className="gmvmax-balance-chip__title">Advertiser balance</p>
+                <p className="gmvmax-balance-chip__timestamp">
+                  {canDisplayBalance && balanceTimestamp
+                    ? `Updated ${formatISODate(balanceTimestamp)}`
+                    : 'Balance unavailable'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="gmvmax-button gmvmax-button--ghost"
+                onClick={handleSyncBalance}
+                disabled={!canSyncBalance || balanceSyncing}
+              >
+                {balanceSyncing ? 'Syncing balance…' : 'Sync balance'}
+              </button>
+            </div>
+            <div className="gmvmax-balance-chip__values">
+              {!storeId ? (
+                <span className="gmvmax-balance-chip__placeholder">Select a store to view balance.</span>
+              ) : !bindingConfigMatchedScope ? (
+                <span className="gmvmax-balance-chip__placeholder">
+                  Binding not confirmed for this store yet.
+                </span>
+              ) : advertiserBalance ? (
+                <>
+                  <div className="gmvmax-balance-banner__value-block">
+                    <span className="gmvmax-balance-banner__label">Cash</span>
+                    <span className="gmvmax-balance-banner__value">
+                      {formatMoney(advertiserBalance?.cash_balance)}
+                      {advertiserBalance?.currency ? (
+                        <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="gmvmax-balance-banner__value-block">
+                    <span className="gmvmax-balance-banner__label">Credit</span>
+                    <span className="gmvmax-balance-banner__value">
+                      {formatMoney(advertiserBalance?.credit_balance)}
+                      {advertiserBalance?.currency ? (
+                        <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
+                      ) : null}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <span className="gmvmax-balance-chip__placeholder">Awaiting balance update.</span>
+              )}
+            </div>
+            {balanceSyncError ? <p className="gmvmax-inline-error-text">{balanceSyncError}</p> : null}
+            {balanceSyncMessage ? (
+              <p className="gmvmax-inline-success-text">{balanceSyncMessage}</p>
+            ) : null}
+          </div>
+        </div>
       </header>
 
       <section className="gmvmax-card gmvmax-card--filters">
@@ -1691,36 +1800,6 @@ export default function GmvMaxOverviewPage() {
               {autoBindingStatus.message}
             </div>
           ) : null}
-          <div className="gmvmax-balance-banner">
-            <div className="gmvmax-balance-banner__row">
-              <span className="gmvmax-balance-banner__title">Advertiser balance</span>
-              <span className="gmvmax-balance-banner__timestamp">
-                {advertiserBalance?.fetched_at
-                  ? `Updated ${formatISODate(advertiserBalance.fetched_at)}`
-                  : 'Awaiting balance update'}
-              </span>
-            </div>
-            <div className="gmvmax-balance-banner__values">
-              <div className="gmvmax-balance-banner__value-block">
-                <span className="gmvmax-balance-banner__label">Cash</span>
-                <span className="gmvmax-balance-banner__value">
-                  {formatMoney(advertiserBalance?.cash_balance)}
-                  {advertiserBalance?.currency ? (
-                    <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
-                  ) : null}
-                </span>
-              </div>
-              <div className="gmvmax-balance-banner__value-block">
-                <span className="gmvmax-balance-banner__label">Credit</span>
-                <span className="gmvmax-balance-banner__value">
-                  {formatMoney(advertiserBalance?.credit_balance)}
-                  {advertiserBalance?.currency ? (
-                    <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
-                  ) : null}
-                </span>
-              </div>
-            </div>
-          </div>
           <div className="gmvmax-field-grid">
             <FormField label="Store">
               <select

@@ -24,6 +24,7 @@ import {
   syncAccountMetadata,
   syncAccountProducts,
   previewGmvMaxStrategy,
+  syncAdvertiserBalance,
   syncGmvMaxCampaigns,
   syncGmvMaxMetrics,
   updateGmvMaxConfig,
@@ -207,6 +208,13 @@ export function useGmvMaxCampaignCreativesQuery(
 export function useGmvMaxAutoBindingMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => autoDiscoverGmvMaxBinding(workspaceId, provider, authId, payload),
+    ...options,
+  });
+}
+
+export function useSyncAdvertiserBalanceMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => syncAdvertiserBalance(workspaceId, provider, authId, payload),
     ...options,
   });
 }
