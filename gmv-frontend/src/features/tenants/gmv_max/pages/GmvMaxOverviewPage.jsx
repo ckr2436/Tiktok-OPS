@@ -132,6 +132,7 @@ export default function GmvMaxOverviewPage() {
   const [balanceSyncMessage, setBalanceSyncMessage] = useState('');
   const [balanceSyncError, setBalanceSyncError] = useState(null);
   const [autoBindingStatus, setAutoBindingStatus] = useState(null);
+  const [includeDeletedCampaigns, setIncludeDeletedCampaigns] = useState(false);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [scopePresets, setScopePresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
@@ -732,8 +733,9 @@ export default function GmvMaxOverviewPage() {
     if (businessCenterId) params.owner_bc_id = businessCenterId;
     if (advertiserId) params.advertiser_id = advertiserId;
     if (storeId) params.store_ids = [String(storeId)];
+    if (includeDeletedCampaigns) params.include_deleted = 1;
     return params;
-  }, [advertiserId, businessCenterId, storeId]);
+  }, [advertiserId, businessCenterId, includeDeletedCampaigns, storeId]);
 
   const campaignsQuery = useGmvMaxCampaignsQuery(
     workspaceId,
@@ -1025,8 +1027,10 @@ export default function GmvMaxOverviewPage() {
     if (!campaignsQueryEnabled) return [];
     const data = campaignsQuery.data;
     const items = data?.items || data?.list || data || [];
-    return filterCampaignsByStatus(Array.isArray(items) ? items : []);
-  }, [campaignsQuery.data, campaignsQueryEnabled]);
+    return filterCampaignsByStatus(Array.isArray(items) ? items : [], {
+      includeDeleted: includeDeletedCampaigns,
+    });
+  }, [campaignsQuery.data, campaignsQueryEnabled, includeDeletedCampaigns]);
 
   const campaignDetailQueries = useQueries({
     queries: campaignsQueryEnabled
@@ -1922,6 +1926,14 @@ export default function GmvMaxOverviewPage() {
       <section className="gmvmax-card">
         <header className="gmvmax-card__header">
           <h2>GMV Max series</h2>
+          <label className="gmvmax-checkbox gmvmax-checkbox--inline">
+            <input
+              type="checkbox"
+              checked={includeDeletedCampaigns}
+              onChange={(event) => setIncludeDeletedCampaigns(event.target.checked)}
+            />
+            <span>Show deleted series</span>
+          </label>
         </header>
         <div className="gmvmax-card__body">
           <SeriesErrorNotice

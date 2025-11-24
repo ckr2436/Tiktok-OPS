@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequ
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from celery.result import AsyncResult
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
@@ -1911,6 +1911,7 @@ async def list_gmvmax_campaigns_provider(
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=50),
     advertiser_id: Optional[str] = Query(None),
+    include_deleted: bool = Query(False),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignListResponse:
     """List GMV Max campaigns for this advertiser account from local cache."""
@@ -1933,6 +1934,18 @@ async def list_gmvmax_campaigns_provider(
         query = query.filter(TTBGmvMaxCampaign.name.ilike(f"%{campaign_name}%"))
     if primary_status:
         query = query.filter(TTBGmvMaxCampaign.status == str(primary_status))
+    if not include_deleted:
+        query = query.filter(
+            or_(
+                TTBGmvMaxCampaign.operation_status.is_(None),
+                TTBGmvMaxCampaign.operation_status != "DELETE",
+            )
+        ).filter(
+            or_(
+                TTBGmvMaxCampaign.secondary_status.is_(None),
+                TTBGmvMaxCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
+            )
+        )
 
     total = query.count()
     rows = (
