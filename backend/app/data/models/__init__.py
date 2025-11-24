@@ -40,7 +40,6 @@ from .ttb_gmvmax import (
     TTBGmvMaxStrategyConfig,
 )
 from .openai_whisper import OpenAIWhisperJob
-from .email_settings import PlatformEmailSetting, MailSendMode, MailEncryption
 
 __all__ = [
     "Base",
@@ -78,7 +77,4 @@ __all__ = [
     "TTBGmvMaxActionLog",
     "TTBGmvMaxStrategyConfig",
     "OpenAIWhisperJob",
-    "PlatformEmailSetting",
-    "MailSendMode",
-    "MailEncryption",
 ]

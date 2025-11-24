@@ -30,8 +30,7 @@ export function buildMenus(session) {
           { to: '/platform/oauth-apps',  label: 'OAuth 应用' },
           { to: '/platform/policies',    label: 'Platform Policies' },
           { to: '/platform/apis',        label: 'API 管理' },
-          { to: '/platform/email',       label: '邮件服务器' },
-          { to: '/platform/kie-ai',      label: 'KIE AI 接入' },
+	  { to: '/platform/kie-ai',      label: 'KIE AI 接入' },
         ],
       },
     ];

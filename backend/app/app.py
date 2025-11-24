@@ -22,7 +22,6 @@ from app.features.platform.router_oauth_callback import router as oauth_callback
 from app.features.platform.router_tasks import router as platform_tasks_router
 from app.features.platform.router_platform_policies import router as platform_policies_router
 from app.features.platform.kie_ai.routes import router as platform_kie_ai_router
-from app.features.platform.router_email import router as platform_email_router
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -85,7 +84,6 @@ def create_app() -> FastAPI:
     app.include_router(platform_tasks_router)
     app.include_router(platform_policies_router)
     app.include_router(platform_kie_ai_router)
-    app.include_router(platform_email_router)
 
     # Tenant routes
     app.include_router(tenant_users_router)
