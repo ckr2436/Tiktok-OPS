@@ -108,6 +108,7 @@ from .schemas import (
     AutoBindingCandidate,
     AutoBindingRequest,
     AutoBindingResponse,
+    BalanceSyncRequest,
     MetricsRequest,
     MetricsResponse,
     ReportFiltering,
@@ -2024,6 +2025,67 @@ async def get_gmvmax_campaign_provider(
         sessions_page_info=sessions_page_info,
         request_id=info_resp.request_id,
         sessions_request_id=sessions_request_id,
+    )
+
+
+@router.post(
+    "/balance/sync",
+    response_model=AsyncTaskResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+async def sync_advertiser_balance(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    payload: BalanceSyncRequest,
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> AsyncTaskResponse:
+    """Trigger advertiser balance sync via Celery."""
+
+    normalized_bc = _normalize_identifier(payload.bc_id) or context.binding.bc_id
+    normalized_adv = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
+    if payload.store_id and context.store_id:
+        normalized_store = _normalize_identifier(payload.store_id)
+        if normalized_store and normalized_store != _normalize_identifier(context.store_id):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="store_id does not match the bound GMV Max store",
+            )
+
+    if not normalized_bc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bc_id is required for balance sync")
+    if not normalized_adv:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="advertiser_id is required for balance sync",
+        )
+
+    async_res = celery_app.send_task(
+        "gmvmax.sync_advertiser_balance",
+        kwargs={
+            "workspace_id": context.workspace_id,
+            "auth_id": context.auth_id,
+            "bc_id": str(normalized_bc),
+            "advertiser_id": str(normalized_adv),
+        },
+        queue="gmvmax",
+    )
+    logger.info(
+        "gmvmax.sync_advertiser_balance enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "bc_id": normalized_bc,
+            "advertiser_id": normalized_adv,
+            "task_id": async_res.id,
+        },
+    )
+
+    return _build_task_response(
+        async_res,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
     )
 
 
