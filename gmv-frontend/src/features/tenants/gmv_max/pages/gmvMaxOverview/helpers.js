@@ -45,9 +45,17 @@ export function formatError(error) {
   return 'Request failed';
 }
 
+function coerceDate(value) {
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed?.getTime?.()) ? null : parsed;
+}
+
 export function formatISODate(date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    date.getUTCDate(),
+  const parsedDate = coerceDate(date);
+  if (!parsedDate) return '';
+  return `${parsedDate.getUTCFullYear()}-${String(parsedDate.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    parsedDate.getUTCDate(),
   ).padStart(2, '0')}`;
 }
 
