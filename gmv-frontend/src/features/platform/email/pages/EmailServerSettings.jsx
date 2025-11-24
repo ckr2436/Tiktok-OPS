@@ -44,8 +44,12 @@ export default function EmailServerSettings() {
     }
   }, [settingsQuery.data])
 
-  const saveMutation = useMutation(payload => saveEmailSettings(payload))
-  const testMutation = useMutation(email => sendTestEmail(email))
+  const saveMutation = useMutation({
+    mutationFn: payload => saveEmailSettings(payload),
+  })
+  const testMutation = useMutation({
+    mutationFn: email => sendTestEmail(email),
+  })
 
   function onFieldChange(key, value) {
     setNotice('')
