@@ -810,7 +810,7 @@ async def sync_gmvmax_campaigns(
                 TTBGmvMaxCampaignSyncSnapshot.store_id.in_(normalized_store_scope)
             )
         db.execute(delete_snapshots)
-        db.bulk_save_objects(snapshot_rows)
+        db.add_all(snapshot_rows)
 
     removed = 0
     removal_filter_keys = {"store_ids", "gmv_max_promotion_types"}
@@ -822,29 +822,29 @@ async def sync_gmvmax_campaigns(
     if not filtered_run or allow_scoped_removal:
         missing_ids = existing_ids - seen_ids
         if missing_ids:
-            update_stmt = (
+            delete_stmt = (
                 update(TTBGmvMaxCampaign)
                 .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
                 .where(TTBGmvMaxCampaign.auth_id == auth_id)
                 .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
             )
             if normalized_store_scope:
-                update_stmt = update_stmt.where(
+                delete_stmt = delete_stmt.where(
                     TTBGmvMaxCampaign.store_id.in_(normalized_store_scope)
                 )
-            update_stmt = update_stmt.where(
+            delete_stmt = delete_stmt.where(
                 TTBGmvMaxCampaign.campaign_id.in_(missing_ids)
             )
-            update_stmt = update_stmt.values(
+            delete_stmt = delete_stmt.values(
+                status="DELETE",
                 operation_status="DELETE",
-                status="CAMPAIGN_STATUS_DELETE",
                 secondary_status="CAMPAIGN_STATUS_DELETE",
             )
-            update_result = db.execute(update_stmt)
-            removed = update_result.rowcount or 0
+            delete_result = db.execute(delete_stmt)
+            removed = delete_result.rowcount or 0
 
             product_cleanup = (
-                delete(TTBGmvMaxCampaignProduct)
+                update(TTBGmvMaxCampaignProduct)
                 .where(TTBGmvMaxCampaignProduct.workspace_id == workspace_id)
                 .where(TTBGmvMaxCampaignProduct.auth_id == auth_id)
                 .where(TTBGmvMaxCampaignProduct.campaign_id.in_(missing_ids))
@@ -853,6 +853,7 @@ async def sync_gmvmax_campaigns(
                 product_cleanup = product_cleanup.where(
                     TTBGmvMaxCampaignProduct.store_id.in_(normalized_store_scope)
                 )
+            product_cleanup = product_cleanup.values(operation_status="DELETE")
             db.execute(product_cleanup)
 
     return {"synced": synced, "removed": removed}

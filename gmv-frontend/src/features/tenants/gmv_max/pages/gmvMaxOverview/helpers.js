@@ -643,20 +643,22 @@ export function normalizeStatusValue(value) {
   return String(value).trim().toUpperCase();
 }
 
+export function isCampaignDeleted(campaign) {
+  const operationStatus = normalizeStatusValue(
+    campaign?.operation_status ?? campaign?.operationStatus,
+  );
+  if (operationStatus === 'DELETE') return true;
+  const secondaryStatus = normalizeStatusValue(
+    campaign?.secondary_status ?? campaign?.secondaryStatus,
+  );
+  return secondaryStatus === 'CAMPAIGN_STATUS_DELETE';
+}
+
 export function filterCampaignsByStatus(campaigns, { includeDeleted = false } = {}) {
   if (!Array.isArray(campaigns)) return [];
   return campaigns.filter((campaign) => {
     if (includeDeleted) return true;
-    const operationStatus = normalizeStatusValue(
-      campaign?.operation_status ?? campaign?.operationStatus,
-    );
-    if (operationStatus === 'DELETE') {
-      return false;
-    }
-    const secondaryStatus = normalizeStatusValue(
-      campaign?.secondary_status ?? campaign?.secondaryStatus,
-    );
-    return secondaryStatus !== 'CAMPAIGN_STATUS_DELETE';
+    return !isCampaignDeleted(campaign);
   });
 }
 

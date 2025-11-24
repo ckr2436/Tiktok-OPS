@@ -84,6 +84,7 @@ import {
   normalizeLinksMap,
   extractLinkMap,
   normalizeStatusValue,
+  isCampaignDeleted,
   filterCampaignsByStatus,
   parseOptionalFloat,
   summariseMetrics,
@@ -1206,13 +1207,33 @@ export default function GmvMaxOverviewPage() {
         advertiserId,
         storeId,
       });
-      return matches && !pending;
+      return matches && !pending && !isCampaignDeleted(card.campaign);
     });
   }, [
     advertiserId,
     businessCenterId,
     campaignCards,
     campaignsQueryEnabled,
+    includeDeletedCampaigns,
+    storeId,
+  ]);
+
+  const deletedCampaignCards = useMemo(() => {
+    if (!includeDeletedCampaigns || !campaignsQueryEnabled) return [];
+    return campaignCards.filter((card) => {
+      const { matches, pending } = matchesCampaignScope(card, {
+        businessCenterId,
+        advertiserId,
+        storeId,
+      });
+      return matches && !pending && isCampaignDeleted(card.campaign);
+    });
+  }, [
+    advertiserId,
+    businessCenterId,
+    campaignCards,
+    campaignsQueryEnabled,
+    includeDeletedCampaigns,
     storeId,
   ]);
 
@@ -1950,7 +1971,8 @@ export default function GmvMaxOverviewPage() {
           {campaignsQueryEnabled &&
           !campaignsLoading &&
           !campaignsQuery.error &&
-          filteredCampaignCards.length === 0 ? (
+          filteredCampaignCards.length === 0 &&
+          (!includeDeletedCampaigns || deletedCampaignCards.length === 0) ? (
             <p className="gmvmax-placeholder">No GMV Max series found for the selected scope.</p>
           ) : null}
           {campaignsQueryEnabled ? (
@@ -1979,6 +2001,41 @@ export default function GmvMaxOverviewPage() {
                   products={products}
                 />
               ))}
+            </div>
+          ) : null}
+          {includeDeletedCampaigns && campaignsQueryEnabled ? (
+            <div className="gmvmax-card__deleted-section">
+              <h3 className="gmvmax-card__subheading">Deleted series</h3>
+              {!campaignsLoading && !campaignsQuery.error && deletedCampaignCards.length === 0 ? (
+                <p className="gmvmax-placeholder">No deleted GMV Max series for the selected scope.</p>
+              ) : null}
+              {deletedCampaignCards.length > 0 ? (
+                <div className="gmvmax-campaign-grid">
+                  {deletedCampaignCards.map(({
+                    campaign,
+                    detail,
+                    detailLoading,
+                    detailError,
+                    detailRefetch,
+                  }) => (
+                    <CampaignCard
+                      key={campaign.campaign_id || campaign.id}
+                      campaign={campaign}
+                      detail={detail}
+                      detailLoading={detailLoading}
+                      detailError={detailError}
+                      onRetryDetail={detailRefetch}
+                      workspaceId={workspaceId}
+                      provider={provider}
+                      authId={authId}
+                      storeId={storeId}
+                      onDashboard={handleDashboard}
+                      products={products}
+                      isDeleted
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
