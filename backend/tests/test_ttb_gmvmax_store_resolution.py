@@ -364,6 +364,18 @@ def test_sync_campaigns_does_not_remove_missing_rows_on_filtered_run(
         .all()
     }
     assert ids == {"cmp-keep", "cmp-stale"}
+    stale_row = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-stale",
+        )
+        .one()
+    )
+    assert stale_row.operation_status == "DELETE"
+    assert stale_row.secondary_status == "CAMPAIGN_STATUS_DELETE"
     assert result["removed"] == 0
 
 

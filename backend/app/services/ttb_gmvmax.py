@@ -171,6 +171,74 @@ def resolve_store_id_from_page_context(
     )
 
 
+def _mark_missing_snapshot_campaigns_as_deleted(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_scope: Collection[str] | None,
+) -> int:
+    """Soft-delete campaigns that lack a corresponding snapshot.
+
+    Some historical rows may linger in ``ttb_gmvmax_campaigns`` even when their
+    latest sync snapshot has been removed.  Flag these as deleted so they surface
+    in the frontend's "deleted" list while remaining read-only.
+    """
+
+    snapshot_stmt = (
+        select(TTBGmvMaxCampaignSyncSnapshot.campaign_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == advertiser_id)
+    )
+    if store_scope:
+        snapshot_stmt = snapshot_stmt.where(
+            TTBGmvMaxCampaignSyncSnapshot.store_id.in_(store_scope)
+        )
+    snapshot_ids = {
+        str(value)
+        for value in db.execute(snapshot_stmt.distinct()).scalars()
+        if value is not None
+    }
+    if not snapshot_ids:
+        return 0
+
+    campaign_stmt = (
+        select(TTBGmvMaxCampaign.campaign_id)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+    )
+    if store_scope:
+        campaign_stmt = campaign_stmt.where(
+            TTBGmvMaxCampaign.store_id.in_(store_scope)
+        )
+    campaign_ids = {
+        str(value)
+        for value in db.execute(campaign_stmt).scalars()
+        if value is not None
+    }
+    missing_snapshot_ids = campaign_ids - snapshot_ids
+    if not missing_snapshot_ids:
+        return 0
+
+    delete_stmt = (
+        update(TTBGmvMaxCampaign)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+        .where(TTBGmvMaxCampaign.campaign_id.in_(missing_snapshot_ids))
+        .values(
+            status="DELETE",
+            operation_status="DELETE",
+            secondary_status="CAMPAIGN_STATUS_DELETE",
+        )
+    )
+    result = db.execute(delete_stmt)
+    return result.rowcount or 0
+
+
 def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
     bind = db.get_bind()
     if bind is None or bind.dialect.name != "sqlite":
@@ -818,6 +886,14 @@ async def sync_gmvmax_campaigns(
         db.execute(delete_snapshots)
         db.add_all(snapshot_rows)
         db.flush()
+
+    _mark_missing_snapshot_campaigns_as_deleted(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=normalized_advertiser,
+        store_scope=normalized_store_scope or None,
+    )
 
     removed = 0
     removal_filter_keys = {"store_ids", "gmv_max_promotion_types"}
