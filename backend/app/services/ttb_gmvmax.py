@@ -799,18 +799,25 @@ async def sync_gmvmax_campaigns(
     db.flush()
 
     if snapshot_rows:
+        if getattr(getattr(db, "bind", None), "dialect", None) and db.bind.dialect.name == "sqlite":
+            next_id = db.execute(
+                select(func.coalesce(func.max(TTBGmvMaxCampaignSyncSnapshot.id), 0))
+            ).scalar_one()
+            for row in snapshot_rows:
+                if getattr(row, "id", None) is None:
+                    next_id += 1
+                    row.id = next_id
+        campaign_ids_seen = {row.campaign_id for row in snapshot_rows}
         delete_snapshots = (
             delete(TTBGmvMaxCampaignSyncSnapshot)
             .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
             .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
             .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == normalized_advertiser)
+            .where(TTBGmvMaxCampaignSyncSnapshot.campaign_id.in_(campaign_ids_seen))
         )
-        if normalized_store_scope:
-            delete_snapshots = delete_snapshots.where(
-                TTBGmvMaxCampaignSyncSnapshot.store_id.in_(normalized_store_scope)
-            )
         db.execute(delete_snapshots)
         db.add_all(snapshot_rows)
+        db.flush()
 
     removed = 0
     removal_filter_keys = {"store_ids", "gmv_max_promotion_types"}

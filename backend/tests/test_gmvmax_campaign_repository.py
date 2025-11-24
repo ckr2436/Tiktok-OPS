@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignSyncSnapshot
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax import list_gmvmax_campaigns
 
@@ -74,6 +74,30 @@ def _create_campaign(
     db_session.add(campaign)
     db_session.flush()
     return campaign
+
+
+def _create_snapshot(
+    db_session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    store_id: str,
+    synced_at: datetime,
+):
+    snapshot = TTBGmvMaxCampaignSyncSnapshot(
+        id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign_id=campaign_id,
+        store_id=store_id,
+        synced_at=synced_at,
+    )
+    db_session.add(snapshot)
+    db_session.flush()
+    return snapshot
 
 
 def test_list_campaigns_filters_by_store(db_session):
@@ -213,6 +237,48 @@ def test_list_campaigns_respects_operation_status(db_session):
 
     assert total == 2
     assert {item.campaign_id for item in items} == {"cmp-enabled", "cmp-disabled"}
+
+
+def test_list_campaigns_ignores_duplicate_snapshots(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+        store_id="store-1",
+        name="Primary",
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+        store_id="store-1",
+        synced_at=datetime(2024, 1, 1, 12, 0, 0),
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+        store_id="store-1",
+        synced_at=datetime(2024, 1, 2, 12, 0, 0),
+    )
+
+    items, total = list_gmvmax_campaigns(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+    )
+
+    assert total == 1
+    assert [item.campaign_id for item in items] == ["cmp-a"]
 
 
 def test_list_campaigns_does_not_require_matching_auth(db_session):

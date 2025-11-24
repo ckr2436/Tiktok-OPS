@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import and_, case, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_gmvmax import (
@@ -51,19 +51,29 @@ def list_gmvmax_campaigns(
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[TTBGmvMaxCampaign], int]:
+    latest_snapshot = (
+        db.query(
+            TTBGmvMaxCampaignSyncSnapshot.campaign_id.label("campaign_id"),
+            TTBGmvMaxCampaignSyncSnapshot.store_id.label("store_id"),
+            func.max(TTBGmvMaxCampaignSyncSnapshot.synced_at).label("latest_synced_at"),
+        )
+        .filter(TTBGmvMaxCampaignSyncSnapshot.workspace_id == int(workspace_id))
+        .filter(TTBGmvMaxCampaignSyncSnapshot.auth_id == int(auth_id))
+        .filter(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == str(advertiser_id))
+        .group_by(
+            TTBGmvMaxCampaignSyncSnapshot.campaign_id,
+            TTBGmvMaxCampaignSyncSnapshot.store_id,
+        )
+        .subquery()
+    )
+
     query = (
         db.query(TTBGmvMaxCampaign)
         .join(
-            TTBGmvMaxCampaignSyncSnapshot,
+            latest_snapshot,
             and_(
-                TTBGmvMaxCampaignSyncSnapshot.workspace_id
-                == TTBGmvMaxCampaign.workspace_id,
-                TTBGmvMaxCampaignSyncSnapshot.auth_id == TTBGmvMaxCampaign.auth_id,
-                TTBGmvMaxCampaignSyncSnapshot.advertiser_id
-                == TTBGmvMaxCampaign.advertiser_id,
-                TTBGmvMaxCampaignSyncSnapshot.store_id == TTBGmvMaxCampaign.store_id,
-                TTBGmvMaxCampaignSyncSnapshot.campaign_id
-                == TTBGmvMaxCampaign.campaign_id,
+                latest_snapshot.c.campaign_id == TTBGmvMaxCampaign.campaign_id,
+                latest_snapshot.c.store_id == TTBGmvMaxCampaign.store_id,
             ),
             isouter=True,
         )

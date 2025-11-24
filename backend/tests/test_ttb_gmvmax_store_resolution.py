@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
+from app.data.models.ttb_gmvmax import (
+    TTBGmvMaxCampaign,
+    TTBGmvMaxCampaignSyncSnapshot,
+)
 from app.data.models.workspaces import Workspace
 from app.services.ttb_gmvmax import sync_gmvmax_campaigns, upsert_campaign_from_api
 
@@ -82,6 +86,7 @@ def _create_campaign_stub(
     auth_id: int,
     advertiser_id: str,
     campaign_id: str,
+    store_id: str = "",
 ) -> TTBGmvMaxCampaign:
     campaign = TTBGmvMaxCampaign(
         id=_next_id(db_session, TTBGmvMaxCampaign),
@@ -89,7 +94,7 @@ def _create_campaign_stub(
         auth_id=auth_id,
         advertiser_id=advertiser_id,
         campaign_id=campaign_id,
-        store_id="",
+        store_id=store_id,
     )
     db_session.add(campaign)
     db_session.flush()
@@ -295,7 +300,19 @@ def test_sync_campaigns_removes_missing_rows(db_session):
         .filter_by(workspace_id=workspace_id, auth_id=auth_id)
         .all()
     }
-    assert ids == {"cmp-keep"}
+    assert ids == {"cmp-keep", "cmp-stale"}
+    stale_row = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-stale",
+        )
+        .one()
+    )
+    assert stale_row.operation_status == "DELETE"
+    assert stale_row.secondary_status == "CAMPAIGN_STATUS_DELETE"
     assert result["removed"] == 1
 
 
@@ -348,6 +365,60 @@ def test_sync_campaigns_does_not_remove_missing_rows_on_filtered_run(
     }
     assert ids == {"cmp-keep", "cmp-stale"}
     assert result["removed"] == 0
+
+
+def test_sync_campaigns_replaces_previous_snapshots(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-1",
+        store_id="old-store",
+    )
+
+    db_session.add(
+        TTBGmvMaxCampaignSyncSnapshot(
+            id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-1",
+            store_id="old-store",
+            synced_at=datetime(2023, 12, 31, 0, 0, 0),
+        )
+    )
+    db_session.flush()
+
+    class _Client(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            yield {
+                "campaign_id": "cmp-1",
+                "campaign_name": "Demo",
+                "advertiser_id": advertiser_id,
+                "store_id": "new-store",
+            }, {"page_info": {"page": 1, "total_page": 1, "total_number": 1}}
+
+    client = _Client()
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+        )
+    )
+
+    snapshots = (
+        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id, advertiser_id="adv-1")
+        .all()
+    )
+    assert len(snapshots) == 1
+    assert snapshots[0].store_id == "store-from-info"
 
 
 def test_upsert_campaign_prefers_detail_store_id_over_payload(db_session):
