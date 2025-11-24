@@ -12,6 +12,7 @@ from app.celery_app import celery_app
 from app.data.db import get_db
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.services.ttb_client_factory import build_ttb_client
+from app.services.ttb_balances import sync_advertiser_balance
 from app.services.gmvmax_heating import run_creative_heating_cycle
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
@@ -105,7 +106,7 @@ def task_gmvmax_sync_campaigns(
     params: Optional[dict[str, Any]] = None,
     run_id: Optional[int] = None,
     **extra: Any,
-) -> dict:
+    ) -> dict:
     """同步 GMV Max Campaign 列表到本地 DB（幂等）。"""
     db = _db_session()
     try:
@@ -150,6 +151,92 @@ def task_gmvmax_sync_campaigns(
                 "schedule_id": schedule_id,
                 "idempotency_key": idempotency_key,
                 "run_id": run_id,
+            },
+        )
+        raise
+    finally:
+        _close_session(db)
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.sync_advertiser_balance",
+    autoretry_for=(Exception,),
+    retry_backoff=10,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    max_retries=5,
+    queue="gmvmax",
+)
+def task_gmvmax_sync_advertiser_balance(
+    self,
+    *,
+    workspace_id: int,
+    auth_id: int | None = None,
+    advertiser_id: str | None = None,
+    bc_id: str | None = None,
+    schedule_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    params: Optional[dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    **_: Any,
+) -> dict[str, Any]:
+    params = params or {}
+    auth_id = auth_id or params.get("auth_id")
+    advertiser_id = advertiser_id or params.get("advertiser_id")
+    bc_id = bc_id or params.get("bc_id")
+    if auth_id is None or advertiser_id is None or bc_id is None:
+        logger.warning(
+            "gmvmax.sync_advertiser_balance missing required identifiers",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "bc_id": bc_id,
+                "params": params,
+                "schedule_id": schedule_id,
+            },
+        )
+        return {"status": "skipped", "reason": "missing identifiers"}
+    db = _db_session()
+    try:
+        result = asyncio.run(
+            sync_advertiser_balance(
+                db,
+                workspace_id=int(workspace_id),
+                auth_id=int(auth_id),
+                bc_id=str(bc_id),
+                advertiser_id=str(advertiser_id),
+            )
+        )
+        db.commit()
+        logger.info(
+            "gmvmax.sync_advertiser_balance done",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "bc_id": bc_id,
+                "schedule_id": schedule_id,
+                "idempotency_key": idempotency_key,
+                "run_id": run_id,
+                "params": params,
+            },
+        )
+        return result
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "gmvmax.sync_advertiser_balance failed",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "bc_id": bc_id,
+                "schedule_id": schedule_id,
+                "idempotency_key": idempotency_key,
+                "run_id": run_id,
+                "params": params,
             },
         )
         raise

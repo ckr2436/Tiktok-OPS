@@ -240,6 +240,7 @@ class TTBPaths:
     advertiser_info: str
     stores_list: str
     products_list: str
+    advertiser_balance_get: str
 
     @classmethod
     def from_settings(cls) -> "TTBPaths":
@@ -253,6 +254,9 @@ class TTBPaths:
             advertiser_info=g("TTB_ADVERTISER_INFO", "advertiser/info/"),
             stores_list=g("TTB_STORES_LIST", "store/list/"),
             products_list=g("TTB_PRODUCTS_LIST", "store/product/get/"),
+            advertiser_balance_get=g(
+                "TTB_ADVERTISER_BALANCE_GET", "advertiser/balance/get/"
+            ),
         )
 
 
@@ -570,6 +574,67 @@ class TTBApiClient:
         if not isinstance(candidates, list):
             return []
         return [item for item in candidates if isinstance(item, dict)]
+
+    async def fetch_advertiser_balances(
+        self,
+        *,
+        bc_id: str,
+        advertiser_ids: Iterable[str] | None = None,
+        page_size: int = _MAX_PAGE_SIZE,
+        fields: Iterable[str] | None = None,
+    ) -> list[dict]:
+        params: Dict[str, Any] = {
+            "bc_id": str(bc_id),
+            "page_size": _clamp_page_size(page_size),
+            "page": 1,
+        }
+        filter_payload: Dict[str, Any] = {}
+        if advertiser_ids:
+            ids: list[str] = []
+            for adv in advertiser_ids:
+                if adv is None:
+                    continue
+                s = str(adv).strip()
+                if s:
+                    ids.append(s)
+            if ids:
+                filter_payload["advertiser_ids"] = ids
+        if filter_payload:
+            params["filtering"] = json.dumps(filter_payload, ensure_ascii=False)
+
+        if fields:
+            field_list: list[str] = []
+            seen: set[str] = set()
+            for field in fields:
+                if not field:
+                    continue
+                key = str(field).strip()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                field_list.append(key)
+            if field_list:
+                params["fields"] = json.dumps(field_list, ensure_ascii=False)
+
+        results: list[dict] = []
+        while True:
+            payload = await self._request_json(
+                "GET", self._paths.advertiser_balance_get, params=params
+            )
+            data = payload.get("data") if isinstance(payload, dict) else None
+            account_list = []
+            if isinstance(data, dict):
+                account_list = data.get("advertiser_account_list") or []
+                if isinstance(account_list, dict):
+                    account_list = account_list.get("list") or []
+                if not isinstance(account_list, list):
+                    account_list = []
+            results.extend([item for item in account_list if isinstance(item, dict)])
+
+            if len(account_list) < params["page_size"]:
+                break
+            params["page"] += 1
+        return results
 
     async def iter_stores(
         self,

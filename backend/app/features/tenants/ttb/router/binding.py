@@ -26,6 +26,7 @@ from app.services.ttb_binding_config import (
     get_binding_config,
     upsert_binding_config,
 )
+from app.services.ttb_balances import select_latest_balance
 from app.services.ttb_sync import _normalize_identifier
 
 from app.data.models.ttb_entities import TTBBusinessCenter
@@ -144,12 +145,20 @@ def get_gmv_max_config(
     common._ensure_account(db, workspace_id, auth_id)
     try:
         row = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+        balance = None
+        if row and row.advertiser_id:
+            balance = select_latest_balance(
+                db,
+                workspace_id=int(workspace_id),
+                auth_id=int(auth_id),
+                advertiser_id=str(row.advertiser_id),
+            )
     except BindingConfigStorageNotReady as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="GMV Max binding configuration storage is not initialized; please run database migrations.",
         ) from exc
-    return common._serialize_binding_config(row)
+    return common._serialize_binding_config(row, balance=balance)
 
 
 @router.put(
@@ -212,7 +221,15 @@ def update_gmv_max_config(
     except Exception:
         db.rollback()
         raise
-    return common._serialize_binding_config(row)
+    balance = None
+    if row and row.advertiser_id:
+        balance = select_latest_balance(
+            db,
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(row.advertiser_id),
+        )
+    return common._serialize_binding_config(row, balance=balance)
 
 
 __all__ = [

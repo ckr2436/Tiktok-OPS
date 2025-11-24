@@ -261,6 +261,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     {
       enabled: Boolean(workspaceId && provider && authId),
+      refetchInterval: 30 * 60 * 1000,
     },
   );
 
@@ -271,6 +272,7 @@ export default function GmvMaxOverviewPage() {
   const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
   const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
   const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
+  const advertiserBalance = bindingConfig?.advertiser_balance || null;
   const bindingConfigMatchedScope = bindingConfigMatchesScope(bindingConfig, {
     storeId,
     businessCenterId,
@@ -1689,6 +1691,36 @@ export default function GmvMaxOverviewPage() {
               {autoBindingStatus.message}
             </div>
           ) : null}
+          <div className="gmvmax-balance-banner">
+            <div className="gmvmax-balance-banner__row">
+              <span className="gmvmax-balance-banner__title">Advertiser balance</span>
+              <span className="gmvmax-balance-banner__timestamp">
+                {advertiserBalance?.fetched_at
+                  ? `Updated ${formatISODate(advertiserBalance.fetched_at)}`
+                  : 'Awaiting balance update'}
+              </span>
+            </div>
+            <div className="gmvmax-balance-banner__values">
+              <div className="gmvmax-balance-banner__value-block">
+                <span className="gmvmax-balance-banner__label">Cash</span>
+                <span className="gmvmax-balance-banner__value">
+                  {formatMoney(advertiserBalance?.cash_balance)}
+                  {advertiserBalance?.currency ? (
+                    <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
+                  ) : null}
+                </span>
+              </div>
+              <div className="gmvmax-balance-banner__value-block">
+                <span className="gmvmax-balance-banner__label">Credit</span>
+                <span className="gmvmax-balance-banner__value">
+                  {formatMoney(advertiserBalance?.credit_balance)}
+                  {advertiserBalance?.currency ? (
+                    <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
+                  ) : null}
+                </span>
+              </div>
+            </div>
+          </div>
           <div className="gmvmax-field-grid">
             <FormField label="Store">
               <select

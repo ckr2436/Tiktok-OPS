@@ -20,6 +20,8 @@ _AUTO_SCOPE = "products"
 _AUTO_TASK_NAME = "ttb.sync.products"
 _AUTO_PROVIDER = "tiktok-business"
 _MIN_INTERVAL_SECONDS = 900
+_BALANCE_TASK_NAME = "gmvmax.sync_advertiser_balance"
+_BALANCE_INTERVAL_SECONDS = 1800
 
 
 def _utcnow() -> datetime:
@@ -37,6 +39,12 @@ def _auto_sync_interval() -> int:
     candidate = int(getattr(settings, "TTB_GMV_AUTO_SYNC_INTERVAL_SECONDS", _MIN_INTERVAL_SECONDS))
     schedule_min = int(getattr(settings, "SCHEDULE_MIN_INTERVAL_SECONDS", 60))
     return max(_MIN_INTERVAL_SECONDS, candidate, schedule_min)
+
+
+def _balance_sync_interval() -> int:
+    candidate = int(getattr(settings, "TTB_ADVERTISER_BALANCE_INTERVAL_SECONDS", _BALANCE_INTERVAL_SECONDS))
+    schedule_min = int(getattr(settings, "SCHEDULE_MIN_INTERVAL_SECONDS", 60))
+    return max(_BALANCE_INTERVAL_SECONDS, candidate, schedule_min)
 
 
 class BindingConfigStorageNotReady(RuntimeError):
@@ -180,6 +188,61 @@ def _ensure_auto_schedule(
     config.auto_sync_schedule_id = int(schedule.id)
 
 
+def _ensure_balance_schedule(
+    db: Session,
+    *,
+    config: TTBBindingConfig,
+    workspace_id: int,
+    auth_id: int,
+    bc_id: Optional[str],
+    advertiser_id: Optional[str],
+    actor_user_id: Optional[int],
+) -> None:
+    schedule: Optional[Schedule] = None
+    if config.balance_sync_schedule_id:
+        schedule = db.get(Schedule, int(config.balance_sync_schedule_id))
+
+    if not bc_id or not advertiser_id:
+        if schedule:
+            schedule.enabled = False
+            db.add(schedule)
+        return
+
+    params_json: Dict[str, Any] = {
+        "workspace_id": int(workspace_id),
+        "auth_id": int(auth_id),
+        "bc_id": bc_id,
+        "advertiser_id": advertiser_id,
+    }
+
+    interval_seconds = _balance_sync_interval()
+
+    if schedule is None:
+        schedule = Schedule(
+            workspace_id=int(workspace_id),
+            task_name=_BALANCE_TASK_NAME,
+            schedule_type="interval",
+            interval_seconds=interval_seconds,
+            params_json=params_json,
+            timezone="UTC",
+            enabled=True,
+            created_by_user_id=int(actor_user_id) if actor_user_id is not None else None,
+            updated_by_user_id=int(actor_user_id) if actor_user_id is not None else None,
+        )
+    else:
+        schedule.task_name = _BALANCE_TASK_NAME
+        schedule.schedule_type = "interval"
+        schedule.interval_seconds = interval_seconds
+        schedule.params_json = params_json
+        schedule.timezone = schedule.timezone or "UTC"
+        schedule.enabled = True
+        if actor_user_id is not None:
+            schedule.updated_by_user_id = int(actor_user_id)
+    db.add(schedule)
+    db.flush()
+    config.balance_sync_schedule_id = int(schedule.id)
+
+
 def upsert_binding_config(
     db: Session,
     *,
@@ -232,6 +295,15 @@ def upsert_binding_config(
             bc_id=normalized_bc,
             advertiser_id=normalized_adv,
             store_id=normalized_store,
+            actor_user_id=actor_user_id,
+        )
+        _ensure_balance_schedule(
+            db,
+            config=row,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            bc_id=normalized_bc,
+            advertiser_id=normalized_adv,
             actor_user_id=actor_user_id,
         )
         db.add(row)

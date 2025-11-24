@@ -249,6 +249,13 @@ class ProductList(BaseModel):
     page_size: int
 
 
+class AdvertiserBalance(BaseModel):
+    currency: Optional[str] = None
+    cash_balance: Optional[float] = None
+    credit_balance: Optional[float] = None
+    fetched_at: Optional[str] = None
+
+
 class GMVMaxBindingConfig(BaseModel):
     bc_id: Optional[str]
     advertiser_id: Optional[str]
@@ -258,6 +265,7 @@ class GMVMaxBindingConfig(BaseModel):
     last_manual_sync_summary: Optional[Dict[str, Any]]
     last_auto_synced_at: Optional[str]
     last_auto_sync_summary: Optional[Dict[str, Any]]
+    advertiser_balance: Optional["AdvertiserBalance"] = None
 
 
 class GMVMaxBindingUpdateRequest(BaseModel):
@@ -496,8 +504,34 @@ def _ensure_account_meta_seeded(db: Session, *, workspace_id: int, account: OAut
         )
 
 
-def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConfig:
+def _serialize_binding_config(
+    row: TTBBindingConfig | None, balance: Any | None = None
+) -> GMVMaxBindingConfig:
     """Serialize a binding config database row into a pydantic model."""
+    def _iso(dt: Optional[datetime]) -> Optional[str]:
+        if not dt:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
+
+    def _serialize_balance(value: Any | None) -> Optional[AdvertiserBalance]:
+        if value is None:
+            return None
+        fetched = getattr(value, "fetched_at", None)
+        return AdvertiserBalance(
+            currency=getattr(value, "currency", None),
+            cash_balance=float(getattr(value, "valid_cash_balance", None) or getattr(value, "cash_balance", 0) or 0)
+            if getattr(value, "valid_cash_balance", None) is not None or getattr(value, "cash_balance", None) is not None
+            else None,
+            credit_balance=float(
+                getattr(value, "valid_credit_balance", None) or getattr(value, "credit_balance", 0) or 0
+            )
+            if getattr(value, "valid_credit_balance", None) is not None or getattr(value, "credit_balance", None) is not None
+            else None,
+            fetched_at=_iso(fetched),
+        )
+
     if not row:
         return GMVMaxBindingConfig(
             bc_id=None,
@@ -508,13 +542,8 @@ def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConf
             last_manual_sync_summary=None,
             last_auto_synced_at=None,
             last_auto_sync_summary=None,
+            advertiser_balance=_serialize_balance(balance),
         )
-    def _iso(dt: Optional[datetime]) -> Optional[str]:
-        if not dt:
-            return None
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc).isoformat()
-        return dt.astimezone(timezone.utc).isoformat()
     return GMVMaxBindingConfig(
         bc_id=row.bc_id,
         advertiser_id=row.advertiser_id,
@@ -524,6 +553,7 @@ def _serialize_binding_config(row: TTBBindingConfig | None) -> GMVMaxBindingConf
         last_manual_sync_summary=row.last_manual_sync_summary_json or None,
         last_auto_synced_at=_iso(row.last_auto_synced_at),
         last_auto_sync_summary=row.last_auto_sync_summary_json or None,
+        advertiser_balance=_serialize_balance(balance),
     )
 
 
@@ -1132,6 +1162,7 @@ __all__ = [
     "StoreList",
     "ProductItem",
     "ProductList",
+    "AdvertiserBalance",
     "GMVMaxBindingConfig",
     "GMVMaxBindingUpdateRequest",
     "_normalize_provider",
