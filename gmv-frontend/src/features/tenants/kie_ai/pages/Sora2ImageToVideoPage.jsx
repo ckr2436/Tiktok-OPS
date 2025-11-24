@@ -205,6 +205,7 @@ export default function Sora2ImageToVideoPage() {
 
   // 当前任务 ID
   const [currentTaskId, setCurrentTaskId] = useState(null)
+  const [taskIdSetAt, setTaskIdSetAt] = useState(null)
 
   // 历史分页
   const [pageSize, setPageSize] = useState(10)
@@ -239,6 +240,15 @@ export default function Sora2ImageToVideoPage() {
       setShots([{ duration: 5, scene: '' }])
     }
   }, [modelId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 记录当前任务 ID 最近一次被设置的时间（用于避免创建后立即查询导致的 404）
+  useEffect(() => {
+    if (currentTaskId == null) {
+      setTaskIdSetAt(null)
+      return
+    }
+    setTaskIdSetAt(Date.now())
+  }, [currentTaskId])
 
   // 挂载 / 模型切换时恢复最近任务
   useEffect(() => {
@@ -276,6 +286,10 @@ export default function Sora2ImageToVideoPage() {
     if (loadingTask) return
     if (task !== null) return // null 表示 404；undefined 是还没拉到
 
+    // 刚创建完任务时，后端可能尚未落库，短时间内的 404 需要宽容处理
+    const justSetTask = taskIdSetAt && Date.now() - taskIdSetAt < 15_000
+    if (justSetTask) return
+
     setCurrentTaskId(null)
     setPreview(null)
 
@@ -285,7 +299,16 @@ export default function Sora2ImageToVideoPage() {
 
     queryClient.removeQueries({ queryKey: ['sora2-task', wid, modelId] })
     queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
-  }, [currentTaskId, loadingTask, task, lastTaskKey, wid, modelId, queryClient])
+  }, [
+    currentTaskId,
+    loadingTask,
+    task,
+    lastTaskKey,
+    wid,
+    modelId,
+    queryClient,
+    taskIdSetAt,
+  ])
 
   // ------- React Query：当前任务文件 -------
   const { data: files = [] } = useQuery({
