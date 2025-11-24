@@ -38,9 +38,10 @@ class TTBGmvMaxCampaign(Base):
     __table_args__ = (
         UniqueConstraint(
             "workspace_id",
-            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
-            name="uk_ttb_gmvmax_campaign_scope",
+            name="uniq_gmvmax_campaign",
         ),
         Index("idx_ttb_gmvmax_campaign_advertiser", "advertiser_id"),
         Index("idx_ttb_gmvmax_campaign_status", "status"),
@@ -77,6 +78,9 @@ class TTBGmvMaxCampaign(Base):
     ext_updated_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
 
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
+    deleted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
@@ -154,17 +158,14 @@ class TTBGmvMaxCampaignSyncSnapshot(Base):
     __table_args__ = (
         UniqueConstraint(
             "workspace_id",
-            "auth_id",
             "advertiser_id",
             "store_id",
             "campaign_id",
-            "synced_at",
-            name="uk_ttb_gmvmax_sync_snapshot",
+            name="uniq_gmvmax_snapshot",
         ),
         Index(
             "idx_ttb_gmvmax_sync_snapshot_scope",
             "workspace_id",
-            "auth_id",
             "advertiser_id",
             "store_id",
         ),

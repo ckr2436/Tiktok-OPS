@@ -58,6 +58,9 @@ def _create_campaign(
     operation_status: str = "ENABLE",
     secondary_status: str | None = None,
     created_at: datetime | None = None,
+    status: str | None = None,
+    is_deleted: bool = False,
+    deleted_at: datetime | None = None,
 ) -> TTBGmvMaxCampaign:
     campaign = TTBGmvMaxCampaign(
         id=_next_id(db_session, TTBGmvMaxCampaign),
@@ -67,9 +70,12 @@ def _create_campaign(
         campaign_id=campaign_id,
         store_id=store_id,
         name=name,
+        status=status,
         operation_status=operation_status,
         secondary_status=secondary_status,
         ext_created_time=created_at,
+        is_deleted=is_deleted,
+        deleted_at=deleted_at,
     )
     db_session.add(campaign)
     db_session.flush()
@@ -126,7 +132,6 @@ def test_list_campaigns_filters_by_store(db_session):
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )
@@ -161,7 +166,6 @@ def test_list_campaigns_excludes_blocked_secondary_status(db_session):
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )
@@ -194,7 +198,6 @@ def test_list_campaigns_filters_by_advertiser(db_session):
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )
@@ -230,7 +233,6 @@ def test_list_campaigns_respects_operation_status(db_session):
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )
@@ -239,46 +241,53 @@ def test_list_campaigns_respects_operation_status(db_session):
     assert {item.campaign_id for item in items} == {"cmp-enabled", "cmp-disabled"}
 
 
-def test_list_campaigns_ignores_duplicate_snapshots(db_session):
+def test_list_campaigns_filters_deleted_flag(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
     _create_campaign(
         db_session,
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id="adv-1",
-        campaign_id="cmp-a",
+        campaign_id="cmp-active",
         store_id="store-1",
-        name="Primary",
+        name="Active",
+        status="ENABLE",
     )
-    _create_snapshot(
+    _create_campaign(
         db_session,
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id="adv-1",
-        campaign_id="cmp-a",
+        campaign_id="cmp-deleted",
         store_id="store-1",
-        synced_at=datetime(2024, 1, 1, 12, 0, 0),
-    )
-    _create_snapshot(
-        db_session,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id="adv-1",
-        campaign_id="cmp-a",
-        store_id="store-1",
-        synced_at=datetime(2024, 1, 2, 12, 0, 0),
+        name="Deleted",
+        status="DELETE",
+        operation_status="DELETE",
+        secondary_status="CAMPAIGN_STATUS_DELETE",
+        is_deleted=True,
+        deleted_at=datetime(2024, 1, 1),
     )
 
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )
 
     assert total == 1
-    assert [item.campaign_id for item in items] == ["cmp-a"]
+    assert [item.campaign_id for item in items] == ["cmp-active"]
+
+    deleted_items, deleted_total = list_gmvmax_campaigns(
+        db_session,
+        workspace_id=workspace_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+        include_deleted=True,
+    )
+
+    assert deleted_total == 1
+    assert [item.campaign_id for item in deleted_items] == ["cmp-deleted"]
 
 
 def test_list_campaigns_does_not_require_matching_auth(db_session):
@@ -308,7 +317,6 @@ def test_list_campaigns_does_not_require_matching_auth(db_session):
     items, total = list_gmvmax_campaigns(
         db_session,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id="adv-1",
         store_id="store-1",
     )

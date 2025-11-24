@@ -157,7 +157,6 @@ async def list_campaigns(
     items, total = list_gmvmax_campaigns(
         db,
         workspace_id=workspace_id,
-        auth_id=auth_id,
         advertiser_id=str(resolved_advertiser),
         store_id=str(store_id),
         status_filter=status_filter,

@@ -1923,7 +1923,6 @@ async def list_gmvmax_campaigns_provider(
     query = (
         context.db.query(TTBGmvMaxCampaign)
         .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaign.auth_id == int(auth_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(adv))
     )
     if store_ids:
@@ -1934,8 +1933,10 @@ async def list_gmvmax_campaigns_provider(
         query = query.filter(TTBGmvMaxCampaign.name.ilike(f"%{campaign_name}%"))
     if primary_status:
         query = query.filter(TTBGmvMaxCampaign.status == str(primary_status))
-    if not include_deleted:
-        query = query.filter(
+    if include_deleted:
+        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(True))
+    else:
+        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False)).filter(
             or_(
                 TTBGmvMaxCampaign.operation_status.is_(None),
                 TTBGmvMaxCampaign.operation_status != "DELETE",
