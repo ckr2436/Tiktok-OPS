@@ -35,6 +35,7 @@ export default function CampaignCard({
   onManage,
   onDashboard,
   products,
+  isDeleted = false,
 }) {
   const campaignId = campaign?.campaign_id || campaign?.id;
   const { start, end } = useMemo(() => getRecentDateRange(7), []);
@@ -162,30 +163,32 @@ export default function CampaignCard({
           <h3 title={name}>{name}</h3>
           <p className="gmvmax-campaign-card__status">{statusLabel}</p>
         </div>
-        <div className="gmvmax-campaign-card__toggles" aria-label="Series controls">
-          <button
-            type="button"
-            className={`gmvmax-toggle-button ${isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
-            aria-label="Enable series"
-            aria-pressed={isEnabled}
-            onClick={handleEnable}
-            disabled={isEnabled || actionMutation.isPending}
-            title="Enable"
-          >
-            <span aria-hidden="true">▶</span>
-          </button>
-          <button
-            type="button"
-            className={`gmvmax-toggle-button ${!isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
-            aria-label="Disable series"
-            aria-pressed={!isEnabled}
-            onClick={handleDisable}
-            disabled={!isEnabled || actionMutation.isPending}
-            title="Disable"
-          >
-            <span aria-hidden="true">⏸</span>
-          </button>
-        </div>
+        {!isDeleted ? (
+          <div className="gmvmax-campaign-card__toggles" aria-label="Series controls">
+            <button
+              type="button"
+              className={`gmvmax-toggle-button ${isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
+              aria-label="Enable series"
+              aria-pressed={isEnabled}
+              onClick={handleEnable}
+              disabled={isEnabled || actionMutation.isPending}
+              title="Enable"
+            >
+              <span aria-hidden="true">▶</span>
+            </button>
+            <button
+              type="button"
+              className={`gmvmax-toggle-button ${!isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
+              aria-label="Disable series"
+              aria-pressed={!isEnabled}
+              onClick={handleDisable}
+              disabled={!isEnabled || actionMutation.isPending}
+              title="Disable"
+            >
+              <span aria-hidden="true">⏸</span>
+            </button>
+          </div>
+        ) : null}
       </header>
       {actionError ? <p className="gmvmax-campaign-card__action-error">{actionError}</p> : null}
       <div className="gmvmax-campaign-card__body">
@@ -255,36 +258,48 @@ export default function CampaignCard({
         <ErrorBlock error={metricsQuery.error} onRetry={metricsQuery.refetch} />
       </div>
       <footer className="gmvmax-campaign-card__footer">
-        <button
-          type="button"
-          className="gmvmax-button gmvmax-button--secondary"
-          onClick={() => onEdit?.(campaignId)}
-          disabled={!detail || detailLoading}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          className="gmvmax-button gmvmax-button--secondary"
-          onClick={() => onManage?.(campaignId)}
-        >
-          Manage products
-        </button>
-        <button
-          type="button"
-          className="gmvmax-button gmvmax-button--secondary"
-          onClick={() => onDashboard?.(campaignId)}
-        >
-          Dashboard
-        </button>
-        <button
-          type="button"
-          className="gmvmax-button gmvmax-button--danger"
-          onClick={handleDelete}
-          disabled={actionMutation.isPending}
-        >
-          Delete
-        </button>
+        {isDeleted ? (
+          <button
+            type="button"
+            className="gmvmax-button gmvmax-button--secondary"
+            onClick={() => onDashboard?.(campaignId)}
+          >
+            View data
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--secondary"
+              onClick={() => onEdit?.(campaignId)}
+              disabled={!detail || detailLoading}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--secondary"
+              onClick={() => onManage?.(campaignId)}
+            >
+              Manage products
+            </button>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--secondary"
+              onClick={() => onDashboard?.(campaignId)}
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--danger"
+              onClick={handleDelete}
+              disabled={actionMutation.isPending}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </footer>
     </article>
   );

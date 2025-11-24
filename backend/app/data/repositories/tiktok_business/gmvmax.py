@@ -7,7 +7,10 @@ from typing import Optional
 from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
+from app.data.models.ttb_gmvmax import (
+    TTBGmvMaxCampaign,
+    TTBGmvMaxCampaignSyncSnapshot,
+)
 
 
 _BLOCKED_SECONDARY_STATUSES = {
@@ -50,6 +53,20 @@ def list_gmvmax_campaigns(
 ) -> tuple[list[TTBGmvMaxCampaign], int]:
     query = (
         db.query(TTBGmvMaxCampaign)
+        .join(
+            TTBGmvMaxCampaignSyncSnapshot,
+            and_(
+                TTBGmvMaxCampaignSyncSnapshot.workspace_id
+                == TTBGmvMaxCampaign.workspace_id,
+                TTBGmvMaxCampaignSyncSnapshot.auth_id == TTBGmvMaxCampaign.auth_id,
+                TTBGmvMaxCampaignSyncSnapshot.advertiser_id
+                == TTBGmvMaxCampaign.advertiser_id,
+                TTBGmvMaxCampaignSyncSnapshot.store_id == TTBGmvMaxCampaign.store_id,
+                TTBGmvMaxCampaignSyncSnapshot.campaign_id
+                == TTBGmvMaxCampaign.campaign_id,
+            ),
+            isouter=False,
+        )
         .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .filter(TTBGmvMaxCampaign.store_id == str(store_id))
