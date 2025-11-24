@@ -101,6 +101,30 @@ def _create_campaign_stub(
     return campaign
 
 
+def _create_snapshot(
+    db_session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    store_id: str,
+    synced_at: datetime,
+) -> TTBGmvMaxCampaignSyncSnapshot:
+    snapshot = TTBGmvMaxCampaignSyncSnapshot(
+        id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign_id=campaign_id,
+        store_id=store_id,
+        synced_at=synced_at,
+    )
+    db_session.add(snapshot)
+    db_session.flush()
+    return snapshot
+
+
 def test_upsert_campaign_uses_store_links_when_payload_missing_store(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
     _create_store_link(
@@ -314,6 +338,224 @@ def test_sync_campaigns_removes_missing_rows(db_session):
     assert stale_row.operation_status == "DELETE"
     assert stale_row.secondary_status == "CAMPAIGN_STATUS_DELETE"
     assert result["removed"] == 1
+
+
+def test_sync_campaigns_marks_all_missing_when_response_empty(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+    )
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-b",
+    )
+
+    old_synced_at = datetime(2023, 12, 31, 0, 0, 0)
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+        store_id="",
+        synced_at=old_synced_at,
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-b",
+        store_id="",
+        synced_at=old_synced_at,
+    )
+
+    class _EmptyClient(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            if False:
+                yield None
+
+    result = asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            _EmptyClient(),
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+        )
+    )
+
+    campaigns = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id)
+        .order_by(TTBGmvMaxCampaign.campaign_id)
+        .all()
+    )
+    assert {c.campaign_id for c in campaigns} == {"cmp-a", "cmp-b"}
+    assert all(c.is_deleted for c in campaigns)
+    assert all(c.status == "DELETE" for c in campaigns)
+    assert all(c.secondary_status == "CAMPAIGN_STATUS_DELETE" for c in campaigns)
+    assert result["removed"] == 2
+
+    snapshot_count = (
+        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id, advertiser_id="adv-1")
+        .count()
+    )
+    assert snapshot_count == 0
+
+
+def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    old_synced_at = datetime(2024, 1, 1)
+
+    s1_shared = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-shared",
+        store_id="store-1",
+    )
+    s1_shared.operation_status = "ENABLE"
+
+    s2_shared = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-shared",
+        store_id="store-2",
+    )
+    s2_shared.operation_status = "ENABLE"
+
+    s1_keep = _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-keep",
+        store_id="store-1",
+    )
+    s1_keep.operation_status = "ENABLE"
+
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-shared",
+        store_id="store-1",
+        synced_at=old_synced_at,
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-shared",
+        store_id="store-2",
+        synced_at=old_synced_at,
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-keep",
+        store_id="store-1",
+        synced_at=old_synced_at,
+    )
+
+    class _ScopedClient(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            yield {
+                "campaign_id": "cmp-keep",
+                "campaign_name": "Keep",
+                "advertiser_id": advertiser_id,
+                "store_id": "store-1",
+            }, {}
+
+        async def get_gmvmax_campaign_info(self, advertiser_id: str, campaign_id: str):
+            return {
+                "campaign_id": campaign_id,
+                "store_id": "store-1",
+                "status": "ENABLE",
+            }
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            _ScopedClient(),
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            store_ids=["store-1"],
+        )
+    )
+
+    s1_shared = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-shared",
+            store_id="store-1",
+        )
+        .one()
+    )
+    assert s1_shared.operation_status == "DELETE"
+    assert s1_shared.secondary_status == "CAMPAIGN_STATUS_DELETE"
+    assert s1_shared.status == "DELETE"
+
+    s2_shared = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-shared",
+            store_id="store-2",
+        )
+        .one()
+    )
+    assert s2_shared.operation_status == "ENABLE"
+    assert s2_shared.secondary_status is None
+    assert s2_shared.status is None
+
+    s1_snapshot_count = (
+        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-shared",
+            store_id="store-1",
+        )
+        .count()
+    )
+    s2_snapshot_count = (
+        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        .filter_by(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_id="cmp-shared",
+            store_id="store-2",
+        )
+        .count()
+    )
+
+    assert s1_snapshot_count == 0
+    assert s2_snapshot_count == 1
 
 
 def test_sync_campaigns_does_not_remove_missing_rows_on_filtered_run(

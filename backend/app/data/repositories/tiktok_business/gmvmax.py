@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
-from app.data.models.ttb_gmvmax import (
-    TTBGmvMaxCampaign,
-    TTBGmvMaxCampaignSyncSnapshot,
-)
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 
 
 _BLOCKED_SECONDARY_STATUSES = {
@@ -43,46 +40,27 @@ def list_gmvmax_campaigns(
     db: Session,
     *,
     workspace_id: int,
-    auth_id: int,
     advertiser_id: str,
     store_id: str,
     status_filter: Optional[str] = None,
+    include_deleted: bool = False,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[TTBGmvMaxCampaign], int]:
-    latest_snapshot = (
-        db.query(
-            TTBGmvMaxCampaignSyncSnapshot.campaign_id.label("campaign_id"),
-            TTBGmvMaxCampaignSyncSnapshot.store_id.label("store_id"),
-            func.max(TTBGmvMaxCampaignSyncSnapshot.synced_at).label("latest_synced_at"),
-        )
-        .filter(TTBGmvMaxCampaignSyncSnapshot.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaignSyncSnapshot.auth_id == int(auth_id))
-        .filter(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == str(advertiser_id))
-        .group_by(
-            TTBGmvMaxCampaignSyncSnapshot.campaign_id,
-            TTBGmvMaxCampaignSyncSnapshot.store_id,
-        )
-        .subquery()
-    )
-
     query = (
         db.query(TTBGmvMaxCampaign)
-        .join(
-            latest_snapshot,
-            and_(
-                latest_snapshot.c.campaign_id == TTBGmvMaxCampaign.campaign_id,
-                latest_snapshot.c.store_id == TTBGmvMaxCampaign.store_id,
-            ),
-            isouter=True,
-        )
         .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
         .filter(TTBGmvMaxCampaign.store_id == str(store_id))
-        .filter(_exclude_blocked_secondary_statuses())
-        .filter(_allowed_operation_status_clause())
     )
+
+    if include_deleted:
+        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(True))
+    else:
+        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False))
+        query = query.filter(_exclude_blocked_secondary_statuses())
+        query = query.filter(_allowed_operation_status_clause())
 
     if status_filter:
         query = query.filter(TTBGmvMaxCampaign.status == status_filter)
