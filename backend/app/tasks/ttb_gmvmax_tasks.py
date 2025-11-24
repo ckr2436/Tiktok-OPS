@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery_app
 from app.data.db import get_db
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
-from app.services.ttb_client_factory import build_ttb_client
+from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_balances import sync_advertiser_balance
 from app.services.gmvmax_heating import run_creative_heating_cycle
 from app.services.ttb_gmvmax import (
@@ -38,7 +38,7 @@ T = TypeVar("T")
 
 def _run_with_client(db: Session, auth_id: int, fn: Callable[[Any], Awaitable[T]]) -> T:
     async def _runner() -> T:
-        client = build_ttb_client(db, auth_id=auth_id)
+        client = build_ttb_gmvmax_client(db, auth_id=auth_id)
         try:
             return await fn(client)
         finally:
