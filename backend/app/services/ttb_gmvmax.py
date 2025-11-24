@@ -706,7 +706,20 @@ async def sync_gmvmax_campaigns(
     advertiser_id: str,
     **filters: Any,
 ) -> dict:
+    normalized_advertiser = str(advertiser_id)
+    existing_ids: set[str] = set(
+        str(value)
+        for value, in db.execute(
+            select(TTBGmvMaxCampaign.campaign_id)
+            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+            .where(TTBGmvMaxCampaign.auth_id == auth_id)
+            .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
+        )
+        if value is not None
+    )
+
     synced = 0
+    seen_ids: set[str] = set()
     details_cache: dict[str, Mapping[str, Any] | None] = {}
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **filters
@@ -716,6 +729,8 @@ async def sync_gmvmax_campaigns(
         campaign_identifier = _normalize_identifier(
             _extract_field(payload, "campaign_id", "id")
         )
+        if campaign_identifier:
+            seen_ids.add(campaign_identifier)
         campaign_details: Mapping[str, Any] | None = None
         if campaign_identifier:
             if campaign_identifier not in details_cache:
@@ -750,7 +765,21 @@ async def sync_gmvmax_campaigns(
         )
         synced += 1
     db.flush()
-    return {"synced": synced}
+
+    removed = 0
+    missing_ids = existing_ids - seen_ids
+    if missing_ids:
+        delete_stmt = (
+            delete(TTBGmvMaxCampaign)
+            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+            .where(TTBGmvMaxCampaign.auth_id == auth_id)
+            .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
+            .where(TTBGmvMaxCampaign.campaign_id.in_(missing_ids))
+        )
+        delete_result = db.execute(delete_stmt)
+        removed = delete_result.rowcount or 0
+
+    return {"synced": synced, "removed": removed}
 
 
 def upsert_campaign_from_api(
