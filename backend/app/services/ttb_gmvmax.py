@@ -710,14 +710,27 @@ async def sync_gmvmax_campaigns(
     filtered_run = bool(provided_filters)
 
     normalized_advertiser = str(advertiser_id)
+    filter_keys = set(provided_filters)
+    normalized_store_scope: list[str] = []
+    for item in provided_filters.get("store_ids", []):
+        normalized = _normalize_identifier(item)
+        if normalized:
+            normalized_store_scope.append(normalized)
+
+    base_existing_stmt = (
+        select(TTBGmvMaxCampaign.campaign_id)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
+    )
+    if normalized_store_scope:
+        base_existing_stmt = base_existing_stmt.where(
+            TTBGmvMaxCampaign.store_id.in_(normalized_store_scope)
+        )
+
     existing_ids: set[str] = set(
         str(value)
-        for value, in db.execute(
-            select(TTBGmvMaxCampaign.campaign_id)
-            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-            .where(TTBGmvMaxCampaign.auth_id == auth_id)
-            .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
-        )
+        for value, in db.execute(base_existing_stmt)
         if value is not None
     )
 
@@ -770,7 +783,11 @@ async def sync_gmvmax_campaigns(
     db.flush()
 
     removed = 0
-    if not filtered_run:
+    removal_filter_keys = {"store_ids", "gmv_max_promotion_types"}
+    allow_scoped_removal = bool(normalized_store_scope) and filter_keys.issubset(
+        removal_filter_keys
+    )
+    if not filtered_run or allow_scoped_removal:
         missing_ids = existing_ids - seen_ids
         if missing_ids:
             delete_stmt = (
@@ -778,7 +795,13 @@ async def sync_gmvmax_campaigns(
                 .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
                 .where(TTBGmvMaxCampaign.auth_id == auth_id)
                 .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
-                .where(TTBGmvMaxCampaign.campaign_id.in_(missing_ids))
+            )
+            if normalized_store_scope:
+                delete_stmt = delete_stmt.where(
+                    TTBGmvMaxCampaign.store_id.in_(normalized_store_scope)
+                )
+            delete_stmt = delete_stmt.where(
+                TTBGmvMaxCampaign.campaign_id.in_(missing_ids)
             )
             delete_result = db.execute(delete_stmt)
             removed = delete_result.rowcount or 0
