@@ -30,6 +30,8 @@ import PlatformPolicies from '../features/platform/admin/pages/PlatformPolicies.
 import AdminList from '../features/platform/admin/pages/AdminList.jsx';
 // 平台管理员 · OAuth Provider Apps
 import OAuthAppsPage from '../features/platform/oauth/pages/OAuthAppsPage.jsx';
+// 平台管理员 · 邮件服务器
+import EmailServerSettings from '../features/platform/email/pages/EmailServerSettings.jsx';
 
 // 平台 - KIE AI Key 管理
 import PlatformKieKeyPage from '../features/platform/kie_ai/pages/PlatformKieKeyPage.jsx';
@@ -83,6 +85,7 @@ const router = createBrowserRouter([
               { path: 'policies', element: <PlatformPolicies /> },
               { path: 'apis', element: <ApiDocsView /> },
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
+              { path: 'email', element: <EmailServerSettings /> },
               // ★ 新增：平台 - KIE AI Key 管理
               { path: 'kie-ai', element: <PlatformKieKeyPage /> },
             ],
