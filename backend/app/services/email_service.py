@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.data.models.email_settings import PlatformEmailSetting, MailEncryption
 
 
-DEFAULT_SSL_PORT = 443
+# RFC 8314 recommends port 465 for implicit TLS (SMTPS)
+DEFAULT_SSL_PORT = 465
 DEFAULT_STARTTLS_PORT = 587
 
 
