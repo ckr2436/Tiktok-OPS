@@ -119,6 +119,10 @@ export async function autoDiscoverGmvMaxBinding(workspaceId, provider, authId, p
   );
 }
 
+export async function syncAdvertiserBalance(workspaceId, provider, authId, payload, config) {
+  return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/balance/sync`, payload, config);
+}
+
 export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload, config) {
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
 }
