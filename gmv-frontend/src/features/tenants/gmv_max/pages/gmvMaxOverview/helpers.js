@@ -643,9 +643,10 @@ export function normalizeStatusValue(value) {
   return String(value).trim().toUpperCase();
 }
 
-export function filterCampaignsByStatus(campaigns) {
+export function filterCampaignsByStatus(campaigns, { includeDeleted = false } = {}) {
   if (!Array.isArray(campaigns)) return [];
   return campaigns.filter((campaign) => {
+    if (includeDeleted) return true;
     const operationStatus = normalizeStatusValue(
       campaign?.operation_status ?? campaign?.operationStatus,
     );

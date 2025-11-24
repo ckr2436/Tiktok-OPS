@@ -149,6 +149,57 @@ class TTBGmvMaxCampaignProduct(Base):
     )
 
 
+class TTBGmvMaxCampaignSyncSnapshot(Base):
+    __tablename__ = "ttb_gmvmax_campaign_sync_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "synced_at",
+            name="uk_ttb_gmvmax_sync_snapshot",
+        ),
+        Index(
+            "idx_ttb_gmvmax_sync_snapshot_scope",
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+        ),
+        Index("idx_ttb_gmvmax_sync_snapshot_time", "synced_at"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class TTBGmvMaxMetricsHourly(Base):
     __tablename__ = "ttb_gmvmax_metrics_hourly"
     __table_args__ = (
