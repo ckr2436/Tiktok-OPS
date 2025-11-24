@@ -38,6 +38,29 @@ def _drop_index_if_exists(table: str, name: str) -> None:
         op.drop_index(name, table_name=table)
 
 
+def _create_index_if_not_exists(
+    table: str, name: str, columns: list[str], unique: bool = False
+) -> None:
+    insp = inspect(op.get_bind())
+    if name in {ix.get("name") for ix in insp.get_indexes(table)}:
+        return
+    if unique:
+        op.create_unique_constraint(name, table, columns)
+    else:
+        op.create_index(name, table, columns)
+
+
+def _create_unique_constraint_if_not_exists(
+    table: str, name: str, columns: list[str]
+) -> None:
+    insp = inspect(op.get_bind())
+    existing_unique_names = {uc.get("name") for uc in insp.get_unique_constraints(table)}
+    existing_index_names = {ix.get("name") for ix in insp.get_indexes(table)}
+    if name in existing_unique_names or name in existing_index_names:
+        return
+    op.create_unique_constraint(name, table, columns)
+
+
 def _delete_duplicates(table: str, partition_cols: list[str]) -> None:
     if not _has_table(table):
         return
@@ -81,9 +104,9 @@ def upgrade() -> None:
         )
         _drop_constraint_if_exists(SNAPSHOT_TABLE, "uk_ttb_gmvmax_sync_snapshot")
         _drop_index_if_exists(SNAPSHOT_TABLE, "idx_ttb_gmvmax_sync_snapshot_scope")
-        op.create_unique_constraint(
-            "uniq_gmvmax_snapshot",
+        _create_unique_constraint_if_not_exists(
             SNAPSHOT_TABLE,
+            "uniq_gmvmax_snapshot",
             ["workspace_id", "advertiser_id", "store_id", "campaign_id"],
         )
         op.create_index(
@@ -110,12 +133,24 @@ def upgrade() -> None:
                 )
             if "deleted_at" not in {c.get("name") for c in inspect(op.get_bind()).get_columns(CAMPAIGN_TABLE)}:
                 batch_op.add_column(sa.Column("deleted_at", mysql_datetime(fsp=6), nullable=True))
-        _drop_constraint_if_exists(CAMPAIGN_TABLE, "uk_ttb_gmvmax_campaign_scope")
-        op.create_unique_constraint(
-            "uniq_gmvmax_campaign",
-            CAMPAIGN_TABLE,
-            ["workspace_id", "advertiser_id", "store_id", "campaign_id"],
+        # Ensure foreign keys still have supporting indexes when the legacy unique
+        # index is dropped. MySQL requires an index on referenced columns, and the
+        # existing unique index currently fulfills that requirement.
+        _create_index_if_not_exists(
+            CAMPAIGN_TABLE, "idx_ttb_gmvmax_campaign_workspace_id", ["workspace_id"]
         )
+        _create_index_if_not_exists(
+            CAMPAIGN_TABLE, "idx_ttb_gmvmax_campaign_auth_id", ["auth_id"]
+        )
+        # Create the new unique constraint first so there is always an index that
+        # satisfies the foreign key requirements, then drop the legacy unique.
+        _create_index_if_not_exists(
+            CAMPAIGN_TABLE,
+            "uniq_gmvmax_campaign",
+            ["workspace_id", "advertiser_id", "store_id", "campaign_id"],
+            unique=True,
+        )
+        _drop_constraint_if_exists(CAMPAIGN_TABLE, "uk_ttb_gmvmax_campaign_scope")
 
 
 def downgrade() -> None:
@@ -140,6 +175,8 @@ def downgrade() -> None:
             CAMPAIGN_TABLE,
             ["workspace_id", "auth_id", "campaign_id"],
         )
+        _drop_index_if_exists(CAMPAIGN_TABLE, "idx_ttb_gmvmax_campaign_auth_id")
+        _drop_index_if_exists(CAMPAIGN_TABLE, "idx_ttb_gmvmax_campaign_workspace_id")
         with op.batch_alter_table(CAMPAIGN_TABLE) as batch_op:
             batch_op.drop_column("deleted_at")
             batch_op.drop_column("is_deleted")
