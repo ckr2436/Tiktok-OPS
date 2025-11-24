@@ -107,10 +107,10 @@ def task_gmvmax_sync_campaigns(
     run_id: Optional[int] = None,
     **extra: Any,
     ) -> dict:
-        """同步 GMV Max Campaign 列表到本地 DB（幂等）。"""
-        db = _db_session()
-        try:
-            payload_filters = dict(filters or {})
+    """同步 GMV Max Campaign 列表到本地 DB（幂等）。"""
+    db = _db_session()
+    try:
+        payload_filters = dict(filters or {})
         if not payload_filters and params and isinstance(params, dict):
             payload_filters = dict(params.get("filters") or {})
 
