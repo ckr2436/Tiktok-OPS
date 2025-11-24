@@ -145,6 +145,16 @@ class SyncTaskResponse(BaseModel):
 AsyncTaskResponse = SyncTaskResponse
 
 
+class BalanceSyncRequest(BaseModel):
+    """Request body for advertiser balance sync."""
+
+    bc_id: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    store_id: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class SyncTaskStateResponse(BaseModel):
     """Status payload for GMV Max sync Celery tasks."""
 

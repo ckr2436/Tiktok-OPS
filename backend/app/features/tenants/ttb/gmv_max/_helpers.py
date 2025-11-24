@@ -25,8 +25,9 @@ class GMVMaxAccountBinding:
     """Resolved tenant binding information for a GMV Max account."""
 
     account: OAuthAccountTTB
-    advertiser_id: Optional[str]
-    store_id: Optional[str]
+    bc_id: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    store_id: Optional[str] = None
 
 
 def _normalize_provider(provider: str) -> str:
@@ -122,6 +123,7 @@ def resolve_account_binding(
 
     binding = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
     store_id = binding.store_id if binding else None
+    bc_id = binding.bc_id if binding else None
 
     if not advertiser_id and binding and binding.advertiser_id:
         advertiser_id = binding.advertiser_id
@@ -134,6 +136,7 @@ def resolve_account_binding(
 
     return GMVMaxAccountBinding(
         account=account,
+        bc_id=str(bc_id) if bc_id else None,
         advertiser_id=str(advertiser_id) if advertiser_id else None,
         store_id=str(binding.store_id) if binding and binding.store_id else None,
     )

@@ -4,13 +4,12 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+import logging
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_entities import TTBAdvertiserBalance
-from app.services.ttb_client_factory import build_ttb_client
 from app.services.ttb_api import TTBApiClient
-
-import logging
+from app.services.ttb_client_factory import build_ttb_client
 
 log = logging.getLogger(__name__)
 
