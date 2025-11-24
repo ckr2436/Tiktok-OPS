@@ -65,7 +65,7 @@ def list_gmvmax_campaigns(
                 TTBGmvMaxCampaignSyncSnapshot.campaign_id
                 == TTBGmvMaxCampaign.campaign_id,
             ),
-            isouter=False,
+            isouter=True,
         )
         .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
         .filter(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
