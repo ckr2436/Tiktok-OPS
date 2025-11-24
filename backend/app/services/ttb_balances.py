@@ -75,10 +75,15 @@ def upsert_advertiser_balance(
         )
 
     row.currency = payload.get("currency") or row.currency
-    row.account_balance = _to_decimal(payload.get("account_balance") or payload.get("valid_account_balance"))
+    balance_value = payload.get("balance")
+    row.account_balance = _to_decimal(
+        payload.get("account_balance") or payload.get("valid_account_balance") or balance_value
+    )
     row.valid_account_balance = _to_decimal(payload.get("valid_account_balance"))
-    row.cash_balance = _to_decimal(payload.get("cash_balance") or payload.get("valid_cash_balance"))
-    row.valid_cash_balance = _to_decimal(payload.get("valid_cash_balance"))
+    row.cash_balance = _to_decimal(
+        payload.get("cash_balance") or payload.get("valid_cash_balance") or balance_value
+    )
+    row.valid_cash_balance = _to_decimal(payload.get("valid_cash_balance") or balance_value)
     row.credit_balance = _to_decimal(payload.get("credit_balance") or payload.get("valid_credit_balance"))
     row.valid_credit_balance = _to_decimal(payload.get("valid_credit_balance"))
     row.fetched_at = datetime.now(timezone.utc)

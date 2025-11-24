@@ -583,58 +583,60 @@ class TTBApiClient:
         page_size: int = _MAX_PAGE_SIZE,
         fields: Iterable[str] | None = None,
     ) -> list[dict]:
-        params: Dict[str, Any] = {
-            "bc_id": str(bc_id),
-            "page_size": _clamp_page_size(page_size),
-            "page": 1,
-        }
-        filter_payload: Dict[str, Any] = {}
+        """
+        Fetch advertiser balances via /advertiser/info/.
+
+        The previous balance endpoint only returned accounts under the same bc_id;
+        this implementation relies on the advertiser/info API so we can query
+        arbitrary advertiser IDs directly. The bc_id and page_size parameters are
+        preserved for backwards compatibility but are not used by the underlying
+        request.
+        """
+
+        ids: list[str] = []
         if advertiser_ids:
-            ids: list[str] = []
             for adv in advertiser_ids:
                 if adv is None:
                     continue
                 s = str(adv).strip()
                 if s:
                     ids.append(s)
-            if ids:
-                filter_payload["advertiser_ids"] = ids
-        if filter_payload:
-            params["filtering"] = json.dumps(filter_payload, ensure_ascii=False)
+        if not ids:
+            return []
 
-        if fields:
-            field_list: list[str] = []
-            seen: set[str] = set()
-            for field in fields:
-                if not field:
-                    continue
-                key = str(field).strip()
-                if not key or key in seen:
-                    continue
-                seen.add(key)
-                field_list.append(key)
-            if field_list:
-                params["fields"] = json.dumps(field_list, ensure_ascii=False)
+        default_fields = ["advertiser_id", "balance", "currency"]
+        requested_fields: list[str] = []
+        seen: set[str] = set()
+        for field in fields or default_fields:
+            if not field:
+                continue
+            key = str(field).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            requested_fields.append(key)
 
-        results: list[dict] = []
-        while True:
-            payload = await self._request_json(
-                "GET", self._paths.advertiser_balance_get, params=params
-            )
-            data = payload.get("data") if isinstance(payload, dict) else None
-            account_list = []
-            if isinstance(data, dict):
-                account_list = data.get("advertiser_account_list") or []
-                if isinstance(account_list, dict):
-                    account_list = account_list.get("list") or []
-                if not isinstance(account_list, list):
-                    account_list = []
-            results.extend([item for item in account_list if isinstance(item, dict)])
+        params: Dict[str, Any] = {
+            "advertiser_ids": json.dumps(ids, ensure_ascii=False),
+        }
+        if requested_fields:
+            params["fields"] = json.dumps(requested_fields, ensure_ascii=False)
 
-            if len(account_list) < params["page_size"]:
+        response = await self._request_json(
+            "GET",
+            self._paths.advertiser_info,
+            params=params,
+        )
+        data = response.get("data") or {}
+        candidates = []
+        for key in ("list", "advertiser_list", "advertiser_infos", "advertisers"):
+            value = data.get(key)
+            if isinstance(value, list):
+                candidates = value
                 break
-            params["page"] += 1
-        return results
+        if not isinstance(candidates, list):
+            return []
+        return [item for item in candidates if isinstance(item, dict)]
 
     async def iter_stores(
         self,
