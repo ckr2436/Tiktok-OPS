@@ -604,57 +604,54 @@ def task_gmvmax_precheck(
 ) -> dict:
     db = _db_session()
     try:
-        def _worker(client: Any) -> Any:
-            async def _run() -> dict:
-                usage_resp = await client.gmv_max_store_shop_ad_usage_check(
-                    GMVMaxStoreAdUsageCheckRequest(
+        async def _worker(client: Any) -> dict:
+            usage_resp = await client.gmv_max_store_shop_ad_usage_check(
+                GMVMaxStoreAdUsageCheckRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(store_id),
+                    store_authorized_bc_id=store_authorized_bc_id,
+                )
+            )
+            identity_resp = await client.gmv_max_identity_get(
+                GMVMaxIdentityGetRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(store_id),
+                    store_authorized_bc_id=str(store_authorized_bc_id),
+                )
+            )
+
+            occupancy_resp = None
+            asset_ids = []
+            if identity_id:
+                asset_ids.append(str(identity_id))
+            if product_item_group_ids:
+                asset_ids.extend([str(item) for item in product_item_group_ids])
+            asset_ids = [item for item in asset_ids if item.strip()]
+            if asset_ids:
+                occupancy_resp = await client.gmv_max_occupied_custom_shop_ads_list(
+                    GMVMaxOccupiedCustomShopAdsListRequest(
                         advertiser_id=str(advertiser_id),
                         store_id=str(store_id),
-                        store_authorized_bc_id=store_authorized_bc_id,
-                    )
-                )
-                identity_resp = await client.gmv_max_identity_get(
-                    GMVMaxIdentityGetRequest(
-                        advertiser_id=str(advertiser_id),
-                        store_id=str(store_id),
-                        store_authorized_bc_id=str(store_authorized_bc_id),
+                        occupied_asset_type=str(occupied_asset_type or ("IDENTITY" if identity_id else "SPU")),
+                        asset_ids=asset_ids,
                     )
                 )
 
-                occupancy_resp = None
-                asset_ids = []
-                if identity_id:
-                    asset_ids.append(str(identity_id))
-                if product_item_group_ids:
-                    asset_ids.extend([str(item) for item in product_item_group_ids])
-                asset_ids = [item for item in asset_ids if item.strip()]
-                if asset_ids:
-                    occupancy_resp = await client.gmv_max_occupied_custom_shop_ads_list(
-                        GMVMaxOccupiedCustomShopAdsListRequest(
-                            advertiser_id=str(advertiser_id),
-                            store_id=str(store_id),
-                            occupied_asset_type=str(occupied_asset_type or ("IDENTITY" if identity_id else "SPU")),
-                            asset_ids=asset_ids,
-                        )
-                    )
-
-                return {
-                    "store_usage": usage_resp.data.model_dump(exclude_none=True),
-                    "identities": [
-                        entry.model_dump(exclude_none=True)
-                        for entry in getattr(identity_resp.data, "identity_list", [])
-                    ],
-                    "occupancy": occupancy_resp.data.model_dump(exclude_none=True)
-                    if occupancy_resp
-                    else None,
-                    "request_ids": {
-                        "store_usage": usage_resp.request_id,
-                        "identities": identity_resp.request_id,
-                        "occupancy": occupancy_resp.request_id if occupancy_resp else None,
-                    },
-                }
-
-            return asyncio.run(_run())
+            return {
+                "store_usage": usage_resp.data.model_dump(exclude_none=True),
+                "identities": [
+                    entry.model_dump(exclude_none=True)
+                    for entry in getattr(identity_resp.data, "identity_list", [])
+                ],
+                "occupancy": occupancy_resp.data.model_dump(exclude_none=True)
+                if occupancy_resp
+                else None,
+                "request_ids": {
+                    "store_usage": usage_resp.request_id,
+                    "identities": identity_resp.request_id,
+                    "occupancy": occupancy_resp.request_id if occupancy_resp else None,
+                },
+            }
 
         return _run_with_client(db, auth_id, _worker)
     except Exception:
@@ -690,16 +687,13 @@ def task_gmvmax_report_get(
 ) -> dict:
     db = _db_session()
     try:
-        def _worker(client: Any) -> Any:
-            async def _run() -> dict:
-                request = GMVMaxReportGetRequest.model_validate(report_request)
-                response = await client.gmv_max_report_get(request)
-                return {
-                    "report": response.data.model_dump(exclude_none=True),
-                    "request_id": response.request_id,
-                }
-
-            return asyncio.run(_run())
+        async def _worker(client: Any) -> dict:
+            request = GMVMaxReportGetRequest.model_validate(report_request)
+            response = await client.gmv_max_report_get(request)
+            return {
+                "report": response.data.model_dump(exclude_none=True),
+                "request_id": response.request_id,
+            }
 
         return _run_with_client(db, auth_id, _worker)
     except Exception:
@@ -728,16 +722,13 @@ def task_gmvmax_strategy_preview(
 ) -> dict:
     db = _db_session()
     try:
-        def _worker(client: Any) -> Any:
-            async def _run() -> dict:
-                request = GMVMaxBidRecommendRequest.model_validate(bid_request)
-                response = await client.gmv_max_bid_recommend(request)
-                return {
-                    "recommendation": response.data.model_dump(exclude_none=True),
-                    "request_id": response.request_id,
-                }
-
-            return asyncio.run(_run())
+        async def _worker(client: Any) -> dict:
+            request = GMVMaxBidRecommendRequest.model_validate(bid_request)
+            response = await client.gmv_max_bid_recommend(request)
+            return {
+                "recommendation": response.data.model_dump(exclude_none=True),
+                "request_id": response.request_id,
+            }
 
         return _run_with_client(db, auth_id, _worker)
     except Exception:
