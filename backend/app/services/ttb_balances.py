@@ -32,7 +32,13 @@ def select_latest_balance(
         .filter(TTBAdvertiserBalance.workspace_id == int(workspace_id))
         .filter(TTBAdvertiserBalance.auth_id == int(auth_id))
         .filter(TTBAdvertiserBalance.advertiser_id == str(advertiser_id))
-        .order_by(TTBAdvertiserBalance.fetched_at.desc().nullslast(), TTBAdvertiserBalance.id.desc())
+        # MySQL doesn't support "NULLS LAST" syntax. Order by non-null fetched_at first,
+        # then by fetched_at desc and id desc for deterministic ordering.
+        .order_by(
+            TTBAdvertiserBalance.fetched_at.is_(None),
+            TTBAdvertiserBalance.fetched_at.desc(),
+            TTBAdvertiserBalance.id.desc(),
+        )
         .first()
     )
 
