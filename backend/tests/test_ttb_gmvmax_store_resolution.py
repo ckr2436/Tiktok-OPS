@@ -251,6 +251,105 @@ def test_sync_campaigns_fetches_store_id_from_detail_api(db_session):
     assert client.info_calls == [("adv-1", "cmp-1")]
 
 
+def test_sync_campaigns_removes_missing_rows(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-keep",
+    )
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-stale",
+    )
+
+    class _Client(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            yield {
+                "campaign_id": "cmp-keep",
+                "campaign_name": "Demo",
+                "advertiser_id": advertiser_id,
+                "store_id": "store-from-page",
+            }, {"page_info": {"page": 1, "total_page": 1, "total_number": 1}}
+
+    client = _Client()
+
+    result = asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+        )
+    )
+
+    ids = {
+        row.campaign_id
+        for row in db_session.query(TTBGmvMaxCampaign)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id)
+        .all()
+    }
+    assert ids == {"cmp-keep"}
+    assert result["removed"] == 1
+
+
+def test_sync_campaigns_does_not_remove_missing_rows_on_filtered_run(
+    db_session,
+):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-keep",
+    )
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-stale",
+    )
+
+    class _Client(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            yield {
+                "campaign_id": "cmp-keep",
+                "campaign_name": "Demo",
+                "advertiser_id": advertiser_id,
+                "store_id": "store-from-page",
+            }, {"page_info": {"page": 1, "total_page": 1, "total_number": 1}}
+
+    client = _Client()
+
+    result = asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+            campaign_ids=["cmp-keep"],
+        )
+    )
+
+    ids = {
+        row.campaign_id
+        for row in db_session.query(TTBGmvMaxCampaign)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id)
+        .all()
+    }
+    assert ids == {"cmp-keep", "cmp-stale"}
+    assert result["removed"] == 0
+
+
 def test_upsert_campaign_prefers_detail_store_id_over_payload(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
 
