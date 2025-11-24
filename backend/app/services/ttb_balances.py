@@ -84,8 +84,9 @@ def upsert_advertiser_balance(
         payload.get("cash_balance") or payload.get("valid_cash_balance") or balance_value
     )
     row.valid_cash_balance = _to_decimal(payload.get("valid_cash_balance") or balance_value)
-    row.credit_balance = _to_decimal(payload.get("credit_balance") or payload.get("valid_credit_balance"))
-    row.valid_credit_balance = _to_decimal(payload.get("valid_credit_balance"))
+    # 官方 API 暂不提供信用额度相关字段，仅同步现金余额
+    row.credit_balance = None
+    row.valid_credit_balance = None
     row.fetched_at = datetime.now(timezone.utc)
     row.raw_json = payload
     db.add(row)
@@ -127,7 +128,6 @@ async def sync_advertiser_balance(
             "status": "success",
             "currency": row.currency,
             "cash_balance": float(row.cash_balance) if row.cash_balance is not None else None,
-            "credit_balance": float(row.credit_balance) if row.credit_balance is not None else None,
             "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,
         }
     finally:

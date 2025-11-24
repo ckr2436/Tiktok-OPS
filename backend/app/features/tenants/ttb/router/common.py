@@ -252,7 +252,6 @@ class ProductList(BaseModel):
 class AdvertiserBalance(BaseModel):
     currency: Optional[str] = None
     cash_balance: Optional[float] = None
-    credit_balance: Optional[float] = None
     fetched_at: Optional[str] = None
 
 
@@ -523,11 +522,6 @@ def _serialize_binding_config(
             currency=getattr(value, "currency", None),
             cash_balance=float(getattr(value, "valid_cash_balance", None) or getattr(value, "cash_balance", 0) or 0)
             if getattr(value, "valid_cash_balance", None) is not None or getattr(value, "cash_balance", None) is not None
-            else None,
-            credit_balance=float(
-                getattr(value, "valid_credit_balance", None) or getattr(value, "credit_balance", 0) or 0
-            )
-            if getattr(value, "valid_credit_balance", None) is not None or getattr(value, "credit_balance", None) is not None
             else None,
             fetched_at=_iso(fetched),
         )
