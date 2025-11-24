@@ -398,11 +398,57 @@ class TTBBindingConfig(Base):
         UBigInt, ForeignKey("schedules.id", onupdate="RESTRICT", ondelete="SET NULL"), default=None
     )
 
+    balance_sync_schedule_id: Mapped[int | None] = mapped_column(
+        UBigInt, ForeignKey("schedules.id", onupdate="RESTRICT", ondelete="SET NULL"), default=None
+    )
+
     last_manual_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
     last_manual_sync_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     last_auto_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
     last_auto_sync_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+# --------------------------- 广告账户余额 ---------------------------
+class TTBAdvertiserBalance(Base):
+    __tablename__ = "ttb_advertiser_balances"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "auth_id", "advertiser_id", name="uk_ttb_balance_scope"),
+        Index("idx_ttb_balance_scope", "workspace_id", "auth_id", "advertiser_id"),
+        Index("idx_ttb_balance_time", "fetched_at"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"), nullable=False
+    )
+
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+
+    account_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    valid_account_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    cash_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    valid_cash_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    credit_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    valid_credit_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+
+    fetched_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
