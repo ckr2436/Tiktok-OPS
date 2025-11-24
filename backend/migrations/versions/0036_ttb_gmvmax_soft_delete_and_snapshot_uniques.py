@@ -50,6 +50,17 @@ def _create_index_if_not_exists(
         op.create_index(name, table, columns)
 
 
+def _create_unique_constraint_if_not_exists(
+    table: str, name: str, columns: list[str]
+) -> None:
+    insp = inspect(op.get_bind())
+    existing_unique_names = {uc.get("name") for uc in insp.get_unique_constraints(table)}
+    existing_index_names = {ix.get("name") for ix in insp.get_indexes(table)}
+    if name in existing_unique_names or name in existing_index_names:
+        return
+    op.create_unique_constraint(name, table, columns)
+
+
 def _delete_duplicates(table: str, partition_cols: list[str]) -> None:
     if not _has_table(table):
         return
@@ -93,9 +104,9 @@ def upgrade() -> None:
         )
         _drop_constraint_if_exists(SNAPSHOT_TABLE, "uk_ttb_gmvmax_sync_snapshot")
         _drop_index_if_exists(SNAPSHOT_TABLE, "idx_ttb_gmvmax_sync_snapshot_scope")
-        op.create_unique_constraint(
-            "uniq_gmvmax_snapshot",
+        _create_unique_constraint_if_not_exists(
             SNAPSHOT_TABLE,
+            "uniq_gmvmax_snapshot",
             ["workspace_id", "advertiser_id", "store_id", "campaign_id"],
         )
         op.create_index(
