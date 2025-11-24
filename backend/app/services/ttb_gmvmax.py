@@ -787,6 +787,8 @@ async def sync_gmvmax_campaigns(
     allow_scoped_removal = bool(normalized_store_scope) and filter_keys.issubset(
         removal_filter_keys
     )
+    if "gmv_max_promotion_types" in filter_keys:
+        allow_scoped_removal = False
     if not filtered_run or allow_scoped_removal:
         missing_ids = existing_ids - seen_ids
         if missing_ids:
