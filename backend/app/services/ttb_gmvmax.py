@@ -200,8 +200,6 @@ def _mark_missing_snapshot_campaigns_as_deleted(
         for value in db.execute(snapshot_stmt.distinct()).scalars()
         if value is not None
     }
-    if not snapshot_ids:
-        return 0
 
     campaign_stmt = (
         select(TTBGmvMaxCampaign.campaign_id)

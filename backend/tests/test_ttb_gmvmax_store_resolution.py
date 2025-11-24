@@ -340,6 +340,78 @@ def test_sync_campaigns_removes_missing_rows(db_session):
     assert result["removed"] == 1
 
 
+def test_sync_campaigns_marks_all_missing_when_response_empty(db_session):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+    )
+    _create_campaign_stub(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-b",
+    )
+
+    old_synced_at = datetime(2023, 12, 31, 0, 0, 0)
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-a",
+        store_id="",
+        synced_at=old_synced_at,
+    )
+    _create_snapshot(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-b",
+        store_id="",
+        synced_at=old_synced_at,
+    )
+
+    class _EmptyClient(_DummyTTBClient):
+        async def iter_gmvmax_campaigns(self, advertiser_id: str, **_filters):
+            if False:
+                yield None
+
+    result = asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            _EmptyClient(),
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id="adv-1",
+        )
+    )
+
+    campaigns = (
+        db_session.query(TTBGmvMaxCampaign)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id)
+        .order_by(TTBGmvMaxCampaign.campaign_id)
+        .all()
+    )
+    assert {c.campaign_id for c in campaigns} == {"cmp-a", "cmp-b"}
+    assert all(c.is_deleted for c in campaigns)
+    assert all(c.status == "DELETE" for c in campaigns)
+    assert all(c.secondary_status == "CAMPAIGN_STATUS_DELETE" for c in campaigns)
+    assert result["removed"] == 2
+
+    snapshot_count = (
+        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        .filter_by(workspace_id=workspace_id, auth_id=auth_id, advertiser_id="adv-1")
+        .count()
+    )
+    assert snapshot_count == 0
+
+
 def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
     old_synced_at = datetime(2024, 1, 1)
