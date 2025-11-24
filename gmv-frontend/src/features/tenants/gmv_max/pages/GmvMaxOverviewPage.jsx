@@ -1743,15 +1743,6 @@ export default function GmvMaxOverviewPage() {
                       ) : null}
                     </span>
                   </div>
-                  <div className="gmvmax-balance-banner__value-block">
-                    <span className="gmvmax-balance-banner__label">Credit</span>
-                    <span className="gmvmax-balance-banner__value">
-                      {formatMoney(advertiserBalance?.credit_balance)}
-                      {advertiserBalance?.currency ? (
-                        <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
-                      ) : null}
-                    </span>
-                  </div>
                 </>
               ) : (
                 <span className="gmvmax-balance-chip__placeholder">Awaiting balance update.</span>
