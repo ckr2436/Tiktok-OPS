@@ -2348,6 +2348,11 @@ async def _apply_creative_heating_action(
     performed_by: str,
 ) -> CreativeHeatingActionResponse:
     campaign_row = _load_campaign_row(context, campaign_id)
+    if campaign_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Campaign not found",
+        )
     before_state = _snapshot_campaign_state(campaign_row)
     heating_row = await upsert_creative_heating(
         context.db,

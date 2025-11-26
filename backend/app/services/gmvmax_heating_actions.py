@@ -40,7 +40,7 @@ async def apply_boost_creative_action(
     db: Session,
     *,
     client: TikTokBusinessGMVMaxClient,
-    campaign: TTBGmvMaxCampaign,
+    campaign: TTBGmvMaxCampaign | None,
     heating: TTBGmvMaxCreativeHeating,
     mode: str | None = None,
     target_daily_budget: float | None = None,
@@ -52,6 +52,9 @@ async def apply_boost_creative_action(
     before_state: Mapping[str, Any] | None = None,
     after_state: Mapping[str, Any] | None = None,
 ):
+    if campaign is None:
+        raise ValueError("campaign is required to apply boost creative action")
+
     action_body: dict[str, Any] = {
         "campaign_id": str(campaign.campaign_id),
         "action_type": "BOOST_CREATIVE",
