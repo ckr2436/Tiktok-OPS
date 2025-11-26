@@ -314,19 +314,20 @@ export default function Sora2ImageToVideoPage() {
   }, [])
 
   // ------- React Query：当前任务 -------
+  const taskQuery = useQuery({
+    queryKey: ['sora2-task', wid, modelId, currentTaskId],
+    queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
+    enabled: !!wid && !!currentTaskId,
+    refetchInterval: (data) =>
+      data && shouldPollByState(data.state) ? 8000 : false,
+  })
+
   const {
     data: task,
     isLoading: loadingTask,
     error: taskError,
     refetch: refetchTask,
-  } = useQuery({
-    queryKey: ['sora2-task', wid, modelId, currentTaskId],
-    queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
-    enabled: !!wid && !!currentTaskId,
-    refetchInterval: () => {
-      return task && shouldPollByState(task.state) ? 8000 : false
-    },
-  })
+  } = taskQuery
 
   // 如果后端返回 404（getTask → null），自动清理本地“当前任务”状态和缓存
   useEffect(() => {
@@ -371,22 +372,24 @@ export default function Sora2ImageToVideoPage() {
   })
 
   // ------- React Query：任务历史 -------
-  const {
-    data: historyResp,
-    isLoading: historyLoading,
-    refetch: refetchHistory,
-  } = useQuery({
+  const historyQuery = useQuery({
     queryKey: ['sora2-history', wid, modelId, page, pageSize],
     queryFn: () =>
       kieTenantApi.listTasks(wid, { page, size: pageSize, model: modelId }),
     enabled: !!wid,
-    refetchInterval: () => {
-      const items = historyResp?.items || []
+    refetchInterval: (data) => {
+      const items = data?.items || []
       const hasPending = items.some((item) => shouldPollByState(item.state))
       return hasPending ? 8000 : false
     },
     keepPreviousData: true,
   })
+
+  const {
+    data: historyResp,
+    isLoading: historyLoading,
+    refetch: refetchHistory,
+  } = historyQuery
 
   const rawTotal = historyResp?.total ?? 0
   const historyTotal = Math.min(rawTotal, MAX_HISTORY_TOTAL)
