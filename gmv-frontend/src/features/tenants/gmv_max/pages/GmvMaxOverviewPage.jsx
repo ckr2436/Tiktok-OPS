@@ -877,20 +877,22 @@ export default function GmvMaxOverviewPage() {
   ]);
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
 
-  const defaultPresetLabel = useMemo(() => {
-    const parts = [
+    const defaultPresetLabel = useMemo(() => {
+      const parts = [
+        selectedAccountLabel,
+        selectedBusinessCenterLabel,
+        selectedAdvertiserLabel,
+        selectedStoreLabel,
+      ].filter(Boolean);
+      return parts.join(' / ');
+    }, [
       selectedAccountLabel,
-      selectedBusinessCenterLabel,
       selectedAdvertiserLabel,
+      selectedBusinessCenterLabel,
       selectedStoreLabel,
-    ].filter(Boolean);
-    return parts.join(' / ');
-  }, [
-    selectedAccountLabel,
-    selectedAdvertiserLabel,
-    selectedBusinessCenterLabel,
-    selectedStoreLabel,
-  ]);
+    ]);
+
+    const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
 
   const handleAutoRefreshChange = useCallback(
     (event) => {
@@ -1408,12 +1410,11 @@ export default function GmvMaxOverviewPage() {
     storeId,
   ]);
 
-  const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
-  const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
-  const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
-  const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
-  const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
-  const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
+    const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
+    const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
+    const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
+    const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
+    const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
 
   useEffect(() => {
     if (!bindingConfigMatchedScope || autoBindingMutation.isPending) return;

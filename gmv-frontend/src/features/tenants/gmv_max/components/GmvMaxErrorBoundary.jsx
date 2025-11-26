@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo } from 'react';
+import { useRouteError } from 'react-router-dom';
 
-export function GmvMaxErrorBoundary({ error }) {
+export function GmvMaxErrorBoundary({ error: explicitError }) {
+  const routeError = useRouteError();
+  const error = explicitError || routeError;
+
   const details = useMemo(() => {
     if (!error) return null;
     const message = error?.message || String(error);
