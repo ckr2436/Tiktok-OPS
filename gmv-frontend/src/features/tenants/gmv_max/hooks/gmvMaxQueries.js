@@ -10,6 +10,7 @@ import {
   getGmvMaxMetrics,
   autoDiscoverGmvMaxBinding,
   getGmvMaxOptions,
+  getGmvMaxIdentities,
   getGmvMaxStrategy,
   listAccounts,
   listAdvertisers,
@@ -99,6 +100,16 @@ export function useProductsQuery(workspaceId, provider, authId, params = {}, opt
   return useQuery({
     queryKey: composeKey('products', workspaceId, provider, authId, params),
     queryFn: () => listProducts(workspaceId, provider, authId, params),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
+    ...rest,
+  });
+}
+
+export function useGmvMaxIdentitiesQuery(workspaceId, provider, authId, params = {}, options = {}) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('identities', workspaceId, provider, authId, params),
+    queryFn: () => getGmvMaxIdentities(workspaceId, provider, authId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });

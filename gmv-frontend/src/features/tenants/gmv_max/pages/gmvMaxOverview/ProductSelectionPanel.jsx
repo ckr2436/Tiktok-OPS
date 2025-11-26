@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 
 import Loading from '@/components/ui/Loading.jsx';
 
-import { getProductIdentifier, isProductAvailable } from './helpers.js';
+import { formatMoney, getProductIdentifier, isProductAvailable } from './helpers.js';
+import { GmvMaxTexts } from '../../locale.js';
 
 export default function ProductSelectionPanel({
   products,
@@ -13,6 +14,8 @@ export default function ProductSelectionPanel({
   loading,
   emptyMessage,
   disabled,
+  onSelectAll,
+  onClearAll,
 }) {
   const selection = useMemo(() => {
     if (selectedIds instanceof Set) return selectedIds;
@@ -31,11 +34,11 @@ export default function ProductSelectionPanel({
   const allSelected = allIds.length > 0 && allIds.every((id) => selection.has(id));
 
   if (loading) {
-    return <Loading text="Loading products…" />;
+    return <Loading text="商品加载中…" />;
   }
 
   if (productRows.length === 0) {
-    return <p>{emptyMessage || 'No products available.'}</p>;
+    return <p>{emptyMessage || '暂无可用商品。'}</p>;
   }
 
   return (
@@ -48,21 +51,34 @@ export default function ProductSelectionPanel({
             onChange={() => onToggleAll?.(allIds)}
             disabled={disabled || allIds.length === 0}
           />
-          <span>Select all</span>
+          <span>{GmvMaxTexts.selectAll}</span>
         </label>
         <span className="gmvmax-product-table__count">
-          Selected {selection.size} / {productRows.length}
+          已选 {selection.size} / {productRows.length}
         </span>
+        <div className="gmvmax-product-table__bulk-actions">
+          <button
+            type="button"
+            onClick={() => onSelectAll?.(allIds)}
+            disabled={disabled || allIds.length === 0}
+          >
+            全选店铺商品
+          </button>
+          <button type="button" onClick={() => onClearAll?.()} disabled={disabled || selection.size === 0}>
+            取消全选
+          </button>
+        </div>
       </div>
       <table className="gmvmax-table">
         <thead>
           <tr>
             <th aria-label="select" />
-            <th>Product</th>
-            <th>Product ID</th>
-            <th>Store</th>
-            <th>GMV Max status</th>
-            <th>Availability</th>
+            <th>商品</th>
+            <th>商品 ID</th>
+            <th>店铺</th>
+            <th>GMV Max 状态</th>
+            <th>可投放状态</th>
+            <th>价格</th>
           </tr>
         </thead>
         <tbody>
@@ -75,7 +91,10 @@ export default function ProductSelectionPanel({
             const storeKey = String(product.store_id ?? product.storeId ?? '');
             const storeLabel = storeKey && storeNames?.get(storeKey) ? storeNames.get(storeKey) : storeKey || '—';
             const gmvMaxStatus = product.gmv_max_ads_status || '—';
-            const availability = isProductAvailable(product) ? 'Available' : 'Not available';
+            const availability = isProductAvailable(product)
+              ? GmvMaxTexts.availabilityAvailable
+              : GmvMaxTexts.availabilityUnavailable;
+            const price = product.price || product.sale_price || product.salePrice || product.gmv || null;
             return (
               <tr key={id}>
                 <td>
@@ -84,7 +103,7 @@ export default function ProductSelectionPanel({
                     checked={checked}
                     onChange={() => onToggle?.(id)}
                     disabled={disabled}
-                    aria-label={`Toggle product ${id}`}
+                    aria-label={`选择商品 ${id}`}
                   />
                 </td>
                 <td>
@@ -103,6 +122,7 @@ export default function ProductSelectionPanel({
                 <td>{storeLabel}</td>
                 <td>{gmvMaxStatus}</td>
                 <td>{availability}</td>
+                <td>{price ? formatMoney(price) : '—'}</td>
               </tr>
             );
           })}

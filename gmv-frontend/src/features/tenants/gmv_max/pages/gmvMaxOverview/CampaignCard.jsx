@@ -9,17 +9,15 @@ import {
   extractProductsFromDetail,
   formatCampaignStatus,
   formatError,
+  formatISODate,
   formatMoney,
   formatRoi,
-  getRecentDateRange,
+  getCampaignStatusMeta,
   isCampaignEnabledStatus,
-  summariseMetrics,
 } from './helpers.js';
 import { ErrorBlock } from './ErrorHandling.jsx';
-import {
-  useApplyGmvMaxActionMutation,
-  useGmvMaxMetricsQuery,
-} from '../../hooks/gmvMaxQueries.js';
+import { useApplyGmvMaxActionMutation } from '../../hooks/gmvMaxQueries.js';
+import { GmvMaxTexts } from '../../locale.js';
 
 export default function CampaignCard({
   campaign,
@@ -31,14 +29,17 @@ export default function CampaignCard({
   provider,
   authId,
   storeId,
+  storeName,
   onEdit,
   onManage,
   onDashboard,
   products,
+  metricsSummary,
+  metricsLoading = false,
+  metricsError = null,
   isDeleted = false,
 }) {
   const campaignId = campaign?.campaign_id || campaign?.id;
-  const { start, end } = useMemo(() => getRecentDateRange(7), []);
   const queryClient = useQueryClient();
   const campaignsQueryKey = useMemo(
     () => ['gmvMax', 'campaigns', workspaceId, provider, authId],
@@ -50,20 +51,6 @@ export default function CampaignCard({
         ? ['gmvMax', 'campaign-detail', workspaceId, provider, authId, campaignId]
         : null,
     [authId, campaignId, provider, workspaceId],
-  );
-  const metricsQuery = useGmvMaxMetricsQuery(
-    workspaceId,
-    provider,
-    authId,
-    campaignId,
-    {
-      start_date: start,
-      end_date: end,
-      store_ids: storeId ? [String(storeId)] : undefined,
-    },
-    {
-      enabled: Boolean(workspaceId && authId && campaignId && storeId),
-    },
   );
   const actionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
@@ -78,16 +65,31 @@ export default function CampaignCard({
     },
   });
 
-  const reportPayload = metricsQuery.data?.report ?? metricsQuery.data?.data ?? metricsQuery.data ?? null;
-  const metricsSummary = reportPayload ? summariseMetrics(reportPayload) : null;
   const productCount = useMemo(() => {
     if (detail) {
       return collectProductIdsFromDetail(detail).size;
     }
     return collectProductIdsFromCampaign(campaign).size;
   }, [detail, campaign]);
-  const statusLabel = formatCampaignStatus(campaign?.operation_status);
-  const name = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+  const statusMeta = getCampaignStatusMeta(
+    campaign?.operation_status || campaign?.status || detail?.campaign?.operation_status || detail?.campaign?.status,
+  );
+  const statusLabel = statusMeta.label || formatCampaignStatus(campaign?.operation_status);
+  const name = campaign?.campaign_name || campaign?.name || `系列 ${campaignId}`;
+  const storeLabel =
+    storeName ||
+    campaign?.store_name ||
+    campaign?.storeName ||
+    detail?.campaign?.store_name ||
+    detail?.campaign?.storeName ||
+    storeId ||
+    '';
+  const startTime =
+    detail?.campaign?.start_time || detail?.campaign?.startTime || campaign?.start_time || campaign?.startTime;
+  const endTime = detail?.campaign?.end_time || detail?.campaign?.endTime || campaign?.end_time || campaign?.endTime;
+  const timelineLabel = startTime || endTime
+    ? `${startTime ? formatISODate(startTime) : '—'} 至 ${endTime ? formatISODate(endTime) : '—'}`
+    : null;
   const previewProducts = useMemo(() => {
     const extracted = extractProductsFromDetail(detail);
     if (Array.isArray(extracted) && extracted.length > 0) {
@@ -151,7 +153,7 @@ export default function CampaignCard({
 
   const handleDelete = useCallback(() => {
     if (!campaignId) return;
-    const confirmed = window.confirm('Delete this campaign? This action cannot be undone.');
+    const confirmed = window.confirm(GmvMaxTexts.deleteSeries);
     if (!confirmed) return;
     actionMutation.mutate({ type: 'delete' });
   }, [actionMutation, campaignId]);
@@ -161,29 +163,39 @@ export default function CampaignCard({
       <header className="gmvmax-campaign-card__header">
         <div className="gmvmax-campaign-card__title">
           <h3 title={name}>{name}</h3>
-          <p className="gmvmax-campaign-card__status">{statusLabel}</p>
+          <div className="gmvmax-campaign-card__meta">
+            <p className={`gmvmax-status-badge gmvmax-status-badge--${statusMeta.tone || 'muted'}`}>
+              {statusLabel}
+            </p>
+            {storeLabel ? <span className="gmvmax-campaign-card__store">{storeLabel}</span> : null}
+            {timelineLabel ? (
+              <span className="gmvmax-campaign-card__timeline" title={GmvMaxTexts.viewTimeline}>
+                {timelineLabel}
+              </span>
+            ) : null}
+          </div>
         </div>
         {!isDeleted ? (
-          <div className="gmvmax-campaign-card__toggles" aria-label="Series controls">
+          <div className="gmvmax-campaign-card__toggles" aria-label="系列操作">
             <button
               type="button"
               className={`gmvmax-toggle-button ${isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
-              aria-label="Enable series"
+              aria-label={GmvMaxTexts.toggleEnableTooltip}
               aria-pressed={isEnabled}
               onClick={handleEnable}
               disabled={isEnabled || actionMutation.isPending}
-              title="Enable"
+              title={GmvMaxTexts.toggleEnableTooltip}
             >
               <span aria-hidden="true">▶</span>
             </button>
             <button
               type="button"
               className={`gmvmax-toggle-button ${!isEnabled ? 'gmvmax-toggle-button--active' : ''}`}
-              aria-label="Disable series"
+              aria-label={GmvMaxTexts.togglePauseTooltip}
               aria-pressed={!isEnabled}
               onClick={handleDisable}
               disabled={!isEnabled || actionMutation.isPending}
-              title="Disable"
+              title={GmvMaxTexts.togglePauseTooltip}
             >
               <span aria-hidden="true">⏸</span>
             </button>
@@ -192,25 +204,25 @@ export default function CampaignCard({
       </header>
       {actionError ? <p className="gmvmax-campaign-card__action-error">{actionError}</p> : null}
       <div className="gmvmax-campaign-card__body">
-        {detailLoading ? <Loading text="Loading campaign details…" /> : null}
+        {detailLoading ? <Loading text="加载系列详情…" /> : null}
         <ErrorBlock error={detailError} onRetry={onRetryDetail} />
         <div className="gmvmax-campaign-card__products">
           <div className="gmvmax-campaign-card__products-count">
-            <span>Products</span>
+            <span>{GmvMaxTexts.products}</span>
             <strong>{productCount ?? '—'}</strong>
           </div>
           {detailLoading ? (
-            <span className="gmvmax-campaign-card__products-placeholder">Loading products…</span>
+            <span className="gmvmax-campaign-card__products-placeholder">商品加载中…</span>
           ) : displayedProducts.length === 0 ? (
-            <span className="gmvmax-campaign-card__products-placeholder">Product preview unavailable.</span>
+            <span className="gmvmax-campaign-card__products-placeholder">暂无商品预览。</span>
           ) : (
-            <div className="gmvmax-product-thumbnails" aria-label="Products preview">
+            <div className="gmvmax-product-thumbnails" aria-label="商品预览">
               {displayedProducts.map((product, index) => {
                 const key = product.id || product.name || `product-${index}`;
                 return (
                   <div key={key} className="gmvmax-product-thumbnail" title={product.name}>
                     {product.image ? (
-                      <img src={product.image} alt={product.name || 'Product'} />
+                      <img src={product.image} alt={product.name || '商品'} />
                     ) : (
                       <span aria-hidden="true">📦</span>
                     )}
@@ -225,37 +237,29 @@ export default function CampaignCard({
         </div>
         <dl className="gmvmax-campaign-card__stats">
           <div>
-            <dt>Spend (7d)</dt>
+            <dt>{GmvMaxTexts.totalSpend}（{GmvMaxTexts.metricsWindowLabel}）</dt>
             <dd>
-              {metricsQuery.isLoading
-                ? 'Loading…'
-                : metricsSummary
-                ? formatMoney(metricsSummary.spend)
-                : '—'}
+              {metricsLoading ? '加载中…' : metricsSummary ? formatMoney(metricsSummary.spend) : '—'}
             </dd>
           </div>
           <div>
-            <dt>GMV (7d)</dt>
+            <dt>{GmvMaxTexts.totalGmv}（{GmvMaxTexts.metricsWindowLabel}）</dt>
             <dd>
-              {metricsQuery.isLoading
-                ? 'Loading…'
-                : metricsSummary
-                ? formatMoney(metricsSummary.gmv)
-                : '—'}
+              {metricsLoading ? '加载中…' : metricsSummary ? formatMoney(metricsSummary.gmv) : '—'}
             </dd>
           </div>
           <div>
-            <dt>ROAS (7d)</dt>
+            <dt>{GmvMaxTexts.averageRoas}（{GmvMaxTexts.metricsWindowLabel}）</dt>
             <dd>
-              {metricsQuery.isLoading
-                ? 'Loading…'
+              {metricsLoading
+                ? '加载中…'
                 : metricsSummary && metricsSummary.roas !== null
                 ? formatRoi(metricsSummary.roas)
                 : '—'}
             </dd>
           </div>
         </dl>
-        <ErrorBlock error={metricsQuery.error} onRetry={metricsQuery.refetch} />
+        <ErrorBlock error={metricsError} />
       </div>
       <footer className="gmvmax-campaign-card__footer">
         {isDeleted ? (
@@ -264,7 +268,7 @@ export default function CampaignCard({
             className="gmvmax-button gmvmax-button--secondary"
             onClick={() => onDashboard?.(campaignId)}
           >
-            View data
+            {GmvMaxTexts.viewData}
           </button>
         ) : (
           <>
@@ -274,21 +278,21 @@ export default function CampaignCard({
               onClick={() => onEdit?.(campaignId)}
               disabled={!detail || detailLoading}
             >
-              Edit
+              {GmvMaxTexts.editSeries}
             </button>
             <button
               type="button"
               className="gmvmax-button gmvmax-button--secondary"
               onClick={() => onManage?.(campaignId)}
             >
-              Manage products
+              {GmvMaxTexts.manageProducts}
             </button>
             <button
               type="button"
               className="gmvmax-button gmvmax-button--secondary"
               onClick={() => onDashboard?.(campaignId)}
             >
-              Dashboard
+              {GmvMaxTexts.dashboard}
             </button>
             <button
               type="button"
@@ -296,7 +300,7 @@ export default function CampaignCard({
               onClick={handleDelete}
               disabled={actionMutation.isPending}
             >
-              Delete
+              {GmvMaxTexts.deleteSeries}
             </button>
           </>
         )}

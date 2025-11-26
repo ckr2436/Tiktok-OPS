@@ -11,6 +11,7 @@ import {
   useStartGmvMaxCreativeHeatingMutation,
   useStopGmvMaxCreativeHeatingMutation,
 } from '../hooks/gmvMaxQueries.js';
+import { GmvMaxTexts } from '../locale.js';
 
 function formatNumber(value, options = {}) {
   if (value === undefined || value === null || Number.isNaN(value)) return '—';
@@ -345,8 +346,8 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
     <section className="gmvmax-creatives">
       <header className="gmvmax-creatives__header">
         <div>
-          <h3>Creatives</h3>
-          <p>Creative-level performance with heating status.</p>
+          <h3>{GmvMaxTexts.creatives}</h3>
+          <p>{GmvMaxTexts.creativesDescription}</p>
         </div>
         <div className="gmvmax-creatives__filters">
           <label>
@@ -357,7 +358,7 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
               checked={filter === 'all'}
               onChange={() => setFilter('all')}
             />
-            All
+            全部
           </label>
           <label>
             <input
@@ -367,7 +368,7 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
               checked={filter === 'heating'}
               onChange={() => setFilter('heating')}
             />
-            Heating
+            热启中
           </label>
           <label>
             <input
@@ -377,15 +378,15 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
               checked={filter === 'idle'}
               onChange={() => setFilter('idle')}
             />
-            Idle
+            空闲
           </label>
         </div>
       </header>
 
-      {isLoading ? <Loading text="Loading creatives…" /> : null}
+      {isLoading ? <Loading text="创意加载中…" /> : null}
       {hasError ? (
         <div className="gmvmax-error">
-          Failed to load creatives. {creativesQuery.error?.message || creativeMetricsQuery.error?.message || creativeHeatingQuery.error?.message}
+          创意数据加载失败。{creativesQuery.error?.message || creativeMetricsQuery.error?.message || creativeHeatingQuery.error?.message}
         </div>
       ) : null}
 
@@ -393,28 +394,29 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
         <table className="gmvmax-creatives__table">
           <thead>
             <tr>
-              <th>Creative</th>
-              <th>Impressions</th>
-              <th>Clicks</th>
-              <th>Spend</th>
+              <th>创意</th>
+              <th>曝光</th>
+              <th>点击</th>
+              <th>花费</th>
               <th>GMV</th>
-              <th>Orders</th>
+              <th>订单</th>
               <th>CTR</th>
               <th>CPC</th>
               <th>ROAS</th>
-              <th>Heating status</th>
-              <th>Last evaluation</th>
-              <th>Actions</th>
+              <th>热启状态</th>
+              <th>最近评估</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {filteredCreatives.length === 0 ? (
               <tr>
-                <td colSpan={12}>No creatives found for this campaign.</td>
+                <td colSpan={12}>该系列暂无创意数据。</td>
               </tr>
             ) : (
               filteredCreatives.map((creative) => {
                 const status = resolveHeatingStatus(creative.heating);
+                const statusLabel = status === 'HEATING' ? '热启中' : status === 'IDLE' ? '空闲' : status;
                 const lastEvaluated = resolveLastEvaluated(creative.heating);
                 const metrics = creative.metrics || {};
                 const isActive = status === 'HEATING';
@@ -436,10 +438,10 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
                     <td>{metrics.roas ? metrics.roas.toFixed(2) : '—'}</td>
                     <td>
                       <span className={`gmvmax-creatives__status gmvmax-creatives__status--${status.toLowerCase()}`}>
-                        {status}
+                        {statusLabel}
                       </span>
                       {creative.heating?.auto_stop_enabled === false || creative.heating?.autoStopEnabled === false ? (
-                        <span className="gmvmax-creatives__badge">Auto-stop disabled</span>
+                        <span className="gmvmax-creatives__badge">已关闭自动停用</span>
                       ) : null}
                       {creative.heating?.last_evaluation_result || creative.heating?.lastEvaluationResult ? (
                         <span className="gmvmax-creatives__badge gmvmax-creatives__badge--muted">
@@ -456,14 +458,14 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
                           onClick={() => handleStart(creative)}
                           disabled={isActive || startMutation.isPending || stopMutation.isPending}
                         >
-                          Start heating
+                          开始热启
                         </button>
                         <button
                           type="button"
                           onClick={() => handleStop(creative)}
                           disabled={!isActive || startMutation.isPending || stopMutation.isPending}
                         >
-                          Stop heating
+                          停止热启
                         </button>
                       </div>
                     </td>
