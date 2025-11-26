@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Sequence
 from urllib.parse import urlparse
 
@@ -124,6 +125,48 @@ beat_schedule.setdefault(
     },
 )
 celery_app.conf.beat_schedule = beat_schedule
+
+# GMV Max 同步任务周期模板（仅启用选中的一个，避免多个节拍并行）
+GMVMAX_SYNC_INTERVAL_OPTIONS = (10, 15, 20, 30)
+GMVMAX_SYNC_TASK_NAME = "ttb.sync_gmvmax"
+
+
+def _gmvmax_schedule_key(minutes: int) -> str:
+    return f"gmvmax-sync-{int(minutes)}min"
+
+
+_gmvmax_schedule_lock = threading.Lock()
+
+
+def set_gmvmax_sync_interval(interval_minutes: int) -> int:
+    """启用指定的 GMV Max Celery Beat 周期任务，仅保留一个节拍。"""
+
+    normalized = interval_minutes if interval_minutes in GMVMAX_SYNC_INTERVAL_OPTIONS else GMVMAX_SYNC_INTERVAL_OPTIONS[0]
+    with _gmvmax_schedule_lock:
+        schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
+        # 移除其他 GMV Max 周期任务，防止重叠
+        for minutes in GMVMAX_SYNC_INTERVAL_OPTIONS:
+            schedule.pop(_gmvmax_schedule_key(minutes), None)
+
+        schedule[_gmvmax_schedule_key(normalized)] = {
+            "task": GMVMAX_SYNC_TASK_NAME,
+            "schedule": float(normalized) * 60.0,
+            "options": {"queue": "gmvmax"},
+        }
+
+        celery_app.conf.beat_schedule = schedule
+        celery_app.conf.gmvmax_sync_interval_minutes = normalized
+
+    return normalized
+
+
+def get_gmvmax_sync_interval() -> int:
+    return int(getattr(celery_app.conf, "gmvmax_sync_interval_minutes", GMVMAX_SYNC_INTERVAL_OPTIONS[0]))
+
+
+set_gmvmax_sync_interval(
+    int(getattr(settings, "GMVMAX_SYNC_INTERVAL_MINUTES", GMVMAX_SYNC_INTERVAL_OPTIONS[0]))
+)
 
 # ★ 导入任务，确保 worker 启动即注册
 import app.tasks.oauth_tasks  # noqa: F401

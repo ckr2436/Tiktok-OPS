@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime
+from uuid import uuid4
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 from sqlalchemy import select
@@ -23,6 +25,7 @@ from app.services.ttb_gmvmax import (
     sync_gmvmax_metrics_daily,
     sync_gmvmax_metrics_hourly,
 )
+from app.services.redis_locks import RedisDistributedLock
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
     GMVMaxIdentityGetRequest,
@@ -69,6 +72,24 @@ def _close_session(sess: Session) -> None:
             pass
 
 
+def _iter_sync_scopes(db: Session) -> list[tuple[int, int, str]]:
+    stmt = (
+        select(
+            TTBGmvMaxCampaign.workspace_id,
+            TTBGmvMaxCampaign.auth_id,
+            TTBGmvMaxCampaign.advertiser_id,
+        )
+        .where(TTBGmvMaxCampaign.advertiser_id.is_not(None))
+        .distinct()
+    )
+    rows = []
+    for workspace_id, auth_id, advertiser_id in db.execute(stmt):
+        if not auth_id or not advertiser_id:
+            continue
+        rows.append((int(workspace_id), int(auth_id), str(advertiser_id)))
+    return rows
+
+
 def _find_campaign_row(
     db: Session,
     *,
@@ -82,6 +103,78 @@ def _find_campaign_row(
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
     )
     return db.execute(stmt).scalars().first()
+
+
+@celery_app.task(
+    bind=True,
+    name="ttb.sync_gmvmax",
+    queue="gmvmax",
+)
+def task_sync_gmvmax(self, **extra: Any) -> dict:
+    """通过 Celery Beat 周期触发的全局 GMV Max 同步任务。
+
+    - 仅允许单实例运行（Redis 锁）。
+    - 按 workspace/auth/advertiser 维度串行同步，避免重叠调用。
+    """
+
+    lock = RedisDistributedLock(key="gmvmax:beat:sync", owner_token=self.request.id or str(uuid4()))
+    if not lock.acquire(timeout=1.0, retry_interval=0.1):
+        logger.info("gmvmax beat sync skipped: lock held")
+        return {"status": "skipped", "reason": "inflight"}
+
+    db = _db_session()
+    success = 0
+    failures: list[dict[str, Any]] = []
+    scopes = _iter_sync_scopes(db)
+
+    try:
+        for workspace_id, auth_id, advertiser_id in scopes:
+            try:
+                result = _run_with_client(
+                    db,
+                    auth_id,
+                    lambda client: sync_gmvmax_campaigns(
+                        db,
+                        client,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=str(advertiser_id),
+                    ),
+                )
+                db.commit()
+                logger.info(
+                    "gmvmax beat sync ok",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "result": result,
+                    },
+                )
+                success += 1
+            except Exception:
+                db.rollback()
+                failures.append(
+                    {
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                    }
+                )
+                logger.exception(
+                    "gmvmax beat sync failed",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                    },
+                )
+    finally:
+        _close_session(db)
+        with contextlib.suppress(Exception):
+            lock.release()
+
+    return {"status": "ok", "synced_scopes": success, "failed_scopes": failures}
 
 
 @celery_app.task(

@@ -249,6 +249,16 @@ class SyncTaskStateResponse(BaseModel):
     error: Optional[Dict[str, Any]] = None
 
 
+class SyncIntervalUpdateRequest(BaseModel):
+    interval: int = Field(..., description="Interval in minutes: 10/15/20/30")
+
+
+class SyncIntervalResponse(BaseModel):
+    interval: int
+    available: List[int]
+    message: Optional[str] = None
+
+
 class CampaignListResponse(BaseModel):
     """Response returned by the campaign list route."""
 

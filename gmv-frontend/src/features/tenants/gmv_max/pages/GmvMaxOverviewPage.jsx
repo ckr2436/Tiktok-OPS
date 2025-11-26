@@ -20,6 +20,7 @@ import {
   useSyncAdvertiserBalanceMutation,
   useSyncAccountProductsMutation,
   useSyncGmvMaxCampaignsMutation,
+  useUpdateGmvMaxSyncIntervalMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
@@ -116,6 +117,16 @@ const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertis
   return Boolean(normalizedBc && normalizedAdvertiser && normalizedStore);
 };
 
+const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
+const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
+const SYNC_COOLDOWN_MS = 10 * 60 * 1000;
+
+const loadAutoRefreshInterval = (storageKey) => {
+  if (typeof window === 'undefined' || !storageKey) return DEFAULT_AUTO_REFRESH_INTERVAL;
+  const saved = Number(window.localStorage.getItem(storageKey));
+  return AUTO_REFRESH_OPTIONS.includes(saved) ? saved : DEFAULT_AUTO_REFRESH_INTERVAL;
+};
+
 export default function GmvMaxOverviewPage() {
   const { wid: workspaceId } = useParams();
   const navigate = useNavigate();
@@ -123,12 +134,18 @@ export default function GmvMaxOverviewPage() {
 
   const provider = PROVIDER;
   const metricsRange = useMemo(() => getRecentDateRange(7), []);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(() =>
+    loadAutoRefreshInterval(workspaceId ? `gmvMax:autoRefresh:${workspaceId}:${provider}` : ''),
+  );
   const [scope, setScope] = useState(() => ({ ...DEFAULT_SCOPE }));
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
+  const [intervalNotice, setIntervalNotice] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState(null);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [autoBindingStatus, setAutoBindingStatus] = useState(null);
   const [includeDeletedCampaigns, setIncludeDeletedCampaigns] = useState(false);
   const [hidePaused, setHidePaused] = useState(false);
@@ -141,6 +158,12 @@ export default function GmvMaxOverviewPage() {
   const autoOptionsRefreshAccounts = useRef(new Set());
   const autoBindingKeyRef = useRef('');
   const syncInFlightRef = useRef(false);
+  const performSyncRef = useRef(null);
+  const lastAutoSyncScopeRef = useRef('');
+  const autoRefreshStorageKey = useMemo(
+    () => (workspaceId ? `gmvMax:autoRefresh:${workspaceId}:${provider}` : ''),
+    [provider, workspaceId],
+  );
 
   useEffect(() => {
     const handleHttpError = (event) => {
@@ -154,6 +177,15 @@ export default function GmvMaxOverviewPage() {
       window.removeEventListener('http:error', handleHttpError);
     };
   }, []);
+
+  useEffect(() => {
+    setAutoRefreshInterval(loadAutoRefreshInterval(autoRefreshStorageKey));
+  }, [autoRefreshStorageKey]);
+
+  useEffect(() => {
+    if (!autoRefreshStorageKey || typeof window === 'undefined') return;
+    window.localStorage.setItem(autoRefreshStorageKey, String(autoRefreshInterval));
+  }, [autoRefreshInterval, autoRefreshStorageKey]);
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
@@ -312,6 +344,12 @@ export default function GmvMaxOverviewPage() {
     savedStoreId,
     storeId,
   ]);
+
+  useEffect(() => {
+    if (!storeId) {
+      lastAutoSyncScopeRef.current = '';
+    }
+  }, [storeId]);
 
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
@@ -854,6 +892,32 @@ export default function GmvMaxOverviewPage() {
     selectedStoreLabel,
   ]);
 
+  const handleAutoRefreshChange = useCallback(
+    (event) => {
+      const value = Number(event?.target?.value || DEFAULT_AUTO_REFRESH_INTERVAL);
+      const normalized = AUTO_REFRESH_OPTIONS.includes(value) ? value : DEFAULT_AUTO_REFRESH_INTERVAL;
+      setIntervalNotice(null);
+      setAutoRefreshInterval(normalized);
+      if (!workspaceId || !authId) return;
+
+      updateSyncIntervalMutation.mutate(
+        { interval: normalized },
+        {
+          onSuccess: () => {
+            setIntervalNotice({
+              variant: 'success',
+              message: '同步间隔已更新，将在下一轮生效。',
+            });
+          },
+          onError: (error) => {
+            setIntervalNotice({ variant: 'error', message: formatError(error) });
+          },
+        },
+      );
+    },
+    [authId, updateSyncIntervalMutation, workspaceId],
+  );
+
   const handleAccountChange = useCallback((event) => {
     const value = event?.target?.value || '';
     setScope({
@@ -1054,6 +1118,7 @@ export default function GmvMaxOverviewPage() {
     {
       enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled),
       staleTime: 60 * 1000,
+      refetchInterval: autoRefreshInterval * 60 * 1000,
     },
   );
   const overallReport =
@@ -1347,6 +1412,7 @@ export default function GmvMaxOverviewPage() {
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
   const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
+  const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
   const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
 
   useEffect(() => {
@@ -1503,19 +1569,29 @@ export default function GmvMaxOverviewPage() {
 
     const response = await syncMutation.mutateAsync(payload);
     const taskId = response?.task_id || response?.taskId;
+    const initialState = String(response?.state || '').toUpperCase();
     if (!taskId) {
       throw new Error('同步任务未被创建。');
+    }
+
+    if (['FAILURE', 'REVOKED'].includes(initialState)) {
+      const message = formatError(response?.error) || '同步失败，请稍后再试。';
+      throw new Error(message);
+    }
+    if (initialState === 'SUCCESS') {
+      await refreshScopeQueries();
+      return 'SUCCESS';
     }
 
     const maxAttempts = 90;
     const delayMs = 2000;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const status = await getGmvMaxSyncStatus(workspaceId, provider, authId, taskId);
-      const state = status?.state || '';
+      const state = String(status?.state || '').toUpperCase();
       if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(state)) {
         if (state === 'SUCCESS') {
           await refreshScopeQueries();
-          return;
+          return 'SUCCESS';
         }
         const message = formatError(status?.error) || '同步失败，请稍后再试。';
         throw new Error(message);
@@ -1537,23 +1613,37 @@ export default function GmvMaxOverviewPage() {
 
   const performSync = useCallback(async () => {
     if (!workspaceId || !provider || !authId) return;
+    let nextNotice = null;
+    let nextError = null;
+    const now = Date.now();
+
     if (!isScopeReady) {
+      setSyncNotice(null);
       setSyncError('请先选择店铺以完成数据同步。');
       return;
     }
     if (bindingConfigLoading || bindingConfigFetching) {
+      setSyncNotice(null);
       setSyncError('绑定配置加载中，请稍后再试。');
       return;
     }
     if (!autoBindingVerified) {
+      setSyncNotice(null);
       setSyncError('自动绑定验证完成后才能同步 GMV Max 数据。');
       return;
     }
-    if (syncInFlightRef.current) return;
+    if (lastSyncAt && now - lastSyncAt < SYNC_COOLDOWN_MS) {
+      setSyncNotice(null);
+      setSyncError('同步请求过于频繁，请稍后再试。');
+      return;
+    }
+    if (syncInFlightRef.current || isSyncing) return;
 
     syncInFlightRef.current = true;
+    setSyncNotice(null);
     setSyncError(null);
     setIsSyncing(true);
+    setLastSyncAt(now);
     try {
       await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
       const refetchPromises = [];
@@ -1588,15 +1678,25 @@ export default function GmvMaxOverviewPage() {
         product_eligibility: 'gmv_max',
       });
 
-      await performCampaignSync();
+      const finalState = await performCampaignSync();
+      if (finalState === 'SUCCESS') {
+        nextNotice = { variant: 'success', message: '同步完成，数据已刷新。' };
+      }
     } catch (error) {
       console.error('Failed to sync GMV Max data automatically', error);
       const message = formatError(error);
       const normalized = message || '同步失败，请稍后再试。';
-      setSyncError(normalized.trim().startsWith('[') ? '同步失败，请稍后再试。' : normalized);
+      nextError = normalized.trim().startsWith('[') ? '同步失败，请稍后再试。' : normalized;
     } finally {
-      setIsSyncing(false);
       syncInFlightRef.current = false;
+      setIsSyncing(false);
+      if (nextError) {
+        setSyncError(nextError);
+        setSyncNotice(null);
+      } else if (nextNotice) {
+        setSyncNotice(nextNotice);
+        setSyncError(null);
+      }
     }
   }, [
     accountsQuery,
@@ -1609,6 +1709,8 @@ export default function GmvMaxOverviewPage() {
     bindingConfigLoading,
     businessCenterId,
     isScopeReady,
+    isSyncing,
+    lastSyncAt,
     metadataSyncMutation,
     performCampaignSync,
     productSyncMutation,
@@ -1623,15 +1725,18 @@ export default function GmvMaxOverviewPage() {
   ]);
 
   useEffect(() => {
-    const runSync = () => {
-      performSync();
-    };
-    runSync();
-    const intervalId = setInterval(runSync, 15 * 60 * 1000);
-    return () => {
-      clearInterval(intervalId);
-    };
+    performSyncRef.current = performSync;
   }, [performSync]);
+
+  useEffect(() => {
+    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
+    const scopeKey = `${workspaceId}:${provider}:${authId}:${storeId}`;
+    if (lastAutoSyncScopeRef.current === scopeKey) return;
+    lastAutoSyncScopeRef.current = scopeKey;
+    if (typeof performSyncRef.current === 'function') {
+      performSyncRef.current();
+    }
+  }, [authId, isScopeReady, provider, storeId, workspaceId]);
 
   const handleOpenCreate = useCallback(() => {
     if (!canCreateSeries) return;
@@ -1722,6 +1827,9 @@ export default function GmvMaxOverviewPage() {
   const productsLoading = Boolean(isScopeReady && (productsQuery.isLoading || productsQuery.isFetching));
   const balanceTimestamp = advertiserBalance?.fetched_at;
   const canDisplayBalance = Boolean(storeId && bindingConfigMatchedScope);
+  const isSyncIntervalUpdating = Boolean(
+    updateSyncIntervalMutation?.isPending || updateSyncIntervalMutation?.isLoading,
+  );
 
   return (
     <div className="gmvmax-page">
@@ -1733,6 +1841,18 @@ export default function GmvMaxOverviewPage() {
           同步失败：{syncError}
         </div>
       ) : null}
+      {syncNotice ? (
+        <div className={`gmvmax-status-banner gmvmax-status-banner--${syncNotice.variant || 'muted'}`}>
+          {syncNotice.message}
+        </div>
+      ) : null}
+      {intervalNotice ? (
+        <div
+          className={`gmvmax-status-banner gmvmax-status-banner--${intervalNotice.variant || 'muted'}`}
+        >
+          {intervalNotice.message}
+        </div>
+      ) : null}
       <header className="gmvmax-page__header">
         <div>
           <h1>{GmvMaxTexts.overviewTitle}</h1>
@@ -1740,6 +1860,20 @@ export default function GmvMaxOverviewPage() {
         </div>
         <div className="gmvmax-page__header-actions">
           <span className="gmvmax-provider-badge">{`${GmvMaxTexts.providerLabel}：${PROVIDER_LABEL}`}</span>
+          <button
+            type="button"
+            className="gmvmax-button gmvmax-button--primary"
+            onClick={performSync}
+            disabled={
+              isSyncing ||
+              !isScopeReady ||
+              bindingConfigLoading ||
+              bindingConfigFetching ||
+              !autoBindingVerified
+            }
+          >
+            {isSyncing ? '同步中…' : '同步数据'}
+          </button>
           <div className="gmvmax-balance-chip">
             <div className="gmvmax-balance-chip__row">
               <div>
@@ -1795,6 +1929,24 @@ export default function GmvMaxOverviewPage() {
               {autoBindingStatus.message}
             </div>
           ) : null}
+          <div className="gmvmax-field-grid">
+            <FormField label="数据自动刷新间隔">
+              <div>
+                <select
+                  value={autoRefreshInterval}
+                  onChange={handleAutoRefreshChange}
+                  disabled={isSyncIntervalUpdating}
+                >
+                  {AUTO_REFRESH_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{`${option} 分钟`}</option>
+                  ))}
+                </select>
+                <p className="gmvmax-subtext">
+                  自动刷新间隔（当前 {autoRefreshInterval} 分钟），针对轻量级指标数据，不会触发后端全量同步。
+                </p>
+              </div>
+            </FormField>
+          </div>
           <div className="gmvmax-field-grid">
             <FormField label="店铺">
               <select

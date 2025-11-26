@@ -28,6 +28,7 @@ import {
   syncAdvertiserBalance,
   syncGmvMaxCampaigns,
   syncGmvMaxMetrics,
+  updateGmvMaxSyncInterval,
   updateGmvMaxConfig,
   updateGmvMaxCampaign,
   updateGmvMaxStrategy,
@@ -170,11 +171,12 @@ export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId
 }
 
 export function useGmvMaxMetricsQuery(workspaceId, provider, authId, campaignId, params = {}, options = {}) {
-  const { enabled, ...rest } = options;
+  const { enabled, refetchInterval, ...rest } = options;
   return useQuery({
     queryKey: composeKey('metrics', workspaceId, provider, authId, campaignId, params),
     queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    refetchInterval,
     ...rest,
   });
 }
@@ -238,11 +240,12 @@ export function useGmvMaxCreativeMetricsQuery(
   params = {},
   options = {},
 ) {
-  const { enabled, ...rest } = options;
+  const { enabled, refetchInterval, ...rest } = options;
   return useQuery({
     queryKey: composeKey('creative-metrics', workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    refetchInterval,
     ...rest,
   });
 }
@@ -255,11 +258,12 @@ export function useGmvMaxCreativeHeatingQuery(
   params = {},
   options = {},
 ) {
-  const { enabled, ...rest } = options;
+  const { enabled, refetchInterval, ...rest } = options;
   return useQuery({
     queryKey: composeKey('creative-heating', workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    refetchInterval,
     ...rest,
   });
 }
@@ -267,6 +271,13 @@ export function useGmvMaxCreativeHeatingQuery(
 export function useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => syncGmvMaxCampaigns(workspaceId, provider, authId, payload),
+    ...options,
+  });
+}
+
+export function useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => updateGmvMaxSyncInterval(workspaceId, provider, authId, payload),
     ...options,
   });
 }
