@@ -1,6 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 import sqlalchemy as sa
 from sqlalchemy import event
 
@@ -116,6 +118,28 @@ def test_upsert_creative_metrics_insert_and_update(db_session):
     assert row_updated.raw_metrics == updated_metrics
 
 
+@pytest.mark.parametrize("status_key", ["creative_status", "creative_delivery_status"])
+def test_upsert_creative_metrics_creative_status(db_session, status_key):
+    workspace_id, auth_id = _setup_workspace_and_account(db_session)
+    stat_day = datetime(2024, 1, 20, 0, 0, 0)
+
+    metrics = {status_key: "DELIVERING"}
+    row = asyncio.run(
+        upsert_creative_metrics(
+            db_session,
+            workspace_id=workspace_id,
+            provider=_PROVIDER,
+            auth_id=auth_id,
+            campaign_id=_CAMPAIGN_ID,
+            creative_id=_CREATIVE_ID,
+            stat_time_day=stat_day,
+            metrics=metrics,
+        )
+    )
+
+    assert row.creative_status == "DELIVERING"
+
+
 def test_list_and_latest_creative_metrics_filters(db_session):
     workspace_id, auth_id = _setup_workspace_and_account(db_session)
     base_day = datetime(2024, 1, 1)
@@ -208,7 +232,15 @@ def test_get_recent_creative_metrics_window(db_session):
             campaign_id=_CAMPAIGN_ID,
             creative_id="cr-1",
             stat_time_day=today,
-            metrics={"clicks": 15, "ad_click_rate": 0.03, "gross_revenue": 120.5},
+            metrics={
+                "clicks": 15,
+                "ad_click_rate": 0.03,
+                "gross_revenue": 120.5,
+                "cost": 50.0,
+                "orders": 3,
+                "roi": 2.4,
+                "creative_status": "DELIVERING",
+            },
         )
     )
     asyncio.run(
@@ -250,6 +282,10 @@ def test_get_recent_creative_metrics_window(db_session):
     assert "cr-1" in recent_short and "cr-2" in recent_short
     assert recent_short["cr-1"].clicks == 15
     assert recent_short["cr-2"].clicks == 5
+    assert recent_short["cr-1"].cost == 50.0
+    assert recent_short["cr-1"].orders == 3
+    assert recent_short["cr-1"].roi == 2.4
+    assert recent_short["cr-1"].creative_status == "DELIVERING"
 
     recent_long = asyncio.run(
         get_recent_creative_metrics(
@@ -263,3 +299,4 @@ def test_get_recent_creative_metrics_window(db_session):
         )
     )
     assert recent_long["cr-1"].clicks == 40
+    assert recent_long["cr-1"].orders == 3

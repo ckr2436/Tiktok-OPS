@@ -28,6 +28,10 @@ def _metrics(clicks=0, ctr=None, revenue=None):
         clicks=clicks,
         ad_click_rate=ctr,
         gross_revenue=revenue,
+        cost=None,
+        orders=None,
+        roi=None,
+        creative_status=None,
     )
 
 
@@ -42,7 +46,26 @@ def test_evaluate_heating_rule_thresholds_pass():
     heating = _make_heating(min_clicks=10, min_ctr=0.02, min_gross_revenue=50)
     metrics = _metrics(clicks=12, ctr=0.03, revenue=60)
     result = evaluate_heating_rule(heating, metrics)
-    assert result.result == "ok"
+    assert result.result == "ready_to_heat"
+    assert result.should_stop is False
+    assert result.ready_to_heat is True
+
+
+def test_evaluate_heating_rule_ready_to_heat_with_roi_and_orders():
+    heating = _make_heating(min_clicks=1, min_ctr=0.01, min_gross_revenue=1)
+    metrics = CreativeMetricsAggregate(
+        creative_id="cr",
+        clicks=5,
+        ad_click_rate=0.05,
+        gross_revenue=100,
+        cost=20,
+        orders=3,
+        roi=5.0,
+        creative_status="DELIVERING",
+    )
+    result = evaluate_heating_rule(heating, metrics)
+    assert result.result == "ready_to_heat"
+    assert result.ready_to_heat is True
     assert result.should_stop is False
 
 

@@ -356,6 +356,12 @@ class TTBGmvMaxCreativeMetric(Base):
     adgroup_id: Mapped[str | None] = mapped_column(String(64), default=None)
     product_id: Mapped[str | None] = mapped_column(String(64), default=None)
     item_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    creative_status: Mapped[str | None] = mapped_column(
+        String(32),
+        default=None,
+        nullable=True,
+        comment="TikTok creative_delivery_status snapshot (IN_QUEUE/LEARNING/DELIVERING/...)",
+    )
 
     stat_time_day: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
