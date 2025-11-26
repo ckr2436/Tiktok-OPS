@@ -318,8 +318,10 @@ export default function Sora2ImageToVideoPage() {
     queryKey: ['sora2-task', wid, modelId, currentTaskId],
     queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
     enabled: !!wid && !!currentTaskId,
-    refetchInterval: (data) =>
-      data && shouldPollByState(data.state) ? 8000 : false,
+    refetchInterval: (query) => {
+      const state = query?.state?.data?.state
+      return shouldPollByState(state) ? 8000 : false
+    },
   })
 
   const {
@@ -377,8 +379,8 @@ export default function Sora2ImageToVideoPage() {
     queryFn: () =>
       kieTenantApi.listTasks(wid, { page, size: pageSize, model: modelId }),
     enabled: !!wid,
-    refetchInterval: (data) => {
-      const items = data?.items || []
+    refetchInterval: (query) => {
+      const items = query?.state?.data?.items || []
       const hasPending = items.some((item) => shouldPollByState(item.state))
       return hasPending ? 8000 : false
     },
