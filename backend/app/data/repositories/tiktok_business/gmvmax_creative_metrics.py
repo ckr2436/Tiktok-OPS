@@ -15,6 +15,8 @@ _KNOWN_METRIC_FIELDS = {
     "adgroup_id": "adgroup_id",
     "product_id": "product_id",
     "item_id": "item_id",
+    "creative_status": "creative_status",
+    "creative_delivery_status": "creative_status",
     "impressions": "impressions",
     "clicks": "clicks",
     "cost": "cost",
@@ -41,6 +43,10 @@ class CreativeMetricsAggregate:
     clicks: int
     ad_click_rate: float | None
     gross_revenue: Any | None
+    cost: Any | None
+    orders: int | None
+    roi: float | None
+    creative_status: str | None
 
 
 def _normalize_datetime(value: datetime | date) -> datetime:
@@ -252,12 +258,17 @@ async def get_recent_creative_metrics(
         func.sum(TTBGmvMaxCreativeMetric.clicks).label("clicks"),
         func.avg(TTBGmvMaxCreativeMetric.ad_click_rate).label("ad_click_rate"),
         func.sum(TTBGmvMaxCreativeMetric.gross_revenue).label("gross_revenue"),
+        func.sum(TTBGmvMaxCreativeMetric.cost).label("cost"),
+        func.sum(TTBGmvMaxCreativeMetric.orders).label("orders"),
+        func.avg(TTBGmvMaxCreativeMetric.roi).label("roi"),
+        func.max(TTBGmvMaxCreativeMetric.creative_status).label("creative_status"),
     )
     query = _apply_required_filters(
         query=query, workspace_id=workspace_id, provider=provider, auth_id=auth_id
     )
     query = query.where(TTBGmvMaxCreativeMetric.campaign_id == str(campaign_id))
-    query = query.where(TTBGmvMaxCreativeMetric.stat_time_day >= window_start)
+    if minutes > 0:
+        query = query.where(TTBGmvMaxCreativeMetric.stat_time_day >= window_start)
 
     if creative_ids:
         query = query.where(
@@ -272,11 +283,19 @@ async def get_recent_creative_metrics(
         clicks_value = getattr(row, "clicks", 0) or 0
         ctr_value = getattr(row, "ad_click_rate", None)
         revenue_value = getattr(row, "gross_revenue", None)
+        cost_value = getattr(row, "cost", None)
+        orders_value = getattr(row, "orders", None)
+        roi_value = getattr(row, "roi", None)
+        status_value = getattr(row, "creative_status", None)
         aggregates[str(creative_id_value)] = CreativeMetricsAggregate(
             creative_id=str(creative_id_value),
             clicks=int(clicks_value),
             ad_click_rate=float(ctr_value) if ctr_value is not None else None,
             gross_revenue=revenue_value,
+            cost=cost_value,
+            orders=int(orders_value) if orders_value is not None else None,
+            roi=float(roi_value) if roi_value is not None else None,
+            creative_status=str(status_value) if status_value is not None else None,
         )
 
     return aggregates

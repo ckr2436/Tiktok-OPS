@@ -20,6 +20,13 @@ from app.data.models.ttb_gmvmax import (
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxStrategyConfig,
 )
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxCampaignCreateBody,
+    GMVMaxCampaignCreateRequest,
+    GMVMaxCampaignUpdateBody,
+    GMVMaxCampaignUpdateRequest,
+    TikTokBusinessGMVMaxClient,
+)
 from app.services.gmvmax_spec import GMVMAX_DEFAULT_METRICS
 from app.services.ttb_api import TTBApiClient
 
@@ -39,6 +46,8 @@ __all__ = [
     "aggregate_recent_metrics",
     "decide_campaign_action",
     "resolve_store_id_from_page_context",
+    "create_gmvmax_campaign",
+    "update_gmvmax_campaign",
 ]
 
 
@@ -171,6 +180,94 @@ def resolve_store_id_from_page_context(
         campaign_payload=campaign_payload,
         page_context=page_context,
     )
+
+
+async def create_gmvmax_campaign(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    client: TikTokBusinessGMVMaxClient,
+    body: GMVMaxCampaignCreateBody,
+) -> TTBGmvMaxCampaign:
+    request = GMVMaxCampaignCreateRequest(advertiser_id=str(advertiser_id), body=body)
+    response = await client.gmv_max_campaign_create(request)
+    raw_data = response.data
+    if hasattr(raw_data, "model_dump"):
+        campaign_data: dict[str, Any] = raw_data.model_dump(exclude_none=True)
+    elif isinstance(raw_data, Mapping):
+        campaign_data = dict(raw_data)
+    else:
+        campaign_data = {}
+
+    campaign_payload = campaign_data.get("campaign") if isinstance(campaign_data, Mapping) else None
+    if not isinstance(campaign_payload, dict):
+        campaign_payload = dict(campaign_data)
+
+    body_dump = body.model_dump(exclude_none=True)
+    if campaign_payload.get("campaign_id") is None and body_dump.get("campaign_id"):
+        campaign_payload["campaign_id"] = body_dump["campaign_id"]
+    if "item_group_ids" not in campaign_payload and body_dump.get("item_group_ids"):
+        campaign_payload["item_group_ids"] = [str(item) for item in body_dump.get("item_group_ids", [])]
+
+    row = upsert_campaign_from_api(
+        db,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        payload=campaign_payload,
+        store_id_hint=str(body_dump.get("store_id")) if body_dump.get("store_id") is not None else None,
+        campaign_details=campaign_data,
+    )
+    db.flush()
+    return row
+
+
+async def update_gmvmax_campaign(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    client: TikTokBusinessGMVMaxClient,
+    body: GMVMaxCampaignUpdateBody,
+) -> TTBGmvMaxCampaign:
+    request = GMVMaxCampaignUpdateRequest(advertiser_id=str(advertiser_id), body=body)
+    response = await client.gmv_max_campaign_update(request)
+    raw_data = response.data
+    if hasattr(raw_data, "model_dump"):
+        campaign_data: dict[str, Any] = raw_data.model_dump(exclude_none=True)
+    elif isinstance(raw_data, Mapping):
+        campaign_data = dict(raw_data)
+    else:
+        campaign_data = {}
+
+    campaign_payload = campaign_data.get("campaign") if isinstance(campaign_data, Mapping) else None
+    if not isinstance(campaign_payload, dict):
+        campaign_payload = dict(campaign_data)
+
+    body_dump = body.model_dump(exclude_none=True)
+    if campaign_payload.get("campaign_id") is None and body_dump.get("campaign_id"):
+        campaign_payload["campaign_id"] = body_dump["campaign_id"]
+    if "item_group_ids" not in campaign_payload and body_dump.get("item_group_ids"):
+        campaign_payload["item_group_ids"] = [str(item) for item in body_dump.get("item_group_ids", [])]
+
+    row = upsert_campaign_from_api(
+        db,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        payload=campaign_payload,
+        store_id_hint=str(body_dump.get("store_id")) if body_dump.get("store_id") is not None else None,
+        campaign_details=campaign_data,
+    )
+    db.flush()
+    return row
 
 
 def _mark_missing_snapshot_campaigns_as_deleted(

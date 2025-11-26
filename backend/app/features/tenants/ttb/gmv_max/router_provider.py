@@ -70,6 +70,7 @@ from app.services.ttb_binding_config import (
     upsert_binding_config,
 )
 from app.services.provider_registry import provider_registry
+from app.services.gmvmax_heating_actions import apply_boost_creative_action
 from app.services.ttb_sync import _normalize_identifier
 from app.tasks.ttb_sync_tasks import task_sync_products
 
@@ -87,9 +88,11 @@ from app.services.gmvmax_spec import (
     GMVMAX_SUPPORTED_METRICS,
 )
 from app.services.ttb_gmvmax import (
+    create_gmvmax_campaign,
     log_campaign_action,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
+    update_gmvmax_campaign,
     _extract_item_group_ids_from_payload,
 )
 
@@ -109,6 +112,7 @@ from .schemas import (
     AutoBindingRequest,
     AutoBindingResponse,
     BalanceSyncRequest,
+    CreateCampaignRequest,
     MetricsRequest,
     MetricsResponse,
     ReportFiltering,
@@ -117,6 +121,7 @@ from .schemas import (
     StrategyPreviewResponse,
     StrategyResponse,
     StrategyUpdateRequest,
+    UpdateCampaignRequest,
     StrategyUpdateResponse,
     SyncRequest,
     AsyncTaskResponse,
@@ -1892,6 +1897,77 @@ async def gmvmax_precheck(
     )
 
 
+@router.post(
+    "",
+    response_model=CampaignDetailResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+async def create_gmvmax_campaign_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    payload: CreateCampaignRequest,
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> CampaignDetailResponse:
+    row = await create_gmvmax_campaign(
+        context.db,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        advertiser_id=context.advertiser_id,
+        client=context.client,
+        body=payload.to_client_body(),
+    )
+
+    info_request = GMVMaxCampaignInfoRequest(
+        advertiser_id=context.advertiser_id, campaign_id=str(row.campaign_id)
+    )
+    info_response = await _call_tiktok(context.client.gmv_max_campaign_info, info_request)
+    campaign_info = info_response.data
+
+    return CampaignDetailResponse(
+        campaign=campaign_info,
+        sessions=[],
+        request_id=info_response.request_id,
+    )
+
+
+@router.put(
+    "/{campaign_id}",
+    response_model=CampaignDetailResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+async def update_gmvmax_campaign_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: str,
+    payload: UpdateCampaignRequest,
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> CampaignDetailResponse:
+    row = await update_gmvmax_campaign(
+        context.db,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        advertiser_id=context.advertiser_id,
+        client=context.client,
+        body=payload.to_client_body(campaign_id=campaign_id),
+    )
+
+    info_request = GMVMaxCampaignInfoRequest(
+        advertiser_id=context.advertiser_id, campaign_id=str(row.campaign_id)
+    )
+    info_response = await _call_tiktok(context.client.gmv_max_campaign_info, info_request)
+    campaign_info = info_response.data
+
+    return CampaignDetailResponse(
+        campaign=campaign_info,
+        sessions=[],
+        request_id=info_response.request_id,
+    )
+
+
 @router.get(
     "",
     response_model=CampaignListResponse,
@@ -2292,85 +2368,19 @@ async def _apply_creative_heating_action(
     )
     context.db.flush()
 
-    action_body = {
-        "campaign_id": str(campaign_id),
-        "action_type": request.action_type,
-        "creative_id": request.creative_id,
-    }
-    if request.mode:
-        action_body["mode"] = request.mode
-    if request.target_daily_budget is not None:
-        action_body["target_daily_budget"] = request.target_daily_budget
-    if request.budget_delta is not None:
-        action_body["budget_delta"] = request.budget_delta
-    if request.currency:
-        action_body["currency"] = request.currency
-    if request.max_duration_minutes is not None:
-        action_body["max_duration_minutes"] = request.max_duration_minutes
-    if request.note:
-        action_body["note"] = request.note
-
-    api_request = GMVMaxCampaignActionApplyRequest(
-        advertiser_id=context.advertiser_id,
-        body=GMVMaxCampaignActionApplyBody(**action_body),
-    )
-
-    action_time = datetime.now(tz=timezone.utc)
-    try:
-        response = await _call_tiktok(
-            context.client.gmv_max_campaign_action_apply, api_request
-        )
-    except HTTPException as exc:
-        detail = exc.detail
-        await update_heating_action_result(
-            context.db,
-            heating_id=heating_row.id,
-            status="FAILED",
-            action_type="APPLY_BOOST",
-            action_time=action_time,
-            request_payload=action_body,
-            response_payload=detail if isinstance(detail, dict) else None,
-            error_message=_extract_error_message(detail),
-        )
-        context.db.flush()
-        _log_action_entry(
-            context,
-            campaign_id=str(campaign_id),
-            campaign=campaign_row,
-            action="BOOST_CREATIVE",
-            actor=performed_by,
-            before=before_state,
-            after=before_state,
-            result="FAILED",
-            reason=request.note,
-            error_message=_extract_error_message(detail),
-        )
-        raise
-
-    updated_row = await update_heating_action_result(
+    updated_row, response = await apply_boost_creative_action(
         context.db,
-        heating_id=heating_row.id,
-        status="APPLIED",
-        action_type="APPLY_BOOST",
-        action_time=action_time,
-        request_payload=action_body,
-        response_payload=response.data.model_dump(exclude_none=True),
-        error_message=None,
-    )
-    context.db.flush()
-
-    after_row = _load_campaign_row(context, campaign_id)
-    after_state = _snapshot_campaign_state(after_row)
-    _log_action_entry(
-        context,
-        campaign_id=str(campaign_id),
-        campaign=after_row or campaign_row,
-        action="BOOST_CREATIVE",
-        actor=performed_by,
-        before=before_state,
-        after=after_state or before_state,
-        result="SUCCESS",
-        reason=request.note,
+        client=context.client,
+        campaign=campaign_row,
+        heating=heating_row,
+        mode=request.mode,
+        target_daily_budget=request.target_daily_budget,
+        budget_delta=request.budget_delta,
+        currency=request.currency,
+        max_duration_minutes=request.max_duration_minutes,
+        note=request.note,
+        performed_by=performed_by,
+        before_state=before_state,
     )
 
     return CreativeHeatingActionResponse(

@@ -11,7 +11,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendation,
     GMVMaxCampaign,
+    GMVMaxCampaignCreateBody,
     GMVMaxCampaignInfoData,
+    GMVMaxCampaignUpdateBody,
     GMVMaxIdentity,
     GMVMaxReportData,
     GMVMaxOccupiedListData,
@@ -73,6 +75,89 @@ class CampaignListOptions(BaseModel):
     fields: Optional[List[str]] = None
     page: Optional[int] = Field(default=None, ge=1)
     page_size: Optional[int] = Field(default=None, ge=1, le=50)
+
+
+class CreateCampaignRequest(BaseModel):
+    """Tenant payload for creating a GMV Max campaign."""
+
+    name: str
+    store_id: str
+    item_group_ids: List[str]
+    promotion_type: str
+    objective_type: str
+    daily_budget: float
+    roas_bid: Optional[float] = None
+    promotion_days: Optional[Dict[str, Any]] = None
+    schedule_type: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_client_body(self) -> GMVMaxCampaignCreateBody:
+        schedule_type = self.schedule_type
+        if schedule_type is None and (self.start_time or self.end_time):
+            schedule_type = "SCHEDULE"
+
+        payload: Dict[str, Any] = {
+            "store_id": str(self.store_id),
+            "shopping_ads_type": str(self.promotion_type),
+            "optimization_goal": str(self.objective_type),
+            "campaign_name": self.name,
+            "budget": float(self.daily_budget),
+            "roas_bid": float(self.roas_bid) if self.roas_bid is not None else None,
+            "promotion_days": self.promotion_days,
+            "schedule_type": schedule_type,
+            "schedule_start_time": self.start_time.isoformat() if self.start_time else None,
+            "schedule_end_time": self.end_time.isoformat() if self.end_time else None,
+            "item_group_ids": [str(item) for item in self.item_group_ids],
+        }
+
+        cleaned = {key: value for key, value in payload.items() if value is not None}
+        return GMVMaxCampaignCreateBody(**cleaned)
+
+
+class UpdateCampaignRequest(BaseModel):
+    """Tenant payload for updating an existing GMV Max campaign."""
+
+    name: Optional[str] = None
+    item_group_ids: Optional[List[str]] = None
+    promotion_type: Optional[str] = None
+    objective_type: Optional[str] = None
+    daily_budget: Optional[float] = None
+    roas_bid: Optional[float] = None
+    promotion_days: Optional[Dict[str, Any]] = None
+    schedule_type: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_client_body(self, *, campaign_id: str) -> GMVMaxCampaignUpdateBody:
+        schedule_type = self.schedule_type
+        if schedule_type is None and (self.start_time or self.end_time):
+            schedule_type = "SCHEDULE"
+
+        payload: Dict[str, Any] = {
+            "campaign_id": str(campaign_id),
+            "campaign_name": self.name,
+            "budget": float(self.daily_budget) if self.daily_budget is not None else None,
+            "roas_bid": float(self.roas_bid) if self.roas_bid is not None else None,
+            "promotion_days": self.promotion_days,
+            "schedule_type": schedule_type,
+            "schedule_start_time": self.start_time.isoformat() if self.start_time else None,
+            "schedule_end_time": self.end_time.isoformat() if self.end_time else None,
+        }
+
+        if self.promotion_type is not None:
+            payload["shopping_ads_type"] = str(self.promotion_type)
+        if self.objective_type is not None:
+            payload["optimization_goal"] = str(self.objective_type)
+        if self.item_group_ids is not None:
+            payload["item_group_ids"] = [str(item) for item in self.item_group_ids]
+
+        cleaned = {key: value for key, value in payload.items() if value is not None}
+        return GMVMaxCampaignUpdateBody(**cleaned)
 
 
 class ReportFiltering(BaseModel):

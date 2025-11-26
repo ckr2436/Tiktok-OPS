@@ -28,12 +28,18 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxReportGetRequest,
     TikTokBusinessGMVMaxClient,
 )
+from app.services.gmvmax_heating_actions import apply_boost_creative_action
 from app.services.gmvmax_spec import GMVMAX_CREATIVE_METRICS
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 
 logger = logging.getLogger("gmv.services.gmvmax.heating")
 
-_CREATIVE_DIMENSIONS = ["campaign_id", "creative_id", "stat_time_day"]
+_CREATIVE_DIMENSIONS = [
+    "campaign_id",
+    "creative_id",
+    "stat_time_day",
+    "creative_delivery_status",
+]
 _CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
 _REPORT_PAGE_SIZE = 200
 _DEFAULT_PROVIDER = "tiktok-business"
@@ -45,6 +51,7 @@ class HeatingEvaluationResult:
 
     result: str
     should_stop: bool
+    ready_to_heat: bool = False
 
 
 def evaluate_heating_rule(
@@ -59,6 +66,16 @@ def evaluate_heating_rule(
     clicks_actual = metrics.clicks or 0
     ctr_actual = metrics.ad_click_rate if metrics.ad_click_rate is not None else 0.0
     revenue_actual = metrics.gross_revenue if metrics.gross_revenue is not None else 0
+    orders_actual = metrics.orders or 0 if hasattr(metrics, "orders") else 0
+    cost_actual = metrics.cost or 0 if hasattr(metrics, "cost") else 0
+    roi_actual = None
+    if getattr(metrics, "roi", None) is not None:
+        roi_actual = float(metrics.roi)
+    elif cost_actual and metrics.gross_revenue is not None:
+        try:
+            roi_actual = float(metrics.gross_revenue) / float(cost_actual)
+        except ZeroDivisionError:  # defensive
+            roi_actual = None
 
     if config.min_clicks is not None and clicks_actual < int(config.min_clicks):
         if config.auto_stop_enabled and config.is_heating_active:
@@ -86,7 +103,7 @@ def evaluate_heating_rule(
                 return HeatingEvaluationResult("auto_stopped_low_revenue", True)
             return HeatingEvaluationResult("threshold_failed_low_revenue", False)
 
-    return HeatingEvaluationResult(result="ok", should_stop=False)
+    return HeatingEvaluationResult(result="ready_to_heat", should_stop=False, ready_to_heat=True)
 
 
 async def _sync_creative_metrics_for_campaign(
@@ -143,6 +160,9 @@ async def _sync_creative_metrics_for_campaign(
             for meta_field in ("creative_name", "adgroup_id", "product_id", "item_id"):
                 if meta_field in dims and dims[meta_field] is not None:
                     metrics_payload.setdefault(meta_field, dims[meta_field])
+            delivery_status = dims.get("creative_delivery_status")
+            if delivery_status is not None:
+                metrics_payload.setdefault("creative_status", delivery_status)
             stat_datetime = _parse_stat_time(stat_time)
             await upsert_creative_metrics(
                 db,
@@ -440,6 +460,9 @@ async def run_creative_heating_cycle(
                     )
                     metrics = metrics_map.get(str(heating.creative_id))
                     evaluation = evaluate_heating_rule(heating, metrics)
+                    creative_status = (
+                        getattr(metrics, "creative_status", None) if metrics is not None else None
+                    )
 
                     if evaluation.should_stop:
                         stopped = await _auto_stop_creative(
@@ -453,6 +476,50 @@ async def run_creative_heating_cycle(
                         if stopped:
                             summary["stopped"] += 1
                     else:
+                        if evaluation.ready_to_heat and creative_status == "DELIVERING":
+                            logger.debug(
+                                "creative ready to heat and delivering",
+                                extra={
+                                    "workspace_id": workspace_id,
+                                    "auth_id": auth_id,
+                                    "campaign_id": campaign_id,
+                                    "creative_id": heating.creative_id,
+                                },
+                            )
+                            try:
+                                await apply_boost_creative_action(
+                                    db,
+                                    client=client,
+                                    campaign=campaign,
+                                    heating=heating,
+                                    mode=heating.mode,
+                                    target_daily_budget=float(heating.target_daily_budget)
+                                    if heating.target_daily_budget
+                                    else None,
+                                    budget_delta=float(heating.budget_delta)
+                                    if heating.budget_delta
+                                    else None,
+                                    currency=heating.currency,
+                                    max_duration_minutes=heating.max_duration_minutes,
+                                    note=heating.note,
+                                    performed_by="system_auto_heating",
+                                )
+                                summary["boosted_creatives"] = summary.get(
+                                    "boosted_creatives", 0
+                                ) + 1
+                                heating.is_heating_active = True
+                                db.flush()
+                            except Exception:  # noqa: BLE001
+                                logger.exception(
+                                    "auto boost creative failed",
+                                    extra={
+                                        "workspace_id": workspace_id,
+                                        "auth_id": auth_id,
+                                        "campaign_id": campaign_id,
+                                        "creative_id": heating.creative_id,
+                                    },
+                                )
+
                         await update_heating_evaluation(
                             db,
                             heating_id=heating.id,
