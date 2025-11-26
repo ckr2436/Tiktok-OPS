@@ -143,7 +143,8 @@ function shouldPollByState(state) {
     s.includes('wait') ||
     s.includes('queue') ||
     s.includes('run') ||
-    s.includes('process')
+    s.includes('process') ||
+    s.includes('gen')
   ) {
     return true
   }
@@ -322,8 +323,9 @@ export default function Sora2ImageToVideoPage() {
     queryKey: ['sora2-task', wid, modelId, currentTaskId],
     queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
     enabled: !!wid && !!currentTaskId,
-    refetchInterval: (query) =>
-      shouldPollByState(query.state.data?.state) ? 8000 : false,
+    refetchInterval: () => {
+      return task && shouldPollByState(task.state) ? 8000 : false
+    },
   })
 
   // 如果后端返回 404（getTask → null），自动清理本地“当前任务”状态和缓存
@@ -378,16 +380,13 @@ export default function Sora2ImageToVideoPage() {
     queryFn: () =>
       kieTenantApi.listTasks(wid, { page, size: pageSize, model: modelId }),
     enabled: !!wid,
-    refetchInterval: 10000,
+    refetchInterval: () => {
+      const items = historyResp?.items || []
+      const hasPending = items.some((item) => shouldPollByState(item.state))
+      return hasPending ? 8000 : false
+    },
     keepPreviousData: true,
   })
-
-  useEffect(() => {
-    if (!task) return
-    if (!shouldPollByState(task.state)) {
-      refetchHistory()
-    }
-  }, [task?.state, task, refetchHistory])
 
   const rawTotal = historyResp?.total ?? 0
   const historyTotal = Math.min(rawTotal, MAX_HISTORY_TOTAL)
@@ -402,8 +401,8 @@ export default function Sora2ImageToVideoPage() {
   const statusType = useMemo(() => {
     const s = (task?.state || '').toLowerCase()
     if (!s) return 'default'
-    if (s.includes('wait')) return 'waiting'
-    if (s.includes('run') || s.includes('process')) return 'running'
+    if (s.includes('wait') || s.includes('queue')) return 'waiting'
+    if (s.includes('run') || s.includes('process') || s.includes('gen')) return 'running'
     if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success'
     if (s.includes('timeout')) return 'timeout'
     if (s.includes('fail') || s.includes('error')) return 'fail'
