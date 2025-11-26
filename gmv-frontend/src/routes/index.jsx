@@ -1,4 +1,5 @@
 // src/routes/index.jsx
+import { Suspense, lazy } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 
 // 布局
@@ -44,9 +45,15 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 // 公司域：TikTok Business 授权 + GMV Max
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
-import GmvMaxOverviewPage from '../features/tenants/gmv_max/pages/GmvMaxOverviewPage.jsx';
-import GmvMaxCampaignDetailPage from '../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx';
+import Loading from '../components/ui/Loading.jsx';
 import GmvMaxErrorBoundary from '../features/tenants/gmv_max/components/GmvMaxErrorBoundary.jsx';
+
+const GmvMaxOverviewPage = lazy(() =>
+  import('../features/tenants/gmv_max/pages/GmvMaxOverviewPage.jsx'),
+);
+const GmvMaxCampaignDetailPage = lazy(() =>
+  import('../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx'),
+);
 
 // 租户 - KIE Sora2 页面 + Whisper 工具
 import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
@@ -141,7 +148,9 @@ const router = createBrowserRouter([
             path: 'tenants/:wid/gmvmax',
             element: (
               <TenantGuard>
-                <GmvMaxOverviewPage />
+                <Suspense fallback={<Loading text="GMV Max 加载中…" />}>
+                  <GmvMaxOverviewPage />
+                </Suspense>
               </TenantGuard>
             ),
             errorElement: <GmvMaxErrorBoundary />,
@@ -150,7 +159,9 @@ const router = createBrowserRouter([
             path: 'tenants/:wid/gmvmax/:campaignId',
             element: (
               <TenantGuard>
-                <GmvMaxCampaignDetailPage />
+                <Suspense fallback={<Loading text="GMV Max 加载中…" />}>
+                  <GmvMaxCampaignDetailPage />
+                </Suspense>
               </TenantGuard>
             ),
             errorElement: <GmvMaxErrorBoundary />,
