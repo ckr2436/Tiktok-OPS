@@ -52,6 +52,13 @@ function getStartOfDayInTimeZone(date, timeZone) {
   return new Date(utcTime - offsetMinutes * 60 * 1000);
 }
 
+function formatDateInTimeZone(date, timeZone) {
+  const normalizedTz = timeZone || BROWSER_TIMEZONE;
+  const { year, month, day } = getDateParts(date, normalizedTz);
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+}
+
 export function getAdvertiserTodayRange(timeZone) {
   const normalizedTz = timeZone || BROWSER_TIMEZONE;
   const now = new Date();
@@ -73,6 +80,17 @@ export function formatRangeAsIsoStrings(range) {
     : undefined;
   const end = range?.end instanceof Date && !Number.isNaN(range.end.getTime())
     ? range.end.toISOString()
+    : undefined;
+  return { start_date: start, end_date: end };
+}
+
+export function formatRangeAsDateStrings(range) {
+  const timeZone = range?.timeZone || BROWSER_TIMEZONE;
+  const start = range?.start instanceof Date && !Number.isNaN(range.start.getTime())
+    ? formatDateInTimeZone(range.start, timeZone)
+    : undefined;
+  const end = range?.end instanceof Date && !Number.isNaN(range.end.getTime())
+    ? formatDateInTimeZone(range.end, timeZone)
     : undefined;
   return { start_date: start, end_date: end };
 }

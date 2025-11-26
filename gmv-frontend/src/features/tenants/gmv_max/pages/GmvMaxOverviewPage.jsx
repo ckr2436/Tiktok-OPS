@@ -83,7 +83,7 @@ import {
   extractChoiceList,
 } from './gmvMaxOverview/helpers.js';
 import {
-  formatRangeAsIsoStrings,
+  formatRangeAsDateStrings,
   getAdvertiserRecentRange,
   getAdvertiserTodayRange,
   resolveTimezoneLabel,
@@ -1107,7 +1107,7 @@ export default function GmvMaxOverviewPage() {
 
   const metricsRangeParams = useMemo(
     () => ({
-      ...formatRangeAsIsoStrings(metricsRange),
+      ...formatRangeAsDateStrings(metricsRange),
       store_ids: storeId ? [String(storeId)] : undefined,
     }),
     [metricsRange, storeId],
@@ -1116,7 +1116,7 @@ export default function GmvMaxOverviewPage() {
   const todayRange = useMemo(() => getAdvertiserTodayRange(advertiserTimezone), [advertiserTimezone]);
   const todayRangeParams = useMemo(
     () => ({
-      ...formatRangeAsIsoStrings(todayRange),
+      ...formatRangeAsDateStrings(todayRange),
       store_ids: storeId ? [String(storeId)] : undefined,
     }),
     [storeId, todayRange],
