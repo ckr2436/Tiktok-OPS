@@ -23,7 +23,8 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-redux": "9.2.0",
-    "react-router-dom": "7.9.3"
+    "react-router-dom": "7.9.3",
+    "antd": "^6.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.6.3",
@@ -35,3 +36,4 @@
     "vitest": "2.1.8"
   }
 }
+
