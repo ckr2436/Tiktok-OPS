@@ -1,7 +1,8 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { message } from 'antd'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import kieTenantApi from '../service.js'
@@ -176,22 +177,6 @@ async function runWithConcurrency(items, concurrency, worker) {
   return results
 }
 
-function useToast() {
-  const [toast, setToast] = useState(null)
-
-  const showToast = useCallback((message, tone = 'info', duration = 3000) => {
-    setToast({ id: Date.now(), message, tone, duration })
-  }, [])
-
-  useEffect(() => {
-    if (!toast) return undefined
-    const timer = setTimeout(() => setToast(null), toast.duration)
-    return () => clearTimeout(timer)
-  }, [toast])
-
-  return [toast, showToast]
-}
-
 function ConfirmDialog({ open, title, content, onCancel, onOk }) {
   return (
     <Modal open={open} onClose={onCancel} title={title} maskClosable>
@@ -242,15 +227,15 @@ export default function Sora2ImageToVideoPage() {
 
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
-  const [toast, showToast] = useToast()
   const [confirmState, setConfirmState] = useState({ open: false })
 
-  const showSuccessToast = useCallback((msg) => showToast(msg, 'success'), [
-    showToast,
-  ])
-  const showErrorToast = useCallback((msg) => showToast(msg, 'error'), [
-    showToast,
-  ])
+  const showSuccessToast = (msg) => {
+    message.success(msg)
+  }
+
+  const showErrorToast = (msg) => {
+    message.error(msg)
+  }
 
   // 当前任务 ID
   const [currentTaskId, setCurrentTaskId] = useState(null)
@@ -393,9 +378,16 @@ export default function Sora2ImageToVideoPage() {
     queryFn: () =>
       kieTenantApi.listTasks(wid, { page, size: pageSize, model: modelId }),
     enabled: !!wid,
-    refetchInterval: false,
+    refetchInterval: 10000,
     keepPreviousData: true,
   })
+
+  useEffect(() => {
+    if (!task) return
+    if (!shouldPollByState(task.state)) {
+      refetchHistory()
+    }
+  }, [task?.state, task, refetchHistory])
 
   const rawTotal = historyResp?.total ?? 0
   const historyTotal = Math.min(rawTotal, MAX_HISTORY_TOTAL)
@@ -603,8 +595,8 @@ export default function Sora2ImageToVideoPage() {
         window.localStorage.setItem(lastTaskKey, String(newTaskId))
       }
 
-      setPage(1)
-      await refetchHistory()
+      // 新任务 ID 变化会触发自动查询；历史可选刷新一次（无需等待）
+      refetchHistory()
 
       showSuccessToast('任务已创建')
     } catch (e2) {
@@ -1494,12 +1486,6 @@ export default function Sora2ImageToVideoPage() {
               />
             </div>
           </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className={`toast toast--${toast.tone}`} role="status">
-          {toast.message}
         </div>
       )}
 
