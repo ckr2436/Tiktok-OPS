@@ -15,7 +15,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
-from app.celery_app import celery_app
+from app.celery_app import (
+    GMVMAX_SYNC_INTERVAL_OPTIONS,
+    celery_app,
+    get_gmvmax_sync_interval,
+    set_gmvmax_sync_interval,
+)
 from app.data.db import get_db
 from app.data.models.ttb_entities import (
     TTBAdvertiser,
@@ -129,6 +134,8 @@ from .schemas import (
     SyncTaskStateResponse,
     GMVMaxPrecheckRequest,
     GMVMaxPrecheckResponse,
+    SyncIntervalUpdateRequest,
+    SyncIntervalResponse,
 )
 
 router = APIRouter(prefix="/gmvmax")
@@ -1259,6 +1266,49 @@ def _is_binding_candidate_ready(candidate: AutoBindingCandidate) -> bool:
     auth_status = (candidate.authorization_status or "").upper()
     auth_ok = auth_status == "EFFECTIVE"
     return bool(candidate.store_authorized_bc_id) and auth_ok
+
+
+@router.get(
+    "/sync-interval",
+    response_model=SyncIntervalResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+def get_gmvmax_sync_interval_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> SyncIntervalResponse:
+    interval = get_gmvmax_sync_interval()
+    logger.info(
+        "gmvmax.sync_interval fetched",
+        extra={"workspace_id": context.workspace_id, "auth_id": context.auth_id, "interval": interval},
+    )
+    return SyncIntervalResponse(interval=interval, available=list(GMVMAX_SYNC_INTERVAL_OPTIONS))
+
+
+@router.put(
+    "/sync-interval",
+    response_model=SyncIntervalResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+def update_gmvmax_sync_interval_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    payload: SyncIntervalUpdateRequest,
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> SyncIntervalResponse:
+    interval = set_gmvmax_sync_interval(int(payload.interval))
+    logger.info(
+        "gmvmax.sync_interval updated",
+        extra={"workspace_id": context.workspace_id, "auth_id": context.auth_id, "interval": interval},
+    )
+    return SyncIntervalResponse(
+        interval=interval,
+        available=list(GMVMAX_SYNC_INTERVAL_OPTIONS),
+        message="同步间隔已更新，将在下一轮生效。",
+    )
 
 
 @router.post(

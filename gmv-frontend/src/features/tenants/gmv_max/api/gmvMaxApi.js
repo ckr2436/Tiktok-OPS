@@ -132,6 +132,10 @@ export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
 }
 
+export async function updateGmvMaxSyncInterval(workspaceId, provider, authId, payload, config) {
+  return put(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync-interval`, payload, config);
+}
+
 export async function getGmvMaxSyncStatus(workspaceId, provider, authId, taskId, config) {
   return get(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync/${encode(taskId)}`,
