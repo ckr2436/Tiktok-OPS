@@ -165,6 +165,21 @@ export default function GmvMaxOverviewPage() {
     [provider, workspaceId],
   );
 
+  const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
+  const businessCenterId = scope.bcId ? String(scope.bcId) : '';
+  const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
+  const storeId = scope.storeId ? String(scope.storeId) : '';
+  const isScopeReady = Boolean(authId && businessCenterId && advertiserId && storeId);
+  const scopeOptionsParams = EMPTY_QUERY_PARAMS;
+  const scopeOptionsQueryKey = useMemo(
+    () => ['gmvMax', 'options', workspaceId, provider, authId, scopeOptionsParams],
+    [authId, provider, scopeOptionsParams, workspaceId],
+  );
+  const accountsQueryKey = useMemo(
+    () => ['gmvMax', 'accounts', workspaceId, provider, EMPTY_QUERY_PARAMS],
+    [provider, workspaceId],
+  );
+
   useEffect(() => {
     const handleHttpError = (event) => {
       const url = event?.detail?.context?.error?.config?.url || '';
@@ -186,21 +201,6 @@ export default function GmvMaxOverviewPage() {
     if (!autoRefreshStorageKey || typeof window === 'undefined') return;
     window.localStorage.setItem(autoRefreshStorageKey, String(autoRefreshInterval));
   }, [autoRefreshInterval, autoRefreshStorageKey]);
-
-  const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
-  const businessCenterId = scope.bcId ? String(scope.bcId) : '';
-  const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
-  const storeId = scope.storeId ? String(scope.storeId) : '';
-  const isScopeReady = Boolean(authId && businessCenterId && advertiserId && storeId);
-  const scopeOptionsParams = EMPTY_QUERY_PARAMS;
-  const scopeOptionsQueryKey = useMemo(
-    () => ['gmvMax', 'options', workspaceId, provider, authId, scopeOptionsParams],
-    [authId, provider, scopeOptionsParams, workspaceId],
-  );
-  const accountsQueryKey = useMemo(
-    () => ['gmvMax', 'accounts', workspaceId, provider, EMPTY_QUERY_PARAMS],
-    [provider, workspaceId],
-  );
 
   useEffect(() => {
     if (!workspaceId) {

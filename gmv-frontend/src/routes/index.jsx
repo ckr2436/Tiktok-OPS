@@ -46,6 +46,7 @@ import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/T
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
 import GmvMaxOverviewPage from '../features/tenants/gmv_max/pages/GmvMaxOverviewPage.jsx';
 import GmvMaxCampaignDetailPage from '../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx';
+import GmvMaxErrorBoundary from '../features/tenants/gmv_max/components/GmvMaxErrorBoundary.jsx';
 
 // 租户 - KIE Sora2 页面 + Whisper 工具
 import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
@@ -143,6 +144,7 @@ const router = createBrowserRouter([
                 <GmvMaxOverviewPage />
               </TenantGuard>
             ),
+            errorElement: <GmvMaxErrorBoundary />,
           },
           {
             path: 'tenants/:wid/gmvmax/:campaignId',
@@ -151,6 +153,7 @@ const router = createBrowserRouter([
                 <GmvMaxCampaignDetailPage />
               </TenantGuard>
             ),
+            errorElement: <GmvMaxErrorBoundary />,
           },
 
           // ★ 新增：公司域 - KIE Sora2 视频
