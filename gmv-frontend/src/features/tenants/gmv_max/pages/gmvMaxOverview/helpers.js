@@ -701,6 +701,36 @@ export function summariseMetrics(report) {
   return { ...totals, roas };
 }
 
+export function summariseMetricsByCampaign(report) {
+  const entries = Array.isArray(report?.list) ? report.list : [];
+  const byCampaign = new Map();
+  entries.forEach((entry) => {
+    const campaignId = entry?.campaign_id || entry?.campaignId || entry?.id;
+    if (!campaignId) return;
+    const metrics = entry?.metrics || entry || {};
+    const current = byCampaign.get(String(campaignId)) || { spend: 0, gmv: 0, orders: 0 };
+    const spend = parseFloat(
+      metrics.spend ?? metrics.total_spend ?? metrics.totalSpend ?? metrics.total_spend_amount ?? '0',
+    );
+    if (!Number.isNaN(spend)) {
+      current.spend += spend;
+    }
+    const revenue = parseFloat(
+      metrics.gross_revenue ?? metrics.gmv ?? metrics.total_gmv ?? metrics.total_gross_revenue ?? '0',
+    );
+    if (!Number.isNaN(revenue)) {
+      current.gmv += revenue;
+    }
+    const orders = parseFloat(metrics.orders ?? metrics.total_orders ?? '0');
+    if (!Number.isNaN(orders)) {
+      current.orders += orders;
+    }
+    current.roas = current.spend > 0 ? current.gmv / current.spend : null;
+    byCampaign.set(String(campaignId), current);
+  });
+  return byCampaign;
+}
+
 export function formatMoney(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   return Number(value).toLocaleString(undefined, {
@@ -715,14 +745,42 @@ export function formatRoi(value) {
 }
 
 export function formatCampaignStatus(status) {
-  if (!status) return 'Unknown';
+  if (!status) return '状态未知';
+  const normalized = normalizeStatusValue(status);
   const map = {
-    STATUS_DELIVERY_OK: 'Running',
-    STATUS_ENABLE: 'Running',
-    STATUS_DISABLE: 'Paused',
-    STATUS_ARCHIVED: 'Archived',
+    STATUS_DELIVERY_OK: '投放中',
+    STATUS_ENABLE: '投放中',
+    STATUS_ENABLED: '投放中',
+    STATUS_RUNNING: '投放中',
+    STATUS_RUN: '投放中',
+    STATUS_ACTIVE: '投放中',
+    STATUS_LEARNING: '学习中',
+    STATUS_LEARNING_LIMITED: '学习中',
+    STATUS_DISABLE: '已暂停',
+    STATUS_PAUSED: '已暂停',
+    STATUS_ARCHIVED: '已结束',
+    STATUS_END: '已结束',
+    STATUS_STOP: '已结束',
+    CAMPAIGN_STATUS_ENABLE: '投放中',
+    CAMPAIGN_STATUS_RUNNING: '投放中',
+    CAMPAIGN_STATUS_LEARNING: '学习中',
+    CAMPAIGN_STATUS_DELETE: '已结束',
   };
-  return map[status] || status;
+  if (map[normalized]) return map[normalized];
+  if (normalized.includes('LEARN')) return '学习中';
+  if (normalized.includes('DISABLE') || normalized.includes('PAUSE')) return '已暂停';
+  if (normalized.includes('ARCHIVE') || normalized.includes('END') || normalized.includes('STOP')) {
+    return '已结束';
+  }
+  if (
+    normalized.includes('ENABLE') ||
+    normalized.includes('RUN') ||
+    normalized.includes('ACTIVE') ||
+    normalized.includes('DELIVERY')
+  ) {
+    return '投放中';
+  }
+  return status;
 }
 
 export const ENABLED_STATUS_WHITELIST = new Set([
@@ -748,6 +806,24 @@ export function isCampaignEnabledStatus(status) {
     return true;
   }
   return false;
+}
+
+export function getCampaignStatusMeta(status) {
+  const normalized = normalizeStatusValue(status);
+  const label = formatCampaignStatus(status);
+  if (normalized.includes('LEARN')) {
+    return { label, category: 'running', tone: 'warning' };
+  }
+  if (isCampaignEnabledStatus(status)) {
+    return { label, category: 'running', tone: 'success' };
+  }
+  if (normalized.includes('ARCHIVE') || normalized.includes('END') || normalized.includes('STOP')) {
+    return { label, category: 'ended', tone: 'muted' };
+  }
+  if (normalized.includes('DISABLE') || normalized.includes('PAUSE')) {
+    return { label, category: 'paused', tone: 'muted' };
+  }
+  return { label, category: 'unknown', tone: 'muted' };
 }
 
 export function extractProductsFromDetail(detail) {

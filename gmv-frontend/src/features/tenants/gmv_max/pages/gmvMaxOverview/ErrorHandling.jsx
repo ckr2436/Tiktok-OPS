@@ -1,19 +1,20 @@
 import { formatError } from './helpers.js';
+import { GmvMaxTexts } from '../../locale.js';
 
 export function ErrorBlock({ error, onRetry, message: overrideMessage }) {
   if (!error) return null;
   console.error('GMV Max request failed', error);
-  const message = overrideMessage ?? formatError(error) ?? 'Something went wrong. Please try again.';
+  const message = overrideMessage ?? formatError(error) ?? '发生错误，请重试。';
   const safeMessage =
     typeof message === 'string' && message.trim().startsWith('[')
-      ? 'Something went wrong. Please try again.'
+      ? '发生错误，请重试。'
       : message;
   return (
     <div className="gmvmax-inline-error" role="alert">
       <span>{safeMessage}</span>
       {onRetry ? (
         <button type="button" onClick={onRetry} className="gmvmax-button gmvmax-button--link">
-          Retry
+          {GmvMaxTexts.retry}
         </button>
       ) : null}
     </div>
@@ -26,12 +27,12 @@ export function SeriesErrorNotice({ error, onRetry }) {
   return (
     <div className="gmvmax-error-card" role="alert">
       <div>
-        <h3>Failed to load GMV Max series</h3>
-        <p>Please check your filters and try again.</p>
+        <h3>GMV Max 系列加载失败</h3>
+        <p>请检查筛选条件后重试。</p>
       </div>
       {onRetry ? (
         <button type="button" onClick={onRetry} className="gmvmax-button gmvmax-button--primary">
-          Retry
+          {GmvMaxTexts.retry}
         </button>
       ) : null}
     </div>
