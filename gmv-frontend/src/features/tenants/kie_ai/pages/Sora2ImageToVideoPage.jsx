@@ -1,10 +1,11 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import kieTenantApi from '../service.js'
+import Modal from '../../../../components/ui/Modal.jsx'
 
 const MAX_PROMPT_LEN = 10_000
 const LAST_TASK_KEY_PREFIX = 'kie_sora2_last_task_'
@@ -175,6 +176,45 @@ async function runWithConcurrency(items, concurrency, worker) {
   return results
 }
 
+function useToast() {
+  const [toast, setToast] = useState(null)
+
+  const showToast = useCallback((message, tone = 'info', duration = 3000) => {
+    setToast({ id: Date.now(), message, tone, duration })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return undefined
+    const timer = setTimeout(() => setToast(null), toast.duration)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  return [toast, showToast]
+}
+
+function ConfirmDialog({ open, title, content, onCancel, onOk }) {
+  return (
+    <Modal open={open} onClose={onCancel} title={title} maskClosable>
+      <p style={{ marginTop: 0, lineHeight: 1.6 }}>{content}</p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <button type="button" className="btn ghost" onClick={onCancel}>
+          取消
+        </button>
+        <button
+          type="button"
+          className="btn danger"
+          onClick={async () => {
+            await onOk?.()
+            onCancel?.()
+          }}
+        >
+          确认
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 export default function Sora2ImageToVideoPage() {
   const { wid } = useParams()
   const queryClient = useQueryClient()
@@ -202,6 +242,15 @@ export default function Sora2ImageToVideoPage() {
 
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
+  const [toast, showToast] = useToast()
+  const [confirmState, setConfirmState] = useState({ open: false })
+
+  const showSuccessToast = useCallback((msg) => showToast(msg, 'success'), [
+    showToast,
+  ])
+  const showErrorToast = useCallback((msg) => showToast(msg, 'error'), [
+    showToast,
+  ])
 
   // 当前任务 ID
   const [currentTaskId, setCurrentTaskId] = useState(null)
@@ -265,6 +314,18 @@ export default function Sora2ImageToVideoPage() {
   useEffect(() => {
     setPage(1)
   }, [pageSize])
+
+  // 拦截全局 http:error 事件，避免因任务未落库产生阻塞式弹窗
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handler = (e) => {
+      if (e?.detail?.message === 'Task not found') {
+        e.preventDefault?.()
+      }
+    }
+    window.addEventListener('http:error', handler)
+    return () => window.removeEventListener('http:error', handler)
+  }, [])
 
   // ------- React Query：当前任务 -------
   const {
@@ -404,8 +465,7 @@ export default function Sora2ImageToVideoPage() {
   async function onSubmit(e) {
     e.preventDefault()
     if (!wid) {
-      // eslint-disable-next-line no-alert
-      alert('缺少 workspace id')
+      showErrorToast('缺少 workspace id')
       return
     }
 
@@ -419,8 +479,7 @@ export default function Sora2ImageToVideoPage() {
         .filter(Boolean)
 
       if (!lines.length) {
-        // eslint-disable-next-line no-alert
-        alert('请至少输入一个 Sora 视频链接')
+        showErrorToast('请至少输入一个 Sora 视频链接')
         return
       }
 
@@ -463,12 +522,12 @@ export default function Sora2ImageToVideoPage() {
           await refetchTask()
         }
 
-        // eslint-disable-next-line no-alert
-        alert(`去水印任务已创建：成功 ${created} 条，失败 ${failed} 条`)
+        showSuccessToast(`去水印任务已创建：成功 ${created} 条，失败 ${failed} 条`)
       } catch (e2) {
         // eslint-disable-next-line no-console
         console.error(e2)
         setErr(e2?.message || '创建任务失败')
+        showErrorToast(e2?.message || '创建任务失败')
       } finally {
         setSubmitting(false)
       }
@@ -479,35 +538,31 @@ export default function Sora2ImageToVideoPage() {
     // 其他模型：单任务
     if (currentModel.hasPrompt) {
       if (!prompt.trim()) {
-        // eslint-disable-next-line no-alert
-        alert('请输入提示词')
+        showErrorToast('请输入提示词')
         return
       }
     }
 
     if (currentModel.hasImageUpload && kind !== 'storyboard' && !file) {
-      // eslint-disable-next-line no-alert
-      alert('请先选择一张图片')
+      showErrorToast('请先选择一张图片')
       return
     }
 
-    if (kind === 'storyboard') {
-      const validShots = shots
-        .filter((s) => s && s.scene && s.scene.trim())
-        .map((s) => ({
-          Scene: s.scene.trim(),
-          duration: Number(s.duration) || 1,
-        }))
-      if (!validShots.length) {
-        // eslint-disable-next-line no-alert
-        alert('请至少填写一个分镜场景')
-        return
-      }
-    } else if (!nFrames || Number.isNaN(Number(nFrames))) {
-      // eslint-disable-next-line no-alert
-      alert('请选择视频时长')
+      if (kind === 'storyboard') {
+        const validShots = shots
+          .filter((s) => s && s.scene && s.scene.trim())
+          .map((s) => ({
+            Scene: s.scene.trim(),
+            duration: Number(s.duration) || 1,
+          }))
+        if (!validShots.length) {
+          showErrorToast('请至少填写一个分镜场景')
+          return
+        }
+      } else if (!nFrames || Number.isNaN(Number(nFrames))) {
+      showErrorToast('请选择视频时长')
       return
-    }
+      }
 
     setSubmitting(true)
     setErr('')
@@ -549,15 +604,14 @@ export default function Sora2ImageToVideoPage() {
       }
 
       setPage(1)
-      await refetchTask()
       await refetchHistory()
 
-      // eslint-disable-next-line no-alert
-      alert('任务已创建')
+      showSuccessToast('任务已创建')
     } catch (e2) {
       // eslint-disable-next-line no-console
       console.error(e2)
       setErr(e2?.message || '创建任务失败')
+      showErrorToast(e2?.message || '创建任务失败')
     } finally {
       setSubmitting(false)
     }
@@ -584,34 +638,34 @@ export default function Sora2ImageToVideoPage() {
   // 清空任务历史（会删除数据库记录）
   async function onClearHistory() {
     if (!wid || !historyTotal) return
-    // eslint-disable-next-line no-alert
-    const ok = window.confirm(
-      '确定要清空当前模型的任务记录吗？\n此操作会删除数据库中的任务及关联文件记录，且不可恢复。',
-    )
-    if (!ok) return
+    setConfirmState({
+      open: true,
+      title: '清空任务记录',
+      content: '确定要清空当前模型的任务记录吗？此操作会删除数据库中的任务及关联文件记录，且不可恢复。',
+      onOk: async () => {
+        try {
+          await kieTenantApi.clearTasks(wid, { modelId })
 
-    try {
-      await kieTenantApi.clearTasks(wid, { modelId })
+          // 清理前端状态
+          setCurrentTaskId(null)
+          setPreview(null)
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(lastTaskKey)
+          }
+          queryClient.removeQueries({ queryKey: ['sora2-task', wid, modelId] })
+          queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
 
-      // 清理前端状态
-      setCurrentTaskId(null)
-      setPreview(null)
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(lastTaskKey)
-      }
-      queryClient.removeQueries({ queryKey: ['sora2-task', wid, modelId] })
-      queryClient.removeQueries({ queryKey: ['sora2-files', wid, modelId] })
-
-      setPage(1)
-      await refetchHistory()
-      // eslint-disable-next-line no-alert
-      alert('任务记录已清空')
-    } catch (e2) {
-      // eslint-disable-next-line no-console
-      console.error(e2)
-      // eslint-disable-next-line no-alert
-      alert(e2?.message || '清空任务记录失败')
-    }
+          setPage(1)
+          await refetchHistory()
+          showSuccessToast('任务记录已清空')
+        } catch (e2) {
+          // eslint-disable-next-line no-console
+          console.error(e2)
+          showErrorToast(e2?.message || '清空任务记录失败')
+        }
+      },
+      onCancel: () => setConfirmState({ open: false }),
+    })
   }
 
   // 下载视频
@@ -631,8 +685,7 @@ export default function Sora2ImageToVideoPage() {
     } catch (e2) {
       // eslint-disable-next-line no-console
       console.error(e2)
-      // eslint-disable-next-line no-alert
-      alert(e2?.message || '获取下载链接失败')
+      showErrorToast(e2?.message || '获取下载链接失败')
     }
   }
 
@@ -650,8 +703,7 @@ export default function Sora2ImageToVideoPage() {
     } catch (e2) {
       // eslint-disable-next-line no-console
       console.error(e2)
-      // eslint-disable-next-line no-alert
-      alert(e2?.message || '获取预览链接失败')
+      showErrorToast(e2?.message || '获取预览链接失败')
     }
   }
 
@@ -1443,6 +1495,22 @@ export default function Sora2ImageToVideoPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {toast && (
+        <div className={`toast toast--${toast.tone}`} role="status">
+          {toast.message}
+        </div>
+      )}
+
+      {confirmState.open && (
+        <ConfirmDialog
+          open={confirmState.open}
+          title={confirmState.title}
+          content={confirmState.content}
+          onCancel={() => setConfirmState({ open: false })}
+          onOk={confirmState.onOk}
+        />
       )}
     </div>
   )
