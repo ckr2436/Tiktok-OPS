@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 
 import Loading from '@/components/ui/Loading.jsx';
@@ -290,12 +291,8 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaign-creatives'] });
   };
   const sharedError = (error) => {
-    const message = error?.message || error?.response?.data?.message || 'Failed to update creative heating.';
-    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-      window.alert(message);
-    } else {
-      console.error(message);
-    }
+    const errorMessage = error?.message || error?.response?.data?.message || 'Failed to update creative heating.';
+    message.error(errorMessage);
   };
 
   const startMutation = useStartGmvMaxCreativeHeatingMutation(workspaceId, provider, authId, campaignId, {

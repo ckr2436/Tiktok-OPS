@@ -50,6 +50,7 @@ router.include_router(deprecated.router)
 # environment), we simply do not mount the routes.
 try:
     from ..gmv_max.router_provider import router as gmv_max_provider_router  # type: ignore
+    from ..gmv_max.router_tenant import router as gmv_max_tenant_router  # type: ignore
 
     # Mount under the same prefix used in the original router.  This
     # prefix nests the GMV Max provider routes under the account path.
@@ -57,6 +58,7 @@ try:
         gmv_max_provider_router,
         prefix="/{workspace_id}/providers/{provider}/accounts/{auth_id}",
     )
+    router.include_router(gmv_max_tenant_router)
 except Exception:
     # No GMV Max provider module available; skip inclusion.
     pass

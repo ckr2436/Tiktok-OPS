@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict
+from decimal import Decimal
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import ceil
@@ -30,12 +31,16 @@ from app.data.models.ttb_entities import (
 )
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
 from app.data.repositories.tiktok_business.gmvmax_heating import (
+    list_heating_configs,
     update_heating_action_result,
     upsert_creative_heating,
 )
 from app.data.repositories.tiktok_business.gmvmax_metrics import (
     GMVMaxMetricDTO,
     query_gmvmax_metrics,
+)
+from app.data.repositories.tiktok_business.gmvmax_creative_metrics import (
+    list_creative_metrics,
 )
 from app.providers.tiktok_business.gmvmax_client import (
     CampaignStatusUpdateRequest,
@@ -72,6 +77,7 @@ from app.providers.tiktok_business.gmvmax_client import (
 from app.services.ttb_api import TTBApiError, TTBHttpError
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
+    get_binding_config,
     upsert_binding_config,
 )
 from app.services.provider_registry import provider_registry
@@ -103,21 +109,26 @@ from app.services.ttb_gmvmax import (
 
 from .schemas import (
     ActionLogEntry,
+    AsyncTaskResponse,
+    AutoBindingCandidate,
+    AutoBindingRequest,
+    AutoBindingResponse,
+    BalanceSyncRequest,
+    BindingStatusResponse,
     CampaignActionRequest,
     CampaignActionResponse,
     CampaignDetailResponse,
     CampaignFilter,
     CampaignListOptions,
     CampaignListResponse,
-    DEFAULT_PROMOTION_TYPES,
+    CreateCampaignRequest,
     CreativeHeatingActionRequest,
+    CreativeHeatingListResponse,
     CreativeHeatingActionResponse,
     CreativeHeatingRecord,
-    AutoBindingCandidate,
-    AutoBindingRequest,
-    AutoBindingResponse,
-    BalanceSyncRequest,
-    CreateCampaignRequest,
+    DEFAULT_PROMOTION_TYPES,
+    GMVMaxPrecheckRequest,
+    GMVMaxPrecheckResponse,
     MetricsRequest,
     MetricsResponse,
     ReportFiltering,
@@ -126,16 +137,13 @@ from .schemas import (
     StrategyPreviewResponse,
     StrategyResponse,
     StrategyUpdateRequest,
-    UpdateCampaignRequest,
     StrategyUpdateResponse,
+    SyncIntervalResponse,
+    SyncIntervalUpdateRequest,
     SyncRequest,
-    AsyncTaskResponse,
     SyncTaskResponse,
     SyncTaskStateResponse,
-    GMVMaxPrecheckRequest,
-    GMVMaxPrecheckResponse,
-    SyncIntervalUpdateRequest,
-    SyncIntervalResponse,
+    UpdateCampaignRequest,
 )
 
 router = APIRouter(prefix="/gmvmax")
@@ -164,6 +172,11 @@ _ACTION_LOG_TYPES = {
     "update_budget": "SET_BUDGET",
     "update_strategy": "UPDATE_STRATEGY",
 }
+
+
+_DEFAULT_SEED_CONVERSIONS = 3
+_DEFAULT_SEED_ROAS = 2.0
+_DEFAULT_SEED_SPEND = 20.0
 
 
 class _TTLCache:
@@ -451,6 +464,104 @@ def _build_metrics_response(
         has_next=has_more,
     )
     report = GMVMaxReportData(list=entries, page_info=page_info, summary=None)
+    return MetricsResponse(report=report, request_id=None)
+
+
+def _build_creative_metrics_response(
+    *,
+    rows: Sequence[Any],
+    start: date,
+    end: date,
+    page: int,
+    page_size: int,
+    seed_min_conversions: int,
+    seed_min_roas: float,
+    seed_min_spend: float,
+) -> MetricsResponse:
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        creative_id = str(getattr(row, "creative_id", "") or "")
+        if not creative_id:
+            continue
+        bucket = aggregates.setdefault(
+            creative_id,
+            {
+                "impressions": 0,
+                "clicks": 0,
+                "orders": 0,
+                "spend": 0.0,
+                "gmv": 0.0,
+                "roas": 0.0,
+                "creative_name": getattr(row, "creative_name", None),
+                "creative_status": getattr(row, "creative_status", None),
+                "last_seen": getattr(row, "stat_time_day", None),
+                "raw": getattr(row, "raw_metrics", None),
+            },
+        )
+        bucket["impressions"] += int(getattr(row, "impressions", 0) or 0)
+        bucket["clicks"] += int(getattr(row, "clicks", 0) or 0)
+        bucket["orders"] += int(getattr(row, "orders", 0) or 0)
+        bucket["spend"] += _coerce_decimal(getattr(row, "cost", None) or getattr(row, "net_cost", None))
+        bucket["gmv"] += _coerce_decimal(getattr(row, "gross_revenue", None))
+        roi_value = getattr(row, "roi", None)
+        if roi_value is not None:
+            bucket["roas"] = max(bucket["roas"], _coerce_decimal(roi_value))
+        stat_time = getattr(row, "stat_time_day", None)
+        if stat_time and (bucket["last_seen"] is None or stat_time > bucket["last_seen"]):
+            bucket["last_seen"] = stat_time
+
+    creative_items = list(aggregates.items())
+    total = len(creative_items)
+    if page_size:
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        creative_items = creative_items[start_index:end_index]
+
+    entries: list[GMVMaxReportEntry] = []
+    seed_count = 0
+    for creative_id, data in creative_items:
+        spend_value = float(data.get("spend") or 0)
+        gmv_value = float(data.get("gmv") or 0)
+        orders_value = int(data.get("orders") or 0)
+        roas_value = data.get("roas") or (gmv_value / spend_value if spend_value > 0 else 0)
+        is_seed = _is_seed_creative(
+            orders=orders_value,
+            roas=roas_value,
+            spend=spend_value,
+            min_conversions=seed_min_conversions,
+            min_roas=seed_min_roas,
+            min_spend=seed_min_spend,
+        )
+        seed_count += 1 if is_seed else 0
+        metrics = {
+            "impressions": data.get("impressions"),
+            "clicks": data.get("clicks"),
+            "orders": orders_value,
+            "spend": spend_value,
+            "gmv": gmv_value,
+            "roas": roas_value,
+            "is_seed": is_seed,
+        }
+        dimensions = {
+            "creative_id": creative_id,
+            "creative_name": data.get("creative_name") or creative_id,
+            "creative_status": data.get("creative_status"),
+            "stat_time_day": data.get("last_seen") or end,
+        }
+        entries.append(GMVMaxReportEntry(metrics=metrics, dimensions=dimensions))
+
+    has_more = page_size > 0 and page * page_size < total
+    total_page = ceil(total / page_size) if page_size else None
+    page_info = PageInfo(
+        page=page,
+        page_size=page_size,
+        total_number=total,
+        total_page=total_page,
+        has_more=has_more,
+        has_next=has_more,
+    )
+    summary = {"seed_count": seed_count}
+    report = GMVMaxReportData(list=entries, page_info=page_info, summary=summary)
     return MetricsResponse(report=report, request_id=None)
 
 
@@ -1509,6 +1620,58 @@ def _dedupe_append(target: list[str], value: Optional[str], seen: set[str]) -> N
         target.append(normalized)
 
 
+def _build_binding_status(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    store_id: Optional[str],
+    advertiser_id: Optional[str],
+    bc_id: Optional[str],
+) -> BindingStatusResponse:
+    normalized_store = _normalize_identifier(store_id)
+    normalized_adv = _normalize_identifier(advertiser_id)
+    normalized_bc = _normalize_identifier(bc_id)
+    binding = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+
+    has_binding = bool(normalized_store and normalized_adv)
+    status = BindingStatusResponse(
+        has_binding=has_binding,
+        binding_ready=False,
+        advertiser_id=normalized_adv,
+        store_id=normalized_store,
+        bc_id=normalized_bc,
+        last_checked_at=datetime.now(timezone.utc),
+    )
+
+    if not binding or not has_binding:
+        status.error_code = "binding_missing"
+        status.error_message = "尚未完成 GMV Max 店铺-广告主绑定。"
+        return status
+
+    candidate = _select_binding_from_links(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        target_store=normalized_store or _normalize_identifier(binding.store_id),
+        target_advertiser=normalized_adv or _normalize_identifier(binding.advertiser_id),
+        target_bc=normalized_bc or _normalize_identifier(binding.bc_id),
+    )
+
+    if candidate and _is_binding_candidate_ready(candidate):
+        status.binding_ready = True
+        return status
+
+    if candidate is None:
+        status.error_code = "binding_not_found"
+        status.error_message = "未找到匹配的 GMV Max 授权记录，请重试绑定。"
+    else:
+        status.error_code = "binding_not_ready"
+        status.error_message = "GMV Max 授权未生效，请重试绑定。"
+
+    return status
+
+
 def _select_binding_from_links(
     db: Session,
     *,
@@ -1588,6 +1751,85 @@ def _select_binding_from_links(
     if len(candidates) != 1:
         return None
     return candidates[0]
+
+
+@router.get(
+    "/binding_status",
+    response_model=BindingStatusResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+def get_gmvmax_binding_status(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    store_id: Optional[str] = Query(default=None),
+    advertiser_id: Optional[str] = Query(default=None),
+    context: GMVMaxRouteContext = Depends(get_optional_route_context),
+) -> BindingStatusResponse:
+    provider = _ensure_provider(provider)
+    status = _build_binding_status(
+        context.db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        store_id=store_id or (context.binding.store_id if context.binding else None),
+        advertiser_id=advertiser_id or (context.binding.advertiser_id if context.binding else None),
+        bc_id=context.binding.bc_id if context.binding else None,
+    )
+    logger.info(
+        "gmvmax.binding_status fetched",
+        extra={
+            "workspace_id": workspace_id,
+            "provider": provider,
+            "auth_id": auth_id,
+            "store_id": status.store_id,
+            "advertiser_id": status.advertiser_id,
+            "binding_ready": status.binding_ready,
+            "has_binding": status.has_binding,
+            "error_code": status.error_code,
+        },
+    )
+    return status
+
+
+@router.post(
+    "/rebind_auto",
+    response_model=AutoBindingResponse,
+    dependencies=[Depends(require_tenant_admin)],
+)
+async def rebind_gmvmax_binding(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    payload: AutoBindingRequest = Body(default_factory=AutoBindingRequest),
+    me: SessionUser = Depends(require_tenant_admin),
+    context: GMVMaxRouteContext = Depends(get_optional_route_context),
+) -> AutoBindingResponse:
+    provider = _ensure_provider(provider)
+    normalized_payload = AutoBindingRequest(
+        advertiser_id=payload.advertiser_id,
+        store_id=payload.store_id,
+        persist=True,
+    )
+    response = await auto_bind_gmvmax_account(
+        workspace_id,
+        provider,
+        auth_id,
+        normalized_payload,
+        me=me,
+        context=context,
+    )
+    logger.info(
+        "gmvmax.rebind_auto completed",
+        extra={
+            "workspace_id": workspace_id,
+            "provider": provider,
+            "auth_id": auth_id,
+            "store_id": normalized_payload.store_id,
+            "advertiser_id": normalized_payload.advertiser_id,
+            "persisted": response.persisted,
+        },
+    )
+    return response
 
 
 @router.post(
@@ -2277,6 +2519,10 @@ async def query_gmvmax_metrics_provider(
     store_id: Optional[str] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    dimensions: Optional[List[str]] = Query(None),
+    seed_min_conversions: int = Query(_DEFAULT_SEED_CONVERSIONS, ge=0),
+    seed_min_roas: float = Query(_DEFAULT_SEED_ROAS, ge=0.0),
+    seed_min_spend: float = Query(_DEFAULT_SEED_SPEND, ge=0.0),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     advertiser_id: Optional[str] = Query(None),
@@ -2301,6 +2547,30 @@ async def query_gmvmax_metrics_provider(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "missing_store", "message": "store_id is required"},
         )
+    normalized_dimensions = [str(dim).lower() for dim in dimensions or []]
+    if any(dim in {"creative", "creative_id", "creativeid"} for dim in normalized_dimensions):
+        creative_rows = await list_creative_metrics(
+            context.db,
+            workspace_id=context.workspace_id,
+            provider=context.provider,
+            auth_id=context.auth_id,
+            campaign_id=str(campaign_id),
+            date_from=start,
+            date_to=end,
+            limit=5000,
+            offset=0,
+        )
+        return _build_creative_metrics_response(
+            rows=creative_rows,
+            start=start,
+            end=end,
+            page=page,
+            page_size=page_size,
+            seed_min_conversions=seed_min_conversions,
+            seed_min_roas=seed_min_roas,
+            seed_min_spend=seed_min_spend,
+        )
+
     cache_key = (
         context.workspace_id,
         context.provider,
@@ -2348,6 +2618,36 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):  # pragma: no cover - defensive
         return None
+
+
+def _coerce_decimal(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return 0.0
+
+
+def _is_seed_creative(
+    *,
+    orders: int | float | None,
+    roas: float | None,
+    spend: float | None,
+    min_conversions: int,
+    min_roas: float,
+    min_spend: float,
+) -> bool:
+    conversions_value = int(orders or 0)
+    spend_value = float(spend or 0)
+    roas_value = float(roas or 0)
+    return (
+        conversions_value >= min_conversions
+        and spend_value >= min_spend
+        and roas_value >= min_roas
+    )
 
 
 def _serialize_heating_row(row: Any) -> CreativeHeatingRecord:
@@ -2610,6 +2910,32 @@ async def list_gmvmax_action_logs_provider(
 
     # TODO: Wire this endpoint to persisted action logs in a future task.
     return ActionLogEntry(entries=[])
+
+
+@router.get(
+    "/{campaign_id}/creatives/heating",
+    response_model=CreativeHeatingListResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+async def list_gmvmax_creative_heating_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: str,
+    status: Optional[str] = Query(None, description="Optional heating status filter"),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> CreativeHeatingListResponse:
+    """Return stored heating state rows for a campaign's creatives."""
+
+    rows = await list_heating_configs(
+        context.db,
+        workspace_id=context.workspace_id,
+        provider=context.provider,
+        auth_id=context.auth_id,
+        campaign_id=str(campaign_id),
+        status=str(status) if status is not None else None,
+    )
+    return CreativeHeatingListResponse(items=[_serialize_heating_row(row) for row in rows])
 
 
 @router.get(

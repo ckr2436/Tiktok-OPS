@@ -33,10 +33,7 @@ export default function CreateSeriesModal({
   authId,
   advertiserId,
   storeId,
-  products,
-  productsLoading,
   storeNameById,
-  initialProductIds,
   onCreated,
 }) {
   const [step, setStep] = useState(1);
@@ -55,6 +52,7 @@ export default function CreateSeriesModal({
   const [endTime, setEndTime] = useState('');
   const [submitError, setSubmitError] = useState(null);
   const previousStoreId = useRef(selectedStoreId);
+  const [productSearch, setProductSearch] = useState('');
 
   const productsQuery = useProductsQuery(
     workspaceId,
@@ -64,6 +62,8 @@ export default function CreateSeriesModal({
       store_id: selectedStoreId || undefined,
       advertiser_id: advertiserId || undefined,
       gmv_max_ads_status: 'UNOCCUPIED',
+      status: 'AVAILABLE',
+      only_unassigned: 1,
       page_size: 50,
     },
     {
@@ -75,9 +75,8 @@ export default function CreateSeriesModal({
     const payload = productsQuery.data;
     const list = payload?.items || payload?.list || payload || [];
     const normalized = Array.isArray(list) ? list : [];
-    if (normalized.length > 0) return normalized;
-    return products || [];
-  }, [products, productsQuery.data]);
+    return normalized;
+  }, [productsQuery.data]);
 
   const productsById = useMemo(() => {
     const map = new Map();
@@ -103,15 +102,15 @@ export default function CreateSeriesModal({
       budget: '',
       roasBid: '',
     });
-    const ids = (initialProductIds || []).map(String);
-    setLocalSelectedIds(new Set(ids));
+    setLocalSelectedIds(new Set());
     setSelectedIdentities(new Set());
+    setProductSearch('');
     const nowIso = new Date().toISOString().slice(0, 16);
     const defaultEnd = new Date();
     defaultEnd.setDate(defaultEnd.getDate() + 7);
     setStartTime(nowIso);
     setEndTime(defaultEnd.toISOString().slice(0, 16));
-  }, [open, initialProductIds]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +118,7 @@ export default function CreateSeriesModal({
     if (prev && selectedStoreId && prev !== selectedStoreId) {
       setLocalSelectedIds(new Set());
       setSelectedIdentities(new Set());
+      setProductSearch('');
     }
     previousStoreId.current = selectedStoreId;
   }, [open, selectedStoreId]);
@@ -561,12 +561,10 @@ export default function CreateSeriesModal({
             onSelectAll={selectAllProducts}
             onClearAll={clearAllProducts}
             storeNames={storeNameById}
-            loading={productsLoading || productsQuery.isLoading || productsQuery.isFetching}
-            emptyMessage={
-              productsQuery.isLoading
-                ? '商品加载中…'
-                : '该店铺暂无可投放商品。'
-            }
+            loading={productsQuery.isLoading || productsQuery.isFetching}
+            emptyMessage={productsQuery.isLoading ? '商品加载中…' : '该店铺暂无可投放商品。'}
+            searchTerm={productSearch}
+            onSearchChange={setProductSearch}
           />
           <div className="gmvmax-modal-footer">
             <button type="button" onClick={goBack}>

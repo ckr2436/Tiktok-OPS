@@ -43,6 +43,7 @@ _CREATIVE_DIMENSIONS = [
 _CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
 _REPORT_PAGE_SIZE = 200
 _DEFAULT_PROVIDER = "tiktok-business"
+_HEATABLE_STATUSES = {"DELIVERING", "LEARNING", "IN_QUEUE"}
 
 
 @dataclass
@@ -476,14 +477,19 @@ async def run_creative_heating_cycle(
                         if stopped:
                             summary["stopped"] += 1
                     else:
-                        if evaluation.ready_to_heat and creative_status == "DELIVERING":
+                        normalized_status = (
+                            str(creative_status).upper() if creative_status is not None else None
+                        )
+
+                        if evaluation.ready_to_heat and normalized_status in _HEATABLE_STATUSES:
                             logger.debug(
-                                "creative ready to heat and delivering",
+                                "creative ready to heat",
                                 extra={
                                     "workspace_id": workspace_id,
                                     "auth_id": auth_id,
                                     "campaign_id": campaign_id,
                                     "creative_id": heating.creative_id,
+                                    "creative_status": normalized_status,
                                 },
                             )
                             try:
