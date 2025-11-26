@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import Modal from '@/components/ui/Modal.jsx';
 import FormField from '@/components/ui/FormField.jsx';
@@ -54,6 +54,7 @@ export default function CreateSeriesModal({
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [submitError, setSubmitError] = useState(null);
+  const previousStoreId = useRef(selectedStoreId);
 
   const productsQuery = useProductsQuery(
     workspaceId,
@@ -114,8 +115,12 @@ export default function CreateSeriesModal({
 
   useEffect(() => {
     if (!open) return;
-    setLocalSelectedIds(new Set());
-    setSelectedIdentities(new Set());
+    const prev = previousStoreId.current;
+    if (prev && selectedStoreId && prev !== selectedStoreId) {
+      setLocalSelectedIds(new Set());
+      setSelectedIdentities(new Set());
+    }
+    previousStoreId.current = selectedStoreId;
   }, [open, selectedStoreId]);
 
   useEffect(() => {
