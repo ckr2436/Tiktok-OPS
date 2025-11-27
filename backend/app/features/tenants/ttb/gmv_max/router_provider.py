@@ -154,6 +154,9 @@ router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
 
 
+# === GMV Max sync cadence & task monitoring ===
+# - fetch/update sync interval configuration
+# - enqueue full sync jobs and check Celery task status
 def _build_task_response(
     async_res: AsyncResult,
     *,
@@ -1413,6 +1416,7 @@ def get_gmvmax_sync_interval_provider(
     auth_id: int,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncIntervalResponse:
+    """Return the configured GMV Max sync interval (no upstream TikTok call)."""
     interval = get_gmvmax_sync_interval()
     logger.info(
         "gmvmax.sync_interval fetched",
@@ -1433,6 +1437,7 @@ def update_gmvmax_sync_interval_provider(
     payload: SyncIntervalUpdateRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncIntervalResponse:
+    """Update the per-provider GMV Max sync interval used by Celery beat."""
     interval = set_gmvmax_sync_interval(int(payload.interval))
     logger.info(
         "gmvmax.sync_interval updated",
@@ -1461,7 +1466,7 @@ async def sync_gmvmax_campaigns_provider(
     store_id_query: Optional[str] = Query(None, alias="store_id"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncTaskResponse:
-    """Enqueue a GMV Max sync job to Celery instead of blocking FastAPI."""
+    """Enqueue GMV Max campaign sync (TikTok GET /gmv_max/campaign/get/) via Celery."""
 
     advertiser_id = (
         payload.advertiser_id or advertiser_id_query or context.advertiser_id
@@ -1538,7 +1543,7 @@ def get_sync_task_state(
     task_id: str = Path(..., description="Celery task identifier"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncTaskStateResponse:
-    """Return Celery task status for GMV Max sync jobs."""
+    """Return Celery task status for GMV Max sync jobs (campaign/report sync)."""
 
     res: AsyncResult = AsyncResult(task_id, app=celery_app)
     state = str(res.state)
@@ -1573,7 +1578,7 @@ def get_async_task_state(
     task_id: str = Path(..., description="Celery task identifier"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncTaskStateResponse:
-    """Return Celery task status for GMV Max async API fetches."""
+    """Return Celery task status for GMV Max async API fetches (report/bid preview)."""
 
     res: AsyncResult = AsyncResult(task_id, app=celery_app)
     state = str(res.state)
@@ -1776,6 +1781,10 @@ def _select_binding_from_links(
     return candidates[0]
 
 
+# === GMV Max binding discovery & eligibility ===
+# - check current binding status and store/advertiser readiness
+# - auto-discover bindings via TikTok store/authorization APIs
+# - run precheck for identity/asset occupancy and balance sync
 @router.get(
     "/binding_status",
     response_model=BindingStatusResponse,
@@ -1789,6 +1798,7 @@ def get_gmvmax_binding_status(
     advertiser_id: Optional[str] = Query(default=None),
     context: GMVMaxRouteContext = Depends(get_optional_route_context),
 ) -> BindingStatusResponse:
+    """Report GMV Max binding readiness using stored links and cached configs."""
     provider = _ensure_provider(provider)
     status = _build_binding_status(
         context.db,
@@ -1827,6 +1837,7 @@ async def rebind_gmvmax_binding(
     me: SessionUser = Depends(require_tenant_admin),
     context: GMVMaxRouteContext = Depends(get_optional_route_context),
 ) -> AutoBindingResponse:
+    """Force auto-binding using TikTok store/authorization checks and persist when allowed."""
     provider = _ensure_provider(provider)
     normalized_payload = AutoBindingRequest(
         advertiser_id=payload.advertiser_id,
@@ -1868,7 +1879,7 @@ async def auto_bind_gmvmax_account(
     me: SessionUser = Depends(require_tenant_admin),
     context: GMVMaxRouteContext = Depends(get_optional_route_context),
 ) -> AutoBindingResponse:
-    """Discover GMV Max store bindings via TikTok APIs and optionally persist them."""
+    """Discover GMV Max store bindings via TikTok store/list + authorization/usage APIs and optionally persist them."""
 
     target_store = _normalize_identifier(payload.store_id)
     target_bc = None
@@ -2167,7 +2178,7 @@ async def gmvmax_precheck(
     payload: GMVMaxPrecheckRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> AsyncTaskResponse:
-    """Enqueue GMV Max precheck against external APIs via Celery."""
+    """Enqueue precheck (shop usage, identity list, occupancy) via TikTok GMV Max APIs."""
 
     advertiser_id = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
     if not advertiser_id:
@@ -2212,6 +2223,8 @@ async def gmvmax_precheck(
     )
 
 
+# === GMV Max campaign lifecycle & details ===
+# - create/update campaigns, list from cache, and fetch TikTok details/sessions
 @router.post(
     "",
     response_model=CampaignDetailResponse,
@@ -2224,6 +2237,7 @@ async def create_gmvmax_campaign_provider(
     payload: CreateCampaignRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
+    """Create a GMV Max campaign (POST /campaign/gmv_max/create/) then fetch detail."""
     row = await create_gmvmax_campaign(
         context.db,
         workspace_id=workspace_id,
@@ -2260,6 +2274,7 @@ async def update_gmvmax_campaign_provider(
     payload: UpdateCampaignRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
+    """Update a GMV Max campaign (POST /campaign/gmv_max/update/) and refresh detail."""
     row = await update_gmvmax_campaign(
         context.db,
         workspace_id=workspace_id,
@@ -2306,7 +2321,7 @@ async def list_gmvmax_campaigns_provider(
     include_deleted: bool = Query(False),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignListResponse:
-    """List GMV Max campaigns for this advertiser account from local cache."""
+    """List GMV Max campaigns for this advertiser account from local cache (synced from /gmv_max/campaign/get/)."""
 
     adv = advertiser_id or context.advertiser_id
     page_value = page or 1
@@ -2366,7 +2381,7 @@ async def get_gmvmax_campaign_provider(
     include_sessions: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
-    """Retrieve a single GMV Max campaign for this advertiser account."""
+    """Retrieve campaign detail and sessions via TikTok info/list endpoints."""
 
     adv = advertiser_id or context.advertiser_id
     info_request = asyncio.create_task(
@@ -2420,6 +2435,8 @@ async def get_gmvmax_campaign_provider(
     )
 
 
+# === GMV Max metrics ingestion & queries ===
+# - enqueue TikTok report pulls and read cached daily/hourly metrics
 @router.post(
     "/balance/sync",
     response_model=AsyncTaskResponse,
@@ -2432,7 +2449,7 @@ async def sync_advertiser_balance(
     payload: BalanceSyncRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> AsyncTaskResponse:
-    """Trigger advertiser balance sync via Celery."""
+    """Trigger advertiser balance sync via Celery (no direct TikTok GMV Max call here)."""
 
     normalized_bc = _normalize_identifier(payload.bc_id) or context.binding.bc_id
     normalized_adv = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
@@ -2495,7 +2512,7 @@ async def sync_gmvmax_metrics_provider(
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> AsyncTaskResponse:
-    """Trigger a metrics sync for the specified GMV Max campaign via Celery."""
+    """Trigger metrics sync via TikTok GET /gmv_max/report/get/ for the campaign."""
 
     adv = advertiser_id or context.advertiser_id
     report_req = _build_report_request(
@@ -2635,6 +2652,10 @@ async def query_gmvmax_metrics_provider(
     return response
 
 
+# === GMV Max actions, creative heating, and strategy ===
+# - campaign status/strategy actions and logs
+# - creative heating triggers and evaluation
+# - bid recommendation previews and session strategy updates
 def _to_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -2784,7 +2805,7 @@ async def apply_gmvmax_campaign_action_provider(
     me: SessionUser = Depends(require_tenant_admin),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> Union[CampaignActionResponse, CreativeHeatingActionResponse]:
-    """Apply a GMV Max campaign action and return the TikTok response."""
+    """Apply campaign status/strategy actions or BOOST_CREATIVE (status/update or /campaign/gmv_max/action/apply/)."""
 
     actor_label = _resolve_actor_label(me)
     normalized_campaign_id = str(campaign_id)
@@ -2949,7 +2970,7 @@ async def list_gmvmax_creative_heating_provider(
     status: Optional[str] = Query(None, description="Optional heating status filter"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CreativeHeatingListResponse:
-    """Return stored heating state rows for a campaign's creatives."""
+    """Return stored heating state rows for a campaign's creatives (no live API call)."""
 
     rows = await list_heating_configs(
         context.db,
@@ -2976,7 +2997,7 @@ async def get_gmvmax_strategy_provider(
     include_recommendation: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> StrategyResponse:
-    """Fetch the GMV Max optimization strategy for the campaign."""
+    """Fetch campaign + session details and optional bid recommendation from TikTok APIs."""
 
     adv = advertiser_id or context.advertiser_id
     campaign_resp = await _call_tiktok(
@@ -3038,7 +3059,7 @@ async def update_gmvmax_strategy_provider(
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> StrategyUpdateResponse:
-    """Update the strategy configuration for the campaign."""
+    """Update campaign/session strategy via TikTok update endpoints then return status."""
 
     adv = advertiser_id or context.advertiser_id
     campaign_resp = None
@@ -3094,7 +3115,7 @@ async def preview_gmvmax_strategy_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 
 ) -> AsyncTaskResponse:
-    """Preview the GMV Max optimization strategy for the campaign via Celery."""
+    """Preview bid recommendations via TikTok GET /gmv_max/bid/recommend/ through Celery."""
 
     adv = advertiser_id or context.advertiser_id
     store_id = payload.store_id or context.store_id

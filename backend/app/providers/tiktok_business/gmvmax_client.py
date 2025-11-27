@@ -679,6 +679,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_campaign_get(
         self, request: GMVMaxCampaignGetRequest
     ) -> GMVMaxResponse[GMVMaxCampaignListData]:
+        """Wrapper for TikTok GET /gmv_max/campaign/get/ to list campaigns."""
         params = request.model_dump(exclude_none=True)
         filtering_payload = params.get("filtering")
         if isinstance(filtering_payload, dict):
@@ -711,6 +712,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_campaign_info(
         self, request: GMVMaxCampaignInfoRequest
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
+        """Wrapper for TikTok GET /campaign/gmv_max/info/ to fetch campaign detail."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json("GET", "/campaign/gmv_max/info/", params=params)
         return self._parse_response(payload, GMVMaxCampaignInfoData)
@@ -718,6 +720,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_campaign_create(
         self, request: GMVMaxCampaignCreateRequest
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/create/ to create campaigns."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
@@ -732,6 +735,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_campaign_update(
         self, request: GMVMaxCampaignUpdateRequest
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/update/ to mutate campaigns."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
@@ -746,6 +750,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def campaign_status_update(
         self, request: CampaignStatusUpdateRequest
     ) -> GMVMaxResponse[CampaignStatusUpdateData]:
+        """Wrapper for TikTok POST /campaign/status/update/ to change status."""
         params = {"advertiser_id": request.advertiser_id}
         body = {
             "advertiser_id": request.advertiser_id,
@@ -764,6 +769,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_campaign_action_apply(
         self, request: GMVMaxCampaignActionApplyRequest
     ) -> GMVMaxResponse[GMVMaxCampaignActionApplyData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/action/apply/ (e.g., BOOST_CREATIVE)."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
@@ -778,6 +784,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_session_create(
         self, request: GMVMaxSessionCreateRequest
     ) -> GMVMaxResponse[GMVMaxSessionListData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/session/create/."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
@@ -792,6 +799,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_session_update(
         self, request: GMVMaxSessionUpdateRequest
     ) -> GMVMaxResponse[GMVMaxSessionListData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/session/update/."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
@@ -806,6 +814,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_session_list(
         self, request: GMVMaxSessionListRequest
     ) -> GMVMaxResponse[GMVMaxSessionListData]:
+        """Wrapper for TikTok GET /campaign/gmv_max/session/list/."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -817,6 +826,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_identity_get(
         self, request: GMVMaxIdentityGetRequest
     ) -> GMVMaxResponse[GMVMaxIdentityListData]:
+        """Wrapper for TikTok GET /gmv_max/identity/get/ to list eligible identities."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -828,6 +838,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_store_list(
         self, request: GMVMaxStoreListRequest
     ) -> GMVMaxResponse[GMVMaxStoreListData]:
+        """Wrapper for TikTok GET /gmv_max/store/list/ to enumerate stores."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -839,6 +850,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_store_shop_ad_usage_check(
         self, request: GMVMaxStoreAdUsageCheckRequest
     ) -> GMVMaxResponse[GMVMaxStoreAdUsageCheckData]:
+        """Wrapper for TikTok GET /gmv_max/store/shop_ad_usage_check/ to verify eligibility."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -850,6 +862,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_occupied_custom_shop_ads_list(
         self, request: GMVMaxOccupiedCustomShopAdsListRequest
     ) -> GMVMaxResponse[GMVMaxOccupiedListData]:
+        """Wrapper for TikTok GET /gmv_max/occupied_custom_shop_ads/list/."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -861,6 +874,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_video_get(
         self, request: GMVMaxVideoGetRequest
     ) -> GMVMaxResponse[GMVMaxVideoListData]:
+        """Wrapper for TikTok GET /gmv_max/video/get/."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -872,6 +886,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_custom_anchor_video_list_get(
         self, request: GMVMaxCustomAnchorVideoListGetRequest
     ) -> GMVMaxResponse[GMVMaxCustomAnchorVideoListData]:
+        """Wrapper for TikTok GET /gmv_max/custom_anchor_video_list/get/."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -883,6 +898,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_exclusive_authorization_get(
         self, request: GMVMaxExclusiveAuthorizationGetRequest
     ) -> GMVMaxResponse[GMVMaxExclusiveAuthorizationData]:
+        """Wrapper for TikTok GET /gmv_max/exclusive_authorization/get/."""
         params = request.model_dump(exclude_none=True)
         payload = await self._request_json(
             "GET",
@@ -894,6 +910,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_exclusive_authorization_create(
         self, request: GMVMaxExclusiveAuthorizationCreateRequest
     ) -> GMVMaxResponse[GMVMaxExclusiveAuthorizationData]:
+        """Wrapper for TikTok POST /gmv_max/exclusive_authorization/create/."""
         params = {"advertiser_id": request.advertiser_id}
         body = {
             "advertiser_id": request.advertiser_id,
@@ -911,6 +928,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_bid_recommend(
         self, request: GMVMaxBidRecommendRequest
     ) -> GMVMaxResponse[GMVMaxBidRecommendation]:
+        """Wrapper for TikTok GET /gmv_max/bid/recommend/ to preview strategy suggestions."""
         params = request.model_dump(exclude_none=True)
         params["item_group_ids"] = [str(item) for item in request.item_group_ids]
         payload = await self._request_json(
@@ -923,6 +941,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_report_get(
         self, request: GMVMaxReportGetRequest
     ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
         def _encode_seq(values: Sequence[Any] | None) -> str | None:
             if values is None:
                 return None

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Helpers to execute GMV Max creative heating actions and capture audit logs."""
+
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -52,6 +54,7 @@ async def apply_boost_creative_action(
     before_state: Mapping[str, Any] | None = None,
     after_state: Mapping[str, Any] | None = None,
 ):
+    """Call TikTok /campaign/gmv_max/action/apply/ for BOOST_CREATIVE and persist heating log context."""
     if campaign is None:
         raise ValueError("campaign is required to apply boost creative action")
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+"""Provider-scoped service helpers bridging GMV Max routers to core services."""
+
 from typing import Any, Iterable, Optional, Sequence
 
 from fastapi import HTTPException, status
@@ -83,6 +85,7 @@ async def sync_campaigns(
     status_filter: Optional[str] = None,
     campaign_ids: Optional[Iterable[str]] = None,
 ) -> int:
+    """Sync campaigns for a binding using ``ttb_gmvmax.sync_gmvmax_campaigns`` and TikTok client."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -128,6 +131,7 @@ async def list_campaigns(
     page_size: int = 20,
     sync: bool = False,
 ) -> dict[str, Any]:
+    """Return cached GMV Max campaigns with optional pre-sync; relies on repository filters."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -186,6 +190,7 @@ async def get_campaign(
     advertiser_id: Optional[str] = None,
     refresh: bool = False,
 ) -> TTBGmvMaxCampaign:
+    """Load a single campaign, optionally triggering a targeted sync when missing."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -239,6 +244,7 @@ async def sync_metrics(
     start_date: date,
     end_date: date,
 ) -> int:
+    """Sync hourly/daily metrics for a campaign by calling TikTok report API through the client."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -341,6 +347,7 @@ def query_metrics(
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
+    """Query stored hourly or daily metrics for a campaign (DB only)."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -395,6 +402,7 @@ async def apply_campaign_action(
     performed_by: str,
     audit_hook: Any | None = None,
 ) -> tuple[TTBGmvMaxCampaign, TTBGmvMaxActionLog]:
+    """Apply a campaign action via TikTok and persist an action log snapshot."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -442,6 +450,7 @@ def list_action_logs(
     limit: int,
     offset: int,
 ) -> tuple[TTBGmvMaxCampaign, Sequence[TTBGmvMaxActionLog]]:
+    """Return campaign with paginated action logs stored locally."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -471,6 +480,7 @@ def get_strategy(
     auth_id: int,
     campaign_id: str,
 ) -> TTBGmvMaxStrategyConfig:
+    """Load or create the local strategy configuration for a GMV Max campaign."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -510,6 +520,7 @@ def update_strategy(
     campaign_id: str,
     payload: dict[str, Any],
 ) -> Optional[TTBGmvMaxStrategyConfig]:
+    """Persist strategy config adjustments used by automated decision making."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
@@ -585,6 +596,7 @@ def preview_strategy(
     auth_id: int,
     campaign_id: str,
 ) -> dict[str, Any]:
+    """Compute a dry-run decision using cached metrics and strategy thresholds."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
 
