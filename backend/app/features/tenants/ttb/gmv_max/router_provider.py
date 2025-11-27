@@ -99,6 +99,8 @@ from app.services.gmvmax_spec import (
     GMVMAX_METRIC_ALIASES,
     GMVMAX_SUPPORTED_DIMENSIONS,
     GMVMAX_SUPPORTED_METRICS,
+    GMV_REPORT_CONFIG,
+    GMVMaxReportLevel,
 )
 from .service import _ensure_provider
 from app.services.ttb_gmvmax import (
@@ -654,6 +656,46 @@ def _normalize_dimensions_list(dimensions: Optional[Sequence[str]]) -> List[str]
     return normalized
 
 
+def _resolve_report_level(level: Any) -> GMVMaxReportLevel:
+    if level is None:
+        return GMVMaxReportLevel.CAMPAIGN
+    try:
+        return GMVMaxReportLevel(str(level))
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "unsupported_level", "message": "Unsupported GMV Max report level."},
+        ) from exc
+
+
+def _validate_date_range_for_level(
+    *, start_date: date, end_date: date, level: GMVMaxReportLevel
+) -> None:
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_date_range",
+                "message": "end_date must not be earlier than start_date.",
+            },
+        )
+
+    config = GMV_REPORT_CONFIG.get(level)
+    if not config:
+        return
+    max_range = config.get("max_range")
+    if max_range and (end_date - start_date) > max_range:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "range_too_large",
+                "message": (
+                    f"{level.value} reports support up to {max_range.days} days for the selected granularity"
+                ),
+            },
+        )
+
+
 @dataclass(slots=True)
 class GMVMaxRouteContext:
     """Per-request context containing the TikTok client and binding metadata."""
@@ -1025,9 +1067,18 @@ def _build_report_request(
     default_store_id: Optional[str],
     campaign_id: Optional[str] = None,
 ) -> GMVMaxReportGetRequest:
+    level = _resolve_report_level(getattr(report, "level", None))
     store_ids = _normalize_store_ids(report.store_ids, default_store_id)
-    metrics = _normalize_metrics_list(report.metrics)
-    dimensions = _normalize_dimensions_list(report.dimensions)
+    config = GMV_REPORT_CONFIG.get(level)
+    metrics = _normalize_metrics_list(
+        config.get("metrics") if config else report.metrics
+    )
+    dimensions = _normalize_dimensions_list(
+        config.get("dimensions") if config else report.dimensions
+    )
+    _validate_date_range_for_level(
+        start_date=report.start_date, end_date=report.end_date, level=level
+    )
     filtering_payload: Dict[str, Any] = {}
     promotion_types = None
     if report.filtering is not None:

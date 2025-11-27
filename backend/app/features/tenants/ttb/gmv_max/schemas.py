@@ -25,6 +25,7 @@ from app.providers.tiktok_business.gmvmax_client import (
 from app.services.gmvmax_spec import (
     GMVMAX_DEFAULT_DIMENSIONS,
     GMVMAX_DEFAULT_METRICS,
+    GMVMaxReportLevel,
 )
 
 DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
@@ -204,6 +205,7 @@ class ReportRequest(BaseModel):
     store_ids: Optional[List[str]] = None
     start_date: date
     end_date: date
+    level: GMVMaxReportLevel | None = Field(default=None, description="Aggregation level")
     metrics: List[str]
     dimensions: List[str]
     enable_total_metrics: Optional[bool] = None
@@ -318,6 +320,7 @@ class MetricsRequest(BaseModel):
     store_ids: Optional[List[str]] = None
     start_date: date
     end_date: date
+    level: GMVMaxReportLevel | None = Field(default=None, description="Aggregation level")
     metrics: Optional[List[str]] = None
     dimensions: Optional[List[str]] = None
     enable_total_metrics: Optional[bool] = None

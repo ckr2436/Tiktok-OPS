@@ -7,6 +7,8 @@ same configuration when talking to the upstream endpoint.
 
 from __future__ import annotations
 
+from datetime import timedelta
+from enum import Enum
 from typing import Final
 
 # Metrics documented under "Metrics in GMV Max Campaign reports". Keeping the
@@ -81,6 +83,44 @@ GMVMAX_CREATIVE_METRICS: Final[tuple[str, ...]] = (
     "live_follows",
 )
 
+
+class GMVMaxReportLevel(str, Enum):
+    """Supported aggregation levels for GMV Max reports."""
+
+    CAMPAIGN = "campaign"
+    PRODUCT = "product"
+    CREATIVE = "creative"
+
+
+GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
+    GMVMaxReportLevel.CAMPAIGN: {
+        "dimensions": ("campaign_id", "stat_time_day"),
+        "metrics": GMVMAX_DEFAULT_METRICS,
+        "max_range": timedelta(days=30),
+    },
+    GMVMaxReportLevel.PRODUCT: {
+        "dimensions": ("campaign_id", "item_group_id", "stat_time_day"),
+        "metrics": (
+            "cost",
+            "net_cost",
+            "orders",
+            "gross_revenue",
+            "roi",
+            "product_impressions",
+            "product_clicks",
+            "product_click_rate",
+            "ad_click_rate",
+            "ad_conversion_rate",
+        ),
+        "max_range": timedelta(days=30),
+    },
+    GMVMaxReportLevel.CREATIVE: {
+        "dimensions": ("campaign_id", "item_id", "stat_time_day"),
+        "metrics": GMVMAX_CREATIVE_METRICS,
+        "max_range": timedelta(days=30),
+    },
+}
+
 # Dimension set defined by https://business-api.tiktok.com/portal/docs?id=1824722485971009
 GMVMAX_SUPPORTED_DIMENSIONS: Final[set[str]] = {
     "advertiser_id",
@@ -106,4 +146,6 @@ __all__ = [
     "GMVMAX_CREATIVE_METRICS",
     "GMVMAX_SUPPORTED_DIMENSIONS",
     "GMVMAX_DEFAULT_DIMENSIONS",
+    "GMVMaxReportLevel",
+    "GMV_REPORT_CONFIG",
 ]
