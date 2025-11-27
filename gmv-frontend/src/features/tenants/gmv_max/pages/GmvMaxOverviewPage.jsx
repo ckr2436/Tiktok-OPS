@@ -134,6 +134,7 @@ export default function GmvMaxOverviewPage() {
   const [seriesStoreFilter, setSeriesStoreFilter] = useState('');
   const [seriesSearch, setSeriesSearch] = useState('');
   const [sortOption, setSortOption] = useState('latest');
+  const [, setSelectedProductIds] = useState([]);
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const autoOptionsRefreshAccounts = useRef(new Set());
   const syncInFlightRef = useRef(false);
