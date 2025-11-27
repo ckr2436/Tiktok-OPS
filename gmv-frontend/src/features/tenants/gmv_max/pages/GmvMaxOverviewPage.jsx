@@ -924,6 +924,7 @@ export default function GmvMaxOverviewPage() {
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
 
   const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
+  const rebindAutoMutation = useGmvMaxRebindAutoMutation(workspaceId, provider, authId);
 
   const handleAutoRefreshChange = useCallback(
     (event) => {
@@ -1332,7 +1333,6 @@ export default function GmvMaxOverviewPage() {
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
-  const rebindAutoMutation = useGmvMaxRebindAutoMutation(workspaceId, provider, authId);
 
   const refreshScopeQueries = useCallback(() => {
     if (!workspaceId || !provider || !authId) {
