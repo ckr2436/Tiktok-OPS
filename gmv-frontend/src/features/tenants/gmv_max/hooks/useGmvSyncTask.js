@@ -101,6 +101,7 @@ export function useEnsureFreshGmvData({
   provider,
   authId,
   storeId,
+  reportParams,
   freshnessMs = 10 * 60 * 1000,
 }) {
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
@@ -112,14 +113,22 @@ export function useEnsureFreshGmvData({
       if (lastEnsuredRef.current && now - lastEnsuredRef.current < freshnessMs) {
         return true;
       }
-      const result = await syncTask.runSync({ store_id: storeId || undefined });
+      const normalizedStoreId = storeId ? String(storeId) : undefined;
+      const payload = { store_id: normalizedStoreId };
+      if (reportParams) {
+        payload.report = {
+          ...reportParams,
+          store_ids: reportParams.store_ids || (normalizedStoreId ? [normalizedStoreId] : undefined),
+        };
+      }
+      const result = await syncTask.runSync(payload);
       if (result?.state === 'SUCCESS') {
         lastEnsuredRef.current = Date.now();
         return true;
       }
       return false;
     },
-    [freshnessMs, storeId, syncTask],
+    [freshnessMs, reportParams, storeId, syncTask],
   );
 
   return {

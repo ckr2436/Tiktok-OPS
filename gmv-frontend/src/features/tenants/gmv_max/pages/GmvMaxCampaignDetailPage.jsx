@@ -30,7 +30,11 @@ import {
   resolveTimezoneLabel,
 } from '../utils/timezone.js';
 import ProductSelectionPanel from './gmvMaxOverview/ProductSelectionPanel.jsx';
-import { getProductIdentifier, getStoreLabel } from './gmvMaxOverview/helpers.js';
+import {
+  DEFAULT_REPORT_METRICS,
+  getProductIdentifier,
+  getStoreLabel,
+} from './gmvMaxOverview/helpers.js';
 
 const MIN_MONITORING_INTERVAL = 10;
 const METRIC_CHOICES = [
@@ -775,12 +779,24 @@ export default function GmvMaxCampaignDetailPage() {
     [advertiserTimezone, customRange, timeRange],
   );
 
+  const syncReportParams = useMemo(
+    () => ({
+      ...metricsParams,
+      metrics: DEFAULT_REPORT_METRICS,
+      dimensions: ['campaign_id', 'stat_time_day'],
+      enable_total_metrics: true,
+      store_ids: storeIdFromQuery ? [String(storeIdFromQuery)] : undefined,
+    }),
+    [metricsParams, storeIdFromQuery],
+  );
+
   const commonEnabled = Boolean(workspaceId && provider && authId && campaignId);
   const { ensureFresh, isSyncing: isEnsuringFresh } = useEnsureFreshGmvData({
     workspaceId,
     provider,
     authId,
     storeId: storeIdFromQuery,
+    reportParams: syncReportParams,
   });
 
   const campaignQuery = useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId, {

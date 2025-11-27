@@ -230,7 +230,7 @@ class SyncRequest(BaseModel):
         default=None, alias="campaign_filter"
     )
     campaign_options: Optional[CampaignListOptions] = None
-    report: ReportRequest
+    report: Optional[ReportRequest] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
