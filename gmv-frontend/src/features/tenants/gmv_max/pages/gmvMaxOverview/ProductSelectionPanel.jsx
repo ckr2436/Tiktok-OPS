@@ -16,6 +16,8 @@ export default function ProductSelectionPanel({
   disabled,
   onSelectAll,
   onClearAll,
+  searchTerm = '',
+  onSearchChange,
 }) {
   const selection = useMemo(() => {
     if (selectedIds instanceof Set) return selectedIds;
@@ -27,9 +29,26 @@ export default function ProductSelectionPanel({
     if (!Array.isArray(products)) return [];
     return products.filter((product) => isProductAvailable(product));
   }, [products]);
+  const filteredProducts = useMemo(() => {
+    const query = String(searchTerm || '').trim().toLowerCase();
+    if (!query) return productRows;
+    return productRows.filter((product) => {
+      const id = getProductIdentifier(product);
+      const name =
+        product.title ||
+        product.name ||
+        product.product_name ||
+        product.productName ||
+        product.item_name ||
+        product.itemName ||
+        '';
+      return (id && String(id).toLowerCase().includes(query)) ||
+        (typeof name === 'string' && name.toLowerCase().includes(query));
+    });
+  }, [productRows, searchTerm]);
   const allIds = useMemo(
-    () => productRows.map((product) => getProductIdentifier(product)).filter(Boolean),
-    [productRows],
+    () => filteredProducts.map((product) => getProductIdentifier(product)).filter(Boolean),
+    [filteredProducts],
   );
   const allSelected = allIds.length > 0 && allIds.every((id) => selection.has(id));
 
@@ -37,13 +56,21 @@ export default function ProductSelectionPanel({
     return <Loading text="商品加载中…" />;
   }
 
-  if (productRows.length === 0) {
+  if (filteredProducts.length === 0) {
     return <p>{emptyMessage || '暂无可用商品。'}</p>;
   }
 
   return (
     <div className="gmvmax-product-table">
       <div className="gmvmax-product-table__actions">
+        <div className="gmvmax-product-table__search">
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => onSearchChange?.(event.target.value)}
+            placeholder="搜索商品名称或 ID"
+          />
+        </div>
         <label>
           <input
             type="checkbox"
@@ -54,7 +81,7 @@ export default function ProductSelectionPanel({
           <span>{GmvMaxTexts.selectAll}</span>
         </label>
         <span className="gmvmax-product-table__count">
-          已选 {selection.size} / {productRows.length}
+          已选 {selection.size} / {filteredProducts.length}
         </span>
         <div className="gmvmax-product-table__bulk-actions">
           <button
@@ -82,7 +109,7 @@ export default function ProductSelectionPanel({
           </tr>
         </thead>
         <tbody>
-          {productRows.map((product) => {
+          {filteredProducts.map((product) => {
             const id = getProductIdentifier(product);
             if (!id) return null;
             const checked = selection.has(id);

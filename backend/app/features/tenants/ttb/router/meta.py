@@ -281,6 +281,7 @@ def list_account_products(
     store_id: str = Query(..., max_length=64),
     advertiser_id: Optional[str] = Query(default=None, max_length=64),
     owner_bc_id: Optional[str] = Query(default=None, max_length=64),
+    only_unassigned: bool = Query(False, description="Filter to GMV Max-eligible unassigned products."),
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(200, ge=1, le=500),
     _: SessionUser = Depends(require_tenant_member),
@@ -378,6 +379,12 @@ def list_account_products(
             .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
             .where(func.lower(TTBGmvMaxCampaign.operation_status) == "enable")
         )
+        if only_unassigned:
+            base_query = base_query.filter(func.upper(TTBProduct.status) == "AVAILABLE")
+            base_query = base_query.filter(
+                func.upper(TTBProduct.gmv_max_ads_status).in_(["UNOCCUPIED"])
+            )
+            base_query = base_query.filter(~TTBProduct.product_id.in_(assignment_stmt))
         assigned_ids = {
             str(item)
             for item in db.execute(assignment_stmt).scalars().all()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -10,6 +10,7 @@ import {
   useApplyGmvMaxActionMutation,
   useGmvMaxCampaignCreativesQuery,
   useGmvMaxCampaignQuery,
+  useProductsQuery,
   useGmvMaxCreativeHeatingQuery,
   useGmvMaxCreativeMetricsQuery,
   useGmvMaxMetricsQuery,
@@ -18,9 +19,18 @@ import {
   useSyncGmvMaxMetricsMutation,
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
+import { useEnsureFreshGmvData } from '../hooks/useGmvSyncTask.js';
 import useGmvMaxNotifications from '../hooks/useGmvMaxNotifications.js';
 import { GmvMaxTexts } from '../locale.js';
 import ActionLogsTable from '../components/ActionLogsTable.jsx';
+import {
+  formatRangeAsIsoStrings,
+  getAdvertiserRecentRange,
+  getAdvertiserTodayRange,
+  resolveTimezoneLabel,
+} from '../utils/timezone.js';
+import ProductSelectionPanel from './gmvMaxOverview/ProductSelectionPanel.jsx';
+import { getProductIdentifier, getStoreLabel } from './gmvMaxOverview/helpers.js';
 
 const MIN_MONITORING_INTERVAL = 10;
 const METRIC_CHOICES = [
@@ -31,6 +41,11 @@ const METRIC_CHOICES = [
   { value: 'ctr', label: 'CTR' },
   { value: 'cpc', label: 'CPC' },
 ];
+const HEATABLE_CREATIVE_STATUSES = new Set(['DELIVERING', 'LEARNING', 'IN_QUEUE']);
+const SEED_MIN_CONVERSIONS = 3;
+const SEED_MIN_ROAS = 2;
+const SEED_MIN_SPEND = 20;
+const SEED_RULE_TEXT = `满足转化≥${SEED_MIN_CONVERSIONS}、ROAS≥${SEED_MIN_ROAS.toFixed(1)}、消耗≥$${SEED_MIN_SPEND}`;
 const OPERATOR_CHOICES = [
   { value: '>', label: '>' },
   { value: '>=', label: '≥' },
@@ -130,20 +145,16 @@ function extractDateLabel(entry) {
   );
 }
 
-function computeTimeRange(range, customRange) {
+function computeTimeRange(range, customRange, timeZone) {
   if (range === 'custom' && customRange?.start && customRange?.end) {
     return { start_date: customRange.start, end_date: customRange.end };
   }
-  const today = new Date();
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const start = new Date(end);
-  const days = range === '30d' ? 29 : 6;
-  start.setUTCDate(start.getUTCDate() - days);
-  const format = (date) =>
-    `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
-      date.getUTCDate(),
-    ).padStart(2, '0')}`;
-  return { start_date: format(start), end_date: format(end) };
+  if (range === 'today') {
+    return formatRangeAsIsoStrings(getAdvertiserTodayRange(timeZone));
+  }
+  const days = range === '30d' ? 30 : 7;
+  const rangeDates = getAdvertiserRecentRange(days, timeZone);
+  return formatRangeAsIsoStrings(rangeDates);
 }
 
 function normalizeStrategyResponse(data) {
@@ -288,7 +299,11 @@ function buildTrendSeries(report) {
     .map((entry) => ({
       label: extractDateLabel(entry),
       spend: getMetricValue(entry, 'spend'),
-      gmv: getMetricValue(entry, 'gmv'),
+      roas: (() => {
+        const spend = getMetricValue(entry, 'spend');
+        const gmv = getMetricValue(entry, 'gmv');
+        return spend > 0 ? gmv / spend : 0;
+      })(),
     }))
     .filter((item) => item.label);
 }
@@ -441,7 +456,7 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
         entry?.creative_name || entry?.creativeName || entry?.name || entry?.label || entry?.title || row.name || creativeId;
       row.status = normalizeCreativeStatus(entry?.creative_status || entry?.status || entry?.state || row.status);
       row.metrics = parseCreativeMetrics(entry?.metrics || entry);
-      row.metadata = { ...row.metadata, ...entry };
+      row.metadata = { ...row.metadata, ...entry, ...(entry?.metrics || {}) };
     }
   }
 
@@ -461,6 +476,14 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
         creativeId;
       row.status = normalizeCreativeStatus(dimensions.creative_status || dimensions.status || row.status);
       row.metrics = parseCreativeMetrics(entry.metrics || entry);
+      const seedFlag =
+        entry.is_seed || entry.isSeed || dimensions.is_seed || dimensions.isSeed || entry.metrics?.is_seed || false;
+      row.metadata = {
+        ...row.metadata,
+        ...dimensions,
+        ...(entry.metrics || {}),
+        is_seed: seedFlag,
+      };
     }
   }
 
@@ -487,6 +510,21 @@ function isCreativeBoosting(creative) {
   );
 }
 
+function isSeedCreative(creative) {
+  const meta = creative?.metadata || {};
+  const heating = creative?.heating || {};
+  return Boolean(
+    meta.is_seed ||
+      meta.isSeed ||
+      meta.seed ||
+      meta.seed_creative ||
+      meta.is_seed_creative ||
+      meta.isSeedCreative ||
+      heating.is_seed ||
+      heating.isSeed,
+  );
+}
+
 function resolveLastEvaluated(creative) {
   const heating = creative?.heating || {};
   return (
@@ -508,7 +546,7 @@ function TrendChart({ data }) {
   const width = 600;
   const height = 240;
   const maxValue = Math.max(
-    ...data.map((point) => Math.max(point.spend || 0, point.gmv || 0)),
+    ...data.map((point) => Math.max(point.spend || 0, point.roas || 0)),
     1,
   );
   const xStep = (width - padding * 2) / Math.max(data.length - 1, 1);
@@ -522,7 +560,7 @@ function TrendChart({ data }) {
       })
       .join(' ');
   const spendPath = buildPath('spend');
-  const gmvPath = buildPath('gmv');
+  const roasPath = buildPath('roas');
   const xLabels = data.map((point, index) => ({
     x: padding + index * xStep,
     label: point.label,
@@ -534,7 +572,7 @@ function TrendChart({ data }) {
         <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
       </g>
       <path d={spendPath} className="gmvmax-chart__line gmvmax-chart__line--spend" />
-      <path d={gmvPath} className="gmvmax-chart__line gmvmax-chart__line--gmv" />
+      <path d={roasPath} className="gmvmax-chart__line gmvmax-chart__line--roas" />
       {xLabels.map((item) => (
         <text key={item.x} x={item.x} y={height - 4} textAnchor="middle" className="gmvmax-chart__label">
           {item.label}
@@ -679,11 +717,19 @@ export default function GmvMaxCampaignDetailPage() {
   const authId = searchParams.get('authId') || '';
   const advertiserId = searchParams.get('advertiserId') || '';
   const storeIdFromQuery = searchParams.get('storeId') || '';
-
-  const [activeTab, setActiveTab] = useState(() =>
-    searchParams.get('tab') === 'dashboard' ? 'dashboard' : 'automation',
+  const advertiserTimezone = useMemo(
+    () => resolveTimezoneLabel(searchParams.get('timezone') || ''),
+    [searchParams],
   );
-  const [timeRange, setTimeRange] = useState(searchParams.get('range') || '7d');
+
+  const resolveTab = useCallback((params) => {
+    const value = params.get('tab');
+    if (value === 'dashboard' || value === 'products') return value;
+    return 'automation';
+  }, []);
+
+  const [activeTab, setActiveTab] = useState(() => resolveTab(searchParams));
+  const [timeRange, setTimeRange] = useState(searchParams.get('range') || 'today');
   const [customRange, setCustomRange] = useState({
     start: searchParams.get('start_date') || '',
     end: searchParams.get('end_date') || '',
@@ -694,22 +740,50 @@ export default function GmvMaxCampaignDetailPage() {
   const [strategyDirty, setStrategyDirty] = useState(false);
   const [lastSaveMessage, setLastSaveMessage] = useState('');
   const [showAdvancedRules, setShowAdvancedRules] = useState(false);
+  const [creativeStatusFilters, setCreativeStatusFilters] = useState(
+    () => new Set(['DELIVERING', 'LEARNING', 'IN_QUEUE', 'NOT_DELIVERING', 'UNKNOWN']),
+  );
+  const [showOnlyHeated, setShowOnlyHeated] = useState(false);
+  const [showSeedOnly, setShowSeedOnly] = useState(false);
+  const [creativeSortKey, setCreativeSortKey] = useState('spend');
+  const [productSelection, setProductSelection] = useState(() => new Set());
+  const [productSearch, setProductSearch] = useState('');
+  const [productMessage, setProductMessage] = useState('');
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const tab = searchParams.get('tab') === 'dashboard' ? 'dashboard' : 'automation';
-    setActiveTab(tab);
-  }, [searchParams]);
+    setActiveTab(resolveTab(searchParams));
+  }, [resolveTab, searchParams]);
 
-  const metricsParams = useMemo(() => computeTimeRange(timeRange, customRange), [customRange, timeRange]);
+  const metricsParams = useMemo(
+    () => computeTimeRange(timeRange, customRange, advertiserTimezone),
+    [advertiserTimezone, customRange, timeRange],
+  );
 
   const commonEnabled = Boolean(workspaceId && provider && authId && campaignId);
+  const { ensureFresh, isSyncing: isEnsuringFresh } = useEnsureFreshGmvData({
+    workspaceId,
+    provider,
+    authId,
+    storeId: storeIdFromQuery,
+  });
 
   const campaignQuery = useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId, {
     enabled: commonEnabled,
   });
 
   const isDashboardTab = activeTab === 'dashboard';
+  const isProductsTab = activeTab === 'products';
+  const creativeStatusOptions = useMemo(
+    () => [
+      { key: 'DELIVERING', label: GmvMaxTexts.creativeStatusDelivering },
+      { key: 'LEARNING', label: GmvMaxTexts.creativeStatusLearning },
+      { key: 'IN_QUEUE', label: GmvMaxTexts.creativeStatusInQueue },
+      { key: 'NOT_DELIVERING', label: GmvMaxTexts.creativeStatusNotDelivering },
+      { key: 'UNKNOWN', label: GmvMaxTexts.creativeStatusUnknown },
+    ],
+    [],
+  );
 
   const metricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
@@ -738,7 +812,11 @@ export default function GmvMaxCampaignDetailPage() {
     provider,
     authId,
     campaignId,
-    undefined,
+    {
+      ...metricsParams,
+      advertiser_id: advertiserId || undefined,
+      dimensions: ['creative_id'],
+    },
     {
       enabled: commonEnabled && isDashboardTab,
     },
@@ -754,6 +832,85 @@ export default function GmvMaxCampaignDetailPage() {
       enabled: commonEnabled && isDashboardTab,
     },
   );
+
+  const sessionList = useMemo(
+    () => ensureArray(campaignQuery.data?.sessions || campaignQuery.data?.session_list),
+    [campaignQuery.data],
+  );
+  const campaignStoreId = useMemo(() => {
+    const campaign = campaignQuery.data?.campaign || campaignQuery.data;
+    return campaign?.store_id || campaign?.storeId || '';
+  }, [campaignQuery.data]);
+  const sessionProducts = useMemo(() => {
+    const products = [];
+    sessionList.forEach((session) => {
+      ensureArray(session?.product_list || session?.products).forEach((product) => {
+        if (product) products.push(product);
+      });
+    });
+    return products;
+  }, [sessionList]);
+  const initialProductSet = useMemo(() => {
+    const set = new Set();
+    sessionProducts.forEach((product) => {
+      const id = getProductIdentifier(product);
+      if (id) set.add(String(id));
+    });
+    return set;
+  }, [sessionProducts]);
+
+  useEffect(() => {
+    setProductSelection(new Set(initialProductSet));
+  }, [initialProductSet]);
+
+  const productsQuery = useProductsQuery(
+    workspaceId,
+    provider,
+    authId,
+    {
+      store_id: storeIdFromQuery || campaignStoreId || undefined,
+      advertiser_id: advertiserId || undefined,
+      gmv_max_ads_status: 'UNOCCUPIED',
+      page_size: 50,
+    },
+    {
+      enabled: Boolean(commonEnabled && isProductsTab && (storeIdFromQuery || campaignStoreId)),
+    },
+  );
+
+  const mergedProducts = useMemo(() => {
+    const map = new Map();
+    const queried = Array.isArray(productsQuery.data?.items)
+      ? productsQuery.data.items
+      : Array.isArray(productsQuery.data?.list)
+        ? productsQuery.data.list
+        : Array.isArray(productsQuery.data)
+          ? productsQuery.data
+          : [];
+    queried.forEach((product) => {
+      const id = getProductIdentifier(product);
+      if (id) map.set(id, product);
+    });
+    sessionProducts.forEach((product) => {
+      const id = getProductIdentifier(product);
+      if (id && !map.has(id)) {
+        map.set(id, product);
+      }
+    });
+    return Array.from(map.values());
+  }, [productsQuery.data, sessionProducts]);
+
+  const storeNameMap = useMemo(() => {
+    const map = new Map();
+    if (campaignStoreId) {
+      const storeLabel = getStoreLabel(campaignQuery.data?.campaign?.store || {}) || String(campaignStoreId);
+      map.set(String(campaignStoreId), storeLabel);
+    }
+    if (storeIdFromQuery && !map.has(storeIdFromQuery)) {
+      map.set(storeIdFromQuery, storeIdFromQuery);
+    }
+    return map;
+  }, [campaignQuery.data, campaignStoreId, storeIdFromQuery]);
 
   const strategyQuery = useGmvMaxStrategyQuery(workspaceId, provider, authId, campaignId, {
     enabled: commonEnabled,
@@ -783,6 +940,13 @@ export default function GmvMaxCampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-heating'] });
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaign-creatives'] });
     },
+  });
+  const updateProductsMutation = useUpdateGmvMaxStrategyMutation(workspaceId, provider, authId, campaignId, {
+    onSuccess: () => {
+      setProductMessage('商品已更新');
+      campaignQuery.refetch();
+    },
+    onError: (error) => setProductMessage(error?.message || '商品更新失败'),
   });
   const updateStrategyMutation = useUpdateGmvMaxStrategyMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
@@ -827,40 +991,127 @@ export default function GmvMaxCampaignDetailPage() {
       ),
     [creativeHeatingQuery.data, creativeMetricsQuery.data, creativesQuery.data],
   );
-  const creativeGroups = useMemo(() => {
-    const inQueue = [];
-    const learning = [];
-    const delivering = [];
-    const others = [];
-    for (const creative of creatives) {
-      if (creative.status === 'IN_QUEUE') {
-        inQueue.push(creative);
-        continue;
+  const seedCreatives = useMemo(
+    () =>
+      creatives
+        .filter((creative) => isSeedCreative(creative))
+        .sort((a, b) => (b.metrics?.roas || 0) - (a.metrics?.roas || 0)),
+    [creatives],
+  );
+  const filteredCreatives = useMemo(() => {
+    return creatives.filter((creative) => {
+      if (!creativeStatusFilters.has(creative.status || 'UNKNOWN')) return false;
+      if (showOnlyHeated && !isCreativeBoosting(creative)) return false;
+      if (showSeedOnly && !isSeedCreative(creative)) return false;
+      return true;
+    });
+  }, [creativeStatusFilters, creatives, showOnlyHeated, showSeedOnly]);
+
+  const sortedCreatives = useMemo(() => {
+    const list = [...filteredCreatives];
+    const getValue = (creative) => {
+      const metrics = creative.metrics || {};
+      if (creativeSortKey === 'roas') return metrics.roas || 0;
+      if (creativeSortKey === 'conversions') return metrics.orders || 0;
+      return metrics.spend || 0;
+    };
+    return list.sort((a, b) => getValue(b) - getValue(a));
+  }, [creativeSortKey, filteredCreatives]);
+
+  const creativesByStatus = useMemo(() => {
+    const groups = new Map();
+    sortedCreatives.forEach((creative) => {
+      const key = creative.status || 'UNKNOWN';
+      if (!groups.has(key)) {
+        groups.set(key, []);
       }
-      if (creative.status === 'LEARNING') {
-        learning.push(creative);
-        continue;
-      }
-      if (creative.status === 'DELIVERING') {
-        delivering.push(creative);
-        continue;
-      }
-      others.push(creative);
-    }
-    return { inQueue, learning, delivering, others };
-  }, [creatives]);
-  const creativeSections = useMemo(
-    () => [
-      { key: 'delivering', title: `投放中 (${creativeGroups.delivering.length})`, items: creativeGroups.delivering },
-      { key: 'learning', title: `学习中 (${creativeGroups.learning.length})`, items: creativeGroups.learning },
-      { key: 'inQueue', title: `排队中 (${creativeGroups.inQueue.length})`, items: creativeGroups.inQueue },
-      { key: 'others', title: `其他 (${creativeGroups.others.length})`, items: creativeGroups.others },
-    ],
-    [creativeGroups],
+      groups.get(key).push(creative);
+    });
+    return creativeStatusOptions.map((option) => ({
+      key: option.key,
+      label: option.label,
+      items: groups.get(option.key) || [],
+    }));
+  }, [creativeStatusOptions, sortedCreatives]);
+
+  const creativeStatusLabelMap = useMemo(
+    () => new Map(creativeStatusOptions.map((item) => [item.key, item.label])),
+    [creativeStatusOptions],
   );
   const creativesLoading =
     creativesQuery.isLoading || creativeMetricsQuery.isLoading || creativeHeatingQuery.isLoading;
   const creativesError = creativesQuery.error || creativeMetricsQuery.error || creativeHeatingQuery.error;
+
+  const productsChanged = useMemo(() => {
+    if (productSelection.size !== initialProductSet.size) return true;
+    for (const id of productSelection) {
+      if (!initialProductSet.has(id)) return true;
+    }
+    return false;
+  }, [initialProductSet, productSelection]);
+
+  const sessionId = useMemo(() => {
+    const session = sessionList[0];
+    return session?.session_id || session?.sessionId || session?.id || '';
+  }, [sessionList]);
+
+  const identityList = useMemo(() => {
+    const identities = ensureArray(sessionList[0]?.identities || sessionList[0]?.identity_list);
+    return identities
+      .map((identity) => (typeof identity === 'object' ? identity.identity_id || identity.id : identity))
+      .filter(Boolean)
+      .map(String);
+  }, [sessionList]);
+
+  const toggleProduct = useCallback(
+    (id) => {
+      setProductSelection((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [setProductSelection],
+  );
+
+  const toggleAllProducts = useCallback((ids) => {
+    setProductSelection((prev) => {
+      const next = new Set(prev);
+      const shouldSelectAll = ids.some((id) => !next.has(id));
+      ids.forEach((id) => {
+        if (shouldSelectAll) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const selectAllProducts = useCallback((ids) => setProductSelection(new Set(ids)), []);
+  const clearProducts = useCallback(() => setProductSelection(new Set()), []);
+
+  const handleSaveProducts = useCallback(async () => {
+    if (!sessionId) {
+      setProductMessage('无法更新商品：缺少 session 信息');
+      return;
+    }
+    const payload = {
+      session: {
+        session_id: sessionId,
+        store_id: storeIdFromQuery || campaignStoreId || undefined,
+        product_list: Array.from(productSelection).map((id) => ({ spu_id: String(id) })),
+        identities: identityList.length > 0 ? identityList : undefined,
+      },
+    };
+    setProductMessage('');
+    await updateProductsMutation.mutateAsync(payload);
+  }, [campaignStoreId, identityList, productSelection, sessionId, storeIdFromQuery, updateProductsMutation]);
 
   const handleTabChange = useCallback(
     (tab) => {
@@ -902,41 +1153,60 @@ export default function GmvMaxCampaignDetailPage() {
     }
   }, [customRange.end, customRange.start, searchParams, setSearchParams, timeRange]);
 
-  const handleSyncMetrics = useCallback(() => {
+  const handleSyncMetrics = useCallback(async () => {
+    await ensureFresh();
     syncMetricsMutation.mutate({ start_date: metricsParams.start_date, end_date: metricsParams.end_date });
-  }, [metricsParams.end_date, metricsParams.start_date, syncMetricsMutation]);
+  }, [ensureFresh, metricsParams.end_date, metricsParams.start_date, syncMetricsMutation]);
+
+  const handleToggleCreativeStatus = useCallback((status) => {
+    setCreativeStatusFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+      return next.size === 0 ? prev : next;
+    });
+  }, []);
 
   const handleBoostCreative = useCallback(
-    (creative) => {
+    async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
       if (!creativeId || creativeActionMutation.isPending) return;
+      await ensureFresh();
       creativeActionMutation.mutate({ type: 'boost', creative_id: creativeId });
     },
-    [creativeActionMutation],
+    [creativeActionMutation, ensureFresh],
   );
 
   const handleStopHeat = useCallback(
-    (creative) => {
+    async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
       if (!creativeId || creativeActionMutation.isPending) return;
+      await ensureFresh();
       creativeActionMutation.mutate({ type: 'stop_heat', creative_id: creativeId });
     },
-    [creativeActionMutation],
+    [creativeActionMutation, ensureFresh],
   );
 
-  const handlePause = useCallback(() => {
-    applyActionMutation.mutate({ type: 'pause' });
-  }, [applyActionMutation]);
+  const handlePause = useCallback(async () => {
+    await ensureFresh();
+    await applyActionMutation.mutateAsync({ type: 'pause' });
+  }, [applyActionMutation, ensureFresh]);
 
-  const handleResume = useCallback(() => {
-    applyActionMutation.mutate({ type: 'resume' });
-  }, [applyActionMutation]);
+  const handleResume = useCallback(async () => {
+    await ensureFresh();
+    await applyActionMutation.mutateAsync({ type: 'resume' });
+  }, [applyActionMutation, ensureFresh]);
 
   const handleDelete = useCallback(() => {
     const confirmed = window.confirm('确定删除该系列？此操作无法恢复。');
     if (!confirmed) return;
-    applyActionMutation.mutate({ type: 'delete' });
-  }, [applyActionMutation]);
+    ensureFresh()
+      .then(() => applyActionMutation.mutateAsync({ type: 'delete' }))
+      .catch(() => {});
+  }, [applyActionMutation, ensureFresh]);
 
   const openBudgetDialog = useCallback((mode) => {
     setBudgetDialog({ open: true, mode });
@@ -955,10 +1225,12 @@ export default function GmvMaxCampaignDetailPage() {
           percent,
         },
       };
-      applyActionMutation.mutate(payload);
+      ensureFresh()
+        .then(() => applyActionMutation.mutateAsync(payload))
+        .catch(() => {});
       closeBudgetDialog();
     },
-    [applyActionMutation, budgetDialog.mode, closeBudgetDialog],
+    [applyActionMutation, budgetDialog.mode, closeBudgetDialog, ensureFresh],
   );
 
   const openActionLogs = useCallback(() => {
@@ -1040,19 +1312,11 @@ export default function GmvMaxCampaignDetailPage() {
   const gmv = metricsSummary.gmv || 0;
   const roas = spend > 0 ? gmv / spend : null;
 
-  const average = (values) => {
-    if (!values || values.length === 0) return null;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
-  };
-
   const summaryCards = [
     { label: '花费', value: `$${formatMoney(spend)}` },
     { label: 'GMV', value: `$${formatMoney(gmv)}` },
     { label: '订单', value: formatNumber(metricsSummary.orders) },
     { label: 'ROAS', value: roas === null ? '—' : roas.toFixed(2) },
-    { label: 'CTR', value: formatPercent(average(metricsSummary.ctrValues)) },
-    { label: 'CPC', value: `$${formatMoney(average(metricsSummary.cpcValues))}` },
-    { label: 'CPM', value: `$${formatMoney(average(metricsSummary.cpmValues))}` },
   ];
 
   const strategyHighlights = useMemo(() => {
@@ -1120,19 +1384,39 @@ export default function GmvMaxCampaignDetailPage() {
           </div>
         </div>
         <div className="gmvmax-campaign-detail__actions">
-          <button type="button" onClick={handlePause} disabled={applyActionMutation.isPending}>
+          <button
+            type="button"
+            onClick={handlePause}
+            disabled={applyActionMutation.isPending || isEnsuringFresh}
+          >
             暂停
           </button>
-          <button type="button" onClick={handleResume} disabled={applyActionMutation.isPending}>
+          <button
+            type="button"
+            onClick={handleResume}
+            disabled={applyActionMutation.isPending || isEnsuringFresh}
+          >
             启用
           </button>
-          <button type="button" onClick={handleDelete} disabled={applyActionMutation.isPending}>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={applyActionMutation.isPending || isEnsuringFresh}
+          >
             删除
           </button>
-          <button type="button" onClick={() => openBudgetDialog('increase')} disabled={applyActionMutation.isPending}>
+          <button
+            type="button"
+            onClick={() => openBudgetDialog('increase')}
+            disabled={applyActionMutation.isPending || isEnsuringFresh}
+          >
             提升预算
           </button>
-          <button type="button" onClick={() => openBudgetDialog('decrease')} disabled={applyActionMutation.isPending}>
+          <button
+            type="button"
+            onClick={() => openBudgetDialog('decrease')}
+            disabled={applyActionMutation.isPending || isEnsuringFresh}
+          >
             降低预算
           </button>
           <button type="button" onClick={openActionLogs}>
@@ -1183,6 +1467,13 @@ export default function GmvMaxCampaignDetailPage() {
           onClick={() => handleTabChange('dashboard')}
         >
           {GmvMaxTexts.dashboard}
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'products' ? 'active' : ''}
+          onClick={() => handleTabChange('products')}
+        >
+          {GmvMaxTexts.manageProducts}
         </button>
       </div>
 
@@ -1398,40 +1689,65 @@ export default function GmvMaxCampaignDetailPage() {
             </div>
           ) : null}
         </section>
-      ) : (
+      ) : null}
+
+      {activeTab === 'products' ? (
+        <section className="gmvmax-products">
+          <div className="gmvmax-products__header">
+            <div>
+              <h2>{GmvMaxTexts.manageProducts}</h2>
+              <p className="gmvmax-products__summary">已绑定 {initialProductSet.size} 个商品</p>
+            </div>
+            {productMessage ? <div className="gmvmax-notice">{productMessage}</div> : null}
+            {productsQuery.error ? (
+              <div className="gmvmax-error">{productsQuery.error.message || '商品加载失败'}</div>
+            ) : null}
+          </div>
+          <ProductSelectionPanel
+            products={mergedProducts}
+            selectedIds={productSelection}
+            onToggle={toggleProduct}
+            onToggleAll={toggleAllProducts}
+            storeNames={storeNameMap}
+            loading={productsQuery.isLoading || productsQuery.isFetching}
+            emptyMessage="暂无可管理的商品。"
+            disabled={updateProductsMutation.isPending}
+            onSelectAll={selectAllProducts}
+            onClearAll={clearProducts}
+            searchTerm={productSearch}
+            onSearchChange={setProductSearch}
+          />
+          <div className="gmvmax-products__actions">
+            <span>已选 {productSelection.size} 个商品</span>
+            <button type="button" onClick={() => setProductSelection(new Set(initialProductSet))}>
+              重置
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={!productsChanged || updateProductsMutation.isPending}
+              onClick={handleSaveProducts}
+            >
+              保存商品
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'dashboard' ? (
         <section className="gmvmax-dashboard">
           <div className="gmvmax-dashboard__controls">
             <div className="gmvmax-dashboard__range">
-              <label>
-                <input
-                  type="radio"
-                  name="gmvmax-range"
-                  value="7d"
-                  checked={timeRange === '7d'}
-                  onChange={() => handleTimeRangeChange('7d')}
-                />
-                7 天
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="gmvmax-range"
-                  value="30d"
-                  checked={timeRange === '30d'}
-                  onChange={() => handleTimeRangeChange('30d')}
-                />
-                30 天
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="gmvmax-range"
-                  value="custom"
-                  checked={timeRange === 'custom'}
-                  onChange={() => handleTimeRangeChange('custom')}
-                />
-                自定义
-              </label>
+              {[{ key: 'today', label: '今日' }, { key: '7d', label: '近 7 日' }, { key: '30d', label: '近 30 日' }, { key: 'custom', label: '自定义' }].map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`gmvmax-chip ${timeRange === option.key ? 'gmvmax-chip--active' : ''}`}
+                  onClick={() => handleTimeRangeChange(option.key)}
+                >
+                  {option.label}
+                </button>
+              ))}
               {timeRange === 'custom' ? (
                 <div className="gmvmax-dashboard__custom-range">
                   <input
@@ -1448,164 +1764,269 @@ export default function GmvMaxCampaignDetailPage() {
                 </div>
               ) : null}
             </div>
-            <button type="button" onClick={handleSyncMetrics} disabled={syncMetricsMutation.isPending}>
-              同步数据
-            </button>
-            {metricsQuery.isFetching ? <Loading text="数据加载中…" /> : null}
-            {metricsQuery.error ? (
-              <div className="gmvmax-error">{metricsQuery.error.message || '数据加载失败'}</div>
-            ) : null}
+            <div className="gmvmax-dashboard__controls-right">
+              {advertiserTimezone ? (
+                <div className="gmvmax-dashboard__timezone">按广告主时区：{advertiserTimezone}</div>
+              ) : null}
+              <button
+                type="button"
+                className="gmvmax-button gmvmax-button--secondary"
+                onClick={handleSyncMetrics}
+                disabled={syncMetricsMutation.isPending}
+              >
+                {syncMetricsMutation.isPending ? '同步中…' : '同步数据'}
+              </button>
+            </div>
+          </div>
+          {metricsQuery.isFetching ? <Loading text="数据加载中…" /> : null}
+          {metricsQuery.error ? (
+            <div className="gmvmax-error">{metricsQuery.error.message || '数据加载失败'}</div>
+          ) : null}
+
+          <div className="gmvmax-summary__cards gmvmax-summary__cards--muted">
+            {summaryCards.map((card) => (
+              <div key={card.label} className="gmvmax-summary__card">
+                <span className="gmvmax-summary__card-label">{card.label}</span>
+                <strong className="gmvmax-summary__card-value">{card.value}</strong>
+              </div>
+            ))}
           </div>
 
           <div className="gmvmax-dashboard__chart">
+            <div className="gmvmax-dashboard__chart-header">
+              <h3>消耗 / ROAS 趋势</h3>
+              <span className="gmvmax-dashboard__chart-caption">按所选时间范围</span>
+            </div>
             <TrendChart data={trendSeries} />
           </div>
 
-          <div className="gmvmax-dashboard__tables">
-            <div className="gmvmax-dashboard__table gmvmax-dashboard__table--creatives">
-              <h3>{GmvMaxTexts.creatives}</h3>
-              {creativesLoading ? <Loading text="创意加载中…" /> : null}
-              {creativesError ? (
-                <div className="gmvmax-error">创意数据加载失败：{creativesError.message || '未知错误'}</div>
-              ) : null}
-              {creativeActionMutation.error ? (
-                <div className="gmvmax-error">
-                  创意操作失败：{creativeActionMutation.error.message || '请稍后重试'}
+          <div className="gmvmax-dashboard__table gmvmax-dashboard__table--creatives">
+            {seedCreatives.length > 0 ? (
+              <div className="gmvmax-seed-panel">
+                <div className="gmvmax-seed-panel__header">
+                  <div className="gmvmax-seed-panel__title">
+                    <span role="img" aria-label="seed">⭐</span>
+                    <span>种子视频 ({seedCreatives.length})</span>
+                  </div>
+                  <span className="gmvmax-seed-panel__hint" title={SEED_RULE_TEXT}>
+                    规则：{SEED_RULE_TEXT}
+                  </span>
                 </div>
-              ) : null}
-              {creativeSections.map((group) => (
-                <details key={group.key} open>
-                  <summary>{group.title}</summary>
-                  {group.items.length === 0 ? (
-                    <p>暂无对应创意。</p>
-                  ) : (
-                    <div className="gmvmax-creatives__table-wrapper">
-                      <table className="gmvmax-creatives__table">
-                        <thead>
-                          <tr>
-                            <th>创意</th>
-                            <th>曝光</th>
-                            <th>点击</th>
-                            <th>点击率</th>
-                            <th>花费</th>
-                            <th>GMV</th>
-                            <th>ROI</th>
-                            <th>订单</th>
-                            <th>加热</th>
-                            <th>操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.items.map((creative) => {
-                            const metrics = creative.metrics || {};
-                            const boosting = isCreativeBoosting(creative);
-                            return (
-                              <tr key={creative.creativeId}>
-                                <td>
-                                  <div className="gmvmax-creatives__name">
-                                    {creative.thumbnail ? (
-                                      <img
-                                        src={creative.thumbnail}
-                                        alt={creative.name || '创意封面'}
-                                        className="gmvmax-creatives__thumb"
-                                      />
-                                    ) : (
-                                      <span className="gmvmax-creatives__thumb gmvmax-creatives__thumb--placeholder">🎞️</span>
-                                    )}
-                                    <div>
-                                      <div className="gmvmax-creatives__label">{creative.name}</div>
-                                      <div className="gmvmax-creatives__id">ID: {creative.creativeId}</div>
-                                      <div className="gmvmax-creatives__badge gmvmax-creatives__badge--muted">
-                                        状态：{creative.status}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td>{formatNumber(metrics.impressions)}</td>
-                                <td>{formatNumber(metrics.clicks)}</td>
-                                <td>{formatPercent(metrics.ctr)}</td>
-                                <td>${formatMoney(metrics.spend)}</td>
-                                <td>${formatMoney(metrics.gmv)}</td>
-                                <td>{metrics.roas ? metrics.roas.toFixed(2) : '—'}</td>
-                                <td>{formatNumber(metrics.orders)}</td>
-                                <td>{boosting ? '🔥' : '—'}</td>
-                                <td>
-                                  {creative.status === 'DELIVERING' ? (
-                                    boosting ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStopHeat(creative)}
-                                        disabled={creativeActionMutation.isPending}
-                                      >
-                                        停止加热
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleBoostCreative(creative)}
-                                        disabled={creativeActionMutation.isPending}
-                                      >
-                                        加热
-                                      </button>
-                                    )
-                                  ) : (
-                                    <span className="gmvmax-creatives__badge gmvmax-creatives__badge--muted">无操作</span>
-                                  )}
-                                  {resolveLastEvaluated(creative) ? (
-                                    <div className="gmvmax-creatives__meta">
-                                      最近更新：{new Date(resolveLastEvaluated(creative)).toLocaleString()}
-                                    </div>
-                                  ) : null}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                <div className="gmvmax-seed-panel__grid">
+                  {seedCreatives.slice(0, 6).map((creative) => (
+                    <div key={creative.creativeId} className="gmvmax-seed-card">
+                      <div className="gmvmax-seed-card__name" title={creative.name}>
+                        ⭐ {creative.name}
+                      </div>
+                      <div className="gmvmax-seed-card__meta">
+                        <span>ROAS {formatNumber(creative.metrics?.roas, { maximumFractionDigits: 2 })}</span>
+                        <span>转化 {formatNumber(creative.metrics?.orders)}</span>
+                        <span>消耗 ${formatMoney(creative.metrics?.spend)}</span>
+                      </div>
                     </div>
-                  )}
-                </details>
-              ))}
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="gmvmax-creatives__filters">
+              <div className="gmvmax-chip-group" aria-label="创意状态筛选">
+                {creativeStatusOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`gmvmax-chip ${creativeStatusFilters.has(option.key) ? 'gmvmax-chip--active' : ''}`}
+                    onClick={() => handleToggleCreativeStatus(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="gmvmax-creatives__toggles">
+                <label className="gmvmax-checkbox gmvmax-checkbox--inline">
+                  <input
+                    type="checkbox"
+                    checked={showOnlyHeated}
+                    onChange={(event) => setShowOnlyHeated(event.target.checked)}
+                  />
+                  <span>仅显示加热中</span>
+                </label>
+                <label className="gmvmax-checkbox gmvmax-checkbox--inline">
+                  <input
+                    type="checkbox"
+                    checked={showSeedOnly}
+                    onChange={(event) => setShowSeedOnly(event.target.checked)}
+                  />
+                  <span>仅种子创意</span>
+                </label>
+                <label className="gmvmax-select gmvmax-select--inline">
+                  <span>排序</span>
+                  <select value={creativeSortKey} onChange={(event) => setCreativeSortKey(event.target.value)}>
+                    <option value="spend">按消耗</option>
+                    <option value="conversions">按转化</option>
+                    <option value="roas">按 ROAS</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <div className="gmvmax-dashboard__table">
-              <h3>{GmvMaxTexts.products}</h3>
-              <table>
+            {creativesLoading ? <Loading text="创意加载中…" /> : null}
+            {creativesError ? (
+              <div className="gmvmax-error">创意数据加载失败：{creativesError.message || '未知错误'}</div>
+            ) : null}
+            {creativeActionMutation.error ? (
+              <div className="gmvmax-error">
+                创意操作失败：{creativeActionMutation.error.message || '请稍后重试'}
+              </div>
+            ) : null}
+            <div className="table-wrap">
+              <table className="gmvmax-table gmvmax-creatives-table">
                 <thead>
                   <tr>
-                    <th>商品</th>
+                    <th>创意</th>
+                    <th>状态</th>
+                    <th>曝光</th>
+                    <th>点击</th>
+                    <th>转化</th>
                     <th>花费</th>
                     <th>GMV</th>
-                    <th>订单</th>
-                    <th>点击</th>
                     <th>ROAS</th>
+                    <th>标签</th>
+                    <th className="col-actions">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {productTable.length === 0 ? (
-                    <tr>
-                      <td colSpan={6}>暂无商品数据。</td>
-                    </tr>
-                  ) : (
-                    productTable
-                      .slice()
-                      .sort((a, b) => b.gmv - a.gmv)
-                      .map((row) => {
-                        const rowRoas = row.spend > 0 ? row.gmv / row.spend : null;
+                  {creativesByStatus.map((group) => (
+                    <Fragment key={group.key}>
+                      <tr className="gmvmax-creatives__group-row">
+                        <td colSpan={10}>{group.label}</td>
+                      </tr>
+                      {group.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={10}>该状态暂无创意。</td>
+                        </tr>
+                      ) : null}
+                      {group.items.map((creative) => {
+                        const metrics = creative.metrics || {};
+                        const boosting = isCreativeBoosting(creative);
+                        const isSeed = isSeedCreative(creative);
                         return (
-                          <tr key={row.id}>
-                            <td>{row.name}</td>
-                            <td>${formatMoney(row.spend)}</td>
-                            <td>${formatMoney(row.gmv)}</td>
-                            <td>{formatNumber(row.orders)}</td>
-                            <td>{formatNumber(row.clicks)}</td>
-                            <td>{rowRoas === null ? '—' : rowRoas.toFixed(2)}</td>
+                          <tr key={creative.creativeId}>
+                            <td>
+                              <div className="gmvmax-creatives__name">
+                                {creative.thumbnail ? (
+                                  <img
+                                    src={creative.thumbnail}
+                                    alt={creative.name || '创意封面'}
+                                    className="gmvmax-creatives__thumb"
+                                  />
+                                ) : (
+                                  <span className="gmvmax-creatives__thumb gmvmax-creatives__thumb--placeholder">🎞️</span>
+                                )}
+                                <div>
+                                  <div className="gmvmax-creatives__label">{creative.name}</div>
+                                  <div className="gmvmax-creatives__id">ID: {creative.creativeId}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="gmvmax-status-pill gmvmax-status-pill--muted">
+                                {creativeStatusLabelMap.get(creative.status || 'UNKNOWN') || creative.status}
+                              </span>
+                            </td>
+                            <td>{formatNumber(metrics.impressions)}</td>
+                            <td>{formatNumber(metrics.clicks)}</td>
+                            <td>{formatNumber(metrics.orders)}</td>
+                            <td>${formatMoney(metrics.spend)}</td>
+                            <td>${formatMoney(metrics.gmv)}</td>
+                            <td>{metrics.roas ? metrics.roas.toFixed(2) : '—'}</td>
+                            <td>
+                              <div className="gmvmax-tag-list">
+                                {boosting ? (
+                                  <span className="gmvmax-tag gmvmax-tag--heat" title="加热中">
+                                    🔥 加热中
+                                  </span>
+                                ) : null}
+                                {isSeed ? (
+                                  <span className="gmvmax-tag" title={SEED_RULE_TEXT}>
+                                    ⭐ 种子
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="col-actions">
+                              {HEATABLE_CREATIVE_STATUSES.has(creative.status) ? (
+                                <div className="gmvmax-series-actions">
+                                  {boosting ? (
+                                    <button
+                                      type="button"
+                                      className="gmvmax-button gmvmax-button--ghost"
+                                      onClick={() => handleStopHeat(creative)}
+                                      disabled={creativeActionMutation.isPending}
+                                    >
+                                      停止加热
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="gmvmax-button gmvmax-button--ghost"
+                                      onClick={() => handleBoostCreative(creative)}
+                                      disabled={creativeActionMutation.isPending}
+                                    >
+                                      加热
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="gmvmax-creatives__badge gmvmax-creatives__badge--muted">无操作</span>
+                              )}
+                            </td>
                           </tr>
                         );
-                      })
-                  )}
+                      })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div className="gmvmax-dashboard__table">
+            <h3>{GmvMaxTexts.products}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>商品</th>
+                  <th>花费</th>
+                  <th>GMV</th>
+                  <th>订单</th>
+                  <th>点击</th>
+                  <th>ROAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productTable.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>暂无商品数据。</td>
+                  </tr>
+                ) : (
+                  productTable
+                    .slice()
+                    .sort((a, b) => b.gmv - a.gmv)
+                    .map((row) => {
+                      const rowRoas = row.spend > 0 ? row.gmv / row.spend : null;
+                      return (
+                        <tr key={row.id}>
+                          <td>{row.name}</td>
+                          <td>${formatMoney(row.spend)}</td>
+                          <td>${formatMoney(row.gmv)}</td>
+                          <td>{formatNumber(row.orders)}</td>
+                          <td>{formatNumber(row.clicks)}</td>
+                          <td>{rowRoas === null ? '—' : rowRoas.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
       )}

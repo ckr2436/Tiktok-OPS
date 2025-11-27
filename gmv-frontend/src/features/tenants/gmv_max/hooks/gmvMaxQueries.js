@@ -8,7 +8,9 @@ import {
   getGmvMaxCampaign,
   getGmvMaxConfig,
   getGmvMaxMetrics,
+  getGmvMaxBindingStatus,
   autoDiscoverGmvMaxBinding,
+  rebindAutoGmvMaxBinding,
   getGmvMaxOptions,
   getGmvMaxIdentities,
   getGmvMaxStrategy,
@@ -27,6 +29,7 @@ import {
   previewGmvMaxStrategy,
   syncAdvertiserBalance,
   syncGmvMaxCampaigns,
+  getGmvMaxSyncInterval,
   syncGmvMaxMetrics,
   updateGmvMaxSyncInterval,
   updateGmvMaxConfig,
@@ -160,6 +163,16 @@ export function useGmvMaxCampaignsQuery(workspaceId, provider, authId, params = 
   });
 }
 
+export function useGmvMaxBindingStatusQuery(workspaceId, provider, authId, params = {}, options = {}) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('binding-status', workspaceId, provider, authId, params),
+    queryFn: () => getGmvMaxBindingStatus(workspaceId, provider, authId, params),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
+    ...rest,
+  });
+}
+
 export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId, options = {}) {
   const { enabled, ...rest } = options;
   return useQuery({
@@ -225,6 +238,13 @@ export function useGmvMaxAutoBindingMutation(workspaceId, provider, authId, opti
   });
 }
 
+export function useGmvMaxRebindAutoMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => rebindAutoGmvMaxBinding(workspaceId, provider, authId, payload),
+    ...options,
+  });
+}
+
 export function useSyncAdvertiserBalanceMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => syncAdvertiserBalance(workspaceId, provider, authId, payload),
@@ -272,6 +292,16 @@ export function useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId, op
   return useMutation({
     mutationFn: (payload) => syncGmvMaxCampaigns(workspaceId, provider, authId, payload),
     ...options,
+  });
+}
+
+export function useGmvMaxSyncIntervalQuery(workspaceId, provider, authId, options = {}) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('sync-interval', workspaceId, provider, authId),
+    queryFn: () => getGmvMaxSyncInterval(workspaceId, provider, authId),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
+    ...rest,
   });
 }
 

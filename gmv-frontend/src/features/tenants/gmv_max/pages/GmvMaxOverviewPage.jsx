@@ -14,12 +14,13 @@ import {
   useGmvMaxConfigQuery,
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
-  useGmvMaxAutoBindingMutation,
+  useGmvMaxBindingStatusQuery,
+  useGmvMaxRebindAutoMutation,
+  useGmvMaxSyncIntervalQuery,
   useProductsQuery,
   useSyncAccountMetadataMutation,
-  useSyncAdvertiserBalanceMutation,
   useSyncAccountProductsMutation,
-  useSyncGmvMaxCampaignsMutation,
+  useSyncAdvertiserBalanceMutation,
   useUpdateGmvMaxSyncIntervalMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxStrategyMutation,
@@ -28,15 +29,8 @@ import {
   clampPageSize,
   getGmvMaxCampaign,
   getGmvMaxOptions,
-  getGmvMaxSyncStatus,
 } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
-import {
-  MAX_SCOPE_PRESETS,
-  buildScopePresetId,
-  loadScopePresets,
-  saveScopePresets,
-} from '../utils/scopePresets.js';
 
 import {
   PROVIDER,
@@ -46,11 +40,7 @@ import {
   DEFAULT_SCOPE,
   formatError,
   formatISODate,
-  getRecentDateRange,
   getProductIdentifier,
-  getProductAvailabilityStatus,
-  isProductAvailable,
-  getAvailableProductIds,
   normalizeIdValue,
   shouldFetchGmvMaxSeries,
   addId,
@@ -62,9 +52,6 @@ import {
   collectStoreIdsFromCampaign,
   collectStoreIdsFromDetail,
   addProductIdentifier,
-  collectProductIdsFromList,
-  collectProductIdsFromCampaign,
-  collectProductIdsFromDetail,
   buildScopeMatchResult,
   matchesBusinessCenter,
   matchesAdvertiser,
@@ -91,7 +78,6 @@ import {
   summariseMetricsByCampaign,
   formatMoney,
   formatRoi,
-  formatCampaignStatus,
   getCampaignStatusMeta,
   isCampaignEnabledStatus,
   extractProductsFromDetail,
@@ -99,12 +85,18 @@ import {
   toChoiceList,
   extractChoiceList,
 } from './gmvMaxOverview/helpers.js';
-import { ErrorBlock, SeriesErrorNotice } from './gmvMaxOverview/ErrorHandling.jsx';
+import {
+  formatRangeAsDateStrings,
+  getAdvertiserRecentRange,
+  getAdvertiserTodayRange,
+  resolveTimezoneLabel,
+} from '../utils/timezone.js';
+import { SeriesErrorNotice } from './gmvMaxOverview/ErrorHandling.jsx';
 import ProductSelectionPanel from './gmvMaxOverview/ProductSelectionPanel.jsx';
-import CampaignCard from './gmvMaxOverview/CampaignCard.jsx';
 import CreateSeriesModal from './gmvMaxOverview/CreateSeriesModal.jsx';
 import EditSeriesModal from './gmvMaxOverview/EditSeriesModal.jsx';
 import { GmvMaxTexts } from '../locale.js';
+import { useGmvSyncTask } from '../hooks/useGmvSyncTask.js';
 
 const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertiserId }) => {
   if (!config || !storeId) return false;
@@ -121,24 +113,14 @@ const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
 const SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 
-const loadAutoRefreshInterval = (storageKey) => {
-  if (typeof window === 'undefined' || !storageKey) return DEFAULT_AUTO_REFRESH_INTERVAL;
-  const saved = Number(window.localStorage.getItem(storageKey));
-  return AUTO_REFRESH_OPTIONS.includes(saved) ? saved : DEFAULT_AUTO_REFRESH_INTERVAL;
-};
-
 export default function GmvMaxOverviewPage() {
   const { wid: workspaceId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const provider = PROVIDER;
-  const metricsRange = useMemo(() => getRecentDateRange(7), []);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(() =>
-    loadAutoRefreshInterval(workspaceId ? `gmvMax:autoRefresh:${workspaceId}:${provider}` : ''),
-  );
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(DEFAULT_AUTO_REFRESH_INTERVAL);
   const [scope, setScope] = useState(() => ({ ...DEFAULT_SCOPE }));
-  const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState('');
   const [syncError, setSyncError] = useState(null);
@@ -146,30 +128,27 @@ export default function GmvMaxOverviewPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState(null);
   const [lastSyncAt, setLastSyncAt] = useState(null);
-  const [autoBindingStatus, setAutoBindingStatus] = useState(null);
+  const [advertiserTimezone, setAdvertiserTimezone] = useState(() => resolveTimezoneLabel());
   const [includeDeletedCampaigns, setIncludeDeletedCampaigns] = useState(false);
-  const [hidePaused, setHidePaused] = useState(false);
-  const [hideEnded, setHideEnded] = useState(false);
+  const [seriesStatusFilter, setSeriesStatusFilter] = useState('running');
+  const [seriesStoreFilter, setSeriesStoreFilter] = useState('');
+  const [seriesSearch, setSeriesSearch] = useState('');
   const [sortOption, setSortOption] = useState('latest');
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
-  const [scopePresets, setScopePresets] = useState([]);
-  const [selectedPresetId, setSelectedPresetId] = useState('');
-  const [presetLabelInput, setPresetLabelInput] = useState('');
   const autoOptionsRefreshAccounts = useRef(new Set());
-  const autoBindingKeyRef = useRef('');
   const syncInFlightRef = useRef(false);
   const performSyncRef = useRef(null);
   const lastAutoSyncScopeRef = useRef('');
-  const autoRefreshStorageKey = useMemo(
-    () => (workspaceId ? `gmvMax:autoRefresh:${workspaceId}:${provider}` : ''),
-    [provider, workspaceId],
-  );
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
   const advertiserId = scope.advertiserId ? String(scope.advertiserId) : '';
   const storeId = scope.storeId ? String(scope.storeId) : '';
   const isScopeReady = Boolean(authId && businessCenterId && advertiserId && storeId);
+  const autoRefreshMs = useMemo(
+    () => (autoRefreshInterval ? autoRefreshInterval * 60 * 1000 : undefined),
+    [autoRefreshInterval],
+  );
   const scopeOptionsParams = EMPTY_QUERY_PARAMS;
   const scopeOptionsQueryKey = useMemo(
     () => ['gmvMax', 'options', workspaceId, provider, authId, scopeOptionsParams],
@@ -179,6 +158,33 @@ export default function GmvMaxOverviewPage() {
     () => ['gmvMax', 'accounts', workspaceId, provider, EMPTY_QUERY_PARAMS],
     [provider, workspaceId],
   );
+
+  const syncIntervalQuery = useGmvMaxSyncIntervalQuery(workspaceId, provider, authId, {
+    enabled: Boolean(workspaceId && provider && authId),
+  });
+
+  const refreshIntervalOptions = useMemo(() => {
+    const fromApi = syncIntervalQuery.data?.available;
+    if (Array.isArray(fromApi)) {
+      const normalized = fromApi
+        .map((value) => Number(value))
+        .filter((value) => AUTO_REFRESH_OPTIONS.includes(value));
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    }
+    return AUTO_REFRESH_OPTIONS;
+  }, [syncIntervalQuery.data?.available]);
+
+  useEffect(() => {
+    const interval = syncIntervalQuery.data?.interval;
+    if (interval) {
+      const normalized = Number(interval);
+      if (refreshIntervalOptions.includes(normalized) && normalized !== autoRefreshInterval) {
+        setAutoRefreshInterval(normalized);
+      }
+    }
+  }, [autoRefreshInterval, refreshIntervalOptions, syncIntervalQuery.data?.interval]);
 
   useEffect(() => {
     const handleHttpError = (event) => {
@@ -194,19 +200,9 @@ export default function GmvMaxOverviewPage() {
   }, []);
 
   useEffect(() => {
-    setAutoRefreshInterval(loadAutoRefreshInterval(autoRefreshStorageKey));
-  }, [autoRefreshStorageKey]);
-
-  useEffect(() => {
-    if (!autoRefreshStorageKey || typeof window === 'undefined') return;
-    window.localStorage.setItem(autoRefreshStorageKey, String(autoRefreshInterval));
-  }, [autoRefreshInterval, autoRefreshStorageKey]);
-
-  useEffect(() => {
     if (!workspaceId) {
       setScope({ ...DEFAULT_SCOPE });
       setHasLoadedScope(false);
-      setSelectedPresetId('');
       return;
     }
     const saved = loadScope(workspaceId, provider);
@@ -222,17 +218,6 @@ export default function GmvMaxOverviewPage() {
     }
     setHasLoadedScope(true);
   }, [provider, workspaceId]);
-
-  useEffect(() => {
-    if (!workspaceId) {
-      setScopePresets([]);
-      setSelectedPresetId('');
-      return;
-    }
-    const presets = loadScopePresets(workspaceId);
-    setScopePresets(presets);
-    setSelectedPresetId('');
-  }, [workspaceId]);
 
   useEffect(() => {
     if (!workspaceId || !hasLoadedScope) return;
@@ -294,7 +279,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     {
       enabled: Boolean(workspaceId && provider && authId),
-      refetchInterval: 30 * 60 * 1000,
+      refetchInterval: autoRefreshMs,
     },
   );
 
@@ -311,6 +296,29 @@ export default function GmvMaxOverviewPage() {
     businessCenterId,
     advertiserId,
   });
+
+  const bindingStatusParams = useMemo(() => (storeId ? { store_id: storeId } : {}), [storeId]);
+  const bindingStatusQuery = useGmvMaxBindingStatusQuery(
+    workspaceId,
+    provider,
+    authId,
+    bindingStatusParams,
+    {
+      enabled: Boolean(workspaceId && provider && authId && storeId),
+    },
+  );
+  const bindingStatus = bindingStatusQuery.data || null;
+  const bindingReady = Boolean(bindingStatus?.binding_ready);
+  const bindingStatusRefreshing = bindingStatusQuery.isLoading || bindingStatusQuery.isFetching;
+  const bindingErrorMessage = useMemo(() => {
+    if (!bindingReady && bindingStatus?.error_message) {
+      return bindingStatus.error_message;
+    }
+    if (bindingStatusQuery.error) {
+      return formatError(bindingStatusQuery.error);
+    }
+    return '';
+  }, [bindingReady, bindingStatus?.error_message, bindingStatusQuery.error]);
 
   useEffect(() => {
     if (!bindingConfig || !savedStoreId) return;
@@ -470,6 +478,17 @@ export default function GmvMaxOverviewPage() {
     return ensureArray(scopeOptions.stores || scopeOptions.store_list);
   }, [scopeOptions]);
 
+  const advertiserById = useMemo(() => {
+    const map = new Map();
+    advertiserList.forEach((adv) => {
+      const id = getAdvertiserId(adv);
+      if (id) {
+        map.set(String(id), adv);
+      }
+    });
+    return map;
+  }, [advertiserList]);
+
   const links = scopeOptions.links || {};
   const bcToAdvertisers = useMemo(
     () => extractLinkMap(links, 'bc_to_advertisers', 'bcToAdvertisers'),
@@ -609,6 +628,29 @@ export default function GmvMaxOverviewPage() {
     return map;
   }, [advertiserToBusinessCenter, advertiserToStores, storeList, storeToAdvertiserId]);
 
+  const resolvedAdvertiserId = useMemo(
+    () => advertiserId || storeToAdvertiserId.get(storeId) || savedAdvertiserId || '',
+    [advertiserId, savedAdvertiserId, storeId, storeToAdvertiserId],
+  );
+
+  const advertiserTimezoneFromOptions = useMemo(() => {
+    if (!resolvedAdvertiserId) return '';
+    const advertiser = advertiserById.get(String(resolvedAdvertiserId));
+    if (!advertiser) return '';
+    return (
+      advertiser.display_timezone ||
+      advertiser.displayTimezone ||
+      advertiser.timezone ||
+      advertiser.time_zone ||
+      advertiser.timeZone ||
+      ''
+    );
+  }, [advertiserById, resolvedAdvertiserId]);
+
+  useEffect(() => {
+    setAdvertiserTimezone(resolveTimezoneLabel(advertiserTimezoneFromOptions));
+  }, [advertiserTimezoneFromOptions]);
+
   const storeOptions = useMemo(() => {
     if (aggregatedStoreOptions.length > 0) {
       return aggregatedStoreOptions;
@@ -666,8 +708,7 @@ export default function GmvMaxOverviewPage() {
     storeToBusinessCenter,
   ]);
 
-  const autoBindingVerified =
-    autoBindingStatus?.variant === 'success' || bindingConfigMatchedScope === true;
+  const autoBindingVerified = Boolean(bindingReady || bindingConfigMatchedScope === true);
 
   const campaignsQueryEnabled = shouldFetchGmvMaxSeries({
     workspaceId,
@@ -851,24 +892,29 @@ export default function GmvMaxOverviewPage() {
         message: `检测到 ${savedScope} 的已保存绑定。请选择对应店铺或为当前范围重新执行自动绑定。`,
       };
     }
-    if (autoBindingStatus) {
+    if (bindingStatusQuery.isLoading || bindingStatusQuery.isFetching) {
+      return { variant: 'muted', message: '绑定状态检查中…' };
+    }
+    if (bindingStatus && !bindingStatus.binding_ready) {
       return {
-        variant: autoBindingStatus.variant || 'muted',
-        message: autoBindingStatus.message || '暂无法获取自动绑定状态，请重试。',
+        variant: 'error',
+        message: bindingStatus.error_message || 'GMV Max 绑定未就绪，请重试。',
       };
     }
     if (!autoBindingVerified) {
       return {
         variant: 'warning',
-        message: '自动绑定正在进行中，需验证后方可同步。',
+        message: '正在等待绑定完成后再同步 GMV Max。',
       };
     }
-    return { variant: 'success', message: '自动绑定已验证，可开始同步 GMV Max。' };
+    return { variant: 'success', message: '绑定已确认，可开始同步 GMV Max。' };
   }, [
-    autoBindingStatus,
     bindingConfigError,
     bindingConfigFetching,
     bindingConfigLoading,
+    bindingStatus,
+    bindingStatusQuery.isFetching,
+    bindingStatusQuery.isLoading,
     savedAdvertiserId,
     savedBusinessCenterId,
     savedStoreId,
@@ -877,27 +923,15 @@ export default function GmvMaxOverviewPage() {
   ]);
   const scopeStatusClassName = `gmvmax-status-banner gmvmax-status-banner--${scopeStatus.variant || 'muted'}`;
 
-    const defaultPresetLabel = useMemo(() => {
-      const parts = [
-        selectedAccountLabel,
-        selectedBusinessCenterLabel,
-        selectedAdvertiserLabel,
-        selectedStoreLabel,
-      ].filter(Boolean);
-      return parts.join(' / ');
-    }, [
-      selectedAccountLabel,
-      selectedAdvertiserLabel,
-      selectedBusinessCenterLabel,
-      selectedStoreLabel,
-    ]);
-
-    const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
+  const updateSyncIntervalMutation = useUpdateGmvMaxSyncIntervalMutation(workspaceId, provider, authId);
 
   const handleAutoRefreshChange = useCallback(
     (event) => {
       const value = Number(event?.target?.value || DEFAULT_AUTO_REFRESH_INTERVAL);
-      const normalized = AUTO_REFRESH_OPTIONS.includes(value) ? value : DEFAULT_AUTO_REFRESH_INTERVAL;
+      const allowedOptions = refreshIntervalOptions.length > 0 ? refreshIntervalOptions : AUTO_REFRESH_OPTIONS;
+      const normalized = allowedOptions.includes(value)
+        ? value
+        : allowedOptions[0] || DEFAULT_AUTO_REFRESH_INTERVAL;
       setIntervalNotice(null);
       setAutoRefreshInterval(normalized);
       if (!workspaceId || !authId) return;
@@ -905,10 +939,19 @@ export default function GmvMaxOverviewPage() {
       updateSyncIntervalMutation.mutate(
         { interval: normalized },
         {
-          onSuccess: () => {
+          onSuccess: (data) => {
+            const nextInterval =
+              data?.interval && allowedOptions.includes(Number(data.interval))
+                ? Number(data.interval)
+                : normalized;
+            setAutoRefreshInterval(nextInterval);
+            queryClient.setQueryData(
+              ['gmvMax', 'sync-interval', workspaceId, provider, authId],
+              (prev) => ({ ...(prev || {}), interval: nextInterval }),
+            );
             setIntervalNotice({
               variant: 'success',
-              message: '同步间隔已更新，将在下一轮生效。',
+              message: data?.message || '同步间隔已更新，将在下一轮生效。',
             });
           },
           onError: (error) => {
@@ -917,8 +960,35 @@ export default function GmvMaxOverviewPage() {
         },
       );
     },
-    [authId, updateSyncIntervalMutation, workspaceId],
+    [
+      authId,
+      provider,
+      queryClient,
+      refreshIntervalOptions,
+      updateSyncIntervalMutation,
+      workspaceId,
+    ],
   );
+
+  const handleRebindBinding = useCallback(async () => {
+    if (!workspaceId || !provider || !authId || !storeId) return;
+    setSyncError(null);
+    try {
+      await rebindAutoMutation.mutateAsync({ store_id: storeId });
+      await Promise.all([bindingStatusQuery.refetch(), bindingConfigQuery.refetch()]);
+      setSyncNotice({ variant: 'success', message: '已重新尝试绑定，请稍后刷新绑定状态。' });
+    } catch (error) {
+      setSyncError(formatError(error));
+    }
+  }, [
+    authId,
+    bindingConfigQuery,
+    bindingStatusQuery,
+    provider,
+    rebindAutoMutation,
+    storeId,
+    workspaceId,
+  ]);
 
   const handleAccountChange = useCallback((event) => {
     const value = event?.target?.value || '';
@@ -928,20 +998,11 @@ export default function GmvMaxOverviewPage() {
       advertiserId: null,
       storeId: null,
     });
-    setSelectedPresetId('');
   }, []);
 
   const handleStoreChange = useCallback((event) => {
     const value = event?.target?.value || '';
     const matched = storeOptions.find((option) => option.value === value);
-    if (matched?.needsAuthorization) {
-      setAutoBindingStatus({
-        variant: 'warning',
-        message: `店铺 ${matched.label} 缺少有效的广告主授权，请先完成授权。`,
-      });
-    } else {
-      setAutoBindingStatus(null);
-    }
     setScope((prev) => ({
       ...prev,
       accountAuthId: matched?.authId || prev.accountAuthId,
@@ -949,69 +1010,7 @@ export default function GmvMaxOverviewPage() {
       bcId: matched?.bcId ? String(matched.bcId) : null,
       storeId: value ? String(value) : null,
     }));
-    setSelectedPresetId('');
   }, [storeOptions]);
-
-  const handlePresetChange = useCallback(
-    (event) => {
-      const presetId = event?.target?.value || '';
-      setSelectedPresetId(presetId);
-      const preset = scopePresets.find((item) => item.id === presetId);
-      if (!preset) return;
-      setScope({
-        accountAuthId: preset.accountAuthId || null,
-        bcId: preset.bcId || null,
-        advertiserId: preset.advertiserId || null,
-        storeId: preset.storeId || null,
-      });
-    },
-    [scopePresets],
-  );
-
-  const handleDeletePreset = useCallback(() => {
-    if (!workspaceId || !selectedPresetId) return;
-    setScopePresets((prev) => {
-      const next = prev.filter((preset) => preset.id !== selectedPresetId);
-      saveScopePresets(workspaceId, next);
-      return next;
-    });
-    setSelectedPresetId('');
-  }, [selectedPresetId, workspaceId]);
-
-  const handleSavePreset = useCallback(() => {
-    if (!workspaceId || !isScopeReady) return;
-    const label = presetLabelInput.trim() || defaultPresetLabel || 'GMV Max 范围预设';
-    const preset = {
-      id: buildScopePresetId({
-        accountAuthId: authId,
-        bcId: businessCenterId,
-        advertiserId,
-        storeId,
-      }),
-      label,
-      accountAuthId: authId,
-      bcId: businessCenterId,
-      advertiserId,
-      storeId,
-    };
-    setScopePresets((prev) => {
-      const filtered = prev.filter((item) => item.id !== preset.id);
-      const next = [preset, ...filtered].slice(0, MAX_SCOPE_PRESETS);
-      saveScopePresets(workspaceId, next);
-      return next;
-    });
-    setPresetLabelInput('');
-    setSelectedPresetId(preset.id);
-  }, [
-    advertiserId,
-    authId,
-    businessCenterId,
-    defaultPresetLabel,
-    isScopeReady,
-    presetLabelInput,
-    storeId,
-    workspaceId,
-  ]);
 
   useEffect(() => {
     setSelectedProductIds([]);
@@ -1027,7 +1026,6 @@ export default function GmvMaxOverviewPage() {
       advertiserId: null,
       storeId: null,
     }));
-    setSelectedPresetId('');
   }, [authId, businessCenterId, businessCenterOptions, scopeOptionsReady]);
 
   useEffect(() => {
@@ -1039,7 +1037,6 @@ export default function GmvMaxOverviewPage() {
       advertiserId: null,
       storeId: null,
     }));
-    setSelectedPresetId('');
   }, [advertiserId, advertiserOptions, businessCenterId, scopeOptionsReady]);
 
   useEffect(() => {
@@ -1050,7 +1047,6 @@ export default function GmvMaxOverviewPage() {
       ...prev,
       storeId: null,
     }));
-    setSelectedPresetId('');
   }, [scopeOptionsReady, storeId, storeOptions]);
 
   useEffect(() => {
@@ -1107,20 +1103,42 @@ export default function GmvMaxOverviewPage() {
     });
   }, [campaignsQuery.data, campaignsQueryEnabled, includeDeletedCampaigns]);
 
+  const metricsRange = useMemo(
+    () => getAdvertiserRecentRange(7, advertiserTimezone),
+    [advertiserTimezone],
+  );
+
+  const metricsRangeParams = useMemo(
+    () => ({
+      ...formatRangeAsDateStrings(metricsRange),
+      store_ids: storeId ? [String(storeId)] : undefined,
+    }),
+    [metricsRange, storeId],
+  );
+
+  const todayRange = useMemo(() => getAdvertiserTodayRange(advertiserTimezone), [advertiserTimezone]);
+  const todayRangeParams = useMemo(
+    () => ({
+      ...formatRangeAsDateStrings(todayRange),
+      store_ids: storeId ? [String(storeId)] : undefined,
+    }),
+    [storeId, todayRange],
+  );
+
   const overallMetricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
     authId,
     'all',
     {
-      start_date: metricsRange.start,
-      end_date: metricsRange.end,
-      store_ids: storeId ? [String(storeId)] : undefined,
+      start_date: metricsRangeParams.start_date,
+      end_date: metricsRangeParams.end_date,
+      store_ids: metricsRangeParams.store_ids,
     },
     {
       enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled),
       staleTime: 60 * 1000,
-      refetchInterval: autoRefreshInterval * 60 * 1000,
+      refetchInterval: autoRefreshMs,
     },
   );
   const overallReport =
@@ -1132,6 +1150,29 @@ export default function GmvMaxOverviewPage() {
   const metricsByCampaign = useMemo(
     () => (overallReport ? summariseMetricsByCampaign(overallReport) : new Map()),
     [overallReport],
+  );
+
+  const todayMetricsQuery = useGmvMaxMetricsQuery(
+    workspaceId,
+    provider,
+    authId,
+    'all',
+    {
+      start_date: todayRangeParams.start_date,
+      end_date: todayRangeParams.end_date,
+      store_ids: todayRangeParams.store_ids,
+    },
+    {
+      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled),
+      staleTime: 60 * 1000,
+      refetchInterval: autoRefreshMs,
+    },
+  );
+  const todayReport =
+    todayMetricsQuery.data?.report || todayMetricsQuery.data?.data || todayMetricsQuery.data || null;
+  const todayMetricsByCampaign = useMemo(
+    () => (todayReport ? summariseMetricsByCampaign(todayReport) : new Map()),
+    [todayReport],
   );
 
   const campaignDetailQueries = useQueries({
@@ -1167,121 +1208,6 @@ export default function GmvMaxOverviewPage() {
     });
     return map;
   }, [campaignDetailQueries, campaigns]);
-
-  // 根据 GMV Max 系列的启用状态收集被占用的产品 ID。
-  // 只有当系列的 operation_status 为启用（通过 isCampaignEnabledStatus 判断）时，
-  // 才认为其中的产品被占用。否则即便产品在该系列下，也视为未占用。
-  const occupiedProductIds = useMemo(() => {
-    const ids = new Set();
-    // 遍历当前范围内的所有系列，只收集启用系列中的产品 ID。
-    campaigns.forEach((campaign) => {
-      // campaign.operation_status 或 campaign.operationStatus 表示系列是否启用
-      const status = campaign?.operation_status ?? campaign?.operationStatus;
-      if (isCampaignEnabledStatus(status)) {
-        collectProductIdsFromCampaign(campaign, ids);
-      }
-    });
-    // 同样地，从详情结果中收集启用系列中的产品 ID
-    campaignDetailQueries.forEach((result) => {
-      const detail = result?.data;
-      if (!detail) return;
-      const detailStatus =
-        detail?.campaign?.operation_status ?? detail?.campaign?.operationStatus;
-      if (isCampaignEnabledStatus(detailStatus)) {
-        collectProductIdsFromDetail(detail, ids);
-      }
-    });
-    return ids;
-  }, [campaignDetailQueries, campaigns]);
-
-  const productsWithAvailability = useMemo(() => {
-    if (!isScopeReady || products.length === 0) return [];
-
-    return products.map((product) => {
-      const id = getProductIdentifier(product); // 获取产品标识
-      if (!id) return product; // 如果没有标识符则跳过该产品
-
-    // 判断产品是否已被 GMV Max 占用（仅在启用的系列中才视为占用）
-      const isOccupied = occupiedProductIds.has(id);
-      const nextAdsStatus = isOccupied ? 'OCCUPIED' : 'UNOCCUPIED';  // 设定占用状态
-
-      // 如果当前状态已经是正确的 GMV Max 占用状态，无需更改
-      if (String(product.gmv_max_ads_status || '').toUpperCase() === nextAdsStatus) {
-        return product; // 如果状态一致，直接返回原产品
-      }
-
-      // 返回修改后的产品对象
-      return {
-        ...product,
-        gmv_max_ads_status: nextAdsStatus,  // 修改 GMV Max 占用状态
-      };
-    });
-  }, [occupiedProductIds, isScopeReady, products]);
-
-  const unassignedProducts = useMemo(() => {
-    if (!isScopeReady || productsWithAvailability.length === 0) return [];
-
-    return productsWithAvailability.filter((product) => {
-      const id = getProductIdentifier(product); // 获取产品标识
-      if (!id) return false;  // 如果没有标识符则跳过该产品
-
-      // 判断产品是否未被 GMV Max 占用
-      const isNotOccupied = product.gmv_max_ads_status === 'UNOCCUPIED';
-
-      // 判断产品是否可用
-      const isAvailable = isProductAvailable(product);
-
-      // 只有未被占用且可用的产品才会被视为有效
-      return isNotOccupied && isAvailable;
-    });
-  // 依赖项中不需要 occupiedProductIds，因为占用状态已经体现在 productsWithAvailability 中
-  }, [isScopeReady, productsWithAvailability]);
-
-  useEffect(() => {
-    setSelectedProductIds((prev) => {
-      if (!Array.isArray(prev) || prev.length === 0) return prev;
-      const availableIds = new Set(
-        unassignedProducts.map((product) => getProductIdentifier(product)).filter(Boolean),
-      );
-      const filtered = prev.filter((id) => availableIds.has(String(id)));
-      return filtered.length === prev.length ? prev : filtered;
-    });
-  }, [unassignedProducts]);
-
-  const selectedProductIdSet = useMemo(
-    () => new Set((selectedProductIds || []).map((id) => String(id))),
-    [selectedProductIds],
-  );
-
-  const handleToggleProduct = useCallback((id) => {
-    setSelectedProductIds((prev) => {
-      const next = new Set((prev || []).map((value) => String(value)));
-      const key = String(id);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return Array.from(next);
-    });
-  }, []);
-
-  const handleToggleAllProducts = useCallback(
-    (ids) => {
-      setSelectedProductIds((prev) => {
-        const next = new Set((prev || []).map((value) => String(value)));
-        const normalized = (ids || []).map(String);
-        const shouldDeselect = normalized.every((id) => next.has(id));
-        if (shouldDeselect) {
-          normalized.forEach((id) => next.delete(id));
-        } else {
-          normalized.forEach((id) => next.add(id));
-        }
-        return Array.from(next);
-      });
-    },
-    [],
-  );
 
   const campaignCards = useMemo(
     () =>
@@ -1345,51 +1271,43 @@ export default function GmvMaxOverviewPage() {
     });
   }, [filteredCampaignCards, metricsByCampaign, overallMetricsQuery.error, overallMetricsQuery.isLoading, resolveStoreName]);
 
-  const visibleCampaignCards = useMemo(() => {
-    return campaignCardsWithMeta.filter((card) => {
-      if (hidePaused && card.statusMeta?.category === 'paused') return false;
-      if (hideEnded && card.statusMeta?.category === 'ended') return false;
-      return true;
-    });
-  }, [campaignCardsWithMeta, hideEnded, hidePaused]);
+  const seriesRows = useMemo(() => {
+    const search = seriesSearch.trim().toLowerCase();
+    return campaignCardsWithMeta
+      .map((card) => {
+        const campaignId = card.campaign?.campaign_id || card.campaign?.id;
+        return {
+          ...card,
+          todaySummary: campaignId ? todayMetricsByCampaign.get(String(campaignId)) || null : null,
+          storeId: getStoreId(card.campaign) || card.campaign?.store_id || card.campaign?.storeId,
+        };
+      })
+      .filter((card) => {
+        if (seriesStatusFilter !== 'all' && card.statusMeta?.category !== seriesStatusFilter) return false;
+        if (seriesStoreFilter && card.storeId && String(card.storeId) !== String(seriesStoreFilter)) return false;
+        if (search) {
+          const name =
+            card.campaign?.name || card.campaign?.campaign_name || card.detail?.campaign?.name || '';
+          if (!String(name).toLowerCase().includes(search)) return false;
+        }
+        return true;
+      });
+  }, [campaignCardsWithMeta, seriesSearch, seriesStatusFilter, seriesStoreFilter, todayMetricsByCampaign]);
 
-  const sortedCampaignCards = useMemo(() => {
-    const list = [...visibleCampaignCards];
-    const getRoas = (card) => card.metricsSummary?.roas ?? -Infinity;
-    const getGmv = (card) => card.metricsSummary?.gmv ?? 0;
-    const getCreated = (card) => Number.isFinite(card.createdAt) ? card.createdAt : 0;
+  const sortedSeriesRows = useMemo(() => {
+    const list = [...seriesRows];
+    const getRoas = (card) => card.todaySummary?.roas ?? card.metricsSummary?.roas ?? -Infinity;
+    const getGmv = (card) => card.todaySummary?.gmv ?? card.metricsSummary?.gmv ?? 0;
+    const getSpend = (card) => card.todaySummary?.spend ?? card.metricsSummary?.spend ?? 0;
+    const getCreated = (card) => (Number.isFinite(card.createdAt) ? card.createdAt : 0);
     list.sort((a, b) => {
-      if (sortOption === 'roas') {
-        return getRoas(b) - getRoas(a);
-      }
-      if (sortOption === 'gmv') {
-        return getGmv(b) - getGmv(a);
-      }
+      if (sortOption === 'roas') return getRoas(b) - getRoas(a);
+      if (sortOption === 'gmv') return getGmv(b) - getGmv(a);
+      if (sortOption === 'spend') return getSpend(b) - getSpend(a);
       return getCreated(b) - getCreated(a);
     });
     return list;
-  }, [sortOption, visibleCampaignCards]);
-
-  const groupedCampaignCards = useMemo(() => {
-    const groups = {
-      running: [],
-      paused: [],
-      ended: [],
-    };
-    sortedCampaignCards.forEach((card) => {
-      const category = card.statusMeta?.category;
-      if (category === 'ended') {
-        groups.ended.push(card);
-        return;
-      }
-      if (category === 'running') {
-        groups.running.push(card);
-        return;
-      }
-      groups.paused.push(card);
-    });
-    return groups;
-  }, [sortedCampaignCards]);
+  }, [seriesRows, sortOption]);
 
   const deletedCampaignCards = useMemo(() => {
     if (!includeDeletedCampaigns || !campaignsQueryEnabled) return [];
@@ -1410,128 +1328,11 @@ export default function GmvMaxOverviewPage() {
     storeId,
   ]);
 
-    const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
-    const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
-    const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
-    const syncMutation = useSyncGmvMaxCampaignsMutation(workspaceId, provider, authId);
-    const autoBindingMutation = useGmvMaxAutoBindingMutation(workspaceId, provider, authId);
-
-  useEffect(() => {
-    if (!bindingConfigMatchedScope || autoBindingMutation.isPending) return;
-    setAutoBindingStatus((prev) => {
-      if (prev?.variant === 'success') return prev;
-      return {
-        variant: 'success',
-        message: '已根据保存的配置确认 GMV Max 绑定，可立即同步 GMV Max。',
-      };
-    });
-    if (!autoBindingKeyRef.current && authId && storeId) {
-      autoBindingKeyRef.current = `${authId}:store:${storeId}`;
-    }
-  }, [authId, autoBindingMutation.isPending, bindingConfigMatchedScope, storeId]);
-
-  useEffect(() => {
-    if (!workspaceId || !provider || !authId || !storeId) {
-      setAutoBindingStatus(null);
-      autoBindingKeyRef.current = '';
-      return;
-    }
-    if (!scopeOptionsReady) {
-      setAutoBindingStatus(null);
-      autoBindingKeyRef.current = '';
-      return;
-    }
-    const derivedAdvertiserId = advertiserId || storeToAdvertiserId.get(storeId) || '';
-    const key = storeId && authId ? `${authId}:store:${storeId}` : '';
-    if (autoBindingMutation.isPending) {
-      return;
-    }
-    if (autoBindingKeyRef.current === key && !autoBindingMutation.isError) {
-      return;
-    }
-    autoBindingKeyRef.current = key;
-    let cancelled = false;
-    setAutoBindingStatus({ variant: 'muted', message: '正在自动检测 GMV Max 绑定…' });
-    (async () => {
-      try {
-        const response = await autoBindingMutation.mutateAsync({
-          store_id: storeId,
-          persist: true,
-        });
-        if (cancelled) return;
-        const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
-        const selected = (() => {
-          if (response?.selected) return response.selected;
-          const ready = candidates.find((candidate) => {
-            const status = (candidate?.authorization_status || '').toUpperCase();
-            const hasBc = Boolean(candidate?.store_authorized_bc_id);
-            return hasBc && status === 'EFFECTIVE';
-          });
-          const effectiveCandidate = candidates.find(
-            (candidate) => (candidate?.authorization_status || '').toUpperCase() === 'EFFECTIVE',
-          );
-          return ready || effectiveCandidate || null;
-        })();
-        if (!selected) {
-          setAutoBindingStatus({
-            variant: 'warning',
-            message: '无法确认所选店铺的 GMV Max 独占授权。',
-          });
-          return;
-        }
-        const nextAdvertiserId = selected.advertiser_id || derivedAdvertiserId;
-        const nextBusinessCenterId = selected.store_authorized_bc_id || businessCenterId;
-        setScope((prev) => {
-          const updatedAdvertiser = nextAdvertiserId || prev.advertiserId;
-          const updatedBcId = nextBusinessCenterId || prev.bcId;
-          if (updatedAdvertiser === prev.advertiserId && updatedBcId === prev.bcId) {
-            return prev;
-          }
-          return {
-            ...prev,
-            advertiserId: updatedAdvertiser || null,
-            bcId: updatedBcId || null,
-          };
-        });
-        const normalizedStatus = (selected.authorization_status || '').toUpperCase();
-        const effectiveStatuses = new Set(['EFFECTIVE', 'AUTHORIZED']);
-        if (normalizedStatus && !effectiveStatuses.has(normalizedStatus)) {
-          setAutoBindingStatus({
-            variant: 'warning',
-            message: `GMV Max exclusive authorization is ${normalizedStatus.toLowerCase()} for advertiser ${nextAdvertiserId}.`,
-          });
-          return;
-        }
-        setAutoBindingStatus({
-          variant: 'success',
-          message: `Confirmed GMV Max exclusive authorization for advertiser ${nextAdvertiserId}.`,
-        });
-        queryClient.invalidateQueries({ queryKey: ['gmvMax', 'config', workspaceId, provider, authId] });
-      } catch (error) {
-        if (cancelled) return;
-        setAutoBindingStatus({
-          variant: 'error',
-          message: `Failed to check GMV Max exclusive authorization: ${formatError(error)}`,
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    advertiserId,
-    authId,
-    autoBindingMutation.isError,
-    autoBindingMutation.isPending,
-    autoBindingMutation.mutateAsync,
-    businessCenterId,
-    queryClient,
-    provider,
-    scopeOptionsReady,
-    storeId,
-    storeToAdvertiserId,
-    workspaceId,
-  ]);
+  const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
+  const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
+  const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
+  const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
+  const rebindAutoMutation = useGmvMaxRebindAutoMutation(workspaceId, provider, authId);
 
   const refreshScopeQueries = useCallback(() => {
     if (!workspaceId || !provider || !authId) {
@@ -1548,7 +1349,6 @@ export default function GmvMaxOverviewPage() {
   const canCreateSeries = Boolean(isScopeReady);
 
   const performCampaignSync = useCallback(async () => {
-    const range = getRecentDateRange(7);
     const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
     const normalizedStoreId = storeId ? String(storeId) : undefined;
     const payload = {
@@ -1560,56 +1360,28 @@ export default function GmvMaxOverviewPage() {
       campaign_options: { page_size: clampPageSize(50) },
       report: {
         store_ids: normalizedStoreId ? [normalizedStoreId] : undefined,
-        start_date: range.start,
-        end_date: range.end,
+        start_date: metricsRangeParams.start_date,
+        end_date: metricsRangeParams.end_date,
         metrics: DEFAULT_REPORT_METRICS,
         dimensions: ['campaign_id', 'stat_time_day'],
         enable_total_metrics: true,
       },
     };
 
-    const response = await syncMutation.mutateAsync(payload);
-    const taskId = response?.task_id || response?.taskId;
-    const initialState = String(response?.state || '').toUpperCase();
-    if (!taskId) {
-      throw new Error('同步任务未被创建。');
-    }
-
-    if (['FAILURE', 'REVOKED'].includes(initialState)) {
-      const message = formatError(response?.error) || '同步失败，请稍后再试。';
-      throw new Error(message);
-    }
-    if (initialState === 'SUCCESS') {
+    const result = await syncTask.runSync(payload);
+    if (result?.state === 'SUCCESS') {
       await refreshScopeQueries();
       return 'SUCCESS';
     }
-
-    const maxAttempts = 90;
-    const delayMs = 2000;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const status = await getGmvMaxSyncStatus(workspaceId, provider, authId, taskId);
-      const state = String(status?.state || '').toUpperCase();
-      if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(state)) {
-        if (state === 'SUCCESS') {
-          await refreshScopeQueries();
-          return 'SUCCESS';
-        }
-        const message = formatError(status?.error) || '同步失败，请稍后再试。';
-        throw new Error(message);
-      }
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-    throw new Error('同步时间较长，请稍后查看任务状态。');
+    throw new Error('同步失败，请稍后再试。');
   }, [
     advertiserId,
     authId,
     businessCenterId,
-    provider,
+    metricsRangeParams,
     refreshScopeQueries,
     storeId,
-    syncMutation,
-    workspaceId,
+    syncTask,
   ]);
 
   const performSync = useCallback(async () => {
@@ -1628,9 +1400,9 @@ export default function GmvMaxOverviewPage() {
       setSyncError('绑定配置加载中，请稍后再试。');
       return;
     }
-    if (!autoBindingVerified) {
+    if (!bindingReady) {
       setSyncNotice(null);
-      setSyncError('自动绑定验证完成后才能同步 GMV Max 数据。');
+      setSyncError('请先完成店铺-广告主绑定后再同步 GMV Max 数据。');
       return;
     }
     if (lastSyncAt && now - lastSyncAt < SYNC_COOLDOWN_MS) {
@@ -1638,7 +1410,7 @@ export default function GmvMaxOverviewPage() {
       setSyncError('同步请求过于频繁，请稍后再试。');
       return;
     }
-    if (syncInFlightRef.current || isSyncing) return;
+    if (syncInFlightRef.current || isSyncing || syncTask.isSyncing) return;
 
     syncInFlightRef.current = true;
     setSyncNotice(null);
@@ -1708,6 +1480,7 @@ export default function GmvMaxOverviewPage() {
     balanceSyncMutation,
     bindingConfigFetching,
     bindingConfigLoading,
+    bindingReady,
     businessCenterId,
     isScopeReady,
     isSyncing,
@@ -1721,6 +1494,7 @@ export default function GmvMaxOverviewPage() {
     savedBusinessCenterId,
     scopeOptionsQuery,
     scopeOptionsQueryKey,
+    syncTask,
     storeId,
     workspaceId,
   ]);
@@ -1750,7 +1524,6 @@ export default function GmvMaxOverviewPage() {
 
   const handleSeriesCreated = useCallback(() => {
     setCreateModalOpen(false);
-    setSelectedProductIds([]);
     refreshScopeQueries();
   }, [
     authId,
@@ -1786,14 +1559,15 @@ export default function GmvMaxOverviewPage() {
       if (businessCenterId) params.set('businessCenterId', businessCenterId);
       if (advertiserId) params.set('advertiserId', advertiserId);
       if (storeId) params.set('storeId', storeId);
+      if (advertiserTimezone) params.set('timezone', advertiserTimezone);
       return params.toString() ? `?${params.toString()}` : '';
     },
-    [advertiserId, authId, businessCenterId, provider, storeId],
+    [advertiserId, advertiserTimezone, authId, businessCenterId, provider, storeId],
   );
 
   const handleManage = useCallback(
     (campaignId) => {
-      const search = buildCampaignSearchParams('automation');
+      const search = buildCampaignSearchParams('products');
       navigate(`/tenants/${workspaceId}/gmvmax/${encodeURIComponent(campaignId)}${search}`);
     },
     [buildCampaignSearchParams, navigate, workspaceId],
@@ -1837,6 +1611,19 @@ export default function GmvMaxOverviewPage() {
       {isSyncing ? (
         <div className="gmvmax-status-banner gmvmax-status-banner--muted">数据同步中…</div>
       ) : null}
+      {bindingErrorMessage ? (
+        <div className="gmvmax-status-banner gmvmax-status-banner--error gmvmax-status-banner--actions">
+          <span>{`同步失败：${bindingErrorMessage}`}</span>
+          <button
+            type="button"
+            className="gmvmax-button"
+            onClick={handleRebindBinding}
+            disabled={rebindAutoMutation.isPending || bindingStatusRefreshing}
+          >
+            {rebindAutoMutation.isPending ? '重试中…' : '重试绑定'}
+          </button>
+        </div>
+      ) : null}
       {syncError ? (
         <div className="gmvmax-status-banner gmvmax-status-banner--error">
           同步失败：{syncError}
@@ -1870,8 +1657,9 @@ export default function GmvMaxOverviewPage() {
               !isScopeReady ||
               bindingConfigLoading ||
               bindingConfigFetching ||
-              !autoBindingVerified
+              !bindingReady
             }
+            title={bindingReady ? undefined : '请先完成店铺-广告主绑定'}
           >
             {isSyncing ? '同步中…' : '同步数据'}
           </button>
@@ -1884,6 +1672,9 @@ export default function GmvMaxOverviewPage() {
                     ? `${GmvMaxTexts.balanceUpdatedPrefix} ${formatISODate(balanceTimestamp)}`
                     : GmvMaxTexts.balanceUnavailable}
                 </p>
+                {advertiserTimezone ? (
+                  <p className="gmvmax-balance-chip__timezone">{`按广告主时区：${advertiserTimezone}`}</p>
+                ) : null}
               </div>
             </div>
             <div className="gmvmax-balance-chip__values">
@@ -1919,26 +1710,15 @@ export default function GmvMaxOverviewPage() {
           </div>
         </header>
         <div className="gmvmax-card__body">
-          {autoBindingStatus ? (
-            <div
-              className={`gmvmax-status-banner ${
-                autoBindingStatus.variant
-                  ? `gmvmax-status-banner--${autoBindingStatus.variant}`
-                  : 'gmvmax-status-banner--muted'
-              }`}
-            >
-              {autoBindingStatus.message}
-            </div>
-          ) : null}
-          <div className="gmvmax-field-grid">
+          <div className="gmvmax-field-grid gmvmax-field-grid--two">
             <FormField label="数据自动刷新间隔">
               <div>
                 <select
                   value={autoRefreshInterval}
                   onChange={handleAutoRefreshChange}
-                  disabled={isSyncIntervalUpdating}
+                  disabled={isSyncIntervalUpdating || syncIntervalQuery.isLoading}
                 >
-                  {AUTO_REFRESH_OPTIONS.map((option) => (
+                  {refreshIntervalOptions.map((option) => (
                     <option key={option} value={option}>{`${option} 分钟`}</option>
                   ))}
                 </select>
@@ -1947,8 +1727,6 @@ export default function GmvMaxOverviewPage() {
                 </p>
               </div>
             </FormField>
-          </div>
-          <div className="gmvmax-field-grid">
             <FormField label="店铺">
               <select
                 value={storeId}
@@ -1964,95 +1742,7 @@ export default function GmvMaxOverviewPage() {
               </select>
             </FormField>
           </div>
-          <div className="gmvmax-field-grid">
-            <FormField label={`范围预设（最多 ${MAX_SCOPE_PRESETS} 个）`}>
-              <div className="gmvmax-presets-row">
-                <select value={selectedPresetId} onChange={handlePresetChange}>
-                  <option value="">选择预设</option>
-                  {scopePresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="gmvmax-button"
-                  onClick={handleDeletePreset}
-                  disabled={!selectedPresetId}
-                >
-                  删除
-                </button>
-              </div>
-            </FormField>
-            <FormField label="保存当前范围为预设">
-              <div className="gmvmax-presets-row">
-                <input
-                  type="text"
-                  value={presetLabelInput}
-                  onChange={(event) => setPresetLabelInput(event.target.value)}
-                  placeholder={defaultPresetLabel || '预设名称'}
-                  disabled={!isScopeReady}
-                />
-                <button
-                  type="button"
-                  className="gmvmax-button"
-                  onClick={handleSavePreset}
-                  disabled={!isScopeReady}
-                >
-                  保存预设
-                </button>
-              </div>
-            </FormField>
-          </div>
           <div className={scopeStatusClassName}>{scopeStatus.message}</div>
-        </div>
-      </section>
-
-      <section className="gmvmax-card">
-        <header className="gmvmax-card__header">
-          <div>
-            <h2>未分配商品</h2>
-            {selectedAccountLabel ? <p className="gmvmax-subtext">账户：{selectedAccountLabel}</p> : null}
-          </div>
-          <button
-            type="button"
-            className="gmvmax-button gmvmax-button--primary"
-            onClick={handleOpenCreate}
-            disabled={!canCreateSeries || unassignedProducts.length === 0}
-          >
-            {GmvMaxTexts.createSeries}
-          </button>
-        </header>
-        <div className="gmvmax-card__body">
-          {!authId ? <p className="gmvmax-placeholder">请选择店铺后查看商品。</p> : null}
-          {authId && !storeId ? (
-            <p className="gmvmax-placeholder">请选择店铺后加载商品。</p>
-          ) : null}
-          {isScopeReady ? (
-            <>
-              <ProductSelectionPanel
-                products={unassignedProducts}
-                selectedIds={selectedProductIdSet}
-                onToggle={handleToggleProduct}
-                onToggleAll={handleToggleAllProducts}
-                storeNames={storeNameById}
-                loading={productsLoading}
-                emptyMessage={
-                  productsLoading
-                    ? '商品加载中…'
-                    : '当前店铺下的商品均已分配至 GMV Max 系列。'
-                }
-              />
-              <p className="gmvmax-subtext">
-                已选择 {selectedProductIdSet.size} 个商品，可用于创建新的 GMV Max 系列。
-              </p>
-            </>
-          ) : null}
-          <ErrorBlock
-            error={isScopeReady ? productsQuery.error : null}
-            onRetry={productsQuery.refetch}
-          />
         </div>
       </section>
 
@@ -2094,38 +1784,76 @@ export default function GmvMaxOverviewPage() {
         <header className="gmvmax-card__header">
           <h2>{GmvMaxTexts.gmvMaxSeries}</h2>
           <div className="gmvmax-card__header-actions gmvmax-card__header-actions--wrap">
-            <label className="gmvmax-checkbox gmvmax-checkbox--inline">
-              <input
-                type="checkbox"
-                checked={includeDeletedCampaigns}
-                onChange={(event) => setIncludeDeletedCampaigns(event.target.checked)}
-              />
-              <span>{GmvMaxTexts.showDeletedSeries}</span>
-            </label>
-            <label className="gmvmax-checkbox gmvmax-checkbox--inline">
-              <input
-                type="checkbox"
-                checked={hidePaused}
-                onChange={(event) => setHidePaused(event.target.checked)}
-              />
-              <span>{GmvMaxTexts.hidePaused}</span>
-            </label>
-            <label className="gmvmax-checkbox gmvmax-checkbox--inline">
-              <input
-                type="checkbox"
-                checked={hideEnded}
-                onChange={(event) => setHideEnded(event.target.checked)}
-              />
-              <span>{GmvMaxTexts.hideEnded}</span>
-            </label>
-            <label className="gmvmax-select gmvmax-select--inline">
-              <span>{GmvMaxTexts.sortBy}</span>
-              <select value={sortOption} onChange={(event) => setSortOption(event.target.value)}>
-                <option value="latest">{GmvMaxTexts.sortLatest}</option>
-                <option value="roas">{GmvMaxTexts.sortBestRoas}</option>
-                <option value="gmv">{GmvMaxTexts.sortBestGmv}</option>
-              </select>
-            </label>
+            <button
+              type="button"
+              className="gmvmax-button gmvmax-button--primary"
+              onClick={handleOpenCreate}
+              disabled={!canCreateSeries}
+            >
+              {GmvMaxTexts.createSeries}
+            </button>
+            <div className="gmvmax-series-filters">
+              <div className="gmvmax-series-filters__row">
+                <label className="gmvmax-select gmvmax-select--inline">
+                  <span>{GmvMaxTexts.filterByStore}</span>
+                  <select
+                    value={seriesStoreFilter}
+                    onChange={(event) => setSeriesStoreFilter(event.target.value)}
+                  >
+                    <option value="">{GmvMaxTexts.allStores}</option>
+                    {storeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="gmvmax-chip-group" aria-label={GmvMaxTexts.filterByStatus}>
+                  {[
+                    { key: 'running', label: GmvMaxTexts.statusRunning },
+                    { key: 'paused', label: GmvMaxTexts.statusPaused },
+                    { key: 'ended', label: GmvMaxTexts.statusEnded },
+                    { key: 'all', label: GmvMaxTexts.statusAll },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`gmvmax-chip ${seriesStatusFilter === option.key ? 'gmvmax-chip--active' : ''}`}
+                      onClick={() => setSeriesStatusFilter(option.key)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="gmvmax-input gmvmax-input--inline">
+                  <input
+                    type="search"
+                    value={seriesSearch}
+                    onChange={(event) => setSeriesSearch(event.target.value)}
+                    placeholder={GmvMaxTexts.seriesSearchPlaceholder}
+                  />
+                </div>
+              </div>
+              <div className="gmvmax-series-filters__row gmvmax-series-filters__row--end">
+                <label className="gmvmax-select gmvmax-select--inline">
+                  <span>{GmvMaxTexts.sortBy}</span>
+                  <select value={sortOption} onChange={(event) => setSortOption(event.target.value)}>
+                    <option value="latest">{GmvMaxTexts.sortLatest}</option>
+                    <option value="spend">{GmvMaxTexts.sortTodaySpend}</option>
+                    <option value="roas">{GmvMaxTexts.sortBestRoas}</option>
+                    <option value="gmv">{GmvMaxTexts.sortBestGmv}</option>
+                  </select>
+                </label>
+                <label className="gmvmax-checkbox gmvmax-checkbox--inline">
+                  <input
+                    type="checkbox"
+                    checked={includeDeletedCampaigns}
+                    onChange={(event) => setIncludeDeletedCampaigns(event.target.checked)}
+                  />
+                  <span>{GmvMaxTexts.showDeletedSeries}</span>
+                </label>
+              </div>
+            </div>
           </div>
         </header>
         <div className="gmvmax-card__body">
@@ -2143,70 +1871,94 @@ export default function GmvMaxOverviewPage() {
           {campaignsQueryEnabled &&
           !campaignsLoading &&
           !campaignsQuery.error &&
-          sortedCampaignCards.length === 0 &&
+          sortedSeriesRows.length === 0 &&
           (!includeDeletedCampaigns || deletedCampaignCards.length === 0) ? (
             <p className="gmvmax-placeholder">{GmvMaxTexts.noSeriesForScope}</p>
           ) : null}
           {campaignsQueryEnabled ? (
-            <div className="gmvmax-card__groups">
-              {[{
-                key: 'running',
-                title: `${GmvMaxTexts.runningSeries} (${groupedCampaignCards.running.length})`,
-                list: groupedCampaignCards.running,
-              },
-              {
-                key: 'paused',
-                title: `${GmvMaxTexts.pausedSeries} (${groupedCampaignCards.paused.length})`,
-                list: groupedCampaignCards.paused,
-              },
-              {
-                key: 'ended',
-                title: `${GmvMaxTexts.endedSeries} (${groupedCampaignCards.ended.length})`,
-                list: groupedCampaignCards.ended,
-              }].map((section) => (
-                <section key={section.key} className="gmvmax-card__group">
-                  <h3 className="gmvmax-card__subheading">{section.title}</h3>
-                  {!campaignsLoading && !campaignsQuery.error && section.list.length === 0 ? (
-                    <p className="gmvmax-placeholder">{GmvMaxTexts.noSeriesInGroup}</p>
-                  ) : null}
-                  {section.list.length > 0 ? (
-                    <div className="gmvmax-campaign-grid">
-                      {section.list.map(({
-                        campaign,
-                        detail,
-                        detailLoading,
-                        detailError,
-                        detailRefetch,
-                        storeName,
-                        metricsSummary,
-                        metricsLoading,
-                        metricsError,
-                      }) => (
-                        <CampaignCard
-                          key={campaign.campaign_id || campaign.id}
-                          campaign={campaign}
-                          detail={detail}
-                          detailLoading={detailLoading}
-                          detailError={detailError}
-                          onRetryDetail={detailRefetch}
-                          workspaceId={workspaceId}
-                          provider={provider}
-                          authId={authId}
-                          storeId={storeId}
-                          storeName={storeName}
-                          onEdit={handleEditRequest}
-                          onManage={handleManage}
-                          onDashboard={handleDashboard}
-                          products={products}
-                          metricsSummary={metricsSummary}
-                          metricsLoading={metricsLoading}
-                          metricsError={metricsError}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-              ))}
+            <div className="gmvmax-series-table">
+              <div className="table-wrap">
+                <table className="gmvmax-table gmvmax-series-table__table">
+                  <thead>
+                    <tr>
+                      <th>{GmvMaxTexts.seriesName}</th>
+                      <th>{GmvMaxTexts.storeLabel}</th>
+                      <th>{GmvMaxTexts.statusLabel}</th>
+                      <th>{GmvMaxTexts.todaySpend}</th>
+                      <th>{GmvMaxTexts.todayGmv}</th>
+                      <th>ROAS</th>
+                      <th className="col-actions">{GmvMaxTexts.actionsLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {campaignsLoading || todayMetricsQuery.isLoading ? (
+                      <tr>
+                        <td colSpan={7}>
+                          <Loading text="加载系列数据…" />
+                        </td>
+                      </tr>
+                    ) : null}
+                    {!campaignsLoading && sortedSeriesRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7}>{GmvMaxTexts.noSeriesForScope}</td>
+                      </tr>
+                    ) : null}
+                    {sortedSeriesRows.map((card) => {
+                      const campaignId = card.campaign?.campaign_id || card.campaign?.id;
+                      const name =
+                        card.campaign?.name ||
+                        card.campaign?.campaign_name ||
+                        card.detail?.campaign?.name ||
+                        `系列 ${campaignId}`;
+                      const todaySpend = card.todaySummary?.spend ?? null;
+                      const todayGmv = card.todaySummary?.gmv ?? null;
+                      const roas =
+                        card.todaySummary?.roas ?? card.metricsSummary?.roas ??
+                        (todaySpend && todaySpend > 0 ? (todayGmv || 0) / todaySpend : null);
+                      const statusClass = `gmvmax-status-pill gmvmax-status-pill--${card.statusMeta?.tone || 'muted'}`;
+                      return (
+                        <tr key={campaignId}>
+                          <td>
+                            <div className="gmvmax-series-name">{name}</div>
+                          </td>
+                          <td>{card.storeName || '—'}</td>
+                          <td>
+                            <span className={statusClass}>{card.statusMeta?.label || GmvMaxTexts.statusUnknown}</span>
+                          </td>
+                          <td>{todaySpend === null ? '—' : `$${formatMoney(todaySpend)}`}</td>
+                          <td>{todayGmv === null ? '—' : `$${formatMoney(todayGmv)}`}</td>
+                          <td>{roas === null ? '—' : formatRoi(roas)}</td>
+                          <td className="col-actions">
+                            <div className="gmvmax-series-actions">
+                              <button
+                                type="button"
+                                className="gmvmax-button gmvmax-button--ghost"
+                                onClick={() => handleEditRequest(campaignId)}
+                              >
+                                {GmvMaxTexts.editSeries}
+                              </button>
+                              <button
+                                type="button"
+                                className="gmvmax-button gmvmax-button--ghost"
+                                onClick={() => handleManage(campaignId)}
+                              >
+                                {GmvMaxTexts.manageProducts}
+                              </button>
+                              <button
+                                type="button"
+                                className="gmvmax-button gmvmax-button--secondary"
+                                onClick={() => handleDashboard(campaignId)}
+                              >
+                                {GmvMaxTexts.viewData}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
           {includeDeletedCampaigns && campaignsQueryEnabled ? (
@@ -2216,32 +1968,18 @@ export default function GmvMaxOverviewPage() {
                 <p className="gmvmax-placeholder">{GmvMaxTexts.noDeletedSeries}</p>
               ) : null}
               {deletedCampaignCards.length > 0 ? (
-                <div className="gmvmax-campaign-grid">
-                  {deletedCampaignCards.map(({
-                    campaign,
-                    detail,
-                    detailLoading,
-                    detailError,
-                    detailRefetch,
-                  }) => (
-                    <CampaignCard
-                      key={campaign.campaign_id || campaign.id}
-                      campaign={campaign}
-                      detail={detail}
-                      detailLoading={detailLoading}
-                      detailError={detailError}
-                      onRetryDetail={detailRefetch}
-                      workspaceId={workspaceId}
-                      provider={provider}
-                      authId={authId}
-                      storeId={storeId}
-                      storeName={resolveStoreName(campaign)}
-                      onDashboard={handleDashboard}
-                      products={products}
-                      isDeleted
-                    />
-                  ))}
-                </div>
+                <ul className="gmvmax-deleted-list">
+                  {deletedCampaignCards.map(({ campaign }) => {
+                    const campaignId = campaign?.campaign_id || campaign?.id;
+                    const name = campaign?.name || campaign?.campaign_name || `系列 ${campaignId}`;
+                    return (
+                      <li key={campaignId}>
+                        <div className="gmvmax-series-name">{name}</div>
+                        <span className="gmvmax-deleted-label">{GmvMaxTexts.statusEnded}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
               ) : null}
             </div>
           ) : null}
@@ -2256,10 +1994,7 @@ export default function GmvMaxOverviewPage() {
         authId={authId}
         advertiserId={advertiserId}
         storeId={storeId}
-        products={unassignedProducts}
-        productsLoading={productsLoading}
         storeNameById={storeNameById}
-        initialProductIds={selectedProductIds}
         onCreated={handleSeriesCreated}
       />
 

@@ -392,6 +392,12 @@ class CreativeHeatingActionResponse(BaseModel):
     request_id: Optional[str] = None
 
 
+class CreativeHeatingListResponse(BaseModel):
+    """List response for creative heating states."""
+
+    items: List[CreativeHeatingRecord] = Field(default_factory=list)
+
+
 class StrategyResponse(BaseModel):
     """Strategy payload combining campaign, session, and recommendations."""
 
@@ -498,6 +504,19 @@ class AutoBindingResponse(BaseModel):
     selected: Optional[AutoBindingCandidate] = None
     candidates: List[AutoBindingCandidate] = Field(default_factory=list)
     persisted: bool = False
+
+
+class BindingStatusResponse(BaseModel):
+    """Summarized status for GMV Max advertiser-store binding."""
+
+    has_binding: bool
+    binding_ready: bool
+    last_checked_at: Optional[datetime] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    bc_id: Optional[str] = None
+    store_id: Optional[str] = None
 
 
 class GMVMaxPrecheckRequest(BaseModel):

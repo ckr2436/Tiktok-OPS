@@ -49,6 +49,14 @@ async function post(url, body, config) {
   return response.data;
 }
 
+export async function startGmvMaxSync(workspaceId, payload = {}, config) {
+  return post(`${tenantPrefix(workspaceId)}/gmvmax/sync`, payload, config);
+}
+
+export async function getTaskStatus(workspaceId, taskId, config) {
+  return get(`${tenantPrefix(workspaceId)}/tasks/${encode(taskId)}`, config);
+}
+
 async function put(url, body, config) {
   const response = await http.put(url, body, config);
   return response.data;
@@ -116,9 +124,22 @@ export async function updateGmvMaxConfig(workspaceId, provider, authId, payload,
   return put(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/config`, payload, config);
 }
 
+export async function getGmvMaxBindingStatus(workspaceId, provider, authId, params, config) {
+  const axiosConfig = mergeConfig(config, params);
+  return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/binding_status`, axiosConfig);
+}
+
 export async function autoDiscoverGmvMaxBinding(workspaceId, provider, authId, payload, config) {
   return post(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/binding/auto`,
+    payload,
+    config,
+  );
+}
+
+export async function rebindAutoGmvMaxBinding(workspaceId, provider, authId, payload, config) {
+  return post(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/rebind_auto`,
     payload,
     config,
   );
@@ -130,6 +151,10 @@ export async function syncAdvertiserBalance(workspaceId, provider, authId, paylo
 
 export async function syncGmvMaxCampaigns(workspaceId, provider, authId, payload, config) {
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
+}
+
+export async function getGmvMaxSyncInterval(workspaceId, provider, authId, config) {
+  return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync-interval`, config);
 }
 
 export async function updateGmvMaxSyncInterval(workspaceId, provider, authId, payload, config) {
@@ -200,12 +225,10 @@ export async function listGmvMaxCreativeMetrics(workspaceId, provider, authId, c
 
 export async function listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params, config) {
   const axiosConfig = mergeConfig(config, params);
-  const data = await get(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/actions`,
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/creatives/heating`,
     axiosConfig,
   );
-  const entries = Array.isArray(data?.entries) ? data.entries : [];
-  return { items: entries };
 }
 
 export async function startGmvMaxCreativeHeating(
