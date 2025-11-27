@@ -107,6 +107,8 @@ def _find_campaign_row(
     return db.execute(stmt).scalars().first()
 
 
+# Beat-driven sweep (see scheduler_catalog) to sync all GMV Max scopes via
+# TikTok /gmv_max/campaign/get/ and upsert TTBGmvMaxCampaign* tables.
 @celery_app.task(
     bind=True,
     name="ttb.sync_gmvmax",
@@ -179,6 +181,8 @@ def task_sync_gmvmax(self, **extra: Any) -> dict:
     return {"status": "ok", "synced_scopes": success, "failed_scopes": failures}
 
 
+# Sync campaigns for a specific binding (scheduled ~every 10 minutes); writes
+# TTBGmvMaxCampaign/TTBGmvMaxCampaignProduct via TikTok /gmv_max/campaign/get/.
 @celery_app.task(
     bind=True,
     name="gmvmax.sync_campaigns",
@@ -253,6 +257,8 @@ def task_gmvmax_sync_campaigns(
         _close_session(db)
 
 
+# Advertiser balance sync helper (triggered manually); no direct GMV Max API
+# but persists balance snapshot used for eligibility checks.
 @celery_app.task(
     bind=True,
     name="gmvmax.sync_advertiser_balance",
@@ -339,6 +345,8 @@ def task_gmvmax_sync_advertiser_balance(
         _close_session(db)
 
 
+# Metric sync (hourly/daily windows) scheduled via scheduler_catalog; calls
+# TikTok GET /gmv_max/report/get/ and upserts TTBGmvMaxMetricsDaily/Hourly.
 @celery_app.task(
     bind=True,
     name="gmvmax.sync_metrics",
@@ -439,6 +447,8 @@ def task_gmvmax_sync_metrics(
         _close_session(db)
 
 
+# Apply campaign actions (status/budget/strategy) and log to TTBGmvMaxActionLog;
+# uses TikTok campaign status/update endpoints.
 @celery_app.task(
     bind=True,
     name="gmvmax.apply_action",
@@ -650,6 +660,8 @@ def task_gmvmax_evaluate_strategy(
         _close_session(db)
 
 
+# Periodic every ~15 minutes (scheduler_catalog) to evaluate TTBGmvMaxCreativeHeating
+# and stop creatives via TikTok /campaign/gmv_max/action/apply/ when needed.
 @celery_app.task(
     bind=True,
     name="gmvmax.creative_heating_cycle",
@@ -675,6 +687,8 @@ def task_gmvmax_creative_heating_cycle(self, **extra: Any) -> dict:
         _close_session(db)
 
 
+# Eligibility precheck task: calls /gmv_max/store/shop_ad_usage_check/,
+# /gmv_max/identity/get/, and /gmv_max/occupied_custom_shop_ads/list/.
 @celery_app.task(
     bind=True,
     name="gmvmax.precheck",
@@ -763,6 +777,8 @@ def task_gmvmax_precheck(
         _close_session(db)
 
 
+# Async report fetch for metrics sync (TikTok GET /gmv_max/report/get/);
+# caller persists results.
 @celery_app.task(
     bind=True,
     name="gmvmax.report_get",
@@ -798,6 +814,8 @@ def task_gmvmax_report_get(
         _close_session(db)
 
 
+# Strategy preview helper calling TikTok GET /gmv_max/bid/recommend/ for
+# recommendations.
 @celery_app.task(
     bind=True,
     name="gmvmax.strategy_preview",
