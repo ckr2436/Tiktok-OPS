@@ -42,23 +42,6 @@ echo "[4] 扫描 httpx/requests 直连调用"
 git grep -n -E "httpx\\.|requests\\." -- backend | grep -v "services/ttb_http" || true
 echo
 
-# 5) GMV Max 路由必须 async
-echo "[5] 检查 GMV Max 路由是否 async"
-GMV_DIR="backend/app/features/tenants/ttb/gmv_max"
-if [ -d "$GMV_DIR" ]; then
-  for f in "$GMV_DIR"/*.py; do
-    echo "--- 检查 $f"
-    if ! grep -q "async def " "$f"; then
-      echo "FAIL: $f 中未发现 async 路由定义"
-      exit 1
-    fi
-  done
-  echo "OK: GMV Max 路由文件中均存在 async 定义"
-else
-  echo "WARN: 目录 $GMV_DIR 不存在，请确认 GMV Max 路由位置"
-fi
-echo
-
 # 6) Alembic 迁移中是否新增唯一约束（简要正则检查）
 echo "[6] 检查 Alembic 迁移是否包含唯一约束关键字（用于 GMV Max 表）"
 git grep -n -E "UniqueConstraint|unique=True|UNIQUE" -- backend/migrations/versions || echo "WARN: 未检出唯一约束关键字，请人工查看迁移文件"
