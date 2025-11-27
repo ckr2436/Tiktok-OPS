@@ -3,7 +3,6 @@ from __future__ import annotations
 from __future__ import annotations
 
 from datetime import date, datetime
-from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -31,6 +30,37 @@ from app.services.gmvmax_spec import (
 DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
 DEFAULT_METRICS: List[str] = list(GMVMAX_DEFAULT_METRICS)
 DEFAULT_DIMENSIONS: List[str] = list(GMVMAX_DEFAULT_DIMENSIONS)
+
+
+def normalize_datetime_to_date(value: Any) -> Any:
+    """Accept datetime-like values for date fields and coerce to ``date``.
+
+    This keeps API compatibility when clients send ISO datetimes while the
+    backend expects plain dates.
+    """
+
+    if value is None:
+        return value
+
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+
+        try:
+            normalized = value.replace("Z", "+00:00")
+            return datetime.fromisoformat(normalized).date()
+        except ValueError:
+            return value
+
+    return value
 
 _ACTION_TYPES = {"pause", "enable", "delete", "update_budget", "update_strategy"}
 _ACTION_ALIASES = {
@@ -183,6 +213,11 @@ class ReportRequest(BaseModel):
     sort_field: Optional[str] = None
     sort_type: Optional[str] = None
 
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def _normalize_dates(cls, value: Any) -> Any:
+        return normalize_datetime_to_date(value)
+
 
 class SyncRequest(BaseModel):
     """Payload accepted by the sync endpoint combining campaigns + report."""
@@ -291,6 +326,11 @@ class MetricsRequest(BaseModel):
     page_size: Optional[int] = Field(default=None, ge=1, le=50)
     sort_field: Optional[str] = None
     sort_type: Optional[str] = None
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def _normalize_dates(cls, value: Any) -> Any:
+        return normalize_datetime_to_date(value)
 
 
 class MetricsResponse(BaseModel):

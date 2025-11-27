@@ -24,7 +24,7 @@ import useGmvMaxNotifications from '../hooks/useGmvMaxNotifications.js';
 import { GmvMaxTexts } from '../locale.js';
 import ActionLogsTable from '../components/ActionLogsTable.jsx';
 import {
-  formatRangeAsIsoStrings,
+  formatRangeAsDateStrings,
   getAdvertiserRecentRange,
   getAdvertiserTodayRange,
   resolveTimezoneLabel,
@@ -146,15 +146,30 @@ function extractDateLabel(entry) {
 }
 
 function computeTimeRange(range, customRange, timeZone) {
+  const toDate = (value) => {
+    if (value instanceof Date) return value;
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   if (range === 'custom' && customRange?.start && customRange?.end) {
-    return { start_date: customRange.start, end_date: customRange.end };
+    const normalizedStart = formatRangeAsDateStrings({
+      start: toDate(customRange.start),
+      timeZone,
+    }).start_date;
+    const normalizedEnd = formatRangeAsDateStrings({
+      end: toDate(customRange.end),
+      timeZone,
+    }).end_date;
+    return { start_date: normalizedStart, end_date: normalizedEnd };
   }
   if (range === 'today') {
-    return formatRangeAsIsoStrings(getAdvertiserTodayRange(timeZone));
+    return formatRangeAsDateStrings(getAdvertiserTodayRange(timeZone));
   }
   const days = range === '30d' ? 30 : 7;
   const rangeDates = getAdvertiserRecentRange(days, timeZone);
-  return formatRangeAsIsoStrings(rangeDates);
+  return formatRangeAsDateStrings(rangeDates);
 }
 
 function normalizeStrategyResponse(data) {

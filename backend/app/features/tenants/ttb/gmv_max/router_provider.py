@@ -145,6 +145,7 @@ from .schemas import (
     SyncTaskResponse,
     SyncTaskStateResponse,
     UpdateCampaignRequest,
+    normalize_datetime_to_date,
 )
 
 router = APIRouter(prefix="/gmvmax")
@@ -994,6 +995,21 @@ def _normalize_store_ids(
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"code": "missing_store", "message": "store_id is required for this operation"},
+    )
+
+
+def _normalize_date_value(value: Any, *, field_name: str) -> Optional[date]:
+    normalized = normalize_datetime_to_date(value)
+    if normalized is None:
+        return None
+    if isinstance(normalized, date) and not isinstance(normalized, datetime):
+        return normalized
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "code": "invalid_date_format",
+            "message": f"{field_name} must be a valid date (YYYY-MM-DD)",
+        },
     )
 
 
@@ -2518,8 +2534,8 @@ async def query_gmvmax_metrics_provider(
     auth_id: int,
     campaign_id: str,
     store_id: Optional[str] = Query(None),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
+    start_date: Optional[Union[date, datetime, str]] = Query(None),
+    end_date: Optional[Union[date, datetime, str]] = Query(None),
     dimensions: Optional[List[str]] = Query(None),
     seed_min_conversions: int = Query(_DEFAULT_SEED_CONVERSIONS, ge=0),
     seed_min_roas: float = Query(_DEFAULT_SEED_ROAS, ge=0.0),
@@ -2531,8 +2547,8 @@ async def query_gmvmax_metrics_provider(
 ) -> MetricsResponse:
     """Return stored GMV Max performance metrics for the requested campaign."""
 
-    end = end_date or date.today()
-    start = start_date or (end - timedelta(days=6))
+    end = _normalize_date_value(end_date, field_name="end_date") or date.today()
+    start = _normalize_date_value(start_date, field_name="start_date") or (end - timedelta(days=6))
     if start > end:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
