@@ -1,3 +1,5 @@
+"""GMV Max service layer: syncs campaigns, metrics, and local state."""
+
 from __future__ import annotations
 
 import logging
@@ -180,6 +182,67 @@ def resolve_store_id_from_page_context(
         campaign_payload=campaign_payload,
         page_context=page_context,
     )
+
+
+def _resolve_store_id_for_metrics(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: TTBGmvMaxCampaign,
+) -> str | None:
+    """Pick the best-effort store_id for metrics sync.
+
+    Falls back to advertiser↔store links when the campaign record does not
+    carry a store_id, ensuring metrics sync does not silently skip entire
+    workspaces.
+    """
+
+    store_id = _normalize_identifier(campaign.store_id)
+    if store_id:
+        return store_id
+
+    stmt = (
+        select(TTBAdvertiserStoreLink.store_id)
+        .where(TTBAdvertiserStoreLink.workspace_id == int(workspace_id))
+        .where(TTBAdvertiserStoreLink.auth_id == int(auth_id))
+        .where(TTBAdvertiserStoreLink.advertiser_id == str(advertiser_id))
+        .order_by(TTBAdvertiserStoreLink.last_seen_at.desc())
+    )
+    candidate_rows = [row[0] for row in db.execute(stmt).all() if row[0]]
+    deduped = list(
+        dict.fromkeys(_normalize_identifier(item) or "" for item in candidate_rows)
+    )
+    deduped = [item for item in deduped if item]
+    if not deduped:
+        logger.warning(
+            "skip metrics sync because store_id missing and no links found",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign.campaign_id,
+            },
+        )
+        return None
+
+    if len(deduped) > 1:
+        logger.warning(
+            "multiple store links found for advertiser; defaulting to first",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign.campaign_id,
+                "store_candidates": deduped,
+            },
+        )
+
+    chosen = deduped[0]
+    campaign.store_id = chosen
+    db.add(campaign)
+    return chosen
 
 
 async def create_gmvmax_campaign(
@@ -1397,16 +1460,14 @@ async def sync_gmvmax_metrics_hourly(
 
     synced_rows = 0
     page = 1
-    store_id = campaign.store_id
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
     if not store_id:
-        logger.warning(
-            "skip hourly metrics sync because store_id missing",
-            extra={
-                "campaign_id": campaign.campaign_id,
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-            },
-        )
         return {"synced_rows": 0}
 
     dimensions = ["campaign_id", "stat_time_hour"]
@@ -1552,16 +1613,14 @@ async def sync_gmvmax_metrics_daily(
 
     synced_rows = 0
     page = 1
-    store_id = campaign.store_id
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
     if not store_id:
-        logger.warning(
-            "skip daily metrics sync because store_id missing",
-            extra={
-                "campaign_id": campaign.campaign_id,
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-            },
-        )
         return {"synced_rows": 0}
 
     dimensions = ["campaign_id", "stat_time_day"]

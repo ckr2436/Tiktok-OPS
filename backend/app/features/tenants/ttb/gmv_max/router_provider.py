@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+"""Tenant GMV Max provider-scoped router definitions (router layer)."""
+
 from collections import OrderedDict
 from decimal import Decimal
 from dataclasses import dataclass
@@ -1024,8 +1026,10 @@ def _build_report_request(
     metrics = _normalize_metrics_list(report.metrics)
     dimensions = _normalize_dimensions_list(report.dimensions)
     filtering_payload: Dict[str, Any] = {}
+    promotion_types = None
     if report.filtering is not None:
         filtering_payload.update(report.filtering.model_dump(exclude_none=True))
+        promotion_types = report.filtering.gmv_max_promotion_types
     if campaign_id:
         filtering_payload.setdefault("campaign_ids", [str(campaign_id)])
     filtering_model = (
@@ -1038,6 +1042,8 @@ def _build_report_request(
         end_date=report.end_date.isoformat(),
         metrics=list(metrics),
         dimensions=list(dimensions),
+        gmv_max_promotion_types=promotion_types,
+        campaign_ids=[str(campaign_id)] if campaign_id else None,
         enable_total_metrics=report.enable_total_metrics,
         filtering=filtering_model,
         page=report.page,
@@ -2617,6 +2623,7 @@ async def query_gmvmax_metrics_provider(
         end_date=end,
         limit=limit,
         offset=offset,
+        order_desc=True,
     )
     response = _build_metrics_response(
         items,

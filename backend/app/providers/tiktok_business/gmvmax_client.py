@@ -1,4 +1,8 @@
-"""Typed TikTok Business GMV Max client built on top of :mod:`app.services.ttb_api`."""
+"""Typed TikTok Business GMV Max client built on top of :mod:`app.services.ttb_api`.
+
+This module acts as the TikTok Business GMV Max **client** layer, keeping
+request/response models aligned with the official API surface.
+"""
 
 from __future__ import annotations
 
@@ -573,6 +577,15 @@ class GMVMaxReportGetRequest(BaseModel):
     end_date: str
     metrics: Sequence[str]
     dimensions: Sequence[str]
+    gmv_max_promotion_types: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
+    campaign_name: Optional[str] = None
+    campaign_statuses: Optional[Sequence[str]] = None
+    item_group_ids: Optional[Sequence[str]] = None
+    creative_types: Optional[Sequence[str]] = None
+    creative_delivery_statuses: Optional[Sequence[str]] = None
+    search_word: Optional[str] = None
+    room_ids: Optional[Sequence[str]] = None
     enable_total_metrics: Optional[bool] = None
     filtering: Optional[GMVMaxReportFiltering] = None
     page: Optional[int] = None
@@ -910,6 +923,12 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_report_get(
         self, request: GMVMaxReportGetRequest
     ) -> GMVMaxResponse[GMVMaxReportData]:
+        def _encode_seq(values: Sequence[Any] | None) -> str | None:
+            if values is None:
+                return None
+            normalized = [str(item) for item in values if item is not None]
+            return json.dumps(normalized, ensure_ascii=False)
+
         store_ids = [str(store) for store in request.store_ids]
         params: Dict[str, Any] = {
             "advertiser_id": request.advertiser_id,
@@ -928,23 +947,86 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             "metrics": json.dumps(list(request.metrics), ensure_ascii=False),
             "dimensions": json.dumps(list(request.dimensions), ensure_ascii=False),
         }
+
+        optional_arrays = {
+            "gmv_max_promotion_types": request.gmv_max_promotion_types,
+            "campaign_ids": request.campaign_ids,
+            "campaign_statuses": request.campaign_statuses,
+            "item_group_ids": request.item_group_ids,
+            "creative_types": request.creative_types,
+            "creative_delivery_statuses": request.creative_delivery_statuses,
+            "room_ids": request.room_ids,
+        }
+        for key, values in optional_arrays.items():
+            encoded = _encode_seq(values)
+            if encoded is not None:
+                params[key] = encoded
+
+        if request.campaign_name is not None:
+            params["campaign_name"] = request.campaign_name
+        if request.search_word is not None:
+            params["search_word"] = request.search_word
         if request.enable_total_metrics is not None:
             params["enable_total_metrics"] = bool(request.enable_total_metrics)
         if request.filtering is not None:
             params["filtering"] = json.dumps(
                 request.filtering.model_dump(exclude_none=True), ensure_ascii=False
             )
-        for key in ("page", "page_size", "sort_field", "sort_type"):
+        for key in ("page_size", "sort_field", "sort_type"):
             value = getattr(request, key)
             if value is not None:
                 params[key] = value
+
         _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/report/get/",
-            params=_ttb_api._clean_params_map(params),
+
+        aggregated_entries: list[GMVMaxReportEntry] = []
+        summary: Dict[str, Any] | None = None
+        merged_page_info: PageInfo | None = None
+        page_value = request.page or 1
+        page_size_value = request.page_size or 200
+
+        while True:
+            params["page"] = page_value
+            params["page_size"] = page_size_value
+            payload = await self._request_json(
+                "GET",
+                "/gmv_max/report/get/",
+                params=_ttb_api._clean_params_map(params),
+            )
+            response = self._parse_response(payload, GMVMaxReportData)
+            aggregated_entries.extend(response.data.list)
+            if summary is None:
+                summary = response.data.summary
+            merged_page_info = response.data.page_info or merged_page_info
+
+            page_info = response.data.page_info
+            has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)) if page_info else False
+            total_page = getattr(page_info, "total_page", None) if page_info else None
+            if has_more:
+                page_value += 1
+                continue
+            try:
+                total_page_int = int(total_page) if total_page is not None else None
+            except (TypeError, ValueError):
+                total_page_int = None
+            if total_page_int is not None and page_value < total_page_int:
+                page_value += 1
+                continue
+            break
+
+        merged_data = GMVMaxReportData(
+            list=aggregated_entries,
+            page_info=merged_page_info,
+            summary=summary,
         )
-        return self._parse_response(payload, GMVMaxReportData)
+        return GMVMaxResponse[
+            GMVMaxReportData
+        ](  # type: ignore[call-arg]
+            code=response.code,
+            message=response.message,
+            request_id=response.request_id,
+            data=merged_data,
+        )
 
 
 __all__ = [
