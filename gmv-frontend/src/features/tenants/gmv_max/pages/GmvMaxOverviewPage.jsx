@@ -1532,23 +1532,18 @@ export default function GmvMaxOverviewPage() {
     workspaceId,
   ]);
 
-  const handleEditRequest = useCallback((campaignId) => {
+  function handleEditRequest(campaignId) {
     setEditingCampaignId(String(campaignId));
-  }, []);
+  }
 
-  const handleCloseEdit = useCallback(() => {
+  function handleCloseEdit() {
     setEditingCampaignId('');
-  }, []);
+  }
 
-  const handleSeriesUpdated = useCallback(() => {
+  function handleSeriesUpdated() {
     setEditingCampaignId('');
     refreshScopeQueries();
-  }, [
-    authId,
-    provider,
-    refreshScopeQueries,
-    workspaceId,
-  ]);
+  }
 
   const buildCampaignSearchParams = useCallback(
     (tab) => {
