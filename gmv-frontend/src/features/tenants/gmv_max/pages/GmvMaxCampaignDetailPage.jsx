@@ -821,7 +821,7 @@ export default function GmvMaxCampaignDetailPage() {
     provider,
     authId,
     campaignId,
-    { ...metricsParams, advertiser_id: advertiserId || undefined },
+    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'campaign' },
     {
       enabled: commonEnabled,
     },
@@ -846,7 +846,7 @@ export default function GmvMaxCampaignDetailPage() {
     {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
-      dimensions: ['creative_id'],
+      level: 'creative',
     },
     {
       enabled: commonEnabled && isDashboardTab,
