@@ -129,14 +129,13 @@ export function shouldFetchGmvMaxSeries(options = {}) {
     authId,
     isScopeReady,
     autoBindingVerified,
-    bindingConfigLoading,
-    bindingConfigFetching,
+    bindingConfigPending,
   } = options;
 
   if (!workspaceId || !provider || !authId || !isScopeReady) {
     return false;
   }
-  if (bindingConfigLoading || bindingConfigFetching) {
+  if (bindingConfigPending) {
     return false;
   }
   if (!autoBindingVerified) {

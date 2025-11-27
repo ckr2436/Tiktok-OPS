@@ -288,6 +288,7 @@ export default function GmvMaxOverviewPage() {
   const bindingConfigLoading = bindingConfigQuery.isLoading;
   const bindingConfigFetching = bindingConfigQuery.isFetching;
   const bindingConfigError = bindingConfigQuery.error;
+  const bindingConfigPending = !bindingConfig && (bindingConfigLoading || bindingConfigFetching);
   const savedBusinessCenterId = bindingConfig?.bc_id ? String(bindingConfig.bc_id) : '';
   const savedAdvertiserId = bindingConfig?.advertiser_id ? String(bindingConfig.advertiser_id) : '';
   const savedStoreId = bindingConfig?.store_id ? String(bindingConfig.store_id) : '';
@@ -717,13 +718,12 @@ export default function GmvMaxOverviewPage() {
     authId,
     isScopeReady,
     autoBindingVerified,
-    bindingConfigLoading,
-    bindingConfigFetching,
+    bindingConfigPending,
   });
 
   const campaignsBlockedMessage = useMemo(() => {
     if (!isScopeReady || campaignsQueryEnabled) return '';
-    if (bindingConfigLoading || bindingConfigFetching) {
+    if (bindingConfigPending) {
       return '绑定配置加载中…';
     }
     if (!autoBindingVerified) {
@@ -731,8 +731,7 @@ export default function GmvMaxOverviewPage() {
     }
     return '';
   }, [
-    bindingConfigFetching,
-    bindingConfigLoading,
+    bindingConfigPending,
     campaignsQueryEnabled,
     autoBindingVerified,
     isScopeReady,
@@ -872,7 +871,7 @@ export default function GmvMaxOverviewPage() {
         message: '请选择店铺以配置 GMV Max 绑定。',
       };
     }
-    if (bindingConfigLoading || bindingConfigFetching) {
+    if (bindingConfigPending) {
       return { variant: 'muted', message: '绑定配置加载中…' };
     }
     if (bindingConfigError) {
@@ -911,8 +910,7 @@ export default function GmvMaxOverviewPage() {
     return { variant: 'success', message: '绑定已确认，可开始同步 GMV Max。' };
   }, [
     bindingConfigError,
-    bindingConfigFetching,
-    bindingConfigLoading,
+    bindingConfigPending,
     bindingStatus,
     bindingStatusQuery.isFetching,
     bindingStatusQuery.isLoading,
@@ -1398,7 +1396,7 @@ export default function GmvMaxOverviewPage() {
       setSyncError('请先选择店铺以完成数据同步。');
       return;
     }
-    if (bindingConfigLoading || bindingConfigFetching) {
+    if (bindingConfigPending) {
       setSyncNotice(null);
       setSyncError('绑定配置加载中，请稍后再试。');
       return;
@@ -1481,8 +1479,7 @@ export default function GmvMaxOverviewPage() {
     authId,
     autoBindingVerified,
     balanceSyncMutation,
-    bindingConfigFetching,
-    bindingConfigLoading,
+    bindingConfigPending,
     bindingReady,
     businessCenterId,
     isScopeReady,
@@ -1653,8 +1650,7 @@ export default function GmvMaxOverviewPage() {
             disabled={
               isSyncing ||
               !isScopeReady ||
-              bindingConfigLoading ||
-              bindingConfigFetching ||
+              bindingConfigPending ||
               !bindingReady
             }
             title={bindingReady ? undefined : '请先完成店铺-广告主绑定'}
