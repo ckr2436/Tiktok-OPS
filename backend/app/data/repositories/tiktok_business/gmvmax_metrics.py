@@ -133,6 +133,7 @@ def query_gmvmax_metrics(
     end_date: date,
     limit: int = 50,
     offset: int = 0,
+    order_desc: bool = False,
 ) -> tuple[list[GMVMaxMetricDTO], int]:
     """Return stored GMV Max metrics for the requested filters."""
 
@@ -147,14 +148,17 @@ def query_gmvmax_metrics(
         end_date=end_date,
     )
 
-    stmt = (
-        base.order_by(
+    order_columns = (
+        TTBGmvMaxMetricsDaily.date.desc(),
+        TTBGmvMaxMetricsDaily.id.desc(),
+    )
+    if not order_desc:
+        order_columns = (
             TTBGmvMaxMetricsDaily.date.asc(),
             TTBGmvMaxMetricsDaily.id.asc(),
         )
-        .limit(limit)
-        .offset(offset)
-    )
+
+    stmt = base.order_by(*order_columns).limit(limit).offset(offset)
 
     rows = [
         _MetricsRow(metric=metric, campaign_id=campaign_key, store_id=store_key)

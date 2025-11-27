@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+"""Celery task layer orchestrating GMV Max syncs and actions."""
+
 from datetime import datetime
 from uuid import uuid4
 from typing import Any, Awaitable, Callable, Optional, TypeVar

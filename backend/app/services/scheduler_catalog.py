@@ -74,7 +74,7 @@ CATALOG: List[PeriodicTaskSpec] = [
     PeriodicTaskSpec(
         name="gmvmax:campaigns:sync",
         task="gmvmax.sync_campaigns",
-        crontab="*/30 * * * *",  # 每 30 分钟刷新 Campaign 列表
+        crontab="*/10 * * * *",  # 每 10 分钟刷新 Campaign 列表
         args=[],
         kwargs={
             "workspace_id": "<workspace_id>",
@@ -88,7 +88,7 @@ CATALOG: List[PeriodicTaskSpec] = [
     PeriodicTaskSpec(
         name="gmvmax:metrics:sync_hourly",
         task="gmvmax.sync_metrics",
-        crontab="*/30 * * * *",  # 每 30 分钟同步最近 6 小时指标
+        crontab="*/10 * * * *",  # 每 10 分钟同步最近 6 小时指标
         args=[],
         kwargs={
             "workspace_id": "<workspace_id>",
