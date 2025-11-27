@@ -98,6 +98,7 @@ from app.services.gmvmax_spec import (
     GMVMAX_SUPPORTED_DIMENSIONS,
     GMVMAX_SUPPORTED_METRICS,
 )
+from .service import _ensure_provider
 from app.services.ttb_gmvmax import (
     create_gmvmax_campaign,
     log_campaign_action,
