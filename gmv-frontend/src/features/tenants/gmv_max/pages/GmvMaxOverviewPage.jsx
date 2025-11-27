@@ -134,7 +134,7 @@ export default function GmvMaxOverviewPage() {
   const [seriesStoreFilter, setSeriesStoreFilter] = useState('');
   const [seriesSearch, setSeriesSearch] = useState('');
   const [sortOption, setSortOption] = useState('latest');
-  const [, setSelectedProductIds] = useState([]);
+  const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const autoOptionsRefreshAccounts = useRef(new Set());
   const syncInFlightRef = useRef(false);
@@ -1015,8 +1015,10 @@ export default function GmvMaxOverviewPage() {
   }, [storeOptions]);
 
   useEffect(() => {
-    setSelectedProductIds([]);
-  }, [advertiserId, authId, businessCenterId, storeId, workspaceId]);
+    if (selectedProductIds.size > 0) {
+      setSelectedProductIds(new Set());
+    }
+  }, [advertiserId, authId, businessCenterId, selectedProductIds, storeId, workspaceId]);
 
   useEffect(() => {
     if (!authId || !businessCenterId || !scopeOptionsReady) return;
@@ -1052,10 +1054,10 @@ export default function GmvMaxOverviewPage() {
   }, [scopeOptionsReady, storeId, storeOptions]);
 
   useEffect(() => {
-    if (!isScopeReady) {
-      setSelectedProductIds([]);
+    if (!isScopeReady && selectedProductIds.size > 0) {
+      setSelectedProductIds(new Set());
     }
-  }, [isScopeReady]);
+  }, [isScopeReady, selectedProductIds]);
 
   useEffect(() => {
     setSyncError(null);
