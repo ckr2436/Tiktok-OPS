@@ -18,6 +18,9 @@ import {
   useGmvMaxRebindAutoMutation,
   useGmvMaxSyncIntervalQuery,
   useProductsQuery,
+  useSyncAccountMetadataMutation,
+  useSyncAccountProductsMutation,
+  useSyncAdvertiserBalanceMutation,
   useUpdateGmvMaxSyncIntervalMutation,
   useUpdateGmvMaxCampaignMutation,
   useUpdateGmvMaxStrategyMutation,
@@ -1325,6 +1328,9 @@ export default function GmvMaxOverviewPage() {
     storeId,
   ]);
 
+  const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
+  const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
+  const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
   const rebindAutoMutation = useGmvMaxRebindAutoMutation(workspaceId, provider, authId);
 
@@ -1412,6 +1418,39 @@ export default function GmvMaxOverviewPage() {
     setIsSyncing(true);
     setLastSyncAt(now);
     try {
+      await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
+      const refetchPromises = [];
+      if (typeof accountsQuery.refetch === 'function') {
+        refetchPromises.push(accountsQuery.refetch());
+      }
+      if (typeof scopeOptionsQuery.refetch === 'function') {
+        refetchPromises.push(scopeOptionsQuery.refetch());
+      }
+      if (refetchPromises.length > 0) {
+        await Promise.all(refetchPromises);
+      }
+      queryClient.invalidateQueries({ queryKey: scopeOptionsQueryKey });
+      queryClient.invalidateQueries({ queryKey: accountsQueryKey });
+
+      const bcForSync = savedBusinessCenterId || (businessCenterId ? String(businessCenterId) : '');
+      const advertiserForSync = savedAdvertiserId || (advertiserId ? String(advertiserId) : '');
+      if (bcForSync && advertiserForSync && storeId) {
+        await balanceSyncMutation.mutateAsync({
+          bc_id: bcForSync,
+          advertiser_id: advertiserForSync,
+          store_id: storeId,
+        });
+      }
+
+      await productSyncMutation.mutateAsync({
+        scope: 'products',
+        mode: 'full',
+        bc_id: businessCenterId ? String(businessCenterId) : undefined,
+        advertiser_id: advertiserId ? String(advertiserId) : undefined,
+        store_id: storeId ? String(storeId) : undefined,
+        product_eligibility: 'gmv_max',
+      });
+
       const finalState = await performCampaignSync();
       if (finalState === 'SUCCESS') {
         nextNotice = { variant: 'success', message: '同步完成，数据已刷新。' };
@@ -1433,17 +1472,28 @@ export default function GmvMaxOverviewPage() {
       }
     }
   }, [
+    accountsQuery,
+    accountsQueryKey,
     advertiserId,
     authId,
     autoBindingVerified,
+    balanceSyncMutation,
     bindingConfigFetching,
     bindingConfigLoading,
+    bindingReady,
     businessCenterId,
     isScopeReady,
     isSyncing,
     lastSyncAt,
+    metadataSyncMutation,
     performCampaignSync,
+    productSyncMutation,
     provider,
+    queryClient,
+    savedAdvertiserId,
+    savedBusinessCenterId,
+    scopeOptionsQuery,
+    scopeOptionsQueryKey,
     syncTask,
     storeId,
     workspaceId,
