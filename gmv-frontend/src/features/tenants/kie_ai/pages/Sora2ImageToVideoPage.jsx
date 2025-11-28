@@ -377,7 +377,12 @@ export default function Sora2ImageToVideoPage() {
   const historyQuery = useQuery({
     queryKey: ['sora2-history', wid, modelId, page, pageSize],
     queryFn: () =>
-      kieTenantApi.listTasks(wid, { page, size: pageSize, model: modelId }),
+      kieTenantApi.listTasks(wid, {
+        page,
+        size: pageSize,
+        model: modelId,
+        refresh_pending: true,
+      }),
     enabled: !!wid,
     refetchInterval: (query) => {
       const items = query?.state?.data?.items || []

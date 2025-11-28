@@ -23,6 +23,32 @@ SORA2_MODELS: set[str] = {
 }
 
 
+_TERMINAL_KEYWORDS = ("success", "succeeded", "fail", "error", "timeout")
+_PENDING_KEYWORDS = ("wait", "queue", "run", "process", "gen", "pending")
+
+
+def is_terminal_state(state: str | None) -> bool:
+    """Return True if the state is considered terminal."""
+
+    if state is None:
+        return False
+    s = state.strip().lower()
+    if not s:
+        return False
+    if s == "ok":
+        return True
+    return any(k in s for k in _TERMINAL_KEYWORDS)
+
+
+def is_pending_state(state: str | None) -> bool:
+    """Return True if the state is considered pending/in-progress."""
+
+    if not state:
+        return False
+    s = state.strip().lower()
+    return any(k in s for k in _PENDING_KEYWORDS)
+
+
 def _ms_to_dt(ms: Any) -> datetime | None:
     if ms is None:
         return None
@@ -360,5 +386,7 @@ __all__ = [
     "create_sora2_task",
     "refresh_sora2_task_status",
     "refresh_sora2_task_status_by_task_id",
+    "is_pending_state",
+    "is_terminal_state",
 ]
 
