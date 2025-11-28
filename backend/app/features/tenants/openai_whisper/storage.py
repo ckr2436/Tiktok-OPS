@@ -77,6 +77,10 @@ def result_path(job_directory: Path) -> Path:
     return job_directory / "result.json"
 
 
+def contact_sheet_path(job_directory: Path) -> Path:
+    return job_directory / "contact_sheet.png"
+
+
 def subtitles_path(job_directory: Path, variant: str) -> Path:
     variant = variant.lower()
     if variant == "source":
@@ -90,7 +94,7 @@ def write_metadata(workspace_id: int, job_id: str, payload: Dict[str, Any]) -> D
     directory = job_dir(workspace_id, job_id)
     payload.setdefault("created_at", _utc_now())
     payload.setdefault("updated_at", payload["created_at"])
-    _write_json_file(metadata_path(directory), payload)
+    _write_json_file(metadata_path(directory), _ensure_status_defaults(payload))
     return payload
 
 
@@ -119,7 +123,7 @@ def delete_upload(workspace_id: int, upload_id: str) -> None:
 
 def _atomic_update(path: Path, updater: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:
     existing = _read_json_file(path)
-    updated = updater(existing)
+    updated = _ensure_status_defaults(updater(existing))
     updated["updated_at"] = _utc_now()
     _write_json_file(path, updated)
     return updated
@@ -143,7 +147,9 @@ def save_results(workspace_id: int, job_id: str, result_payload: Dict[str, Any])
     def _apply(meta: Dict[str, Any]) -> Dict[str, Any]:
         meta["result"] = result_payload
         meta["status"] = "success"
+        meta["subtitle_status"] = "success"
         meta["error"] = None
+        meta["subtitle_error"] = None
         meta["completed_at"] = _utc_now()
         return meta
 
@@ -153,7 +159,9 @@ def save_results(workspace_id: int, job_id: str, result_payload: Dict[str, Any])
 def mark_failed(workspace_id: int, job_id: str, message: str) -> Dict[str, Any]:
     def _apply(meta: Dict[str, Any]) -> Dict[str, Any]:
         meta["status"] = "failed"
+        meta["subtitle_status"] = "failed"
         meta["error"] = message
+        meta["subtitle_error"] = message
         return meta
 
     return update_metadata(workspace_id, job_id, _apply)
@@ -162,6 +170,7 @@ def mark_failed(workspace_id: int, job_id: str, message: str) -> Dict[str, Any]:
 def mark_processing(workspace_id: int, job_id: str, started_at: Optional[str] = None) -> Dict[str, Any]:
     def _apply(meta: Dict[str, Any]) -> Dict[str, Any]:
         meta["status"] = "processing"
+        meta["subtitle_status"] = "processing"
         if started_at:
             meta["started_at"] = started_at
         else:
@@ -184,4 +193,71 @@ def resolve_download_path(workspace_id: int, job_id: str, variant: str) -> Path:
     if not path.exists():
         raise FileNotFoundError(path)
     return path
+
+
+def resolve_contact_sheet_path(workspace_id: int, job_id: str) -> Path:
+    directory = BASE_DIR / f"workspace_{workspace_id}" / job_id
+    path = contact_sheet_path(directory)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    return path
+
+
+def _ensure_status_defaults(meta: Dict[str, Any]) -> Dict[str, Any]:
+    if "do_subtitle" not in meta:
+        meta["do_subtitle"] = True
+    if "do_contact_sheet" not in meta:
+        meta["do_contact_sheet"] = False
+    if "do_download_only" not in meta:
+        meta["do_download_only"] = False
+    if "subtitle_status" not in meta:
+        meta["subtitle_status"] = "pending" if meta.get("do_subtitle") else "skipped"
+    if "contact_sheet_status" not in meta:
+        meta["contact_sheet_status"] = "pending" if meta.get("do_contact_sheet") else "skipped"
+    if "download_status" not in meta:
+        meta["download_status"] = "pending" if meta.get("share_url") else "skipped"
+    meta["status"] = derive_overall_status(meta)
+    return meta
+
+
+def derive_overall_status(meta: Dict[str, Any]) -> str:
+    statuses = []
+    for key in ("subtitle_status", "contact_sheet_status", "download_status"):
+        status = meta.get(key)
+        if status and status != "skipped":
+            statuses.append(status)
+    if not statuses:
+        return meta.get("status") or "pending"
+    if any(st == "failed" for st in statuses):
+        return "failed"
+    if any(st in {"processing", "pending"} for st in statuses):
+        return "processing"
+    return "success"
+
+
+def update_component_status(
+    workspace_id: int,
+    job_id: str,
+    component: str,
+    *,
+    status: str,
+    error: Optional[str] = None,
+    url: Optional[str] = None,
+    started_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    def _apply(meta: Dict[str, Any]) -> Dict[str, Any]:
+        status_key = f"{component}_status"
+        error_key = "error" if component == "subtitle" else f"{component}_error"
+        url_key = f"{component}_url"
+        meta[status_key] = status
+        if error_key:
+            meta[error_key] = error
+        if url_key in meta or url is not None:
+            meta[url_key] = url
+        if component == "subtitle" and started_at:
+            meta["started_at"] = started_at
+        meta["status"] = derive_overall_status(meta)
+        return meta
+
+    return update_metadata(workspace_id, job_id, _apply)
 

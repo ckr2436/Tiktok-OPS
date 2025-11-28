@@ -51,6 +51,10 @@ async def enqueue_job(
     translate: bool = Form(False),
     target_language: Optional[str] = Form(None),
     show_bilingual: bool = Form(False),
+    do_subtitle: bool = Form(True),
+    do_contact_sheet: bool = Form(False),
+    contact_interval: Optional[float] = Form(None),
+    do_download_only: bool = Form(False),
     me: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
@@ -64,6 +68,10 @@ async def enqueue_job(
         translate=translate,
         target_language=target_language,
         show_bilingual=show_bilingual,
+        do_subtitle=do_subtitle,
+        do_contact_sheet=do_contact_sheet,
+        contact_interval=contact_interval,
+        do_download_only=do_download_only,
         db=db,
     )
 
@@ -98,4 +106,25 @@ def download_subtitles(
     path = service.build_download(workspace_id, job_id, variant)
     filename = f"{job_id}-{variant}.srt"
     return FileResponse(path, filename=filename, media_type="text/plain")
+
+
+@router.get("/jobs/{job_id}/contact-sheet")
+def download_contact_sheet(
+    workspace_id: int,
+    job_id: str,
+    _: SessionUser = Depends(require_tenant_member),
+):
+    path = service.build_contact_sheet_download(workspace_id, job_id)
+    filename = f"{job_id}-contact-sheet.png"
+    return FileResponse(path, filename=filename, media_type="image/png")
+
+
+@router.get("/jobs/{job_id}/video")
+def download_video(
+    workspace_id: int,
+    job_id: str,
+    _: SessionUser = Depends(require_tenant_member),
+):
+    path, filename, content_type = service.build_video_download(workspace_id, job_id)
+    return FileResponse(path, filename=filename, media_type=content_type)
 
