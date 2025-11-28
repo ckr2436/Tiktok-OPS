@@ -32,6 +32,7 @@ from app.services.kie_api.common import (
 from app.services.kie_api.sora2 import Sora2ImageToVideoService, KieApiError
 from app.services.kie_api.tasks import (
     create_sora2_task,
+    refresh_sora2_task_status_by_task_id,
 )
 from app.tasks.kie_ai.sora.sora2_image_to_video_tasks import (
     poll_sora2_task_status,
@@ -808,7 +809,7 @@ async def get_sora2_task(
 ):
     """
     查询本地任务状态。
-    refresh=true 时，只触发一次 Celery 轮询任务（不等待）。
+    refresh=true 时，会立即向 KIE 查询最新状态并同步到数据库。
     """
     task = (
         db.query(KieTask)
@@ -821,23 +822,18 @@ async def get_sora2_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    if refresh and (task.state or "").lower() not in {
-        "success",
-        "failed",
-        "error",
-        "timeout",
-    }:
+    if refresh:
         try:
-            poll_sora2_task_status.apply_async(
-                kwargs={
-                    "workspace_id": int(workspace_id),
-                    "local_task_id": int(task.id),
-                },
-                queue="gmv.tasks.kie_ai",
+            task = await refresh_sora2_task_status_by_task_id(
+                db,
+                workspace_id=int(workspace_id),
+                local_task_id=int(task.id),
             )
+            db.commit()
         except Exception:  # noqa: BLE001
+            db.rollback()
             logger.exception(
-                "Failed to enqueue poll_sora2_task_status from get_sora2_task",
+                "Failed to refresh task status from get_sora2_task",
                 extra={"workspace_id": workspace_id, "local_task_id": task.id},
             )
 
