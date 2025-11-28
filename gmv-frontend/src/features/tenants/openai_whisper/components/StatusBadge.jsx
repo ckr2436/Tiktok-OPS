@@ -4,6 +4,7 @@ const STATUS_COLORS = {
   processing: '#2563eb',
   success: '#16a34a',
   failed: '#dc2626',
+  skipped: '#6b7280',
 }
 
 export default function StatusBadge({ status }) {

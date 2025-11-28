@@ -20,6 +20,23 @@ export default function SubtitleResult({ job }) {
     )
   }
 
+  if (!job.do_subtitle) {
+    return (
+      <div
+        style={{
+          padding: 24,
+          background: '#fff',
+          borderRadius: 16,
+          border: '1px solid #e5e7eb',
+          color: '#6b7280',
+        }}
+      >
+        本次任务未开启字幕识别。
+      </div>
+    )
+  }
+
+  const subtitleStatus = job.subtitle_status || job.status
   const segments = Array.isArray(job.segments) ? job.segments : []
   const translationSegments = Array.isArray(job.translation_segments)
     ? job.translation_segments
@@ -54,10 +71,10 @@ export default function SubtitleResult({ job }) {
             {job.translation_language ? ` ｜ 翻译语言：${job.translation_language}` : ''}
           </div>
         </div>
-        <StatusBadge status={job.status} />
+        <StatusBadge status={subtitleStatus} />
       </div>
 
-      {job.error ? (
+      {job.subtitle_error || job.error ? (
         <div
           style={{
             padding: 16,
@@ -67,7 +84,7 @@ export default function SubtitleResult({ job }) {
             border: '1px solid #fecaca',
           }}
         >
-          处理失败：{job.error}
+          处理失败：{job.subtitle_error || job.error}
         </div>
       ) : null}
 

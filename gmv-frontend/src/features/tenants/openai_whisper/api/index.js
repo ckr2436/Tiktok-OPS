@@ -20,6 +20,12 @@ export async function createSubtitleJob(wid, payload, options = {}) {
   } else if (payload.file) {
     form.append('file', payload.file)
   }
+  form.append('do_subtitle', payload.doSubtitle ? 'true' : 'false')
+  form.append('do_contact_sheet', payload.doContactSheet ? 'true' : 'false')
+  form.append('do_download_only', payload.doDownloadOnly ? 'true' : 'false')
+  if (payload.doContactSheet && payload.contactInterval) {
+    form.append('contact_interval', String(payload.contactInterval))
+  }
   if (payload.sourceLanguage) {
     form.append('source_language', payload.sourceLanguage)
   }
@@ -82,5 +88,13 @@ export async function fetchSubtitleJobs(wid, options = {}) {
 export function buildSubtitleDownloadUrl(wid, jobId, variant = 'source') {
   const safeVariant = variant === 'translation' ? 'translation' : 'source'
   return `${apiRoot}${basePath(wid)}/jobs/${encodeURIComponent(jobId)}/subtitles?variant=${safeVariant}`
+}
+
+export function buildContactSheetDownloadUrl(wid, jobId) {
+  return `${apiRoot}${basePath(wid)}/jobs/${encodeURIComponent(jobId)}/contact-sheet`
+}
+
+export function buildVideoDownloadUrl(wid, jobId) {
+  return `${apiRoot}${basePath(wid)}/jobs/${encodeURIComponent(jobId)}/video`
 }
 

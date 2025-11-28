@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import mimetypes
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -19,6 +22,7 @@ WHISPER_TASK_QUEUE = (
     getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None)
     or getattr(settings, "CELERY_TASK_DEFAULT_QUEUE", "gmv.tasks.default")
 )
+ALLOWED_CONTACT_INTERVALS = {0.5, 1.0, 1.5, 2.0}
 
 
 class DownloadRequiresAuthError(RuntimeError):
@@ -131,6 +135,236 @@ def _segments_to_srt(segments: Iterable[dict]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _mark_download_status(
+    db: SessionLocal,
+    *,
+    workspace_id: int,
+    job_id: str,
+    status: str,
+    message: str | None = None,
+    download_url: str | None = None,
+    video_path: Path | None = None,
+    filename: str | None = None,
+    size: int | None = None,
+    content_type: str | None = None,
+) -> dict:
+    def _apply(meta: dict) -> dict:
+        meta["download_status"] = status
+        meta["download_error"] = message
+        if video_path:
+            meta["video_path"] = str(video_path)
+        if filename:
+            meta["filename"] = filename
+        if size is not None:
+            meta["size"] = size
+        if content_type:
+            meta["content_type"] = content_type
+        if download_url is not None:
+            meta["download_url"] = download_url
+        meta["status"] = storage.derive_overall_status(meta)
+        return meta
+
+    metadata = storage.update_metadata(workspace_id, job_id, _apply)
+    repository.update_download_status(
+        db,
+        workspace_id=workspace_id,
+        job_id=job_id,
+        status=status,
+        message=message,
+        download_url=download_url,
+    )
+    if status == "success":
+        repository.update_downloaded_file(
+            db,
+            workspace_id=workspace_id,
+            job_id=job_id,
+            filename=metadata.get("filename"),
+            file_size=size,
+            content_type=content_type,
+            video_path=str(video_path) if video_path else None,
+            download_url=download_url,
+        )
+    db.flush()
+    return metadata
+
+
+def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> tuple[dict | None, Path | None, str | None]:
+    raw_video_path = metadata.get("video_path")
+    video_path = Path(raw_video_path) if raw_video_path else None
+    share_url = (metadata.get("share_url") or "").strip()
+    download_url = f"/api/v1/tenants/{workspace_id}/openai-whisper/jobs/{job_id}/video"
+
+    if share_url:
+        if video_path and video_path.exists():
+            if (metadata.get("download_status") or "") != "success":
+                metadata = _mark_download_status(
+                    db,
+                    workspace_id=workspace_id,
+                    job_id=job_id,
+                    status="success",
+                    download_url=download_url,
+                    video_path=video_path,
+                    filename=metadata.get("filename"),
+                    size=metadata.get("size"),
+                    content_type=metadata.get("content_type"),
+                )
+            return metadata, video_path, None
+
+        try:
+            _mark_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="processing",
+            )
+            db.commit()
+            video_path, filename, content_type = _download_shared_video(
+                workspace_id, job_id, share_url, video_path
+            )
+            size = video_path.stat().st_size
+            metadata = _mark_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="success",
+                download_url=download_url,
+                video_path=video_path,
+                filename=filename or video_path.name,
+                size=size,
+                content_type=content_type,
+            )
+            db.commit()
+            return metadata, video_path, None
+        except DownloadRequiresAuthError as exc:
+            message = "该分享视频需要登录授权才能下载，请登录后重新复制可访问的链接。"
+            _mark_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=message,
+            )
+            db.commit()
+            logger.warning(
+                "whisper download requires auth",
+                extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)},
+            )
+            return None, None, message
+        except Exception as exc:  # noqa: BLE001
+            message = "视频下载失败，请稍后重试或更换链接。"
+            _mark_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=message,
+            )
+            db.commit()
+            logger.exception(
+                "whisper download failed",
+                extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)},
+            )
+            return None, None, message
+
+    if not video_path or not video_path.exists():
+        message = "视频源文件已丢失，无法继续。"
+        _mark_download_status(
+            db,
+            workspace_id=workspace_id,
+            job_id=job_id,
+            status="failed",
+            message=message,
+        )
+        db.commit()
+        return None, None, message
+
+    if (metadata.get("download_status") or "") in {"pending", "processing"}:
+        metadata = _mark_download_status(
+            db,
+            workspace_id=workspace_id,
+            job_id=job_id,
+            status="success",
+        )
+        db.commit()
+
+    return metadata, video_path, None
+
+
+def _best_grid(n: int) -> tuple[int, int]:
+    best_rows, best_cols = 1, n
+    best_diff = abs(best_rows - best_cols)
+    best_area = best_rows * best_cols
+
+    for rows in range(1, n + 1):
+        cols = math.ceil(n / rows)
+        area = rows * cols
+        diff = abs(rows - cols)
+        if diff < best_diff or (diff == best_diff and area < best_area):
+            best_rows, best_cols = rows, cols
+            best_diff = diff
+            best_area = area
+    return best_rows, best_cols
+
+
+def _extract_frames(video_path: Path, frames_dir: Path, interval: float) -> list[Path]:
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    pattern = frames_dir / "frame_%03d.png"
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vf",
+        f"fps=1/{interval},scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+        str(pattern),
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    frames = sorted(frames_dir.glob("frame_*.png"))
+    if frames:
+        return frames
+
+    fallback = frames_dir / "frame_001.png"
+    fallback_cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-vf",
+        "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+        str(fallback),
+    ]
+    subprocess.run(fallback_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return [fallback]
+
+
+def _render_contact_sheet(video_path: Path, workspace_id: int, job_id: str, interval: float) -> Path:
+    directory = storage.job_dir(workspace_id, job_id)
+    frames_dir = directory / "frames"
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir, ignore_errors=True)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    frames = _extract_frames(video_path, frames_dir, interval)
+    frame_count = max(1, len(frames))
+    rows, cols = _best_grid(frame_count)
+    output_path = storage.contact_sheet_path(directory)
+    tile_cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(frames_dir / "frame_%03d.png"),
+        "-frames:v",
+        "1",
+        "-vf",
+        f"tile={cols}x{rows}:padding=4:margin=10",
+        str(output_path),
+    ]
+    subprocess.run(tile_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    shutil.rmtree(frames_dir, ignore_errors=True)
+    return output_path
+
+
 @celery_app.task(name="openai_whisper.transcribe_video", bind=True, queue=WHISPER_TASK_QUEUE)
 def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
     with SessionLocal() as db:
@@ -146,61 +380,29 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
             repository.mark_failed(db, workspace_id, job_id, "任务元数据损坏，无法继续。")
             db.commit()
             return job_id
-
-        raw_video_path = metadata.get("video_path")
-        video_path = Path(raw_video_path) if raw_video_path else None
-        share_url = (metadata.get("share_url") or "").strip()
-
-        if share_url and (not video_path or not video_path.exists()):
-            try:
-                video_path, filename, content_type = _download_shared_video(
-                    workspace_id, job_id, share_url, video_path
-                )
-                size = video_path.stat().st_size
-
-                def _apply(meta: dict) -> dict:
-                    meta["video_path"] = str(video_path)
-                    meta["filename"] = filename or meta.get("filename") or video_path.name
-                    meta["size"] = size
-                    if content_type:
-                        meta["content_type"] = content_type
-                    return meta
-
-                metadata = storage.update_metadata(workspace_id, job_id, _apply)
-                repository.update_downloaded_file(
-                    db,
-                    workspace_id=workspace_id,
-                    job_id=job_id,
-                    filename=metadata.get("filename"),
-                    file_size=size,
-                    content_type=metadata.get("content_type"),
-                    video_path=str(video_path),
-                )
-                db.commit()
-            except DownloadRequiresAuthError as exc:
-                message = "该分享视频需要登录授权才能下载，请登录后重新复制可访问的链接。"
-                storage.mark_failed(workspace_id, job_id, message)
-                repository.mark_failed(db, workspace_id, job_id, message)
-                db.commit()
-                logger.warning(
-                    "whisper download requires auth",
-                    extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)},
-                )
-                return job_id
-            except Exception as exc:  # noqa: BLE001
-                message = "视频下载失败，请稍后重试或更换链接。"
-                storage.mark_failed(workspace_id, job_id, message)
-                repository.mark_failed(db, workspace_id, job_id, message)
-                db.commit()
-                logger.exception(
-                    "whisper download failed",
-                    extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)},
-                )
-                return job_id
+        metadata, video_path, video_error = _ensure_local_video(db, workspace_id, job_id, metadata)
+        if video_error:
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "subtitle",
+                status="failed",
+                error=video_error,
+            )
+            repository.mark_failed(db, workspace_id, job_id, video_error)
+            db.commit()
+            return job_id
 
         if not video_path or not video_path.exists():
-            storage.mark_failed(workspace_id, job_id, "视频源文件已丢失，无法继续。")
-            repository.mark_failed(db, workspace_id, job_id, "视频源文件已丢失，无法继续。")
+            message = "视频源文件已丢失，无法继续。"
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "subtitle",
+                status="failed",
+                error=message,
+            )
+            repository.mark_failed(db, workspace_id, job_id, message)
             db.commit()
             logger.error(
                 "whisper video missing",
@@ -208,7 +410,7 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
             )
             return job_id
 
-        storage.mark_processing(workspace_id, job_id)
+        storage.update_component_status(workspace_id, job_id, "subtitle", status="processing")
         repository.mark_processing(db, workspace_id, job_id)
         db.commit()
         try:
@@ -246,4 +448,220 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
         db.commit()
         logger.info("whisper transcription completed", extra={"workspace_id": workspace_id, "job_id": job_id})
     return job_id
+
+
+@celery_app.task(name="openai_whisper.download_shared_video", bind=True, queue=WHISPER_TASK_QUEUE)
+def download_shared_video(self, *, workspace_id: int, job_id: str) -> str:
+    with SessionLocal() as db:
+        try:
+            metadata = storage.load_metadata(workspace_id, job_id)
+        except FileNotFoundError:
+            logger.error("download metadata missing", extra={"workspace_id": workspace_id, "job_id": job_id})
+            repository.update_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message="任务元数据缺失，无法继续。",
+            )
+            db.commit()
+            return job_id
+        except storage.MetadataCorruptedError:
+            logger.error("download metadata corrupted", extra={"workspace_id": workspace_id, "job_id": job_id})
+            repository.update_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message="任务元数据损坏，无法继续。",
+            )
+            db.commit()
+            return job_id
+
+        metadata, video_path, video_error = _ensure_local_video(db, workspace_id, job_id, metadata)
+        if video_error:
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "download",
+                status="failed",
+                error=video_error,
+            )
+            repository.update_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=video_error,
+            )
+            db.commit()
+            return job_id
+
+        if video_path and video_path.exists():
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "download",
+                status="success",
+                url=metadata.get("download_url"),
+            )
+            repository.update_download_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="success",
+                download_url=metadata.get("download_url"),
+            )
+            db.commit()
+        return job_id
+
+
+@celery_app.task(name="openai_whisper.generate_contact_sheet", bind=True, queue=WHISPER_TASK_QUEUE)
+def generate_contact_sheet(
+    self,
+    *,
+    workspace_id: int,
+    job_id: str,
+    contact_interval: float | None = None,
+) -> str:
+    with SessionLocal() as db:
+        try:
+            metadata = storage.load_metadata(workspace_id, job_id)
+        except FileNotFoundError:
+            logger.error("contact sheet metadata missing", extra={"workspace_id": workspace_id, "job_id": job_id})
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message="任务元数据缺失，无法继续。",
+            )
+            db.commit()
+            return job_id
+        except storage.MetadataCorruptedError:
+            logger.error("contact sheet metadata corrupted", extra={"workspace_id": workspace_id, "job_id": job_id})
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message="任务元数据损坏，无法继续。",
+            )
+            db.commit()
+            return job_id
+
+        metadata, video_path, video_error = _ensure_local_video(db, workspace_id, job_id, metadata)
+        if video_error:
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "contact_sheet",
+                status="failed",
+                error=video_error,
+            )
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=video_error,
+            )
+            db.commit()
+            return job_id
+
+        if not video_path or not video_path.exists():
+            message = "视频源文件已丢失，无法生成拼图。"
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "contact_sheet",
+                status="failed",
+                error=message,
+            )
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=message,
+            )
+            db.commit()
+            return job_id
+
+        interval_value = contact_interval or metadata.get("contact_interval")
+        try:
+            interval_value = float(interval_value)
+        except (TypeError, ValueError):
+            interval_value = None
+        if interval_value not in ALLOWED_CONTACT_INTERVALS:
+            message = "抽帧间隔不合法，无法生成拼图。"
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "contact_sheet",
+                status="failed",
+                error=message,
+            )
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=message,
+            )
+            db.commit()
+            return job_id
+
+        storage.update_component_status(workspace_id, job_id, "contact_sheet", status="processing")
+        repository.update_contact_sheet_status(
+            db,
+            workspace_id=workspace_id,
+            job_id=job_id,
+            status="processing",
+        )
+        db.commit()
+        try:
+            output_path = _render_contact_sheet(video_path, workspace_id, job_id, interval_value)
+            download_url = f"/api/v1/tenants/{workspace_id}/openai-whisper/jobs/{job_id}/contact-sheet"
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "contact_sheet",
+                status="success",
+                url=download_url,
+            )
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="success",
+                contact_sheet_url=download_url,
+            )
+            db.commit()
+            logger.info(
+                "contact sheet generated",
+                extra={"workspace_id": workspace_id, "job_id": job_id, "path": str(output_path)},
+            )
+        except Exception as exc:  # noqa: BLE001
+            message = "拆解图片失败，请稍后再试。"
+            storage.update_component_status(
+                workspace_id,
+                job_id,
+                "contact_sheet",
+                status="failed",
+                error=message,
+            )
+            repository.update_contact_sheet_status(
+                db,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                status="failed",
+                message=message,
+            )
+            db.commit()
+            logger.exception(
+                "contact sheet generation failed",
+                extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)},
+            )
+        return job_id
 

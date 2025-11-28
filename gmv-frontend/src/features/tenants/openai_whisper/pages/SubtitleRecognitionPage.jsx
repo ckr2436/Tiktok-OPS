@@ -4,6 +4,8 @@ import { useParams } from 'react-router-dom'
 import FileDropZone from '../components/FileDropZone.jsx'
 import SubtitleResult from '../components/SubtitleResult.jsx'
 import SubtitleJobHistory from '../components/SubtitleJobHistory.jsx'
+import ContactSheetResult from '../components/ContactSheetResult.jsx'
+import DownloadVideoCard from '../components/DownloadVideoCard.jsx'
 import useSubtitleJob from '../hooks/useSubtitleJob.js'
 import {
   buildSubtitleDownloadUrl,
@@ -24,6 +26,10 @@ export default function SubtitleRecognitionPage() {
   const [translate, setTranslate] = useState(false)
   const [targetLanguage, setTargetLanguage] = useState('')
   const [showBilingual, setShowBilingual] = useState(false)
+  const [doSubtitle, setDoSubtitle] = useState(true)
+  const [doContactSheet, setDoContactSheet] = useState(false)
+  const [contactInterval, setContactInterval] = useState('1')
+  const [doDownloadOnly, setDoDownloadOnly] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
@@ -81,6 +87,8 @@ export default function SubtitleRecognitionPage() {
       setUploadedVideo(null)
       setUploadProgress(0)
       setIsUploading(false)
+    } else {
+      setDoDownloadOnly(false)
     }
   }, [shareLink])
 
@@ -200,6 +208,7 @@ export default function SubtitleRecognitionPage() {
   }, [job, upsertHistory])
 
   const languageOptions = useMemo(() => languages ?? [], [languages])
+  const contactIntervals = useMemo(() => ['0.5', '1', '1.5', '2'], [])
 
   const handleHistoryRefresh = useCallback(async () => {
     const jobs = await refreshHistory()
@@ -240,11 +249,24 @@ export default function SubtitleRecognitionPage() {
     e.preventDefault()
     setErrorMessage('')
     const trimmedLink = shareLink.trim()
+    const hasTask = doSubtitle || doContactSheet || (doDownloadOnly && !!trimmedLink)
     if (!trimmedLink && !uploadedVideo?.upload_id) {
       setErrorMessage('请先上传需要识别的视频文件，或粘贴有效的短视频分享链接。')
       return
     }
-    if (translate && !targetLanguage) {
+    if (!hasTask) {
+      setErrorMessage('请至少勾选一种任务类型。')
+      return
+    }
+    if (doDownloadOnly && !trimmedLink) {
+      setErrorMessage('仅下载模式仅支持分享链接。')
+      return
+    }
+    if (doContactSheet && !contactIntervals.includes(String(contactInterval))) {
+      setErrorMessage('请选择合法的抽帧间隔。')
+      return
+    }
+    if (doSubtitle && translate && !targetLanguage) {
       setErrorMessage('请选择翻译目标语言。')
       return
     }
@@ -254,9 +276,13 @@ export default function SubtitleRecognitionPage() {
         uploadId: trimmedLink ? null : uploadedVideo?.upload_id,
         shareUrl: trimmedLink || null,
         sourceLanguage: sourceLanguage || null,
-        translate,
-        targetLanguage: targetLanguage || null,
-        showBilingual,
+        translate: doSubtitle && translate,
+        targetLanguage: doSubtitle ? targetLanguage || null : null,
+        showBilingual: doSubtitle ? showBilingual : false,
+        doSubtitle,
+        doContactSheet,
+        contactInterval: doContactSheet ? Number(contactInterval) : null,
+        doDownloadOnly: doDownloadOnly && !!trimmedLink,
       })
       setJob(response)
       upsertHistory(response)
@@ -270,9 +296,12 @@ export default function SubtitleRecognitionPage() {
     }
   }
 
-  const canSubmit =
-    (!!uploadedVideo || !!shareLink.trim()) && (!translate || targetLanguage) && !isUploading
-  const showDownloads = job && job.status === 'success'
+  const hasVideo = !!uploadedVideo || !!shareLink.trim()
+  const hasTaskSelection = doSubtitle || doContactSheet || (doDownloadOnly && !!shareLink.trim())
+  const translationReady = !doSubtitle || !translate || targetLanguage
+  const contactReady = !doContactSheet || contactIntervals.includes(String(contactInterval))
+  const canSubmit = hasVideo && hasTaskSelection && translationReady && contactReady && !isUploading
+  const showDownloads = job && job.do_subtitle && job.subtitle_status === 'success'
   const sourceDownloadUrl = job
     ? buildSubtitleDownloadUrl(wid, job.job_id, 'source')
     : null
@@ -378,6 +407,80 @@ export default function SubtitleRecognitionPage() {
             </p>
           </div>
 
+          <div
+            style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: 12,
+              padding: 16,
+              background: '#f9fafb',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>任务类型</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={doSubtitle}
+                onChange={(e) => {
+                  setDoSubtitle(e.target.checked)
+                  if (!e.target.checked) {
+                    setTranslate(false)
+                    setTargetLanguage('')
+                    setShowBilingual(false)
+                  }
+                }}
+                disabled={loading}
+              />
+              <span>识别字幕</span>
+            </label>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={doContactSheet}
+                  onChange={(e) => setDoContactSheet(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>拆解视频图片（生成 contact sheet）</span>
+              </label>
+              {doContactSheet ? (
+                <div style={{ marginLeft: 24 }}>
+                  <label style={{ display: 'block', marginBottom: 6 }}>抽帧间隔</label>
+                  <select
+                    value={contactInterval}
+                    onChange={(e) => setContactInterval(e.target.value)}
+                    disabled={loading}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid #d1d5db',
+                    }}
+                  >
+                    {contactIntervals.map((opt) => (
+                      <option key={opt} value={opt}>
+                        每 {opt} 秒
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: shareLink ? 1 : 0.6 }}>
+              <input
+                type="checkbox"
+                checked={doDownloadOnly}
+                onChange={(e) => setDoDownloadOnly(e.target.checked)}
+                disabled={loading || !shareLink}
+              />
+              <span>下载源视频文件（仅分享链接可用）</span>
+            </label>
+          </div>
+
           <div>
             <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
               原视频语言（可选）
@@ -421,7 +524,7 @@ export default function SubtitleRecognitionPage() {
                     setShowBilingual(false)
                   }
                 }}
-                disabled={loading}
+                disabled={loading || !doSubtitle}
               />
               <span style={{ fontWeight: 600 }}>需要翻译</span>
             </label>
@@ -440,7 +543,7 @@ export default function SubtitleRecognitionPage() {
                     borderRadius: 10,
                     border: '1px solid #d1d5db',
                   }}
-                  disabled={loading}
+                  disabled={loading || !doSubtitle}
                 >
                   <option value="">请选择</option>
                   {languageOptions.map((lang) => (
@@ -462,7 +565,7 @@ export default function SubtitleRecognitionPage() {
                     type="checkbox"
                     checked={showBilingual}
                     onChange={(e) => setShowBilingual(e.target.checked)}
-                    disabled={loading}
+                    disabled={loading || !doSubtitle}
                   />
                   <span>同时显示原文与译文</span>
                 </label>
@@ -502,12 +605,15 @@ export default function SubtitleRecognitionPage() {
               ? `上传中…${uploadProgress ? ` ${uploadProgress}%` : ''}`
               : loading
                 ? '正在创建任务…'
-                : '开始识别'}
+                : '开始任务'}
           </button>
         </form>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <SubtitleResult job={job} />
+
+          <ContactSheetResult job={job} />
+          <DownloadVideoCard job={job} />
 
           {showDownloads ? (
             <div
