@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import logging
 from typing import Any, Mapping, Dict, Optional
+
+import httpx
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +28,9 @@ SORA2_MODELS: set[str] = {
 
 _TERMINAL_KEYWORDS = ("success", "succeeded", "fail", "error", "timeout")
 _PENDING_KEYWORDS = ("wait", "queue", "run", "process", "gen", "pending")
+
+
+logger = logging.getLogger(__name__)
 
 
 def is_terminal_state(state: str | None) -> bool:
@@ -270,8 +276,35 @@ async def refresh_sora2_task_status(
     api_key = decrypt_api_key(key.api_key_ciphertext)
     client = Sora2ImageToVideoService(api_key=api_key)
 
-    resp = await client.get_task_record(task_id=task.task_id)
+    def _mark_waiting_remote() -> None:
+        # 远端暂不可见时保持 pending 语义，避免抛 404
+        if not task.state or not is_terminal_state(task.state):
+            task.state = "waiting_remote"
+        db.add(task)
+        db.flush()
+
+    try:
+        resp = await client.get_task_record(task_id=task.task_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            logger.info(
+                "recordInfo temporary 404, mark as waiting_remote",
+                extra={"task_id": task.id, "workspace_id": task.workspace_id},
+            )
+            _mark_waiting_remote()
+            return task
+        raise KieApiError(f"recordInfo http error: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise KieApiError(f"recordInfo error: {exc}") from exc
+
     code = resp.get("code")
+    if code == 404:
+        logger.info(
+            "recordInfo not ready yet, mark as waiting_remote",
+            extra={"task_id": task.id, "workspace_id": task.workspace_id},
+        )
+        _mark_waiting_remote()
+        return task
     if code != 200:
         raise KieApiError(f"recordInfo failed: code={code}, msg={resp.get('msg')}")
 
