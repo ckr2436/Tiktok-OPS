@@ -1,5 +1,5 @@
 // src/features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
@@ -241,6 +241,7 @@ export default function Sora2ImageToVideoPage() {
   // 当前任务 ID
   const [currentTaskId, setCurrentTaskId] = useState(null)
   const [taskIdSetAt, setTaskIdSetAt] = useState(null)
+  const firstTaskRefreshRef = useRef(false)
 
   // 历史分页
   const [pageSize, setPageSize] = useState(10)
@@ -285,6 +286,10 @@ export default function Sora2ImageToVideoPage() {
     setTaskIdSetAt(Date.now())
   }, [currentTaskId])
 
+  useEffect(() => {
+    firstTaskRefreshRef.current = false
+  }, [currentTaskId])
+
   // 挂载 / 模型切换时恢复最近任务
   useEffect(() => {
     if (!wid || typeof window === 'undefined') return
@@ -316,7 +321,15 @@ export default function Sora2ImageToVideoPage() {
   // ------- React Query：当前任务 -------
   const taskQuery = useQuery({
     queryKey: ['sora2-task', wid, modelId, currentTaskId],
-    queryFn: () => kieTenantApi.getTask(wid, currentTaskId, { refresh: true }),
+    queryFn: async () => {
+      const res = await kieTenantApi.getTask(wid, currentTaskId, {
+        refresh: firstTaskRefreshRef.current,
+      })
+      if (!firstTaskRefreshRef.current) {
+        firstTaskRefreshRef.current = true
+      }
+      return res
+    },
     enabled: !!wid && !!currentTaskId,
     refetchInterval: (query) => {
       const state = query?.state?.data?.state
@@ -330,6 +343,12 @@ export default function Sora2ImageToVideoPage() {
     error: taskError,
     refetch: refetchTask,
   } = taskQuery
+
+  const enableFilesQuery =
+    !!wid &&
+    !!currentTaskId &&
+    !!task &&
+    !shouldPollByState(task.state)
 
   // 如果后端返回 404（getTask → null），自动清理本地“当前任务”状态和缓存
   useEffect(() => {
@@ -362,15 +381,11 @@ export default function Sora2ImageToVideoPage() {
   ])
 
   // ------- React Query：当前任务文件 -------
-  const { data: files = [] } = useQuery({
+  const { data: files = [], refetch: refetchFiles } = useQuery({
     queryKey: ['sora2-files', wid, modelId, currentTaskId],
     queryFn: () => kieTenantApi.listTaskFiles(wid, currentTaskId),
-    enabled: !!wid && !!currentTaskId,
-    refetchInterval: () => {
-      // ✅ 没有 task 的时候不再轮询 files，避免你说的“空仍然不停调用”
-      if (!task) return false
-      return shouldPollByState(task.state) ? 8000 : false
-    },
+    enabled: enableFilesQuery,
+    refetchInterval: false,
   })
 
   // ------- React Query：任务历史 -------
@@ -623,6 +638,7 @@ export default function Sora2ImageToVideoPage() {
     if (!currentTaskId) return
     await refetchTask()
     await refetchHistory()
+    await refetchFiles()
   }
 
   // 清除当前任务（不动历史）
