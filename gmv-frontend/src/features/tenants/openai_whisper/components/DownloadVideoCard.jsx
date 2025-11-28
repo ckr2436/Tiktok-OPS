@@ -1,18 +1,12 @@
 // src/features/tenants/openai_whisper/components/DownloadVideoCard.jsx
 import StatusBadge from './StatusBadge.jsx'
-import { apiRoot } from '../../../../core/config.js'
-
-function buildUrl(value) {
-  if (!value) return ''
-  if (value.startsWith('http')) return value
-  return `${apiRoot}${value}`
-}
+import { buildDownloadUrl } from '../utils/url.js'
 
 export default function DownloadVideoCard({ job }) {
   const enabled = job && job.download_status && job.download_status !== 'skipped'
   if (!enabled) return null
 
-  const url = buildUrl(job.download_url)
+  const url = buildDownloadUrl(job.download_url)
   const status = job.download_status || 'pending'
 
   return (

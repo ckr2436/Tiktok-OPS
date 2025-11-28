@@ -1,12 +1,6 @@
 // src/features/tenants/openai_whisper/components/ContactSheetResult.jsx
 import StatusBadge from './StatusBadge.jsx'
-import { apiRoot } from '../../../../core/config.js'
-
-function buildUrl(value) {
-  if (!value) return ''
-  if (value.startsWith('http')) return value
-  return `${apiRoot}${value}`
-}
+import { buildDownloadUrl } from '../utils/url.js'
 
 export default function ContactSheetResult({ job }) {
   if (!job || !job.do_contact_sheet) {
@@ -14,7 +8,7 @@ export default function ContactSheetResult({ job }) {
   }
 
   const status = job.contact_sheet_status || 'pending'
-  const downloadUrl = buildUrl(job.contact_sheet_url)
+  const downloadUrl = buildDownloadUrl(job.contact_sheet_url)
 
   return (
     <div
