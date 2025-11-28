@@ -32,6 +32,7 @@ from app.services.kie_api.common import (
 from app.services.kie_api.sora2 import Sora2ImageToVideoService, KieApiError
 from app.services.kie_api.tasks import (
     create_sora2_task,
+    is_pending_state,
     refresh_sora2_task_status_by_task_id,
 )
 from app.tasks.kie_ai.sora.sora2_image_to_video_tasks import (
@@ -90,6 +91,9 @@ MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024  # 20MB
 ASPECT_RATIOS_ALLOWED: set[str] = {"portrait", "landscape"}
 DURATIONS_STD: set[int] = {10, 15}
 DURATIONS_STORYBOARD: set[int] = {10, 15, 25}
+REFRESH_PENDING_LIMIT = int(
+    getattr(settings, "SORA2_REFRESH_PENDING_LIMIT", 20),
+)
 
 
 def _validate_image_file(upload: UploadFile) -> None:
@@ -694,6 +698,7 @@ async def list_sora2_tasks(
     size: int = 10,
     state: Optional[str] = None,
     model: Optional[str] = None,
+    refresh_pending: bool = False,
     _: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
@@ -716,12 +721,45 @@ async def list_sora2_tasks(
         q = q.filter(KieTask.state == state)
 
     total = q.count()
+
     items = (
         q.order_by(KieTask.id.desc())
         .offset(offset)
         .limit(size)
         .all()
     )
+
+    if refresh_pending:
+        refreshed = 0
+        for item in items:
+            if refreshed >= REFRESH_PENDING_LIMIT:
+                break
+            if not is_pending_state(item.state):
+                continue
+            try:
+                await refresh_sora2_task_status_by_task_id(
+                    db,
+                    workspace_id=int(workspace_id),
+                    local_task_id=int(item.id),
+                )
+                db.commit()
+                refreshed += 1
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                logger.exception(
+                    "Failed to refresh pending task in list_sora2_tasks",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "task_id": item.id,
+                    },
+                )
+        if refreshed:
+            items = (
+                q.order_by(KieTask.id.desc())
+                .offset(offset)
+                .limit(size)
+                .all()
+            )
 
     return Sora2TaskListResponse(items=items, total=total)
 
