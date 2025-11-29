@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar
 
 import json
+from enum import Enum
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -596,6 +597,204 @@ class GMVMaxReportGetRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+# ------------------------- Dataset typing & builder for report -------------------------
+
+
+class GMVMaxDataset(str, Enum):
+    """High-level GMV Max dataset type = promotion type + metric level."""
+
+    # Overview – ad account level, overall (PRODUCT + LIVE)
+    OVERVIEW = "overview"
+
+    # Product GMV Max
+    PRODUCT_CAMPAIGN = "product_campaign"      # Campaign-level
+    PRODUCT_PRODUCT = "product_product"        # Product-level
+    CREATIVE = "creative"                      # Creative-level
+    PRODUCT_DURATION = "product_duration"      # Duration-level
+
+    # LIVE GMV Max
+    LIVE_CAMPAIGN = "live_campaign"            # Campaign-level
+    LIVE_LIVESTREAM = "live_livestream"        # Livestream(room)-level
+    LIVE_DURATION = "live_duration"            # Duration-level
+
+
+# 每种 dataset 对应的固定维度和必填过滤字段，根据官方 Metrics 文档整理
+_GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
+    # Overview metrics：All GMV Max Campaigns, Ad account-level
+    # 示例 curl 中是 ["advertiser_id", "stat_time_day"]
+    GMVMaxDataset.OVERVIEW: {
+        "promotion_types": None,  # 不限制 PRODUCT/LIVE，一起看整体
+        "dimensions": ["advertiser_id", "stat_time_day"],
+        "require_all_of": (),
+        "require_any_of": (),
+    },
+    # Product GMV Max, campaign-level
+    GMVMaxDataset.PRODUCT_CAMPAIGN: {
+        "promotion_types": ["PRODUCT"],
+        "dimensions": ["campaign_id", "stat_time_day"],
+        "require_all_of": (),  # campaign_ids 可选
+        "require_any_of": (),
+    },
+    # Product GMV Max, product-level（官方：campaign_ids Required）
+    GMVMaxDataset.PRODUCT_PRODUCT: {
+        "promotion_types": ["PRODUCT"],
+        "dimensions": ["item_group_id", "stat_time_day"],
+        "require_all_of": ("campaign_ids",),
+        "require_any_of": (),
+    },
+    # Product GMV Max, creative-level（campaign_ids + item_group_ids Required）
+    GMVMaxDataset.CREATIVE: {
+        "promotion_types": ["PRODUCT"],
+        "dimensions": ["campaign_id", "item_group_id", "item_id"],
+        "require_all_of": ("campaign_ids", "item_group_ids"),
+        "require_any_of": (),
+    },
+    # Product GMV Max, duration-level（campaign_ids + item_group_ids Required）
+    GMVMaxDataset.PRODUCT_DURATION: {
+        "promotion_types": ["PRODUCT"],
+        "dimensions": ["duration"],
+        "require_all_of": ("campaign_ids", "item_group_ids"),
+        "require_any_of": (),
+    },
+    # LIVE GMV Max, campaign-level
+    GMVMaxDataset.LIVE_CAMPAIGN: {
+        "promotion_types": ["LIVE"],
+        "dimensions": ["campaign_id", "stat_time_day"],
+        "require_all_of": (),
+        "require_any_of": (),
+    },
+    # LIVE GMV Max, livestream-level（campaign_ids Required）
+    GMVMaxDataset.LIVE_LIVESTREAM: {
+        "promotion_types": ["LIVE"],
+        "dimensions": ["room_id", "stat_time_day"],
+        "require_all_of": ("campaign_ids",),
+        "require_any_of": (),
+    },
+    # LIVE GMV Max, duration-level（campaign_ids + room_ids Required）
+    GMVMaxDataset.LIVE_DURATION: {
+        "promotion_types": ["LIVE"],
+        "dimensions": ["duration"],
+        "require_all_of": ("campaign_ids", "room_ids"),
+        "require_any_of": (),
+    },
+}
+
+
+def build_gmv_max_report_request(
+    *,
+    dataset: GMVMaxDataset,
+    advertiser_id: str,
+    store_ids: Sequence[str],
+    start_date: str,
+    end_date: str,
+    metrics: Sequence[str],
+    enable_total_metrics: Optional[bool] = None,
+    campaign_ids: Optional[Sequence[str]] = None,
+    campaign_name: Optional[str] = None,
+    campaign_statuses: Optional[Sequence[str]] = None,
+    item_group_ids: Optional[Sequence[str]] = None,
+    room_ids: Optional[Sequence[str]] = None,
+    search_word: Optional[str] = None,
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    sort_field: Optional[str] = None,
+    sort_type: Optional[str] = None,
+) -> GMVMaxReportGetRequest:
+    """
+    Build a GMVMaxReportGetRequest that respects the official dataset-level
+    constraints (promotion type + metric level).
+
+    This will:
+    - Fix `dimensions` according to dataset.
+    - Add appropriate gmv_max_promotion_types filter (PRODUCT / LIVE).
+    - Validate required filters (campaign_ids / item_group_ids / room_ids).
+    """
+    if not store_ids:
+        raise ValueError("store_ids must contain at least one store id")
+
+    if not metrics:
+        raise ValueError("metrics must contain at least one metric field")
+
+    cfg = _GMV_MAX_DATASET_CONFIG[dataset]
+    require_all_of = cfg.get("require_all_of") or ()
+    require_any_of = cfg.get("require_any_of") or ()
+
+    def _is_empty_sequence(value: Any) -> bool:
+        return (
+            isinstance(value, Sequence)
+            and not isinstance(value, (str, bytes))
+            and len(value) == 0
+        )
+
+    # 校验 require_all_of：字段必须非空
+    missing_all: List[str] = []
+    for field_name in require_all_of:
+        value = locals().get(field_name)
+        if value is None or _is_empty_sequence(value):
+            missing_all.append(field_name)
+
+    # 校验 require_any_of：这些字段中至少一个非空
+    missing_any_group = False
+    if require_any_of:
+        has_any = False
+        for field_name in require_any_of:
+            value = locals().get(field_name)
+            if value is None or _is_empty_sequence(value):
+                continue
+            has_any = True
+            break
+        if not has_any:
+            missing_any_group = True
+
+    if missing_all or missing_any_group:
+        msg_parts: List[str] = []
+        if missing_all:
+            msg_parts.append("missing required filters: %s" % ", ".join(missing_all))
+        if missing_any_group:
+            msg_parts.append(
+                "at least one of the following filters must be provided: %s"
+                % ", ".join(require_any_of)
+            )
+        raise ValueError(
+            "Invalid GMV Max report request for dataset %r: %s"
+            % (dataset.value, "; ".join(msg_parts))
+        )
+
+    # 推广类型过滤：PRODUCT / LIVE
+    promotion_types = cfg.get("promotion_types")
+    if promotion_types:
+        promotion_types = list(promotion_types)
+
+    report_filtering = (
+        GMVMaxReportFiltering(gmv_max_promotion_types=list(promotion_types))
+        if promotion_types
+        else None
+    )
+
+    request = GMVMaxReportGetRequest(
+        advertiser_id=advertiser_id,
+        store_ids=list(store_ids),
+        start_date=start_date,
+        end_date=end_date,
+        metrics=list(metrics),
+        dimensions=list(cfg["dimensions"]),
+        gmv_max_promotion_types=promotion_types,
+        campaign_ids=list(campaign_ids) if campaign_ids else None,
+        campaign_name=campaign_name,
+        campaign_statuses=list(campaign_statuses) if campaign_statuses else None,
+        item_group_ids=list(item_group_ids) if item_group_ids else None,
+        room_ids=list(room_ids) if room_ids else None,
+        search_word=search_word,
+        enable_total_metrics=enable_total_metrics,
+        filtering=report_filtering,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_type=sort_type,
+    )
+    return request
+
+
 # ------------------------- Response envelope -------------------------
 
 
@@ -942,6 +1141,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         self, request: GMVMaxReportGetRequest
     ) -> GMVMaxResponse[GMVMaxReportData]:
         """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
+
         def _encode_seq(values: Sequence[Any] | None) -> str | None:
             if values is None:
                 return None
@@ -1019,7 +1219,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             merged_page_info = response.data.page_info or merged_page_info
 
             page_info = response.data.page_info
-            has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)) if page_info else False
+            has_more = bool(
+                getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
+            ) if page_info else False
             total_page = getattr(page_info, "total_page", None) if page_info else None
             if has_more:
                 page_value += 1
@@ -1038,14 +1240,58 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             page_info=merged_page_info,
             summary=summary,
         )
-        return GMVMaxResponse[
-            GMVMaxReportData
-        ](  # type: ignore[call-arg]
+        return GMVMaxResponse[GMVMaxReportData](  # type: ignore[call-arg]
             code=response.code,
             message=response.message,
             request_id=response.request_id,
             data=merged_data,
         )
+
+    async def gmv_max_report_get_dataset(
+        self,
+        *,
+        dataset: GMVMaxDataset,
+        advertiser_id: str,
+        store_ids: Sequence[str],
+        start_date: str,
+        end_date: str,
+        metrics: Sequence[str],
+        enable_total_metrics: Optional[bool] = None,
+        campaign_ids: Optional[Sequence[str]] = None,
+        campaign_name: Optional[str] = None,
+        campaign_statuses: Optional[Sequence[str]] = None,
+        item_group_ids: Optional[Sequence[str]] = None,
+        room_ids: Optional[Sequence[str]] = None,
+        search_word: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        sort_field: Optional[str] = None,
+        sort_type: Optional[str] = None,
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """
+        High-level wrapper around /gmv_max/report/get/ that takes a GMVMaxDataset
+        (promotion type + metric level) and automatically builds a valid request.
+        """
+        request = build_gmv_max_report_request(
+            dataset=dataset,
+            advertiser_id=advertiser_id,
+            store_ids=store_ids,
+            start_date=start_date,
+            end_date=end_date,
+            metrics=metrics,
+            enable_total_metrics=enable_total_metrics,
+            campaign_ids=campaign_ids,
+            campaign_name=campaign_name,
+            campaign_statuses=campaign_statuses,
+            item_group_ids=item_group_ids,
+            room_ids=room_ids,
+            search_word=search_word,
+            page=page,
+            page_size=page_size,
+            sort_field=sort_field,
+            sort_type=sort_type,
+        )
+        return await self.gmv_max_report_get(request)
 
 
 __all__ = [
@@ -1066,4 +1312,8 @@ __all__ = [
     "GMVMaxExclusiveAuthorizationCreateRequest",
     "GMVMaxBidRecommendRequest",
     "GMVMaxReportGetRequest",
+    "GMVMaxReportData",
+    "GMVMaxDataset",
+    "build_gmv_max_report_request",
 ]
+

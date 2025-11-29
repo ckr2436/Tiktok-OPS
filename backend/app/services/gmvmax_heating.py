@@ -24,8 +24,8 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignActionApplyBody,
     GMVMaxCampaignActionApplyRequest,
-    GMVMaxReportFiltering,
-    GMVMaxReportGetRequest,
+    GMVMaxDataset,
+    build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
 )
 from app.services.gmvmax_heating_actions import apply_boost_creative_action
@@ -34,12 +34,7 @@ from app.services.ttb_client_factory import build_ttb_gmvmax_client
 
 logger = logging.getLogger("gmv.services.gmvmax.heating")
 
-_CREATIVE_DIMENSIONS = [
-    "campaign_id",
-    "creative_id",
-    "stat_time_day",
-    "creative_delivery_status",
-]
+# Creative 级别报表使用的指标集合（维度由 GMVMaxDataset.CREATIVE 统一管理）
 _CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
 _REPORT_PAGE_SIZE = 200
 _DEFAULT_PROVIDER = "tiktok-business"
@@ -118,6 +113,8 @@ async def _sync_creative_metrics_for_campaign(
     start_date: date,
     end_date: date,
 ) -> int:
+    """Pull creative-level GMV Max metrics for a single campaign and upsert into DB."""
+
     if not campaign.store_id or not campaign.advertiser_id:
         logger.debug(
             "skip creative metrics sync because store_id or advertiser_id missing",
@@ -129,70 +126,67 @@ async def _sync_creative_metrics_for_campaign(
         )
         return 0
 
-    page = 1
+    if not campaign.campaign_id:
+        logger.debug(
+            "skip creative metrics sync because campaign_id missing",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+            },
+        )
+        return 0
+
+    # 使用统一的 GMVMaxDataset.CREATIVE 构建报表请求：
+    # - promotion_types: PRODUCT_GMV_MAX
+    # - dimensions: ["campaign_id", "creative_id", "stat_time_day", "creative_delivery_status"]
+    # - 约束：必须提供 campaign_ids
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.CREATIVE,
+        advertiser_id=str(campaign.advertiser_id),
+        store_ids=[str(campaign.store_id)],
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(),
+        metrics=_CREATIVE_METRICS,
+        campaign_ids=[str(campaign.campaign_id)],
+        page_size=_REPORT_PAGE_SIZE,
+    )
+
+    response = await client.gmv_max_report_get(request)
+    data = response.data
+    entries = list(data.list)
+    if not entries:
+        return 0
+
     rows = 0
-    filtering = GMVMaxReportFiltering.model_validate({"campaign_ids": [campaign.campaign_id]})
-
-    while True:
-        request = GMVMaxReportGetRequest(
-            advertiser_id=str(campaign.advertiser_id),
-            store_ids=[str(campaign.store_id)],
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
-            metrics=_CREATIVE_METRICS,
-            dimensions=_CREATIVE_DIMENSIONS,
-            filtering=filtering,
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-        response = await client.gmv_max_report_get(request)
-        data = response.data
-        entries = list(data.list)
-        if not entries:
-            break
-
-        for entry in entries:
-            dims = entry.dimensions or {}
-            metrics_payload = dict(entry.metrics or {})
-            creative_id = dims.get("creative_id")
-            stat_time = dims.get("stat_time_day") or dims.get("date")
-            if not creative_id or not stat_time:
-                continue
-            for meta_field in ("creative_name", "adgroup_id", "product_id", "item_id"):
-                if meta_field in dims and dims[meta_field] is not None:
-                    metrics_payload.setdefault(meta_field, dims[meta_field])
-            delivery_status = dims.get("creative_delivery_status")
-            if delivery_status is not None:
-                metrics_payload.setdefault("creative_status", delivery_status)
-            stat_datetime = _parse_stat_time(stat_time)
-            await upsert_creative_metrics(
-                db,
-                workspace_id=workspace_id,
-                provider=provider,
-                auth_id=auth_id,
-                campaign_id=campaign.campaign_id,
-                creative_id=str(creative_id),
-                stat_time_day=stat_datetime,
-                metrics=metrics_payload,
-            )
-            rows += 1
-
-        page_info = (
-            data.page_info.model_dump(exclude_none=True) if data.page_info else {}
-        )
-        has_more = bool(page_info.get("has_more")) or bool(page_info.get("has_next"))
-        total_page = page_info.get("total_page")
-        if has_more:
-            page += 1
+    for entry in entries:
+        dims = entry.dimensions or {}
+        metrics_payload = dict(entry.metrics or {})
+        creative_id = dims.get("creative_id")
+        stat_time = dims.get("stat_time_day") or dims.get("date")
+        if not creative_id or not stat_time:
             continue
-        try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):  # pragma: no cover - defensive
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
-            continue
-        break
+
+        # 补充一些创意级元数据到 metrics 里，方便后续查询
+        for meta_field in ("creative_name", "adgroup_id", "product_id", "item_id"):
+            if meta_field in dims and dims[meta_field] is not None:
+                metrics_payload.setdefault(meta_field, dims[meta_field])
+
+        delivery_status = dims.get("creative_delivery_status")
+        if delivery_status is not None:
+            metrics_payload.setdefault("creative_status", delivery_status)
+
+        stat_datetime = _parse_stat_time(stat_time)
+        await upsert_creative_metrics(
+            db,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            campaign_id=campaign.campaign_id,
+            creative_id=str(creative_id),
+            stat_time_day=stat_datetime,
+            metrics=metrics_payload,
+        )
+        rows += 1
 
     db.flush()
     return rows
@@ -562,3 +556,4 @@ async def run_creative_heating_cycle(
         extra=summary,
     )
     return summary
+
