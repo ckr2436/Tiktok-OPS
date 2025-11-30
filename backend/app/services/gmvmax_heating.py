@@ -24,8 +24,9 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignActionApplyBody,
     GMVMaxCampaignActionApplyRequest,
-    GMVMaxDataset,
-    build_gmv_max_report_request,
+    GMVMaxCreativeReportRequest,
+    GMVMaxReportFiltering,
+    GMVMaxReportTimeRange,
     TikTokBusinessGMVMaxClient,
 )
 from app.services.gmvmax_heating_actions import apply_boost_creative_action
@@ -136,22 +137,26 @@ async def _sync_creative_metrics_for_campaign(
         )
         return 0
 
-    # 使用统一的 GMVMaxDataset.CREATIVE 构建报表请求：
-    # - promotion_types: PRODUCT_GMV_MAX
-    # - dimensions: ["campaign_id", "creative_id", "stat_time_day", "creative_delivery_status"]
-    # - 约束：必须提供 campaign_ids
-    request = build_gmv_max_report_request(
-        dataset=GMVMaxDataset.CREATIVE,
-        advertiser_id=str(campaign.advertiser_id),
+    time_range = GMVMaxReportTimeRange(
+        start_time=start_date.isoformat(), end_time=end_date.isoformat()
+    )
+    filtering = GMVMaxReportFiltering(
         store_ids=[str(campaign.store_id)],
-        start_date=start_date.isoformat(),
-        end_date=end_date.isoformat(),
-        metrics=_CREATIVE_METRICS,
         campaign_ids=[str(campaign.campaign_id)],
+    )
+    request = GMVMaxCreativeReportRequest(
+        advertiser_id=str(campaign.advertiser_id),
+        campaign_ids=[str(campaign.campaign_id)],
+        metrics=_CREATIVE_METRICS,
+        dimensions=["campaign_id", "creative_id", "stat_time_day", "creative_delivery_status"],
+        time_range=time_range,
+        time_granularity="DAILY",
+        time_dimension="DAILY",
+        filtering=filtering,
         page_size=_REPORT_PAGE_SIZE,
     )
 
-    response = await client.gmv_max_report_get(request)
+    response = await client.gmv_max_creative_report(request)
     data = response.data
     entries = list(data.list)
     if not entries:

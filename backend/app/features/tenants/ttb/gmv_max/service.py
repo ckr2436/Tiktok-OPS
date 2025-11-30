@@ -31,7 +31,7 @@ from app.services.ttb_gmvmax import (
 from ._helpers import (
     ensure_ttb_auth_in_workspace,
     get_advertiser_id_for_account,
-    get_ttb_client_for_account,
+    get_gmvmax_client_for_account,
     normalize_provider,
 )
 
@@ -95,7 +95,7 @@ async def sync_campaigns(
         else get_advertiser_id_for_account(db, workspace_id, provider, auth_id)
     )
 
-    client = get_ttb_client_for_account(db, workspace_id, provider, auth_id)
+    client = get_gmvmax_client_for_account(db, workspace_id, provider, auth_id)
     try:
         result = await svc_sync_campaigns(
             db,
@@ -256,7 +256,7 @@ async def sync_metrics(
         advertiser_id=advertiser_id,
     )
 
-    client = get_ttb_client_for_account(db, workspace_id, provider, auth_id)
+    client = get_gmvmax_client_for_account(db, workspace_id, provider, auth_id)
     try:
         if granularity.upper() == "HOUR":
             result = await svc_sync_metrics_hourly(
@@ -414,7 +414,7 @@ async def apply_campaign_action(
     )
 
     advertiser_id = get_advertiser_id_for_account(db, workspace_id, provider, auth_id)
-    client = get_ttb_client_for_account(db, workspace_id, provider, auth_id)
+    client = get_gmvmax_client_for_account(db, workspace_id, provider, auth_id)
     try:
         log_entry = await svc_apply_campaign_action(
             db,
