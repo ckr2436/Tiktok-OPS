@@ -2223,18 +2223,7 @@ async def sync_gmvmax_reports_for_campaign(
     creative_rows = 0
     if _normalize_identifier(campaign.shopping_ads_type) != "LIVE":
         item_group_ids = _list_campaign_product_ids(db, campaign=campaign)
-        creative_rows += await _sync_creative_level_daily(
-            db,
-            client,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            campaign=campaign,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            include_attributes=False,
-        )
-        for item_group_id in item_group_ids:
+        if item_group_ids:
             creative_rows += await _sync_creative_level_daily(
                 db,
                 client,
@@ -2244,9 +2233,22 @@ async def sync_gmvmax_reports_for_campaign(
                 store_id=store_id,
                 start_date=start_date_str,
                 end_date=end_date_str,
-                include_attributes=True,
-                item_group_ids=[item_group_id],
+                include_attributes=False,
+                item_group_ids=item_group_ids,
             )
+            for item_group_id in item_group_ids:
+                creative_rows += await _sync_creative_level_daily(
+                    db,
+                    client,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    campaign=campaign,
+                    store_id=store_id,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    include_attributes=True,
+                    item_group_ids=[item_group_id],
+                )
 
     return {"campaign_rows": campaign_rows, "creative_rows": creative_rows}
 
