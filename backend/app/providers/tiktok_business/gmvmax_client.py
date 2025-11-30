@@ -14,6 +14,8 @@ from enum import Enum
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from enum import Enum
+
 from app.services import ttb_api as _ttb_api
 from app.services.ttb_api import TTBApiClient
 
@@ -257,6 +259,14 @@ GMVMAX_CREATIVE_METRICS = [
     "ad_video_view_rate_p75",
     "ad_video_view_rate_p100",
 ]
+
+
+class GMVMaxMetricsLevel(str, Enum):
+    """Supported GMV Max report levels."""
+
+    CAMPAIGN = "campaign"
+    PRODUCT = "product"
+    CREATIVE = "creative"
 
 
 class GMVMaxStoreAdUsageCheckData(BaseModel):
@@ -1520,6 +1530,53 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             sort_field=sort_field,
             sort_type=sort_type,
         )
+        return await self.gmv_max_report_get(request)
+
+    async def fetch_gmvmax_report(
+        self,
+        *,
+        advertiser_id: str,
+        store_id: str,
+        campaign_id: str,
+        level: GMVMaxMetricsLevel,
+        start_date: str,
+        end_date: str,
+        item_group_ids: Sequence[str] | None = None,
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Build a GMV Max report request for the given level and execute it."""
+
+        level_value = GMVMaxMetricsLevel(level)
+        base_kwargs = dict(
+            advertiser_id=advertiser_id,
+            store_ids=[store_id],
+            campaign_ids=[campaign_id],
+            start_date=start_date,
+            end_date=end_date,
+            enable_total_metrics=False,
+            gmv_max_promotion_types=["PRODUCT"],
+        )
+
+        if level_value is GMVMaxMetricsLevel.CAMPAIGN:
+            request = GMVMaxReportGetRequest(
+                metrics=GMVMAX_CAMPAIGN_METRICS,
+                dimensions=["campaign_id", "stat_time_day"],
+                **base_kwargs,
+            )
+        elif level_value is GMVMaxMetricsLevel.PRODUCT:
+            request = GMVMaxReportGetRequest(
+                metrics=GMVMAX_PRODUCT_METRICS,
+                dimensions=["campaign_id", "item_group_id", "stat_time_day"],
+                item_group_ids=list(item_group_ids) if item_group_ids else None,
+                **base_kwargs,
+            )
+        else:
+            request = GMVMaxReportGetRequest(
+                metrics=GMVMAX_CREATIVE_METRICS,
+                dimensions=GMVMAX_CREATIVE_DIMENSIONS,
+                item_group_ids=list(item_group_ids) if item_group_ids else None,
+                **base_kwargs,
+            )
+
         return await self.gmv_max_report_get(request)
 
 
