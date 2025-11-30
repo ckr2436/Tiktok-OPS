@@ -105,6 +105,7 @@ from .service import _ensure_provider
 from app.services.ttb_gmvmax import (
     build_gmvmax_anchor_params,
     create_gmvmax_campaign,
+    fetch_gmvmax_report_by_level,
     ensure_gmvmax_store_authorized,
     log_campaign_action,
     resolve_store_id_from_page_context,
@@ -2571,6 +2572,7 @@ async def query_gmvmax_metrics_provider(
     auth_id: int,
     campaign_id: str,
     store_id: Optional[str] = Query(None),
+    level: str = Query("campaign"),
     start_date: Optional[Union[date, datetime, str]] = Query(None),
     end_date: Optional[Union[date, datetime, str]] = Query(None),
     dimensions: Optional[List[str]] = Query(None),
@@ -2601,6 +2603,29 @@ async def query_gmvmax_metrics_provider(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "missing_store", "message": "store_id is required"},
         )
+
+    normalized_level = str(level or "campaign").lower()
+    if normalized_level in {"campaign", "product", "creative"}:
+        rows = await fetch_gmvmax_report_by_level(
+            context.client,
+            advertiser_id=context.advertiser_id,
+            store_id=effective_store_id,
+            campaign_id=str(campaign_id),
+            level=normalized_level,
+            start_date=start,
+            end_date=end,
+        )
+        report = GMVMaxReportData(
+            list=[GMVMaxReportEntry.model_validate(item) for item in rows],
+            page_info=PageInfo(
+                page=1,
+                page_size=len(rows),
+                total_number=len(rows),
+                total_page=1,
+            ),
+            summary=None,
+        )
+        return MetricsResponse(report=report, request_id=None)
     normalized_dimensions = [str(dim).lower() for dim in dimensions or []]
     if any(dim in {"creative", "creative_id", "creativeid"} for dim in normalized_dimensions):
         limit = page_size

@@ -34,6 +34,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxExclusiveAuthorizationGetRequest,
     GMVMaxIdentityGetRequest,
     GMVMaxIdentityInfo,
+    GMVMaxMetricsLevel,
     GMVMaxReportFiltering,
     GMVMaxReportGetRequest,
     GMVMaxReportTimeRange,
@@ -69,6 +70,7 @@ __all__ = [
     "build_gmvmax_anchor_params",
     "create_gmvmax_campaign",
     "update_gmvmax_campaign",
+    "fetch_gmvmax_report_by_level",
 ]
 
 
@@ -85,6 +87,34 @@ _CREATIVE_ATTRIBUTE_FIELDS = (
 )
 
 _REPORT_PAGE_SIZE = 200
+
+
+async def fetch_gmvmax_report_by_level(
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    store_id: str,
+    campaign_id: str,
+    level: str,
+    start_date: date | str,
+    end_date: date | str,
+    item_group_ids: Sequence[str] | None = None,
+):
+    """Fetch GMV Max metrics from TikTok for the requested level."""
+
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+    response = await client.fetch_gmvmax_report(
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id),
+        campaign_id=str(campaign_id),
+        level=GMVMaxMetricsLevel(level),
+        start_date=start_date_str,
+        end_date=end_date_str,
+        item_group_ids=item_group_ids,
+    )
+    data = getattr(response, "data", None)
+    return getattr(data, "list", None) or []
 
 
 def _normalize_identifier(value: Any) -> str | None:
