@@ -123,13 +123,36 @@ async def ensure_gmvmax_store_authorized(
         "gmvmax.ensure_store_authorized.list",
         extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
     )
-    store_list_request = GMVMaxStoreListRequest(advertiser_id=str(advertiser_id))
-    store_list_response = await client.gmv_max_store_list(store_list_request)
-    store_list = getattr(store_list_response.data, "store_list", []) if store_list_response else []
     matched_store = None
-    for store in store_list:
-        if _normalize_identifier(getattr(store, "store_id", None)) == str(target_store_id):
-            matched_store = store
+    page = 1
+    page_size = 200
+    while matched_store is None:
+        store_list_request = GMVMaxStoreListRequest(
+            advertiser_id=str(advertiser_id), page=page, page_size=page_size
+        )
+        store_list_response = await client.gmv_max_store_list(store_list_request)
+        store_list = (
+            getattr(store_list_response.data, "store_list", []) if store_list_response else []
+        )
+        for store in store_list:
+            if _normalize_identifier(getattr(store, "store_id", None)) == str(
+                target_store_id
+            ):
+                matched_store = store
+                break
+
+        if matched_store:
+            break
+
+        page_info = getattr(store_list_response.data, "page_info", None)
+        current_page = getattr(page_info, "page", None) or page
+        total_page = getattr(page_info, "total_page", None)
+        has_more = bool(getattr(page_info, "has_next", None)) or bool(
+            getattr(page_info, "has_more", None)
+        )
+        if has_more or (total_page and current_page < total_page):
+            page = current_page + 1
+        else:
             break
 
     if matched_store is None:
