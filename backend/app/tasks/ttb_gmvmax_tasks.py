@@ -5,11 +5,11 @@ import contextlib
 import logging
 """Celery task layer orchestrating GMV Max syncs and actions."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
@@ -23,6 +23,7 @@ from app.services.ttb_gmvmax import (
     apply_campaign_action,
     decide_campaign_action,
     get_or_create_strategy_config,
+    sync_gmvmax_reports_for_campaign,
     sync_gmvmax_campaigns,
     sync_gmvmax_metrics_daily,
     sync_gmvmax_metrics_hourly,
@@ -105,6 +106,38 @@ def _find_campaign_row(
         .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
     )
     return db.execute(stmt).scalars().first()
+
+
+def _iter_active_campaigns(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str | None = None,
+    ) -> list[TTBGmvMaxCampaign]:
+    query = (
+        select(TTBGmvMaxCampaign)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+        .where(
+            or_(
+                TTBGmvMaxCampaign.operation_status.is_(None),
+                TTBGmvMaxCampaign.operation_status.notin_(
+                    ("DELETE", "STATUS_DISABLE")
+                ),
+            )
+        )
+    )
+    query = query.where(
+        or_(
+            TTBGmvMaxCampaign.secondary_status.is_(None),
+            TTBGmvMaxCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
+        )
+    )
+    if advertiser_id is not None:
+        query = query.where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
+    return list(db.execute(query).scalars().all())
 
 
 # Beat-driven sweep (see scheduler_catalog) to sync all GMV Max scopes via
@@ -363,9 +396,9 @@ def task_gmvmax_sync_metrics(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign_id: str,
-    start_date: str,
-    end_date: str,
+    campaign_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     granularity: str = "HOUR",
     schedule_id: Optional[int] = None,
     idempotency_key: Optional[str] = None,
@@ -376,38 +409,72 @@ def task_gmvmax_sync_metrics(
     """按粒度同步 GMV Max 指标（幂等，底层 upsert）。"""
     db = _db_session()
     try:
-        row = _find_campaign_row(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            campaign_id=campaign_id,
-        )
-        if not row:
-            raise RuntimeError(f"campaign not found: {campaign_id}")
-
         def _sync(client: Any) -> Awaitable[dict]:
-            if str(granularity).upper() == "DAY":
-                return sync_gmvmax_metrics_daily(
+            if campaign_id:
+                row = _find_campaign_row(
+                    db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    campaign_id=campaign_id,
+                )
+                if not row:
+                    raise RuntimeError(f"campaign not found: {campaign_id}")
+
+                effective_start = start_date or datetime.utcnow().date()
+                effective_end = end_date or datetime.utcnow().date()
+
+                if str(granularity).upper() == "DAY":
+                    return sync_gmvmax_metrics_daily(
+                        db,
+                        client,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=str(advertiser_id),
+                        campaign=row,
+                        start_date=effective_start,
+                        end_date=effective_end,
+                    )
+
+                return sync_gmvmax_metrics_hourly(
                     db,
                     client,
                     workspace_id=workspace_id,
                     auth_id=auth_id,
                     advertiser_id=str(advertiser_id),
                     campaign=row,
-                    start_date=start_date,
-                    end_date=end_date,
+                    start_date=effective_start,
+                    end_date=effective_end,
                 )
 
-            return sync_gmvmax_metrics_hourly(
-                db,
-                client,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=str(advertiser_id),
-                campaign=row,
-                start_date=start_date,
-                end_date=end_date,
-            )
+            async def _sync_all() -> dict:
+                campaigns = _iter_active_campaigns(
+                    db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=str(advertiser_id),
+                )
+                if not campaigns:
+                    return {"campaign_rows": 0, "creative_rows": 0}
+
+                today = datetime.utcnow().date()
+                window_start = today - timedelta(days=2)
+                totals = {"campaign_rows": 0, "creative_rows": 0}
+                for campaign in campaigns:
+                    result = await sync_gmvmax_reports_for_campaign(
+                        db,
+                        client,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=str(advertiser_id),
+                        campaign=campaign,
+                        start_date=window_start,
+                        end_date=today,
+                    )
+                    totals["campaign_rows"] += result.get("campaign_rows", 0)
+                    totals["creative_rows"] += result.get("creative_rows", 0)
+                return totals
+
+            return _sync_all()
 
         result = _run_with_client(db, auth_id, _sync)
 

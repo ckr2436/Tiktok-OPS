@@ -90,6 +90,8 @@ class GMVMaxReportLevel(str, Enum):
     CAMPAIGN = "campaign"
     PRODUCT = "product"
     CREATIVE = "creative"
+    ROOM = "room"
+    SESSION = "session"
 
 
 GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
@@ -117,6 +119,16 @@ GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
     GMVMaxReportLevel.CREATIVE: {
         "dimensions": ("campaign_id", "item_id", "stat_time_day"),
         "metrics": GMVMAX_CREATIVE_METRICS,
+        "max_range": timedelta(days=30),
+    },
+    GMVMaxReportLevel.ROOM: {
+        "dimensions": ("campaign_id", "room_id", "stat_time_day"),
+        "metrics": GMVMAX_DEFAULT_METRICS,
+        "max_range": timedelta(days=30),
+    },
+    GMVMaxReportLevel.SESSION: {
+        "dimensions": ("campaign_id", "room_id", "duration", "stat_time_day"),
+        "metrics": GMVMAX_DEFAULT_METRICS,
         "max_range": timedelta(days=30),
     },
 }

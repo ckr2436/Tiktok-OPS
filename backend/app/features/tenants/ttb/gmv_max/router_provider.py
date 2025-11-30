@@ -104,7 +104,9 @@ from app.services.gmvmax_spec import (
 )
 from .service import _ensure_provider
 from app.services.ttb_gmvmax import (
+    build_gmvmax_anchor_params,
     create_gmvmax_campaign,
+    ensure_gmvmax_store_authorized,
     log_campaign_action,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
@@ -2289,15 +2291,45 @@ async def create_gmvmax_campaign_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
     """Create a GMV Max campaign (POST /campaign/gmv_max/create/) then fetch detail."""
-    row = await create_gmvmax_campaign(
-        context.db,
-        workspace_id=workspace_id,
-        provider=provider,
-        auth_id=auth_id,
-        advertiser_id=context.advertiser_id,
-        client=context.client,
-        body=payload.to_client_body(),
-    )
+    shopping_ads_type = payload.shopping_ads_type or payload.promotion_type
+    if not shopping_ads_type:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "shopping_ads_type_required", "message": "shopping_ads_type is required"},
+        )
+
+    try:
+        store_authorized_bc_id = await ensure_gmvmax_store_authorized(
+            context.client,
+            advertiser_id=context.advertiser_id,
+            target_store_id=payload.store_id,
+        )
+        anchor_params = await build_gmvmax_anchor_params(
+            context.client,
+            advertiser_id=context.advertiser_id,
+            shopping_ads_type=shopping_ads_type,
+            store_id=payload.store_id,
+            store_authorized_bc_id=store_authorized_bc_id,
+            product_specific_type=payload.product_specific_type,
+            item_group_ids=payload.item_group_ids,
+            product_video_specific_type=payload.product_video_specific_type,
+            identity_ids=payload.identity_ids,
+        )
+        row = await create_gmvmax_campaign(
+            context.db,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            advertiser_id=context.advertiser_id,
+            client=context.client,
+            body=payload.to_client_body(
+                store_authorized_bc_id=store_authorized_bc_id,
+                anchor_params=anchor_params,
+                shopping_ads_type=shopping_ads_type,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        await _handle_tiktok_error(exc)
 
     info_request = GMVMaxCampaignInfoRequest(
         advertiser_id=context.advertiser_id, campaign_id=str(row.campaign_id)
