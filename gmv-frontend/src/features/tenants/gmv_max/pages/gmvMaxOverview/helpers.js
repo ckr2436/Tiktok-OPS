@@ -673,7 +673,7 @@ export function summariseMetrics(report) {
     (acc, entry) => {
       const metrics = entry?.metrics || entry || {};
       const spend = parseFloat(
-        metrics.spend ?? metrics.total_spend ?? metrics.totalSpend ?? metrics.total_spend_amount ?? '0',
+        metrics.cost ?? metrics.net_cost ?? metrics.spend ?? metrics.total_spend ?? metrics.totalSpend ?? metrics.total_spend_amount ?? '0',
       );
       if (!Number.isNaN(spend)) {
         acc.spend += spend;
@@ -683,6 +683,7 @@ export function summariseMetrics(report) {
           metrics.gmv ??
           metrics.total_gmv ??
           metrics.total_gross_revenue ??
+          metrics.revenue ??
           '0',
       );
       if (!Number.isNaN(revenue)) {
@@ -709,13 +710,13 @@ export function summariseMetricsByCampaign(report) {
     const metrics = entry?.metrics || entry || {};
     const current = byCampaign.get(String(campaignId)) || { spend: 0, gmv: 0, orders: 0 };
     const spend = parseFloat(
-      metrics.spend ?? metrics.total_spend ?? metrics.totalSpend ?? metrics.total_spend_amount ?? '0',
+      metrics.cost ?? metrics.net_cost ?? metrics.spend ?? metrics.total_spend ?? metrics.totalSpend ?? metrics.total_spend_amount ?? '0',
     );
     if (!Number.isNaN(spend)) {
       current.spend += spend;
     }
     const revenue = parseFloat(
-      metrics.gross_revenue ?? metrics.gmv ?? metrics.total_gmv ?? metrics.total_gross_revenue ?? '0',
+      metrics.gross_revenue ?? metrics.gmv ?? metrics.total_gmv ?? metrics.total_gross_revenue ?? metrics.revenue ?? '0',
     );
     if (!Number.isNaN(revenue)) {
       current.gmv += revenue;

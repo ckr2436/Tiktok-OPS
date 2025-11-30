@@ -46,10 +46,12 @@ function parseCreativeMetrics(metrics) {
       roas: 0,
     };
   }
-  const spend = Number(metrics.spend ?? metrics.cost ?? metrics.net_cost ?? 0) || 0;
-  const gmv = Number(metrics.gmv ?? metrics.gross_revenue ?? metrics.revenue ?? 0) || 0;
-  const clicks = Number(metrics.clicks ?? metrics.total_clicks ?? 0) || 0;
-  const impressions = Number(metrics.impressions ?? metrics.views ?? 0) || 0;
+  const spend = Number(metrics.cost ?? metrics.net_cost ?? metrics.spend ?? 0) || 0;
+  const gmv = Number(metrics.gross_revenue ?? metrics.gmv ?? metrics.revenue ?? 0) || 0;
+  const clicks = Number(
+    metrics.product_clicks ?? metrics.clicks ?? metrics.total_clicks ?? metrics.ad_clicks ?? 0,
+  ) || 0;
+  const impressions = Number(metrics.product_impressions ?? metrics.impressions ?? metrics.views ?? 0) || 0;
   const orders = Number(metrics.orders ?? metrics.total_orders ?? metrics.conversions ?? 0) || 0;
   const ctr = metrics.ctr ?? metrics.click_through_rate ?? (impressions > 0 ? clicks / impressions : 0);
   const cpc = metrics.cpc ?? metrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
@@ -70,11 +72,14 @@ function buildLegacyCreativeRows(report) {
   for (const entry of entries) {
     const dimensions = entry.dimensions || entry.dimension || {};
     const creativeId =
+      dimensions.item_id ||
       dimensions.creative ||
       dimensions.creative_id ||
       dimensions.creativeId ||
       dimensions.id ||
       dimensions.code ||
+      entry.metrics?.item_id ||
+      entry.metrics?.creative_id ||
       'unknown';
     const creativeName =
       dimensions.creative_name ||
@@ -120,6 +125,7 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
   const baseItems = ensureArray(creativesData?.items ?? creativesData?.list ?? creativesData);
   for (const item of baseItems) {
     const creativeId =
+      item?.item_id ||
       item?.creative_id ||
       item?.creativeId ||
       item?.id ||

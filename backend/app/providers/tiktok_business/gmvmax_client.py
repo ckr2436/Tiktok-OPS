@@ -602,13 +602,10 @@ class GMVMaxReportFiltering(BaseModel):
     gmv_max_promotion_types: Optional[List[str]] = None
     store_ids: Optional[List[str]] = None
     campaign_ids: Optional[List[str]] = None
-    product_ids: Optional[List[str]] = None
     item_group_ids: Optional[List[str]] = None
-    creative_ids: Optional[List[str]] = None
     creative_types: Optional[List[str]] = None
     creative_delivery_statuses: Optional[List[str]] = None
     room_ids: Optional[List[str]] = None
-    session_ids: Optional[List[str]] = None
     search_word: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
@@ -734,7 +731,7 @@ _GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
     # Product GMV Max, product-level（官方：campaign_ids Required）
     GMVMaxDataset.PRODUCT_PRODUCT: {
         "promotion_types": ["PRODUCT"],
-        "dimensions": ["item_group_id", "stat_time_day"],
+        "dimensions": ["campaign_id", "item_group_id", "stat_time_day"],
         "require_all_of": ("campaign_ids",),
         "require_any_of": (),
     },
@@ -1314,6 +1311,8 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         """Run a GMV Max campaign report via GET /gmv_max/report/get/."""
 
         legacy_filtering = request.filtering.model_dump(exclude_none=True) if request.filtering else {}
+        if "item_group_ids" not in legacy_filtering and legacy_filtering.get("product_ids"):
+            legacy_filtering["item_group_ids"] = legacy_filtering.pop("product_ids")
         store_ids = _coerce_store_ids(legacy_filtering.pop("store_ids", None))
         start_date = None
         end_date = None
@@ -1339,7 +1338,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             dimensions=list(request.dimensions),
             gmv_max_promotion_types=getattr(request, "gmv_max_promotion_types", None),
             campaign_ids=list(getattr(request, "campaign_ids", None) or []) or None,
-            item_group_ids=list(getattr(request, "product_ids", None) or []) or None,
+            item_group_ids=list(getattr(request, "item_group_ids", None) or []) or None,
             room_ids=list(getattr(request, "room_ids", None) or []) or None,
             filtering=filtering_model,
             page=request.page,
@@ -1377,7 +1376,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
 
         campaign_ids = list(getattr(request, "campaign_ids", None) or []) or None
         item_group_ids = list(
-            getattr(request, "product_ids", None)
+            getattr(request, "item_group_ids", None)
             or legacy_filtering.pop("item_group_ids", None)
             or legacy_filtering.pop("product_ids", None)
             or []

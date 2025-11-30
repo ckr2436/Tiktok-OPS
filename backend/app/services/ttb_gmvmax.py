@@ -590,7 +590,9 @@ def _build_level_report_request(
             request=request, level=level, include_attributes=include_attributes
         )
 
-    if "stat_time_day" not in request.dimensions:
+    if "stat_time_day" not in request.dimensions and level not in {
+        GMVMaxReportLevel.CREATIVE,
+    }:
         request.dimensions = list(request.dimensions) + ["stat_time_day"]
 
     return request

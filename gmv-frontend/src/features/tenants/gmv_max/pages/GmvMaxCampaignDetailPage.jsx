@@ -106,10 +106,12 @@ function parseCreativeMetrics(metrics) {
       roas: 0,
     };
   }
-  const spend = Number(metrics.spend ?? metrics.cost ?? metrics.net_cost ?? 0) || 0;
-  const gmv = Number(metrics.gmv ?? metrics.gross_revenue ?? metrics.revenue ?? 0) || 0;
-  const clicks = Number(metrics.clicks ?? metrics.total_clicks ?? 0) || 0;
-  const impressions = Number(metrics.impressions ?? metrics.views ?? 0) || 0;
+  const spend = Number(metrics.cost ?? metrics.net_cost ?? metrics.spend ?? 0) || 0;
+  const gmv = Number(metrics.gross_revenue ?? metrics.gmv ?? metrics.revenue ?? 0) || 0;
+  const clicks = Number(
+    metrics.product_clicks ?? metrics.clicks ?? metrics.total_clicks ?? metrics.ad_clicks ?? 0,
+  ) || 0;
+  const impressions = Number(metrics.product_impressions ?? metrics.impressions ?? metrics.views ?? 0) || 0;
   const orders = Number(metrics.orders ?? metrics.total_orders ?? metrics.conversions ?? 0) || 0;
   const ctr = metrics.ctr ?? metrics.click_through_rate ?? (impressions > 0 ? clicks / impressions : 0);
   const cpc = metrics.cpc ?? metrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
@@ -126,12 +128,26 @@ function ensureArray(value) {
 function getMetricValue(entry, key) {
   if (!entry) return 0;
   const metrics = entry.metrics || entry;
-  const value =
-    metrics[key] ??
-    metrics[key?.toUpperCase?.()] ??
-    metrics[key?.toLowerCase?.()] ??
-    metrics[`total_${key}`] ??
-    metrics[`total${key?.charAt(0)?.toUpperCase?.()}${key?.slice(1)}`];
+  const normalizedKey = String(key || '').toLowerCase();
+  const aliasMap = {
+    spend: ['cost', 'net_cost', 'spend'],
+    gmv: ['gross_revenue', 'gmv', 'revenue', 'total_gross_revenue'],
+    clicks: ['product_clicks', 'clicks', 'total_clicks', 'ad_clicks'],
+    impressions: ['product_impressions', 'impressions', 'views'],
+    ctr: ['product_click_rate', 'ctr', 'click_through_rate'],
+  };
+  const candidates = aliasMap[normalizedKey] || [key];
+  const value = candidates.reduce((result, candidate) => {
+    if (result !== undefined && result !== null) return result;
+    const candidateKey = candidate || key;
+    return (
+      metrics[candidateKey] ??
+      metrics[candidateKey?.toUpperCase?.()] ??
+      metrics[candidateKey?.toLowerCase?.()] ??
+      metrics[`total_${candidateKey}`] ??
+      metrics[`total${candidateKey?.charAt?.(0)?.toUpperCase?.()}${candidateKey?.slice?.(1)}`]
+    );
+  }, undefined);
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
@@ -332,8 +348,16 @@ function buildDimensionTable(report, dimensionKey, extraKeys = []) {
   const groups = new Map();
   for (const entry of entries) {
     const dimensions = entry.dimensions || entry.dimension || {};
-    const key = dimensions[dimensionKey] || dimensions[`${dimensionKey}_id`] || 'unknown';
+    const metrics = entry.metrics || entry || {};
+    const key =
+      dimensions[dimensionKey] ||
+      dimensions[`${dimensionKey}_id`] ||
+      metrics[dimensionKey] ||
+      metrics[`${dimensionKey}_id`] ||
+      'unknown';
     const name =
+      metrics.product_name ||
+      metrics.title ||
       dimensions[`${dimensionKey}_name`] ||
       dimensions.name ||
       dimensions.title ||
@@ -429,6 +453,7 @@ function normalizeCreativeStatus(status) {
   if (normalized.includes('QUEUE')) return 'IN_QUEUE';
   if (normalized.includes('LEARN')) return 'LEARNING';
   if (normalized.includes('DELIVER')) return 'DELIVERING';
+  if (normalized.includes('NOT_DELIVER')) return 'NOT_DELIVERING';
   return normalized;
 }
 
@@ -453,13 +478,28 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
 
   for (const item of ensureArray(creativesData?.items ?? creativesData?.list ?? creativesData)) {
     const creativeId =
-      item?.creative_id || item?.creativeId || item?.id || item?.code || item?.creative?.id || item?.creativeCode;
+      item?.item_id ||
+      item?.creative_id ||
+      item?.creativeId ||
+      item?.id ||
+      item?.code ||
+      item?.creative?.id ||
+      item?.creativeCode;
     if (!creativeId) continue;
     const row = ensureRow(creativeId);
     row.name =
-      item?.creative_name || item?.creativeName || item?.name || item?.label || item?.title || row.name || creativeId;
+      item?.title ||
+      item?.creative_name ||
+      item?.creativeName ||
+      item?.name ||
+      item?.label ||
+      item?.title ||
+      row.name ||
+      creativeId;
     row.thumbnail = item?.thumbnail || item?.image || item?.cover_url || item?.coverUrl || row.thumbnail;
-    row.status = normalizeCreativeStatus(item?.creative_status || item?.status || item?.state || row.status);
+    row.status = normalizeCreativeStatus(
+      item?.creative_delivery_status || item?.creative_status || item?.status || item?.state || row.status,
+    );
     row.metrics = parseCreativeMetrics(item?.metrics || row.metrics);
     row.metadata = { ...row.metadata, ...item };
   }
@@ -468,12 +508,27 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
   if (Array.isArray(metricsItems)) {
     for (const entry of metricsItems) {
       const creativeId =
-        entry?.creative_id || entry?.creativeId || entry?.id || entry?.code || entry?.metrics?.creative_id;
+        entry?.item_id ||
+        entry?.creative_id ||
+        entry?.creativeId ||
+        entry?.id ||
+        entry?.code ||
+        entry?.metrics?.creative_id ||
+        entry?.metrics?.item_id;
       if (!creativeId) continue;
       const row = ensureRow(creativeId);
       row.name =
-        entry?.creative_name || entry?.creativeName || entry?.name || entry?.label || entry?.title || row.name || creativeId;
-      row.status = normalizeCreativeStatus(entry?.creative_status || entry?.status || entry?.state || row.status);
+        entry?.title ||
+        entry?.creative_name ||
+        entry?.creativeName ||
+        entry?.name ||
+        entry?.label ||
+        entry?.title ||
+        row.name ||
+        creativeId;
+      row.status = normalizeCreativeStatus(
+        entry?.creative_delivery_status || entry?.creative_status || entry?.status || entry?.state || row.status,
+      );
       row.metrics = parseCreativeMetrics(entry?.metrics || entry);
       row.metadata = { ...row.metadata, ...entry, ...(entry?.metrics || {}) };
     }
@@ -483,17 +538,29 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
     for (const entry of ensureArray(metricsData.report?.list)) {
       const dimensions = entry.dimensions || entry.dimension || {};
       const creativeId =
-        dimensions.creative || dimensions.creative_id || dimensions.creativeId || dimensions.id || dimensions.code;
+        dimensions.item_id ||
+        dimensions.creative ||
+        dimensions.creative_id ||
+        dimensions.creativeId ||
+        dimensions.id ||
+        dimensions.code;
       if (!creativeId) continue;
       const row = ensureRow(creativeId);
       row.name =
+        entry.metrics?.title ||
+        dimensions.title ||
         dimensions.creative_name ||
         dimensions.creativeName ||
         dimensions.name ||
-        dimensions.title ||
         row.name ||
         creativeId;
-      row.status = normalizeCreativeStatus(dimensions.creative_status || dimensions.status || row.status);
+      row.status = normalizeCreativeStatus(
+        entry.metrics?.creative_delivery_status ||
+          dimensions.creative_delivery_status ||
+          dimensions.creative_status ||
+          dimensions.status ||
+          row.status,
+      );
       row.metrics = parseCreativeMetrics(entry.metrics || entry);
       const seedFlag =
         entry.is_seed || entry.isSeed || dimensions.is_seed || dimensions.isSeed || entry.metrics?.is_seed || false;
@@ -1012,7 +1079,7 @@ export default function GmvMaxCampaignDetailPage() {
     [metricsQuery.data],
   );
   const productTable = useMemo(
-    () => buildDimensionTable(metricsQuery.data?.report, 'product'),
+    () => buildDimensionTable(metricsQuery.data?.report, 'item_group_id'),
     [metricsQuery.data],
   );
   const creatives = useMemo(
