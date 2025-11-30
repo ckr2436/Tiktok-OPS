@@ -278,19 +278,20 @@ async def create_job(
                 job_id=job_id,
             )
             task_ids.append(download_result.id)
-        if do_subtitle:
-            async_result = whisper_tasks.transcribe_video.delay(
-                workspace_id=workspace_id,
-                job_id=job_id,
-            )
-            task_ids.append(async_result.id)
-        if do_contact_sheet:
-            contact_result = whisper_tasks.generate_contact_sheet.delay(
-                workspace_id=workspace_id,
-                job_id=job_id,
-                contact_interval=contact_interval,
-            )
-            task_ids.append(contact_result.id)
+        else:
+            if do_subtitle:
+                async_result = whisper_tasks.transcribe_video.delay(
+                    workspace_id=workspace_id,
+                    job_id=job_id,
+                )
+                task_ids.append(async_result.id)
+            if do_contact_sheet:
+                contact_result = whisper_tasks.generate_contact_sheet.delay(
+                    workspace_id=workspace_id,
+                    job_id=job_id,
+                    contact_interval=contact_interval,
+                )
+                task_ids.append(contact_result.id)
     except Exception as exc:
         storage.mark_failed(workspace_id, job_id, failure_message)
         repository.mark_failed(db, workspace_id, job_id, failure_message)
