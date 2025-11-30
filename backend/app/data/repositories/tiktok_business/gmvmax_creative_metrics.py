@@ -211,6 +211,36 @@ async def list_creative_metrics(
     return list(db.execute(query).scalars().all())
 
 
+def count_creative_metrics(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: str | None = None,
+    date_from: datetime | date | None = None,
+    date_to: datetime | date | None = None,
+) -> int:
+    query: Select[int] = select(func.count()).select_from(TTBGmvMaxCreativeMetric)
+    query = _apply_required_filters(
+        query=query, workspace_id=workspace_id, provider=provider, auth_id=auth_id
+    )
+
+    if campaign_id is not None:
+        query = query.where(TTBGmvMaxCreativeMetric.campaign_id == campaign_id)
+
+    if date_from is not None:
+        query = query.where(
+            TTBGmvMaxCreativeMetric.stat_time_day >= _normalize_datetime(date_from)
+        )
+    if date_to is not None:
+        query = query.where(
+            TTBGmvMaxCreativeMetric.stat_time_day <= _normalize_datetime(date_to)
+        )
+
+    return int(db.execute(query).scalar() or 0)
+
+
 async def get_latest_metrics_for_creative(
     db: Session,
     *,

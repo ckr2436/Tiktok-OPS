@@ -225,6 +225,39 @@ class GMVMaxStoreListData(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+# 维度：商品 GMV Max · 创意层级（带状态标识）
+GMVMAX_CREATIVE_DIMENSIONS = ["campaign_id", "item_group_id", "item_id"]
+
+# 指标：属性 + 投放 + 广告表现
+GMVMAX_CREATIVE_METRICS = [
+    # 属性指标
+    "title",
+    "item_id",
+    "tt_account_name",
+    "tt_account_profile_image_url",
+    "tt_account_authorization_type",
+    "shop_content_type",
+    "creative_delivery_status",
+    # 投放指标
+    "cost",
+    "orders",
+    "cost_per_order",
+    "gross_revenue",
+    "roi",
+    # 广告表现指标
+    "product_impressions",
+    "product_clicks",
+    "product_click_rate",
+    "ad_click_rate",
+    "ad_conversion_rate",
+    "ad_video_view_rate_2s",
+    "ad_video_view_rate_6s",
+    "ad_video_view_rate_p25",
+    "ad_video_view_rate_p50",
+    "ad_video_view_rate_p75",
+    "ad_video_view_rate_p100",
+]
+
 
 class GMVMaxStoreAdUsageCheckData(BaseModel):
     """Result of ``gmv_max/store/shop_ad_usage_check``."""
@@ -570,9 +603,13 @@ class GMVMaxReportFiltering(BaseModel):
     store_ids: Optional[List[str]] = None
     campaign_ids: Optional[List[str]] = None
     product_ids: Optional[List[str]] = None
+    item_group_ids: Optional[List[str]] = None
     creative_ids: Optional[List[str]] = None
+    creative_types: Optional[List[str]] = None
+    creative_delivery_statuses: Optional[List[str]] = None
     room_ids: Optional[List[str]] = None
     session_ids: Optional[List[str]] = None
+    search_word: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -643,6 +680,7 @@ class GMVMaxProductReportRequest(GMVMaxBaseReportRequest):
 class GMVMaxCreativeReportRequest(GMVMaxBaseReportRequest):
     creative_ids: Optional[Sequence[str]] = None
     campaign_ids: Optional[Sequence[str]] = None
+    product_ids: Optional[Sequence[str]] = None
 
 
 class GMVMaxRoomReportRequest(GMVMaxBaseReportRequest):
@@ -1322,7 +1360,58 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxReportData]:
         """Run a GMV Max creative report via GET /gmv_max/report/get/."""
 
-        return await self.gmv_max_campaign_report(request)
+        legacy_filtering = request.filtering.model_dump(exclude_none=True) if request.filtering else {}
+        store_ids = _coerce_store_ids(legacy_filtering.pop("store_ids", None))
+        if not store_ids:
+            store_ids = _coerce_store_ids(legacy_filtering.pop("store_id", None))
+
+        start_date = None
+        end_date = None
+        if request.time_range is not None:
+            start_date = request.time_range.start_time
+            end_date = request.time_range.end_time
+        start_date = start_date or request.start_time
+        end_date = end_date or request.end_time
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required for GMV Max creative report")
+
+        campaign_ids = list(getattr(request, "campaign_ids", None) or []) or None
+        item_group_ids = list(
+            getattr(request, "product_ids", None)
+            or legacy_filtering.pop("item_group_ids", None)
+            or legacy_filtering.pop("product_ids", None)
+            or []
+        )
+
+        filtering_model = GMVMaxReportFiltering(
+            gmv_max_promotion_types=["PRODUCT"],
+            store_ids=store_ids,
+            campaign_ids=campaign_ids,
+            item_group_ids=item_group_ids or None,
+            creative_types=legacy_filtering.pop("creative_types", None),
+            creative_delivery_statuses=legacy_filtering.pop("creative_delivery_statuses", None),
+            search_word=legacy_filtering.pop("search_word", None),
+        )
+
+        get_request = GMVMaxReportGetRequest(
+            advertiser_id=request.advertiser_id,
+            store_ids=store_ids,
+            start_date=start_date,
+            end_date=end_date,
+            metrics=list(request.metrics or GMVMAX_CREATIVE_METRICS),
+            dimensions=list(request.dimensions or GMVMAX_CREATIVE_DIMENSIONS),
+            gmv_max_promotion_types=filtering_model.gmv_max_promotion_types,
+            campaign_ids=filtering_model.campaign_ids,
+            item_group_ids=filtering_model.item_group_ids,
+            creative_types=filtering_model.creative_types,
+            creative_delivery_statuses=filtering_model.creative_delivery_statuses,
+            search_word=filtering_model.search_word,
+            filtering=filtering_model,
+            page=request.page,
+            page_size=request.page_size,
+        )
+        params = self._build_report_get_params(get_request)
+        return await self._gmv_max_report_get(params)
 
     async def gmv_max_room_report(
         self, request: GMVMaxRoomReportRequest

@@ -1367,13 +1367,30 @@ def _extract_field_from_sources(keys: Sequence[str], *sources: Mapping[str, Any]
 
 def _normalize_creative_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
     metrics = dict(row)
-    for key in ("cost", "net_cost", "gross_revenue"):
+    for key in ("cost", "net_cost", "gross_revenue", "cost_per_order"):
         if key in metrics:
             metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
-    for key in ("orders", "impressions", "clicks"):
+    for key in (
+        "orders",
+        "impressions",
+        "clicks",
+        "product_impressions",
+        "product_clicks",
+    ):
         if key in metrics:
             metrics[key] = _to_int(metrics[key])
-    for key in ("roi", "ad_click_rate", "ad_conversion_rate"):
+    for key in (
+        "roi",
+        "ad_click_rate",
+        "ad_conversion_rate",
+        "product_click_rate",
+        "ad_video_view_rate_2s",
+        "ad_video_view_rate_6s",
+        "ad_video_view_rate_p25",
+        "ad_video_view_rate_p50",
+        "ad_video_view_rate_p75",
+        "ad_video_view_rate_p100",
+    ):
         if key in metrics:
             metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
     return metrics
@@ -2137,7 +2154,7 @@ async def _sync_creative_level_daily(
     include_attributes: bool,
     item_group_ids: Sequence[str] | None = None,
 ) -> int:
-    dimensions = ["creative_id", "campaign_id", "stat_time_day"]
+    dimensions = ["campaign_id", "item_group_id", "item_id"]
     metrics = list(GMVMAX_CREATIVE_METRICS)
     if include_attributes:
         metrics = list(dict.fromkeys(metrics + list(_CREATIVE_ATTRIBUTE_FIELDS)))
@@ -2147,7 +2164,8 @@ async def _sync_creative_level_daily(
         filtering = GMVMaxReportFiltering(
             store_ids=[store_id] if store_id else None,
             campaign_ids=[str(campaign.campaign_id)],
-            product_ids=list(item_group_ids) if item_group_ids else None,
+            item_group_ids=list(item_group_ids) if item_group_ids else None,
+            gmv_max_promotion_types=["PRODUCT"],
         )
         request = GMVMaxCreativeReportRequest(
             advertiser_id=str(campaign.advertiser_id or ""),
@@ -2170,10 +2188,18 @@ async def _sync_creative_level_daily(
             creative_id = _normalize_identifier(
                 payload.get("item_id") or payload.get("creative_id")
             )
-            stat_time = payload.get("stat_time_day") or payload.get("date")
+            stat_time = payload.get("stat_time_day") or payload.get("date") or start_date
             if not creative_id or not stat_time:
                 continue
             metrics_payload = _normalize_creative_metrics(payload)
+            if "item_group_id" in payload:
+                metrics_payload.setdefault("product_id", payload.get("item_group_id"))
+            if "item_id" in payload:
+                metrics_payload.setdefault("item_id", payload.get("item_id"))
+            if "creative_delivery_status" in payload:
+                metrics_payload.setdefault(
+                    "creative_delivery_status", payload.get("creative_delivery_status")
+                )
             try:
                 await upsert_creative_metrics(
                     db,
