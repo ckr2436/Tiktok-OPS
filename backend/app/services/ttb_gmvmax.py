@@ -35,6 +35,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxIdentityGetRequest,
     GMVMaxIdentityInfo,
     GMVMaxReportFiltering,
+    GMVMaxReportGetRequest,
     GMVMaxReportTimeRange,
     GMVMaxStoreListRequest,
     TikTokBusinessGMVMaxClient,
@@ -1863,7 +1864,6 @@ async def sync_gmvmax_metrics_hourly(
     end_date_str = _normalize_date(end_date)
 
     synced_rows = 0
-    page = 1
     store_id = _resolve_store_id_for_metrics(
         db,
         workspace_id=workspace_id,
@@ -1876,56 +1876,37 @@ async def sync_gmvmax_metrics_hourly(
 
     dimensions = ["campaign_id", "stat_time_hour"]
     campaign_ids = [campaign.campaign_id]
-    while True:
-        request = _build_campaign_report_request(
-            advertiser_id=str(advertiser_id),
-            campaign_ids=campaign_ids,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            granularity="HOURLY",
-            metrics=_DEFAULT_REPORT_METRICS,
-            dimensions=dimensions,
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-        response = await ttb_client.gmv_max_campaign_report(request)
-        data = getattr(response, "data", None)
-        rows_raw = getattr(data, "list", None) or []
-        rows = [_merge_report_entry(item) for item in rows_raw]
-        rows = [row for row in rows if isinstance(row, dict)]
-        if not rows:
-            break
-        for row in rows:
-            try:
-                upsert_metrics_hourly_row(db, campaign=campaign, row=row)
-                synced_rows += 1
-            except ValueError:
-                logger.debug(
-                    "skip hourly metrics row without interval_start",
-                    extra={
-                        "campaign_id": campaign.campaign_id,
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                    },
-                )
-                continue
-        page_info = getattr(data, "page_info", None)
-        has_more = bool(
-            getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
-        )
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
-            page += 1
-            continue
+    request = _build_campaign_report_request(
+        advertiser_id=str(advertiser_id),
+        campaign_ids=campaign_ids,
+        store_id=store_id,
+        start_date=start_date_str,
+        end_date=end_date_str,
+        granularity="HOURLY",
+        metrics=_DEFAULT_REPORT_METRICS,
+        dimensions=dimensions,
+        page=1,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, dict)]
+    for row in rows:
         try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
+            upsert_metrics_hourly_row(db, campaign=campaign, row=row)
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip hourly metrics row without interval_start",
+                extra={
+                    "campaign_id": campaign.campaign_id,
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                },
+            )
             continue
-        break
 
     db.flush()
     return {"synced_rows": synced_rows}
@@ -2015,20 +1996,21 @@ def _build_campaign_report_request(
     dimensions: Sequence[str],
     page: int,
     page_size: int,
-) -> GMVMaxCampaignReportRequest:
-    time_range = GMVMaxReportTimeRange(start_time=start_date, end_time=end_date)
+) -> GMVMaxReportGetRequest:
     filtering = GMVMaxReportFiltering(
+        gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
         store_ids=[store_id] if store_id else None,
         campaign_ids=[str(cid) for cid in campaign_ids],
     )
-    return GMVMaxCampaignReportRequest(
+    return GMVMaxReportGetRequest(
         advertiser_id=str(advertiser_id),
-        campaign_ids=list(campaign_ids),
+        store_ids=[store_id] if store_id else [],
+        start_date=start_date,
+        end_date=end_date,
         metrics=list(metrics),
         dimensions=list(dimensions),
-        time_range=time_range,
-        time_granularity=granularity,
-        time_dimension=granularity,
+        gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
+        campaign_ids=list(campaign_ids),
         filtering=filtering,
         page=page,
         page_size=page_size,
@@ -2050,7 +2032,6 @@ async def sync_gmvmax_metrics_daily(
     end_date_str = _normalize_date(end_date)
 
     synced_rows = 0
-    page = 1
     store_id = _resolve_store_id_for_metrics(
         db,
         workspace_id=workspace_id,
@@ -2063,56 +2044,37 @@ async def sync_gmvmax_metrics_daily(
 
     dimensions = ["campaign_id", "stat_time_day"]
     campaign_ids = [campaign.campaign_id]
-    while True:
-        request = _build_campaign_report_request(
-            advertiser_id=str(advertiser_id),
-            campaign_ids=campaign_ids,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            granularity="DAILY",
-            metrics=_DEFAULT_REPORT_METRICS,
-            dimensions=dimensions,
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-        response = await ttb_client.gmv_max_campaign_report(request)
-        data = getattr(response, "data", None)
-        rows_raw = getattr(data, "list", None) or []
-        rows = [_merge_report_entry(item) for item in rows_raw]
-        rows = [row for row in rows if isinstance(row, dict)]
-        if not rows:
-            break
-        for row in rows:
-            try:
-                upsert_metrics_daily_row(db, campaign=campaign, row=row)
-                synced_rows += 1
-            except ValueError:
-                logger.debug(
-                    "skip daily metrics row without date",
-                    extra={
-                        "campaign_id": campaign.campaign_id,
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                    },
-                )
-                continue
-        page_info = getattr(data, "page_info", None)
-        has_more = bool(
-            getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
-        )
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
-            page += 1
-            continue
+    request = _build_campaign_report_request(
+        advertiser_id=str(advertiser_id),
+        campaign_ids=campaign_ids,
+        store_id=store_id,
+        start_date=start_date_str,
+        end_date=end_date_str,
+        granularity="DAILY",
+        metrics=_DEFAULT_REPORT_METRICS,
+        dimensions=dimensions,
+        page=1,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, dict)]
+    for row in rows:
         try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
+            upsert_metrics_daily_row(db, campaign=campaign, row=row)
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip daily metrics row without date",
+                extra={
+                    "campaign_id": campaign.campaign_id,
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                },
+            )
             continue
-        break
 
     db.flush()
     return {"synced_rows": synced_rows}
@@ -2129,55 +2091,35 @@ async def _sync_campaign_level_daily(
     start_date: str,
     end_date: str,
 ) -> int:
-    page = 1
     synced = 0
-    while True:
-        request = _build_campaign_report_request(
-            advertiser_id=str(campaign.advertiser_id or ""),
-            campaign_ids=[str(campaign.campaign_id)],
-            store_id=store_id,
-            start_date=start_date,
-            end_date=end_date,
-            granularity="DAILY",
-            metrics=_DEFAULT_REPORT_METRICS,
-            dimensions=["campaign_id", "stat_time_day"],
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-        response = await client.gmv_max_campaign_report(request)
-        entries = getattr(getattr(response, "data", None), "list", []) or []
-        if not entries:
-            break
-        for entry in entries:
-            row = _merge_report_entry(entry)
-            try:
-                upsert_metrics_daily_row(db, campaign=campaign, row=row)
-                synced += 1
-            except ValueError:
-                logger.debug(
-                    "skip daily metrics row without date",
-                    extra={
-                        "campaign_id": campaign.campaign_id,
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                    },
-                )
-        page_info = getattr(getattr(response, "data", None), "page_info", None)
-        has_more = bool(
-            getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
-        )
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
-            page += 1
-            continue
+    request = _build_campaign_report_request(
+        advertiser_id=str(campaign.advertiser_id or ""),
+        campaign_ids=[str(campaign.campaign_id)],
+        store_id=store_id,
+        start_date=start_date,
+        end_date=end_date,
+        granularity="DAILY",
+        metrics=_DEFAULT_REPORT_METRICS,
+        dimensions=["campaign_id", "stat_time_day"],
+        page=1,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    response = await client.gmv_max_report_get(request)
+    entries = getattr(getattr(response, "data", None), "list", []) or []
+    for entry in entries:
+        row = _merge_report_entry(entry)
         try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
-            continue
-        break
+            upsert_metrics_daily_row(db, campaign=campaign, row=row)
+            synced += 1
+        except ValueError:
+            logger.debug(
+                "skip daily metrics row without date",
+                extra={
+                    "campaign_id": campaign.campaign_id,
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                },
+            )
     db.flush()
     return synced
 

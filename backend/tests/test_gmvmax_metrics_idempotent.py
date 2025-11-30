@@ -4,6 +4,7 @@ import asyncio
 from datetime import date
 from decimal import Decimal
 from typing import Any
+import types
 
 import sqlalchemy as sa
 from sqlalchemy import event
@@ -17,11 +18,19 @@ from app.services.ttb_gmvmax import sync_gmvmax_metrics_hourly
 class StubReportClient:
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
-        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.calls: list[Any] = []
 
-    async def report_gmvmax(self, advertiser_id: str, **params: Any) -> dict[str, Any]:
-        self.calls.append((advertiser_id, params))
-        return self.payload
+    async def gmv_max_report_get(self, request: Any) -> Any:
+        self.calls.append(request)
+        normalized_entries = [
+            {"metrics": entry, "dimensions": {}} for entry in self.payload.get("list", [])
+        ]
+        data = types.SimpleNamespace(
+            list=normalized_entries,
+            page_info=self.payload.get("page_info"),
+            summary=self.payload.get("summary"),
+        )
+        return types.SimpleNamespace(data=data)
 
 
 @event.listens_for(TTBGmvMaxMetricsHourly, "before_insert")
