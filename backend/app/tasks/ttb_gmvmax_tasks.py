@@ -120,7 +120,14 @@ def _iter_active_campaigns(
         .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
         .where(TTBGmvMaxCampaign.auth_id == auth_id)
         .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-        .where(TTBGmvMaxCampaign.operation_status.notin_(("DELETE", "STATUS_DISABLE")))
+        .where(
+            or_(
+                TTBGmvMaxCampaign.operation_status.is_(None),
+                TTBGmvMaxCampaign.operation_status.notin_(
+                    ("DELETE", "STATUS_DISABLE")
+                ),
+            )
+        )
     )
     query = query.where(
         or_(

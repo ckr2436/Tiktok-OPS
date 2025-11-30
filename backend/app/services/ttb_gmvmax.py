@@ -2211,7 +2211,7 @@ async def sync_gmvmax_reports_for_campaign(
             end_date=end_date_str,
             include_attributes=False,
         )
-        if item_group_ids:
+        for item_group_id in item_group_ids:
             creative_rows += await _sync_creative_level_daily(
                 db,
                 client,
@@ -2222,7 +2222,7 @@ async def sync_gmvmax_reports_for_campaign(
                 start_date=start_date_str,
                 end_date=end_date_str,
                 include_attributes=True,
-                item_group_ids=item_group_ids,
+                item_group_ids=[item_group_id],
             )
 
     return {"campaign_rows": campaign_rows, "creative_rows": creative_rows}
