@@ -566,6 +566,7 @@ class GMVMaxBidRecommendRequest(BaseModel):
 class GMVMaxReportFiltering(BaseModel):
     """Filtering block for GMV Max reports (campaign/product/creative/room/session)."""
 
+    gmv_max_promotion_types: Optional[List[str]] = None
     store_ids: Optional[List[str]] = None
     campaign_ids: Optional[List[str]] = None
     product_ids: Optional[List[str]] = None
@@ -581,6 +582,34 @@ class GMVMaxReportTimeRange(BaseModel):
 
     start_time: str
     end_time: str
+
+
+class GMVMaxReportGetRequest(BaseModel):
+    """Request model for TikTok GET /gmv_max/report/get/."""
+
+    advertiser_id: str
+    store_ids: Sequence[str]
+    start_date: str
+    end_date: str
+    metrics: Sequence[str]
+    dimensions: Sequence[str]
+    gmv_max_promotion_types: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
+    campaign_name: Optional[str] = None
+    campaign_statuses: Optional[Sequence[str]] = None
+    item_group_ids: Optional[Sequence[str]] = None
+    creative_types: Optional[Sequence[str]] = None
+    creative_delivery_statuses: Optional[Sequence[str]] = None
+    room_ids: Optional[Sequence[str]] = None
+    search_word: Optional[str] = None
+    enable_total_metrics: Optional[bool] = None
+    filtering: Optional[GMVMaxReportFiltering] = None
+    page: Optional[int] = None
+    page_size: Optional[int] = None
+    sort_field: Optional[str] = None
+    sort_type: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class GMVMaxBaseReportRequest(BaseModel):
@@ -1174,13 +1203,13 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
         return self._parse_response(payload, GMVMaxBidRecommendation)
 
-    async def _gmv_max_report_post(
-        self, endpoint: str, body: Mapping[str, Any]
+    async def _gmv_max_report_get(
+        self, params: Mapping[str, Any]
     ) -> GMVMaxResponse[GMVMaxReportData]:
         payload = await self._request_json(
-            "POST",
-            endpoint,
-            json_body=_ttb_api._remove_none(dict(body)),
+            "GET",
+            "/gmv_max/report/get/",
+            params=_ttb_api._clean_params_map(dict(params)),
         )
         report_data = _parse_report_data(payload)
         return GMVMaxResponse[GMVMaxReportData](  # type: ignore[call-arg]
@@ -1190,56 +1219,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             data=report_data,
         )
 
-    async def gmv_max_campaign_report(
-        self, request: GMVMaxCampaignReportRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Run a GMV Max campaign report via POST."""
-
-        return await self._gmv_max_report_post(
-            "/gmv_max/report/campaign/get/", request.model_dump(exclude_none=True)
-        )
-
-    async def gmv_max_product_report(
-        self, request: GMVMaxProductReportRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Run a GMV Max product report via POST."""
-
-        return await self._gmv_max_report_post(
-            "/gmv_max/report/product/get/", request.model_dump(exclude_none=True)
-        )
-
-    async def gmv_max_creative_report(
-        self, request: GMVMaxCreativeReportRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Run a GMV Max creative report via POST."""
-
-        return await self._gmv_max_report_post(
-            "/gmv_max/report/creative/get/", request.model_dump(exclude_none=True)
-        )
-
-    async def gmv_max_room_report(
-        self, request: GMVMaxRoomReportRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Run a GMV Max room report via POST."""
-
-        return await self._gmv_max_report_post(
-            "/gmv_max/report/room/get/", request.model_dump(exclude_none=True)
-        )
-
-    async def gmv_max_session_report(
-        self, request: GMVMaxSessionReportRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Run a GMV Max session report via POST."""
-
-        return await self._gmv_max_report_post(
-            "/gmv_max/report/session/get/", request.model_dump(exclude_none=True)
-        )
-
-    async def gmv_max_report_get(
+    def _build_report_get_params(
         self, request: GMVMaxReportGetRequest
-    ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
-
+    ) -> Dict[str, Any]:
         def _encode_seq(values: Sequence[Any] | None) -> str | None:
             if values is None:
                 return None
@@ -1249,18 +1231,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         store_ids = [str(store) for store in request.store_ids]
         params: Dict[str, Any] = {
             "advertiser_id": request.advertiser_id,
-            # TikTok API requires store_ids to be encoded as an array field even on GET.
-            # Passing repeated query params (store_ids=123&store_ids=456) causes the
-            # API to treat the value as a scalar string and respond with
-            # "store_ids: Field must be set to array". Encoding the list as a JSON
-            # array matches the API expectation.
             "store_ids": json.dumps(store_ids, ensure_ascii=False),
             "start_date": request.start_date,
             "end_date": request.end_date,
-            # Dimensions/metrics must also be sent as JSON arrays even though the
-            # endpoint is a GET request. Sending repeated query params leads to
-            # errors such as "dimensions: error unmarshaling parameter
-            # \"dimensions\"" from the TikTok API.
             "metrics": json.dumps(list(request.metrics), ensure_ascii=False),
             "dimensions": json.dumps(list(request.dimensions), ensure_ascii=False),
         }
@@ -1289,12 +1262,86 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             params["filtering"] = json.dumps(
                 request.filtering.model_dump(exclude_none=True), ensure_ascii=False
             )
-        for key in ("page_size", "sort_field", "sort_type"):
+        for key in ("page", "page_size", "sort_field", "sort_type"):
             value = getattr(request, key)
             if value is not None:
                 params[key] = value
 
         _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
+        return params
+
+    async def gmv_max_campaign_report(
+        self, request: GMVMaxCampaignReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max campaign report via GET /gmv_max/report/get/."""
+
+        legacy_filtering = request.filtering.model_dump(exclude_none=True) if request.filtering else {}
+        store_ids = _coerce_store_ids(legacy_filtering.pop("store_ids", None))
+        start_date = None
+        end_date = None
+        if request.time_range is not None:
+            start_date = request.time_range.start_time
+            end_date = request.time_range.end_time
+        start_date = start_date or request.start_time
+        end_date = end_date or request.end_time
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required for GMV Max report")
+
+        filtering_model = (
+            GMVMaxReportFiltering.model_validate(legacy_filtering)
+            if legacy_filtering
+            else None
+        )
+        get_request = GMVMaxReportGetRequest(
+            advertiser_id=request.advertiser_id,
+            store_ids=store_ids,
+            start_date=start_date,
+            end_date=end_date,
+            metrics=list(request.metrics),
+            dimensions=list(request.dimensions),
+            gmv_max_promotion_types=getattr(request, "gmv_max_promotion_types", None),
+            campaign_ids=list(getattr(request, "campaign_ids", None) or []) or None,
+            item_group_ids=list(getattr(request, "product_ids", None) or []) or None,
+            room_ids=list(getattr(request, "room_ids", None) or []) or None,
+            filtering=filtering_model,
+            page=request.page,
+            page_size=request.page_size,
+        )
+        params = self._build_report_get_params(get_request)
+        return await self._gmv_max_report_get(params)
+
+    async def gmv_max_product_report(
+        self, request: GMVMaxProductReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max product report via GET /gmv_max/report/get/."""
+
+        return await self.gmv_max_campaign_report(request)
+
+    async def gmv_max_creative_report(
+        self, request: GMVMaxCreativeReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max creative report via GET /gmv_max/report/get/."""
+
+        return await self.gmv_max_campaign_report(request)
+
+    async def gmv_max_room_report(
+        self, request: GMVMaxRoomReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max room report via GET /gmv_max/report/get/."""
+
+        return await self.gmv_max_campaign_report(request)
+
+    async def gmv_max_session_report(
+        self, request: GMVMaxSessionReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max session report via GET /gmv_max/report/get/."""
+
+        return await self.gmv_max_campaign_report(request)
+
+    async def gmv_max_report_get(
+        self, request: GMVMaxReportGetRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
 
         aggregated_entries: list[GMVMaxReportEntry] = []
         summary: Dict[str, Any] | None = None
@@ -1303,14 +1350,10 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         page_size_value = request.page_size or 200
 
         while True:
-            params["page"] = page_value
-            params["page_size"] = page_size_value
-            payload = await self._request_json(
-                "GET",
-                "/gmv_max/report/get/",
-                params=_ttb_api._clean_params_map(params),
-            )
-            response = self._parse_response(payload, GMVMaxReportData)
+            request.page = page_value
+            request.page_size = page_size_value
+            params = self._build_report_get_params(request)
+            response = await self._gmv_max_report_get(params)
             aggregated_entries.extend(response.data.list)
             if summary is None:
                 summary = response.data.summary
@@ -1411,6 +1454,7 @@ __all__ = [
     "GMVMaxBidRecommendRequest",
     "GMVMaxReportData",
     "GMVMaxReportFiltering",
+    "GMVMaxReportGetRequest",
     "GMVMaxReportTimeRange",
     "GMVMaxBaseReportRequest",
     "GMVMaxCampaignReportRequest",

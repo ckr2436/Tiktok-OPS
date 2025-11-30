@@ -305,6 +305,45 @@ async def test_gmvmax_client_get_requests(request_obj, method_name, expected_pat
 
 
 @pytest.mark.anyio
+async def test_gmvmax_campaign_report_uses_get_endpoint():
+    handler, recorded = _wrap_handler(
+        "GET",
+        "/open_api/v1.3/gmv_max/report/get/",
+        response_body={"code": 0, "message": "OK", "data": {"report": {"list": []}}},
+    )
+    client = await _build_client(handler)
+    request_obj = GMVMaxCampaignReportRequest(
+        advertiser_id="1",
+        campaign_ids=["cmp"],
+        metrics=["cost"],
+        dimensions=["campaign_id", "stat_time_day"],
+        time_range=GMVMaxReportTimeRange(start_time="2024-01-01", end_time="2024-01-02"),
+        filtering=GMVMaxReportFiltering(
+            store_ids=["store"], gmv_max_promotion_types=["PRODUCT_GMV_MAX"]
+        ),
+        page=1,
+        page_size=50,
+    )
+
+    await client.gmv_max_campaign_report(request_obj)
+    await client.aclose()
+
+    assert recorded, "request not captured"
+    request = recorded[0]
+    assert request.method == "GET"
+    parsed = urlparse(request.url)
+    assert parsed.path.endswith("/open_api/v1.3/gmv_max/report/get/")
+    query = _extract_query(request.url)
+    assert query["advertiser_id"] == "1"
+    assert query["start_date"] == "2024-01-01"
+    assert query["end_date"] == "2024-01-02"
+    assert json.loads(query["dimensions"]) == ["campaign_id", "stat_time_day"]
+    assert json.loads(query["metrics"]) == ["cost"]
+    filtering = json.loads(query["filtering"])
+    assert filtering["gmv_max_promotion_types"] == ["PRODUCT_GMV_MAX"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "request_obj, method_name, expected_path, expected_query, expected_body",
     [
