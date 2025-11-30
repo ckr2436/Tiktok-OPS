@@ -1085,6 +1085,24 @@ def _sync_campaign_product_assignments(
         )
 
 
+def _list_campaign_product_ids(
+    db: Session, *, campaign: TTBGmvMaxCampaign
+) -> list[str]:
+    if not getattr(campaign, "id", None):
+        return []
+
+    rows = (
+        db.execute(
+            select(TTBGmvMaxCampaignProduct.item_group_id)
+            .where(TTBGmvMaxCampaignProduct.campaign_pk == int(campaign.id))
+            .where(TTBGmvMaxCampaignProduct.store_id == str(campaign.store_id))
+        )
+        .scalars()
+        .all()
+    )
+    return [item for item in (_normalize_identifier(row) for row in rows) if item]
+
+
 def _lookup_store_id_from_links(
     db: Session,
     *,
@@ -2093,6 +2111,7 @@ async def _sync_creative_level_daily(
     start_date: str,
     end_date: str,
     include_attributes: bool,
+    item_group_ids: Sequence[str] | None = None,
 ) -> int:
     request = _build_level_report_request(
         campaign=campaign,
@@ -2102,6 +2121,7 @@ async def _sync_creative_level_daily(
         end_date=end_date,
         metrics=GMVMAX_CREATIVE_METRICS,
         include_attributes=include_attributes,
+        item_group_ids=item_group_ids,
         campaign_ids=[str(campaign.campaign_id)],
     )
     response = await client.gmv_max_report_get(request)
@@ -2179,6 +2199,7 @@ async def sync_gmvmax_reports_for_campaign(
 
     creative_rows = 0
     if _normalize_identifier(campaign.shopping_ads_type) != "LIVE":
+        item_group_ids = _list_campaign_product_ids(db, campaign=campaign)
         creative_rows += await _sync_creative_level_daily(
             db,
             client,
@@ -2190,17 +2211,19 @@ async def sync_gmvmax_reports_for_campaign(
             end_date=end_date_str,
             include_attributes=False,
         )
-        creative_rows += await _sync_creative_level_daily(
-            db,
-            client,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            campaign=campaign,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            include_attributes=True,
-        )
+        if item_group_ids:
+            creative_rows += await _sync_creative_level_daily(
+                db,
+                client,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                campaign=campaign,
+                store_id=store_id,
+                start_date=start_date_str,
+                end_date=end_date_str,
+                include_attributes=True,
+                item_group_ids=item_group_ids,
+            )
 
     return {"campaign_rows": campaign_rows, "creative_rows": creative_rows}
 
