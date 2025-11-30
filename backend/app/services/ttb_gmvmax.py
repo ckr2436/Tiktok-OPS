@@ -501,6 +501,8 @@ def _apply_attribute_scope_constraints(
 
     filter_field, dimension_field = id_fields[level]
     filter_values = getattr(request, filter_field, None)
+    if not filter_values:
+        return request
     normalized_ids = _require_single_identifier(values=filter_values, field=filter_field)
     setattr(request, filter_field, normalized_ids)
 
@@ -543,6 +545,16 @@ def _build_level_report_request(
         room_ids=list(room_ids) if room_ids else None,
         page_size=_REPORT_PAGE_SIZE,
     )
+
+    if include_attributes:
+        attribute_scopes: dict[GMVMaxReportLevel, Sequence[str] | None] = {
+            GMVMaxReportLevel.PRODUCT: item_group_ids,
+            GMVMaxReportLevel.CREATIVE: item_group_ids,
+            GMVMaxReportLevel.ROOM: room_ids,
+            GMVMaxReportLevel.SESSION: room_ids,
+        }
+        attribute_scope_values = attribute_scopes.get(level)
+        include_attributes = bool(attribute_scope_values)
 
     if include_attributes:
         if level == GMVMaxReportLevel.CREATIVE:
