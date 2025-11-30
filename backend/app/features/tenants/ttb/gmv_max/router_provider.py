@@ -42,6 +42,7 @@ from app.data.repositories.tiktok_business.gmvmax_metrics import (
     query_gmvmax_metrics,
 )
 from app.data.repositories.tiktok_business.gmvmax_creative_metrics import (
+    count_creative_metrics,
     list_creative_metrics,
 )
 from app.providers.tiktok_business.gmvmax_client import (
@@ -483,81 +484,61 @@ def _build_creative_metrics_response(
     end: date,
     page: int,
     page_size: int,
+    total: int,
     seed_min_conversions: int,
     seed_min_roas: float,
     seed_min_spend: float,
 ) -> MetricsResponse:
-    aggregates: dict[str, dict[str, Any]] = {}
+    entries: list[GMVMaxReportEntry] = []
     for row in rows:
-        creative_id = str(getattr(row, "creative_id", "") or "")
+        raw = getattr(row, "raw_metrics", None) or {}
+        creative_id = str(getattr(row, "creative_id", "") or raw.get("item_id") or "")
         if not creative_id:
             continue
-        bucket = aggregates.setdefault(
-            creative_id,
-            {
-                "impressions": 0,
-                "clicks": 0,
-                "orders": 0,
-                "spend": 0.0,
-                "gmv": 0.0,
-                "roas": 0.0,
-                "creative_name": getattr(row, "creative_name", None),
-                "creative_status": getattr(row, "creative_status", None),
-                "last_seen": getattr(row, "stat_time_day", None),
-                "raw": getattr(row, "raw_metrics", None),
-            },
-        )
-        bucket["impressions"] += int(getattr(row, "impressions", 0) or 0)
-        bucket["clicks"] += int(getattr(row, "clicks", 0) or 0)
-        bucket["orders"] += int(getattr(row, "orders", 0) or 0)
-        bucket["spend"] += _coerce_decimal(getattr(row, "cost", None) or getattr(row, "net_cost", None))
-        bucket["gmv"] += _coerce_decimal(getattr(row, "gross_revenue", None))
-        roi_value = getattr(row, "roi", None)
-        if roi_value is not None:
-            bucket["roas"] = max(bucket["roas"], _coerce_decimal(roi_value))
-        stat_time = getattr(row, "stat_time_day", None)
-        if stat_time and (bucket["last_seen"] is None or stat_time > bucket["last_seen"]):
-            bucket["last_seen"] = stat_time
-
-    creative_items = list(aggregates.items())
-    total = len(creative_items)
-    if page_size:
-        start_index = (page - 1) * page_size
-        end_index = start_index + page_size
-        creative_items = creative_items[start_index:end_index]
-
-    entries: list[GMVMaxReportEntry] = []
-    seed_count = 0
-    for creative_id, data in creative_items:
-        spend_value = float(data.get("spend") or 0)
-        gmv_value = float(data.get("gmv") or 0)
-        orders_value = int(data.get("orders") or 0)
-        roas_value = data.get("roas") or (gmv_value / spend_value if spend_value > 0 else 0)
-        is_seed = _is_seed_creative(
-            orders=orders_value,
-            roas=roas_value,
-            spend=spend_value,
-            min_conversions=seed_min_conversions,
-            min_roas=seed_min_roas,
-            min_spend=seed_min_spend,
-        )
-        seed_count += 1 if is_seed else 0
+        metrics_data: dict[str, Any] = dict(raw)
         metrics = {
-            "impressions": data.get("impressions"),
-            "clicks": data.get("clicks"),
-            "orders": orders_value,
-            "spend": spend_value,
-            "gmv": gmv_value,
-            "roas": roas_value,
-            "is_seed": is_seed,
+            "title": metrics_data.get("title"),
+            "item_id": metrics_data.get("item_id") or getattr(row, "item_id", None) or creative_id,
+            "tt_account_name": metrics_data.get("tt_account_name"),
+            "tt_account_profile_image_url": metrics_data.get("tt_account_profile_image_url"),
+            "tt_account_authorization_type": metrics_data.get("tt_account_authorization_type"),
+            "shop_content_type": metrics_data.get("shop_content_type"),
+            "creative_delivery_status": metrics_data.get("creative_delivery_status")
+            or getattr(row, "creative_status", None),
+            "cost": metrics_data.get("cost") or getattr(row, "cost", None),
+            "orders": metrics_data.get("orders") or getattr(row, "orders", None),
+            "cost_per_order": metrics_data.get("cost_per_order"),
+            "gross_revenue": metrics_data.get("gross_revenue")
+            or getattr(row, "gross_revenue", None),
+            "roi": metrics_data.get("roi") or getattr(row, "roi", None),
+            "product_impressions": metrics_data.get("product_impressions"),
+            "product_clicks": metrics_data.get("product_clicks"),
+            "product_click_rate": metrics_data.get("product_click_rate"),
+            "ad_click_rate": metrics_data.get("ad_click_rate") or getattr(row, "ad_click_rate", None),
+            "ad_conversion_rate": metrics_data.get("ad_conversion_rate")
+            or getattr(row, "ad_conversion_rate", None),
+            "ad_video_view_rate_2s": metrics_data.get("ad_video_view_rate_2s")
+            or getattr(row, "ad_video_view_rate_2s", None),
+            "ad_video_view_rate_6s": metrics_data.get("ad_video_view_rate_6s")
+            or getattr(row, "ad_video_view_rate_6s", None),
+            "ad_video_view_rate_p25": metrics_data.get("ad_video_view_rate_p25")
+            or getattr(row, "ad_video_view_rate_p25", None),
+            "ad_video_view_rate_p50": metrics_data.get("ad_video_view_rate_p50")
+            or getattr(row, "ad_video_view_rate_p50", None),
+            "ad_video_view_rate_p75": metrics_data.get("ad_video_view_rate_p75")
+            or getattr(row, "ad_video_view_rate_p75", None),
+            "ad_video_view_rate_p100": metrics_data.get("ad_video_view_rate_p100")
+            or getattr(row, "ad_video_view_rate_p100", None),
         }
+        serialized_metrics = {k: v for k, v in metrics.items() if v is not None}
         dimensions = {
-            "creative_id": creative_id,
-            "creative_name": data.get("creative_name") or creative_id,
-            "creative_status": data.get("creative_status"),
-            "stat_time_day": data.get("last_seen") or end,
+            "campaign_id": getattr(row, "campaign_id", None),
+            "item_group_id": metrics_data.get("item_group_id")
+            or getattr(row, "product_id", None),
+            "item_id": metrics.get("item_id"),
+            "stat_time_day": getattr(row, "stat_time_day", None) or end,
         }
-        entries.append(GMVMaxReportEntry(metrics=metrics, dimensions=dimensions))
+        entries.append(GMVMaxReportEntry(metrics=serialized_metrics, dimensions=dimensions))
 
     has_more = page_size > 0 and page * page_size < total
     total_page = ceil(total / page_size) if page_size else None
@@ -569,8 +550,7 @@ def _build_creative_metrics_response(
         has_more=has_more,
         has_next=has_more,
     )
-    summary = {"seed_count": seed_count}
-    report = GMVMaxReportData(list=entries, page_info=page_info, summary=summary)
+    report = GMVMaxReportData(list=entries, page_info=page_info, summary=None)
     return MetricsResponse(report=report, request_id=None)
 
 
@@ -2623,6 +2603,17 @@ async def query_gmvmax_metrics_provider(
         )
     normalized_dimensions = [str(dim).lower() for dim in dimensions or []]
     if any(dim in {"creative", "creative_id", "creativeid"} for dim in normalized_dimensions):
+        limit = page_size
+        offset = (page - 1) * page_size
+        creative_total = count_creative_metrics(
+            context.db,
+            workspace_id=context.workspace_id,
+            provider=context.provider,
+            auth_id=context.auth_id,
+            campaign_id=str(campaign_id),
+            date_from=start,
+            date_to=end,
+        )
         creative_rows = await list_creative_metrics(
             context.db,
             workspace_id=context.workspace_id,
@@ -2631,8 +2622,8 @@ async def query_gmvmax_metrics_provider(
             campaign_id=str(campaign_id),
             date_from=start,
             date_to=end,
-            limit=5000,
-            offset=0,
+            limit=limit,
+            offset=offset,
         )
         return _build_creative_metrics_response(
             rows=creative_rows,
@@ -2640,6 +2631,7 @@ async def query_gmvmax_metrics_provider(
             end=end,
             page=page,
             page_size=page_size,
+            total=creative_total,
             seed_min_conversions=seed_min_conversions,
             seed_min_roas=seed_min_roas,
             seed_min_spend=seed_min_spend,
