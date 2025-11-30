@@ -15,6 +15,23 @@ import {
   uploadSubtitleVideo,
 } from '../api/index.js'
 
+function normalizeShareLink(input) {
+  const text = (input || '').trim()
+  if (!text) return ''
+
+  const match = text.match(/https?:\/\/[^\s]+/i)
+  if (!match) return ''
+
+  const candidate = match[0].replace(/[。．。,，]+$/, '')
+  try {
+    const url = new URL(candidate)
+    return url.toString()
+  } catch (err) {
+    console.warn('invalid share url detected', candidate, err)
+    return ''
+  }
+}
+
 export default function SubtitleRecognitionPage() {
   const { wid } = useParams()
   const [languages, setLanguages] = useState([])
@@ -40,6 +57,7 @@ export default function SubtitleRecognitionPage() {
   const [historyError, setHistoryError] = useState('')
   const [selectedJobId, setSelectedJobId] = useState(null)
   const [isPasting, setIsPasting] = useState(false)
+  const cleanedShareUrl = useMemo(() => normalizeShareLink(shareLink), [shareLink])
   const upsertHistory = useCallback((jobData) => {
     if (!jobData) return
     setHistoryError('')
@@ -249,8 +267,13 @@ export default function SubtitleRecognitionPage() {
     e.preventDefault()
     setErrorMessage('')
     const trimmedLink = shareLink.trim()
-    const hasTask = doSubtitle || doContactSheet || (doDownloadOnly && !!trimmedLink)
-    if (!trimmedLink && !uploadedVideo?.upload_id) {
+    const hasValidShareLink = !!cleanedShareUrl
+    const hasTask = doSubtitle || doContactSheet || (doDownloadOnly && hasValidShareLink)
+    if (!hasValidShareLink && trimmedLink && doDownloadOnly) {
+      setErrorMessage('分享链接格式不正确，请重新复制有效的短视频链接。')
+      return
+    }
+    if (!hasValidShareLink && !uploadedVideo?.upload_id) {
       setErrorMessage('请先上传需要识别的视频文件，或粘贴有效的短视频分享链接。')
       return
     }
@@ -258,7 +281,7 @@ export default function SubtitleRecognitionPage() {
       setErrorMessage('请至少勾选一种任务类型。')
       return
     }
-    if (doDownloadOnly && !trimmedLink) {
+    if (doDownloadOnly && !hasValidShareLink) {
       setErrorMessage('仅下载模式仅支持分享链接。')
       return
     }
@@ -273,8 +296,8 @@ export default function SubtitleRecognitionPage() {
     try {
       setLoading(true)
       const response = await createSubtitleJob(wid, {
-        uploadId: trimmedLink ? null : uploadedVideo?.upload_id,
-        shareUrl: trimmedLink || null,
+        uploadId: hasValidShareLink ? null : uploadedVideo?.upload_id,
+        shareUrl: hasValidShareLink ? cleanedShareUrl : null,
         sourceLanguage: sourceLanguage || null,
         translate: doSubtitle && translate,
         targetLanguage: doSubtitle ? targetLanguage || null : null,
@@ -282,7 +305,7 @@ export default function SubtitleRecognitionPage() {
         doSubtitle,
         doContactSheet,
         contactInterval: doContactSheet ? Number(contactInterval) : null,
-        doDownloadOnly: doDownloadOnly && !!trimmedLink,
+        doDownloadOnly: doDownloadOnly && hasValidShareLink,
       })
       setJob(response)
       upsertHistory(response)
@@ -296,8 +319,8 @@ export default function SubtitleRecognitionPage() {
     }
   }
 
-  const hasVideo = !!uploadedVideo || !!shareLink.trim()
-  const hasTaskSelection = doSubtitle || doContactSheet || (doDownloadOnly && !!shareLink.trim())
+  const hasVideo = !!uploadedVideo || !!cleanedShareUrl
+  const hasTaskSelection = doSubtitle || doContactSheet || (doDownloadOnly && !!cleanedShareUrl)
   const translationReady = !doSubtitle || !translate || targetLanguage
   const contactReady = !doContactSheet || contactIntervals.includes(String(contactInterval))
   const canSubmit = hasVideo && hasTaskSelection && translationReady && contactReady && !isUploading

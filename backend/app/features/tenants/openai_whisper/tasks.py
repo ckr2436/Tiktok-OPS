@@ -95,6 +95,9 @@ def _download_shared_video(
         "quiet": True,
         "noplaylist": True,
         "merge_output_format": ext,
+        # Avoid temp ``.part`` files whose rename step may fail under
+        # concurrent downloads.
+        "nopart": True,
     }
 
     try:
@@ -347,7 +350,28 @@ def _render_contact_sheet(video_path: Path, workspace_id: int, job_id: str, inte
     frames_dir.mkdir(parents=True, exist_ok=True)
     frames = _extract_frames(video_path, frames_dir, interval)
     frame_count = max(1, len(frames))
-    rows, cols = _best_grid(frame_count)
+
+    try:
+        probe_cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ]
+        duration_raw = subprocess.check_output(probe_cmd, stderr=subprocess.STDOUT).decode().strip()
+        duration_seconds = max(0.0, float(duration_raw)) if duration_raw else 0.0
+    except Exception:  # noqa: BLE001
+        duration_seconds = 0.0
+
+    expected_frames = frame_count
+    if duration_seconds > 0 and interval > 0:
+        expected_frames = max(expected_frames, math.ceil(duration_seconds / interval))
+
+    rows, cols = _best_grid(expected_frames)
     output_path = storage.contact_sheet_path(directory)
     tile_cmd = [
         "ffmpeg",
@@ -513,6 +537,33 @@ def download_shared_video(self, *, workspace_id: int, job_id: str) -> str:
                 download_url=metadata.get("download_url"),
             )
             db.commit()
+
+        if metadata.get("share_url"):
+            spawned_tasks: list[str] = []
+            if metadata.get("do_subtitle") and metadata.get("subtitle_status") == "pending":
+                async_result = transcribe_video.delay(
+                    workspace_id=workspace_id,
+                    job_id=job_id,
+                )
+                spawned_tasks.append(async_result.id)
+            if metadata.get("do_contact_sheet") and metadata.get("contact_sheet_status") == "pending":
+                contact_result = generate_contact_sheet.delay(
+                    workspace_id=workspace_id,
+                    job_id=job_id,
+                    contact_interval=metadata.get("contact_interval"),
+                )
+                spawned_tasks.append(contact_result.id)
+
+            if spawned_tasks:
+                def _apply(meta: dict) -> dict:
+                    existing: list[str] = list(meta.get("celery_task_ids") or [])
+                    meta["celery_task_ids"] = existing + spawned_tasks
+                    if not meta.get("celery_task_id"):
+                        meta["celery_task_id"] = meta["celery_task_ids"][0]
+                    return meta
+
+                storage.update_metadata(workspace_id, job_id, _apply)
+                db.flush()
         return job_id
 
 
