@@ -564,37 +564,66 @@ class GMVMaxBidRecommendRequest(BaseModel):
 
 
 class GMVMaxReportFiltering(BaseModel):
-    """Filtering block for GMV Max report."""
+    """Filtering block for GMV Max reports (campaign/product/creative/room/session)."""
 
-    gmv_max_promotion_types: Optional[List[str]] = None
+    store_ids: Optional[List[str]] = None
+    campaign_ids: Optional[List[str]] = None
+    product_ids: Optional[List[str]] = None
+    creative_ids: Optional[List[str]] = None
+    room_ids: Optional[List[str]] = None
+    session_ids: Optional[List[str]] = None
 
     model_config = ConfigDict(extra="allow")
 
 
-class GMVMaxReportGetRequest(BaseModel):
+class GMVMaxReportTimeRange(BaseModel):
+    """Time range payload accepted by GMV Max report endpoints."""
+
+    start_time: str
+    end_time: str
+
+
+class GMVMaxBaseReportRequest(BaseModel):
+    """Shared fields across GMV Max report endpoints."""
+
     advertiser_id: str
-    store_ids: Sequence[str]
-    start_date: str
-    end_date: str
     metrics: Sequence[str]
     dimensions: Sequence[str]
-    gmv_max_promotion_types: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
-    campaign_name: Optional[str] = None
-    campaign_statuses: Optional[Sequence[str]] = None
-    item_group_ids: Optional[Sequence[str]] = None
-    creative_types: Optional[Sequence[str]] = None
-    creative_delivery_statuses: Optional[Sequence[str]] = None
-    search_word: Optional[str] = None
-    room_ids: Optional[Sequence[str]] = None
-    enable_total_metrics: Optional[bool] = None
+    time_range: Optional[GMVMaxReportTimeRange] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    time_granularity: Optional[str] = None
+    time_dimension: Optional[str] = None
     filtering: Optional[GMVMaxReportFiltering] = None
     page: Optional[int] = None
     page_size: Optional[int] = None
-    sort_field: Optional[str] = None
-    sort_type: Optional[str] = None
+    cursor: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCampaignReportRequest(GMVMaxBaseReportRequest):
+    campaign_ids: Optional[Sequence[str]] = None
+
+
+class GMVMaxProductReportRequest(GMVMaxBaseReportRequest):
+    product_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
+
+
+class GMVMaxCreativeReportRequest(GMVMaxBaseReportRequest):
+    creative_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
+
+
+class GMVMaxRoomReportRequest(GMVMaxBaseReportRequest):
+    room_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
+
+
+class GMVMaxSessionReportRequest(GMVMaxBaseReportRequest):
+    session_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = None
 
 
 # ------------------------- Dataset typing & builder for report -------------------------
@@ -810,6 +839,14 @@ class GMVMaxResponse(BaseModel, Generic[T]):
     data: T
 
     model_config = ConfigDict(extra="allow")
+
+
+def _parse_report_data(payload: Mapping[str, Any]) -> GMVMaxReportData:
+    data_block = payload.get("data") if isinstance(payload, Mapping) else None
+    report_block: Mapping[str, Any] = {}
+    if isinstance(data_block, Mapping):
+        report_block = data_block.get("report") or data_block
+    return GMVMaxReportData.model_validate(report_block)
 
 
 def _coerce_store_ids(value: Any) -> List[str]:
@@ -1137,6 +1174,67 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
         return self._parse_response(payload, GMVMaxBidRecommendation)
 
+    async def _gmv_max_report_post(
+        self, endpoint: str, body: Mapping[str, Any]
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        payload = await self._request_json(
+            "POST",
+            endpoint,
+            json_body=_ttb_api._remove_none(dict(body)),
+        )
+        report_data = _parse_report_data(payload)
+        return GMVMaxResponse[GMVMaxReportData](  # type: ignore[call-arg]
+            code=int(payload.get("code", -1)),
+            message=str(payload.get("message") or ""),
+            request_id=payload.get("request_id"),
+            data=report_data,
+        )
+
+    async def gmv_max_campaign_report(
+        self, request: GMVMaxCampaignReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max campaign report via POST."""
+
+        return await self._gmv_max_report_post(
+            "/gmv_max/report/campaign/get/", request.model_dump(exclude_none=True)
+        )
+
+    async def gmv_max_product_report(
+        self, request: GMVMaxProductReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max product report via POST."""
+
+        return await self._gmv_max_report_post(
+            "/gmv_max/report/product/get/", request.model_dump(exclude_none=True)
+        )
+
+    async def gmv_max_creative_report(
+        self, request: GMVMaxCreativeReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max creative report via POST."""
+
+        return await self._gmv_max_report_post(
+            "/gmv_max/report/creative/get/", request.model_dump(exclude_none=True)
+        )
+
+    async def gmv_max_room_report(
+        self, request: GMVMaxRoomReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max room report via POST."""
+
+        return await self._gmv_max_report_post(
+            "/gmv_max/report/room/get/", request.model_dump(exclude_none=True)
+        )
+
+    async def gmv_max_session_report(
+        self, request: GMVMaxSessionReportRequest
+    ) -> GMVMaxResponse[GMVMaxReportData]:
+        """Run a GMV Max session report via POST."""
+
+        return await self._gmv_max_report_post(
+            "/gmv_max/report/session/get/", request.model_dump(exclude_none=True)
+        )
+
     async def gmv_max_report_get(
         self, request: GMVMaxReportGetRequest
     ) -> GMVMaxResponse[GMVMaxReportData]:
@@ -1311,9 +1409,14 @@ __all__ = [
     "GMVMaxExclusiveAuthorizationGetRequest",
     "GMVMaxExclusiveAuthorizationCreateRequest",
     "GMVMaxBidRecommendRequest",
-    "GMVMaxReportGetRequest",
     "GMVMaxReportData",
-    "GMVMaxDataset",
-    "build_gmv_max_report_request",
+    "GMVMaxReportFiltering",
+    "GMVMaxReportTimeRange",
+    "GMVMaxBaseReportRequest",
+    "GMVMaxCampaignReportRequest",
+    "GMVMaxProductReportRequest",
+    "GMVMaxCreativeReportRequest",
+    "GMVMaxRoomReportRequest",
+    "GMVMaxSessionReportRequest",
 ]
 

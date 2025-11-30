@@ -61,8 +61,6 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxOccupiedCustomShopAdsListRequest,
     GMVMaxReportData,
     GMVMaxReportEntry,
-    GMVMaxReportFiltering,
-    GMVMaxReportGetRequest,
     GMVMaxResponse,
     PageInfo,
     GMVMaxSessionListData,
@@ -1059,53 +1057,6 @@ def _normalize_date_value(value: Any, *, field_name: str) -> Optional[date]:
             "code": "invalid_date_format",
             "message": f"{field_name} must be a valid date (YYYY-MM-DD)",
         },
-    )
-
-
-def _build_report_request(
-    advertiser_id: str,
-    report: ReportRequest | MetricsRequest,
-    *,
-    default_store_id: Optional[str],
-    campaign_id: Optional[str] = None,
-) -> GMVMaxReportGetRequest:
-    level = _resolve_report_level(getattr(report, "level", None))
-    store_ids = _normalize_store_ids(report.store_ids, default_store_id)
-    config = GMV_REPORT_CONFIG.get(level)
-    metrics = _normalize_metrics_list(
-        config.get("metrics") if config else report.metrics
-    )
-    dimensions = _normalize_dimensions_list(
-        config.get("dimensions") if config else report.dimensions
-    )
-    _validate_date_range_for_level(
-        start_date=report.start_date, end_date=report.end_date, level=level
-    )
-    filtering_payload: Dict[str, Any] = {}
-    promotion_types = None
-    if report.filtering is not None:
-        filtering_payload.update(report.filtering.model_dump(exclude_none=True))
-        promotion_types = report.filtering.gmv_max_promotion_types
-    if campaign_id:
-        filtering_payload.setdefault("campaign_ids", [str(campaign_id)])
-    filtering_model = (
-        GMVMaxReportFiltering(**filtering_payload) if filtering_payload else None
-    )
-    return GMVMaxReportGetRequest(
-        advertiser_id=str(advertiser_id),
-        store_ids=store_ids,
-        start_date=report.start_date.isoformat(),
-        end_date=report.end_date.isoformat(),
-        metrics=list(metrics),
-        dimensions=list(dimensions),
-        gmv_max_promotion_types=promotion_types,
-        campaign_ids=[str(campaign_id)] if campaign_id else None,
-        enable_total_metrics=report.enable_total_metrics,
-        filtering=filtering_model,
-        page=report.page,
-        page_size=report.page_size,
-        sort_field=report.sort_field,
-        sort_type=report.sort_type,
     )
 
 
@@ -2595,20 +2546,20 @@ async def sync_gmvmax_metrics_provider(
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> AsyncTaskResponse:
-    """Trigger metrics sync via TikTok GET /gmv_max/report/get/ for the campaign."""
+    """Trigger metrics sync via TikTok GMV Max report endpoints for the campaign."""
 
     adv = advertiser_id or context.advertiser_id
-    report_req = _build_report_request(
-        adv,
-        payload,
-        default_store_id=context.store_id,
-        campaign_id=campaign_id,
-    )
     async_res = celery_app.send_task(
-        "gmvmax.report_get",
+        "gmvmax.sync_metrics",
         kwargs={
-            "auth_id": context.auth_id,
-            "report_request": report_req.model_dump(exclude_none=True, by_alias=True),
+            "workspace_id": workspace_id,
+            "provider": provider,
+            "auth_id": auth_id,
+            "advertiser_id": adv,
+            "campaign_id": campaign_id,
+            "start_date": payload.start_date.isoformat(),
+            "end_date": payload.end_date.isoformat(),
+            "granularity": "DAY",
         },
         queue="gmvmax",
     )

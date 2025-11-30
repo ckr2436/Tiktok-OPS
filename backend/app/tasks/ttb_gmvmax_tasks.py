@@ -33,7 +33,6 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxBidRecommendRequest,
     GMVMaxIdentityGetRequest,
     GMVMaxOccupiedCustomShopAdsListRequest,
-    GMVMaxReportGetRequest,
     GMVMaxStoreAdUsageCheckRequest,
 )
 
@@ -379,7 +378,7 @@ def task_gmvmax_sync_advertiser_balance(
 
 
 # Metric sync (hourly/daily windows) scheduled via scheduler_catalog; calls
-# TikTok GET /gmv_max/report/get/ and upserts TTBGmvMaxMetricsDaily/Hourly.
+# TikTok GMV Max report endpoints and upserts TTBGmvMaxMetricsDaily/Hourly.
 @celery_app.task(
     bind=True,
     name="gmvmax.sync_metrics",
@@ -839,43 +838,6 @@ def task_gmvmax_precheck(
                 "store_id": store_id,
             },
         )
-        raise
-    finally:
-        _close_session(db)
-
-
-# Async report fetch for metrics sync (TikTok GET /gmv_max/report/get/);
-# caller persists results.
-@celery_app.task(
-    bind=True,
-    name="gmvmax.report_get",
-    autoretry_for=(Exception,),
-    retry_backoff=10,
-    retry_backoff_max=120,
-    retry_jitter=True,
-    max_retries=5,
-    queue="gmvmax",
-)
-def task_gmvmax_report_get(
-    self,
-    *,
-    auth_id: int,
-    report_request: dict[str, Any],
-    **extra: Any,
-) -> dict:
-    db = _db_session()
-    try:
-        async def _worker(client: Any) -> dict:
-            request = GMVMaxReportGetRequest.model_validate(report_request)
-            response = await client.gmv_max_report_get(request)
-            return {
-                "report": response.data.model_dump(exclude_none=True),
-                "request_id": response.request_id,
-            }
-
-        return _run_with_client(db, auth_id, _worker)
-    except Exception:
-        logger.exception("gmvmax.report_get failed", extra={"auth_id": auth_id})
         raise
     finally:
         _close_session(db)
