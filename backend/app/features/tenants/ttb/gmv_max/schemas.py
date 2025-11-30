@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Mapping, Optional, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -113,36 +111,74 @@ class CreateCampaignRequest(BaseModel):
 
     name: str
     store_id: str
-    item_group_ids: List[str]
-    promotion_type: str
+    item_group_ids: Optional[List[str]] = None
+    promotion_type: Optional[str] = None
+    shopping_ads_type: Optional[str] = None
     objective_type: str
-    daily_budget: float
+    daily_budget: Optional[float] = None
+    budget: Optional[float] = None
+    budget_mode: Optional[str] = None
     roas_bid: Optional[float] = None
+    deep_bid_type: Optional[str] = None
     promotion_days: Optional[Dict[str, Any]] = None
     schedule_type: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    product_specific_type: Optional[str] = None
+    product_video_specific_type: Optional[str] = None
+    identity_ids: Optional[List[str]] = None
+    store_authorized_bc_id: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
-    def to_client_body(self) -> GMVMaxCampaignCreateBody:
+    def to_client_body(
+        self,
+        *,
+        store_authorized_bc_id: str | None = None,
+        anchor_params: Mapping[str, Any] | None = None,
+        shopping_ads_type: str | None = None,
+    ) -> GMVMaxCampaignCreateBody:
+        resolved_type = (
+            shopping_ads_type
+            or self.shopping_ads_type
+            or self.promotion_type
+        )
+        if resolved_type is None:
+            raise ValueError("shopping_ads_type is required for GMV Max campaign creation")
+
         schedule_type = self.schedule_type
         if schedule_type is None and (self.start_time or self.end_time):
             schedule_type = "SCHEDULE"
 
+        budget_value: float | None
+        if self.daily_budget is not None:
+            budget_value = float(self.daily_budget)
+        else:
+            budget_value = float(self.budget) if self.budget is not None else None
+
         payload: Dict[str, Any] = {
             "store_id": str(self.store_id),
-            "shopping_ads_type": str(self.promotion_type),
+            "shopping_ads_type": str(resolved_type),
             "optimization_goal": str(self.objective_type),
             "campaign_name": self.name,
-            "budget": float(self.daily_budget),
+            "budget": budget_value,
+            "budget_mode": self.budget_mode,
             "roas_bid": float(self.roas_bid) if self.roas_bid is not None else None,
+            "deep_bid_type": self.deep_bid_type,
             "promotion_days": self.promotion_days,
             "schedule_type": schedule_type,
             "schedule_start_time": self.start_time.isoformat() if self.start_time else None,
             "schedule_end_time": self.end_time.isoformat() if self.end_time else None,
-            "item_group_ids": [str(item) for item in self.item_group_ids],
+            "product_specific_type": self.product_specific_type,
+            "product_video_specific_type": self.product_video_specific_type,
+            "item_group_ids": [str(item) for item in self.item_group_ids]
+            if self.item_group_ids
+            else None,
+            "store_authorized_bc_id": store_authorized_bc_id or self.store_authorized_bc_id,
         }
+
+        if anchor_params:
+            payload.update(anchor_params)
 
         cleaned = {key: value for key, value in payload.items() if value is not None}
         return GMVMaxCampaignCreateBody(**cleaned)

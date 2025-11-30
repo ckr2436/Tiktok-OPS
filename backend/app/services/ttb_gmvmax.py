@@ -22,15 +22,29 @@ from app.data.models.ttb_gmvmax import (
     TTBGmvMaxMetricsHourly,
     TTBGmvMaxStrategyConfig,
 )
+from app.data.repositories.tiktok_business.gmvmax_creative_metrics import upsert_creative_metrics
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
+    GMVMaxExclusiveAuthorizationCreateRequest,
+    GMVMaxExclusiveAuthorizationGetRequest,
+    GMVMaxIdentityGetRequest,
+    GMVMaxIdentityInfo,
+    GMVMaxDataset,
+    GMVMaxReportGetRequest,
+    GMVMaxStoreListRequest,
     TikTokBusinessGMVMaxClient,
+    build_gmv_max_report_request,
 )
-from app.services.gmvmax_spec import GMVMAX_DEFAULT_METRICS
-from app.services.ttb_api import TTBApiClient
+from app.services.gmvmax_spec import (
+    GMVMAX_DEFAULT_METRICS,
+    GMVMAX_CREATIVE_METRICS,
+    GMVMaxReportLevel,
+    GMV_REPORT_CONFIG,
+)
+from app.services.ttb_api import TTBApiClient, TTBApiError
 
 
 logger = logging.getLogger("gmv.tenants.gmvmax")
@@ -42,12 +56,15 @@ __all__ = [
     "sync_gmvmax_metrics_hourly",
     "upsert_metrics_daily_row",
     "sync_gmvmax_metrics_daily",
+    "sync_gmvmax_reports_for_campaign",
     "log_campaign_action",
     "apply_campaign_action",
     "get_or_create_strategy_config",
     "aggregate_recent_metrics",
     "decide_campaign_action",
     "resolve_store_id_from_page_context",
+    "ensure_gmvmax_store_authorized",
+    "build_gmvmax_anchor_params",
     "create_gmvmax_campaign",
     "update_gmvmax_campaign",
 ]
@@ -56,6 +73,14 @@ __all__ = [
 _DECIMAL_FOUR = Decimal("0.0001")
 _ONE_HUNDRED = Decimal("100")
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
+_CREATIVE_ATTRIBUTE_FIELDS = (
+    "creative_name",
+    "creative_status",
+    "creative_delivery_status",
+    "adgroup_id",
+    "product_id",
+    "item_id",
+)
 
 _REPORT_PAGE_SIZE = 200
 
@@ -65,6 +90,198 @@ def _normalize_identifier(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _require_single_identifier(
+    *,
+    values: Sequence[str] | None,
+    field: str,
+) -> list[str]:
+    normalized = [
+        _normalize_identifier(value) or ""
+        for value in (values or [])
+        if _normalize_identifier(value)
+    ]
+    if len(normalized) != 1:
+        raise TTBApiError(
+            f"{field} must contain exactly one id when requesting attributes",
+            code="GMVMAX_REPORT_ATTRIBUTE_SCOPE",
+            payload={field: values},
+        )
+    return normalized
+
+
+async def ensure_gmvmax_store_authorized(
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    target_store_id: str,
+) -> str:
+    """Validate store availability and ensure exclusive authorization exists."""
+
+    logger.info(
+        "gmvmax.ensure_store_authorized.list",
+        extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
+    )
+    store_list_request = GMVMaxStoreListRequest(advertiser_id=str(advertiser_id))
+    store_list_response = await client.gmv_max_store_list(store_list_request)
+    store_list = getattr(store_list_response.data, "store_list", []) if store_list_response else []
+    matched_store = None
+    for store in store_list:
+        if _normalize_identifier(getattr(store, "store_id", None)) == str(target_store_id):
+            matched_store = store
+            break
+
+    if matched_store is None:
+        raise TTBApiError(
+            "store is not available for the advertiser",
+            code="GMVMAX_STORE_UNAVAILABLE",
+            payload={"store_id": target_store_id, "advertiser_id": advertiser_id},
+        )
+
+    if not bool(getattr(matched_store, "is_gmv_max_available", False)):
+        raise TTBApiError(
+            "store does not support GMV Max",
+            code="GMVMAX_STORE_NOT_AVAILABLE",
+            payload={
+                "store_id": target_store_id,
+                "advertiser_id": advertiser_id,
+                "authorization_status": getattr(
+                    matched_store, "gmv_max_authorization_status", None
+                ),
+            },
+        )
+
+    store_authorized_bc_id = _normalize_identifier(
+        getattr(matched_store, "store_authorized_bc_id", None)
+    )
+    if not store_authorized_bc_id:
+        raise TTBApiError(
+            "store_authorized_bc_id missing from GMV Max store list",
+            code="GMVMAX_STORE_MISSING_BC",
+            payload={"store_id": target_store_id, "advertiser_id": advertiser_id},
+        )
+
+    get_request = GMVMaxExclusiveAuthorizationGetRequest(
+        advertiser_id=str(advertiser_id),
+        store_id=str(target_store_id),
+        store_authorized_bc_id=store_authorized_bc_id,
+    )
+    logger.info(
+        "gmvmax.ensure_store_authorized.get",
+        extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
+    )
+    get_response = await client.gmv_max_exclusive_authorization_get(get_request)
+    if get_response and getattr(get_response, "data", None):
+        data = get_response.data
+        if bool(getattr(data, "is_authorized", False)):
+            return _normalize_identifier(getattr(data, "store_authorized_bc_id", None)) or store_authorized_bc_id
+
+    create_request = GMVMaxExclusiveAuthorizationCreateRequest(
+        advertiser_id=str(advertiser_id),
+        store_id=str(target_store_id),
+        store_authorized_bc_id=store_authorized_bc_id,
+    )
+    logger.info(
+        "gmvmax.ensure_store_authorized.create",
+        extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
+    )
+    create_response = await client.gmv_max_exclusive_authorization_create(create_request)
+    auth_data = getattr(create_response, "data", None)
+    if auth_data:
+        authorized_id = _normalize_identifier(getattr(auth_data, "store_authorized_bc_id", None))
+        if authorized_id:
+            return authorized_id
+    return store_authorized_bc_id
+
+
+async def build_gmvmax_anchor_params(
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    shopping_ads_type: str,
+    store_id: str,
+    store_authorized_bc_id: str,
+    product_specific_type: str | None = None,
+    item_group_ids: Sequence[str] | None = None,
+    product_video_specific_type: str | None = None,
+    identity_ids: Sequence[str] | None = None,
+) -> dict:
+    """Construct anchor params for GMV Max campaign creation based on ad type."""
+
+    normalized_type = (shopping_ads_type or "").upper()
+    anchor: dict[str, Any] = {"shopping_ads_type": normalized_type}
+
+    if normalized_type == "LIVE":
+        identity_request = GMVMaxIdentityGetRequest(
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            store_authorized_bc_id=str(store_authorized_bc_id),
+        )
+        identity_response = await client.gmv_max_identity_get(identity_request)
+        available = []
+        if identity_response and getattr(identity_response, "data", None):
+            for entry in identity_response.data.identity_list:
+                identity = getattr(entry, "identity_info", None)
+                if identity is None:
+                    continue
+                live_available = getattr(entry, "live_gmv_max_available", None)
+                if live_available is None:
+                    live_available = getattr(identity, "live_gmv_max_available", None)
+                if live_available is False:
+                    continue
+                identity_id = _normalize_identifier(getattr(identity, "identity_id", None))
+                if identity_id:
+                    available.append(identity_id)
+
+        chosen_id = None
+        if identity_ids:
+            if len(identity_ids) != 1:
+                raise TTBApiError(
+                    "live campaigns require exactly one identity",
+                    code="GMVMAX_LIVE_IDENTITY_INVALID",
+                    payload={"identity_ids": list(identity_ids)},
+                )
+            chosen_id = _normalize_identifier(identity_ids[0])
+
+        if chosen_id and chosen_id not in available:
+            raise TTBApiError(
+                "selected identity is not eligible for live GMV Max",
+                code="GMVMAX_LIVE_IDENTITY_UNAVAILABLE",
+                payload={"identity_id": chosen_id, "available": available},
+            )
+
+        if not chosen_id:
+            if not available:
+                raise TTBApiError(
+                    "no eligible identities found for live GMV Max",
+                    code="GMVMAX_LIVE_IDENTITY_MISSING",
+                    payload={"store_id": store_id},
+                )
+            chosen_id = available[0]
+
+        anchor["identity_list"] = [GMVMaxIdentityInfo(identity_id=chosen_id)]
+        return anchor
+
+    resolved_product_type = (product_specific_type or "").upper()
+    if not resolved_product_type:
+        resolved_product_type = "ALL" if not item_group_ids else "CUSTOMIZED_PRODUCTS"
+    anchor["product_specific_type"] = resolved_product_type
+
+    if resolved_product_type != "ALL" and item_group_ids:
+        anchor["item_group_ids"] = [str(item) for item in item_group_ids if item is not None]
+
+    if product_video_specific_type:
+        anchor["product_video_specific_type"] = str(product_video_specific_type)
+
+    if identity_ids:
+        anchor["identity_list"] = [
+            GMVMaxIdentityInfo(identity_id=_normalize_identifier(identity_id))
+            for identity_id in identity_ids
+            if _normalize_identifier(identity_id)
+        ]
+
+    return anchor
 
 
 def _extract_store_links(payload: Mapping[str, Any] | None) -> dict[str, list[str]]:
@@ -245,6 +462,116 @@ def _resolve_store_id_for_metrics(
     return chosen
 
 
+def _pick_dataset_for_level(
+    *, campaign: TTBGmvMaxCampaign, level: GMVMaxReportLevel
+) -> GMVMaxDataset:
+    promotion_type = (_normalize_identifier(campaign.shopping_ads_type) or "PRODUCT").upper()
+    if level == GMVMaxReportLevel.CAMPAIGN:
+        return (
+            GMVMaxDataset.LIVE_CAMPAIGN
+            if promotion_type == "LIVE"
+            else GMVMaxDataset.PRODUCT_CAMPAIGN
+        )
+    if level == GMVMaxReportLevel.PRODUCT:
+        return GMVMaxDataset.PRODUCT_PRODUCT
+    if level == GMVMaxReportLevel.CREATIVE:
+        return GMVMaxDataset.CREATIVE
+    if level == GMVMaxReportLevel.ROOM:
+        return GMVMaxDataset.LIVE_LIVESTREAM
+    if level == GMVMaxReportLevel.SESSION:
+        return GMVMaxDataset.LIVE_DURATION
+    raise ValueError(f"unsupported report level: {level}")
+
+
+def _apply_attribute_scope_constraints(
+    *,
+    request: GMVMaxReportGetRequest,
+    level: GMVMaxReportLevel,
+    include_attributes: bool,
+) -> GMVMaxReportGetRequest:
+    if not include_attributes or level == GMVMaxReportLevel.CAMPAIGN:
+        return request
+
+    id_fields: dict[GMVMaxReportLevel, tuple[str, str]] = {
+        GMVMaxReportLevel.PRODUCT: ("item_group_ids", "item_group_id"),
+        GMVMaxReportLevel.CREATIVE: ("item_group_ids", "item_id"),
+        GMVMaxReportLevel.ROOM: ("room_ids", "room_id"),
+        GMVMaxReportLevel.SESSION: ("room_ids", "duration"),
+    }
+
+    filter_field, dimension_field = id_fields[level]
+    filter_values = getattr(request, filter_field, None)
+    normalized_ids = _require_single_identifier(values=filter_values, field=filter_field)
+    setattr(request, filter_field, normalized_ids)
+
+    if request.campaign_ids:
+        campaign_ids = _require_single_identifier(
+            values=request.campaign_ids, field="campaign_ids"
+        )
+        request.campaign_ids = campaign_ids
+
+    dimensions = [dimension_field]
+    if "stat_time_day" in GMV_REPORT_CONFIG.get(level, {}).get("dimensions", ()):  # type: ignore[arg-type]
+        dimensions.append("stat_time_day")
+    request.dimensions = dimensions
+    return request
+
+
+def _build_level_report_request(
+    *,
+    campaign: TTBGmvMaxCampaign,
+    store_id: str,
+    level: GMVMaxReportLevel,
+    start_date: str,
+    end_date: str,
+    metrics: Sequence[str],
+    include_attributes: bool,
+    campaign_ids: Sequence[str] | None = None,
+    item_group_ids: Sequence[str] | None = None,
+    room_ids: Sequence[str] | None = None,
+) -> GMVMaxReportGetRequest:
+    dataset = _pick_dataset_for_level(campaign=campaign, level=level)
+    request = build_gmv_max_report_request(
+        dataset=dataset,
+        advertiser_id=str(campaign.advertiser_id),
+        store_ids=[str(store_id)],
+        start_date=start_date,
+        end_date=end_date,
+        metrics=list(metrics),
+        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        item_group_ids=list(item_group_ids) if item_group_ids else None,
+        room_ids=list(room_ids) if room_ids else None,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+
+    if include_attributes:
+        if level == GMVMaxReportLevel.CREATIVE:
+            request.metrics = list(
+                dict.fromkeys(list(request.metrics) + list(_CREATIVE_ATTRIBUTE_FIELDS))
+            )
+        request = _apply_attribute_scope_constraints(
+            request=request, level=level, include_attributes=include_attributes
+        )
+
+    if "stat_time_day" not in request.dimensions:
+        request.dimensions = list(request.dimensions) + ["stat_time_day"]
+
+    return request
+
+
+def _merge_report_entry(entry: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if entry is None:
+        return payload
+    if isinstance(entry, Mapping):
+        payload.update(entry.get("metrics") or {})
+        payload.update(entry.get("dimensions") or {})
+    else:
+        payload.update(getattr(entry, "metrics", {}) or {})
+        payload.update(getattr(entry, "dimensions", {}) or {})
+    return payload
+
+
 async def create_gmvmax_campaign(
     db: Session,
     *,
@@ -255,6 +582,15 @@ async def create_gmvmax_campaign(
     client: TikTokBusinessGMVMaxClient,
     body: GMVMaxCampaignCreateBody,
 ) -> TTBGmvMaxCampaign:
+    body_dump = body.model_dump(exclude_none=False)
+    if body_dump.get("store_id") and not body_dump.get("store_authorized_bc_id"):
+        authorized_bc_id = await ensure_gmvmax_store_authorized(
+            client,
+            advertiser_id=str(advertiser_id),
+            target_store_id=str(body_dump["store_id"]),
+        )
+        body = body.copy(update={"store_authorized_bc_id": authorized_bc_id})
+
     request = GMVMaxCampaignCreateRequest(advertiser_id=str(advertiser_id), body=body)
     response = await client.gmv_max_campaign_create(request)
     raw_data = response.data
@@ -974,6 +1310,20 @@ def _extract_field_from_sources(keys: Sequence[str], *sources: Mapping[str, Any]
     return None
 
 
+def _normalize_creative_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
+    metrics = dict(row)
+    for key in ("cost", "net_cost", "gross_revenue"):
+        if key in metrics:
+            metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
+    for key in ("orders", "impressions", "clicks"):
+        if key in metrics:
+            metrics[key] = _to_int(metrics[key])
+    for key in ("roi", "ad_click_rate", "ad_conversion_rate"):
+        if key in metrics:
+            metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
+    return metrics
+
+
 def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     serialized: dict[str, Any] = {}
     for key, value in state.items():
@@ -1676,6 +2026,171 @@ async def sync_gmvmax_metrics_daily(
 
     db.flush()
     return {"synced_rows": synced_rows}
+
+
+async def _sync_campaign_level_daily(
+    db: Session,
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    campaign: TTBGmvMaxCampaign,
+    store_id: str,
+    start_date: str,
+    end_date: str,
+) -> int:
+    request = _build_level_report_request(
+        campaign=campaign,
+        store_id=store_id,
+        level=GMVMaxReportLevel.CAMPAIGN,
+        start_date=start_date,
+        end_date=end_date,
+        metrics=_DEFAULT_REPORT_METRICS,
+        include_attributes=False,
+        campaign_ids=[str(campaign.campaign_id)],
+    )
+    response = await client.gmv_max_report_get(request)
+    entries = getattr(getattr(response, "data", None), "list", []) or []
+    synced = 0
+    for entry in entries:
+        row = _merge_report_entry(entry)
+        try:
+            upsert_metrics_daily_row(db, campaign=campaign, row=row)
+            synced += 1
+        except ValueError:
+            logger.debug(
+                "skip daily metrics row without date",
+                extra={
+                    "campaign_id": campaign.campaign_id,
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                },
+            )
+    db.flush()
+    return synced
+
+
+async def _sync_creative_level_daily(
+    db: Session,
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    campaign: TTBGmvMaxCampaign,
+    store_id: str,
+    start_date: str,
+    end_date: str,
+    include_attributes: bool,
+) -> int:
+    request = _build_level_report_request(
+        campaign=campaign,
+        store_id=store_id,
+        level=GMVMaxReportLevel.CREATIVE,
+        start_date=start_date,
+        end_date=end_date,
+        metrics=GMVMAX_CREATIVE_METRICS,
+        include_attributes=include_attributes,
+        campaign_ids=[str(campaign.campaign_id)],
+    )
+    response = await client.gmv_max_report_get(request)
+    entries = getattr(getattr(response, "data", None), "list", []) or []
+    rows = 0
+    for entry in entries:
+        payload = _merge_report_entry(entry)
+        creative_id = _normalize_identifier(
+            payload.get("item_id") or payload.get("creative_id")
+        )
+        stat_time = payload.get("stat_time_day") or payload.get("date")
+        if not creative_id or not stat_time:
+            continue
+        metrics_payload = _normalize_creative_metrics(payload)
+        try:
+            await upsert_creative_metrics(
+                db,
+                workspace_id=workspace_id,
+                provider="tiktok-business",
+                auth_id=auth_id,
+                campaign_id=str(campaign.campaign_id),
+                creative_id=str(creative_id),
+                stat_time_day=_parse_date(stat_time),
+                metrics=metrics_payload,
+            )
+            rows += 1
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "failed to upsert creative metrics",
+                extra={
+                    "campaign_id": campaign.campaign_id,
+                    "creative_id": creative_id,
+                    "stat_time": stat_time,
+                    "include_attributes": include_attributes,
+                },
+            )
+    db.flush()
+    return rows
+
+
+async def sync_gmvmax_reports_for_campaign(
+    db: Session,
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: TTBGmvMaxCampaign,
+    start_date: date | str,
+    end_date: date | str,
+) -> dict[str, int]:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        return {"campaign_rows": 0, "creative_rows": 0}
+
+    campaign_rows = await _sync_campaign_level_daily(
+        db,
+        client,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        campaign=campaign,
+        store_id=store_id,
+        start_date=start_date_str,
+        end_date=end_date_str,
+    )
+
+    creative_rows = 0
+    if _normalize_identifier(campaign.shopping_ads_type) != "LIVE":
+        creative_rows += await _sync_creative_level_daily(
+            db,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            campaign=campaign,
+            store_id=store_id,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            include_attributes=False,
+        )
+        creative_rows += await _sync_creative_level_daily(
+            db,
+            client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            campaign=campaign,
+            store_id=store_id,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            include_attributes=True,
+        )
+
+    return {"campaign_rows": campaign_rows, "creative_rows": creative_rows}
 
 
 def log_campaign_action(
