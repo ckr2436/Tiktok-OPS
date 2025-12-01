@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,10 @@ from app.core.deps import require_platform_admin
 from app.core.errors import APIError
 from app.data.db import get_db
 from app.services import video_site_cookies
-from app.services.yt_dlp_login_sessions import manager as login_session_manager
+from app.services.yt_dlp_login_sessions import (
+    LoginSessionSetupError,
+    manager as login_session_manager,
+)
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/yt-dlp",
@@ -132,7 +135,10 @@ async def create_login_session(payload: LoginSessionCreate):
     if site not in video_site_cookies.SUPPORTED_SITES:
         raise APIError("INVALID_SITE", f"Unsupported site: {site}", 400)
 
-    session = await login_session_manager.create_session(site, payload.label)
+    try:
+        session = await login_session_manager.create_session(site, payload.label)
+    except LoginSessionSetupError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return _serialize_login_session(session, include_qr=True)
 
 
