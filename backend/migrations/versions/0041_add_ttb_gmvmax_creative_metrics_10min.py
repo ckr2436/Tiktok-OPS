@@ -1,7 +1,7 @@
 """add gmv max creative 10 minute metrics snapshot
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0041_add_ttb_gmvmax_creative_metrics_10min
+Revises: 0040_video_site_login_sessions
 Create Date: 2025-01-24 00:00:00.000000
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0041"
-down_revision = "0040"
+revision = "0041_add_ttb_gmvmax_creative_metrics_10min"
+down_revision = "0040_video_site_login_sessions"
 branch_labels = None
 depends_on = None
 
