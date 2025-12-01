@@ -42,6 +42,8 @@ from app.providers.tiktok_business.gmvmax_client import (
     TikTokBusinessGMVMaxClient,
 )
 from app.services.gmvmax_spec import (
+    GMVMAX_BASE_METRICS,
+    GMVMAX_SUPPORTED_METRICS,
     GMVMAX_DEFAULT_METRICS,
     GMVMAX_CREATIVE_METRICS,
     GMVMaxReportLevel,
@@ -102,19 +104,50 @@ async def fetch_gmvmax_report_by_level(
 ):
     """Fetch GMV Max metrics from TikTok for the requested level."""
 
+    level_value = GMVMaxMetricsLevel(level)
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
     response = await client.fetch_gmvmax_report(
         advertiser_id=str(advertiser_id),
         store_id=str(store_id),
         campaign_id=str(campaign_id),
-        level=GMVMaxMetricsLevel(level),
+        level=level_value,
         start_date=start_date_str,
         end_date=end_date_str,
         item_group_ids=item_group_ids,
     )
     data = getattr(response, "data", None)
-    return getattr(data, "list", None) or []
+    raw_entries = getattr(data, "list", None) or []
+
+    def _build_dimensions(payload: Mapping[str, Any]) -> dict[str, Any]:
+        base = {
+            "campaign_id": payload.get("campaign_id"),
+            "store_id": str(store_id),
+            "stat_time_day": payload.get("stat_time_day")
+            or payload.get("date")
+            or start_date_str,
+        }
+        if level_value is GMVMaxMetricsLevel.PRODUCT:
+            base["product_id"] = payload.get("item_group_id") or payload.get("product_id")
+        if level_value is GMVMaxMetricsLevel.CREATIVE:
+            base["product_id"] = payload.get("item_group_id") or payload.get("product_id")
+            base["shop_content_id"] = payload.get("item_id") or payload.get("creative_id")
+        return base
+
+    mapped_entries: list[GMVMaxReportEntry] = []
+    for entry in raw_entries:
+        payload = _merge_report_entry(entry)
+        metrics_payload = {
+            metric: payload.get(metric)
+            for metric in GMVMAX_SUPPORTED_METRICS
+            if metric in payload
+        }
+        dimensions_payload = _build_dimensions(payload)
+        mapped_entries.append(
+            GMVMaxReportEntry(metrics=metrics_payload, dimensions=dimensions_payload)
+        )
+
+    return mapped_entries
 
 
 def _normalize_identifier(value: Any) -> str | None:
@@ -612,10 +645,6 @@ def _build_level_report_request(
         include_attributes = bool(attribute_scope_values)
 
     if include_attributes:
-        if level == GMVMaxReportLevel.CREATIVE:
-            request.metrics = list(
-                dict.fromkeys(list(request.metrics) + list(_CREATIVE_ATTRIBUTE_FIELDS))
-            )
         request = _apply_attribute_scope_constraints(
             request=request, level=level, include_attributes=include_attributes
         )
@@ -2188,8 +2217,6 @@ async def _sync_creative_level_daily(
 ) -> int:
     dimensions = ["campaign_id", "item_group_id", "item_id"]
     metrics = list(GMVMAX_CREATIVE_METRICS)
-    if include_attributes:
-        metrics = list(dict.fromkeys(metrics + list(_CREATIVE_ATTRIBUTE_FIELDS)))
     page = 1
     rows = 0
     while True:
