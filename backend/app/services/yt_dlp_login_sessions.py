@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -19,7 +20,7 @@ logger = logging.getLogger("gmv.ytdlp.login")
 SUPPORTED_SITES = {"tiktok", "douyin", "youtube"}
 
 LOGIN_URLS: Dict[str, str] = {
-    "tiktok": "https://www.tiktok.com/login/qr",
+    "tiktok": "https://www.tiktok.com/login",
     "douyin": "https://www.douyin.com/passport/login/qr",
     "youtube": "https://accounts.google.com/ServiceLogin?service=youtube",
 }
@@ -38,6 +39,10 @@ DOMAIN_FILTERS: Dict[str, str] = {
 
 LOGIN_TIMEOUT = timedelta(minutes=3)
 POLL_INTERVAL = 2.0
+
+
+class LoginFlowError(Exception):
+    """Expected exception for QR/login flow failures."""
 
 
 @dataclass
@@ -81,24 +86,46 @@ class YtDlpLoginSessionManager:
 
         logger.info("starting login session for site=%s label=%s", site, label)
         login_session_id = uuid4().hex
-        browser, context, page, qr_image, playwright = await self._prepare_page(site)
+
+        browser: Browser | None = None
+        context: BrowserContext | None = None
+        page: Page | None = None
+        playwright = None
+        qr_image: str | None = None
+        status = "qrcode_ready"
+        error_msg: str | None = None
+
+        try:
+            browser, context, page, qr_image, playwright = await self._prepare_page(site)
+        except LoginFlowError as exc:
+            status = "failed"
+            error_msg = str(exc)
+            logger.warning("login flow failed for site=%s label=%s: %s", site, label, exc)
+        except Exception as exc:  # noqa: BLE001
+            status = "failed"
+            error_msg = f"login setup failed: {exc}"
+            logger.exception("unexpected error preparing login page for %s: %s", site, exc)
 
         session = LoginSessionState(
             login_session_id=login_session_id,
             site=site,
             label=label,
-            status="qrcode_ready",
-            qrcode_image_base64=qr_image,
-            _browser=browser,
-            _context=context,
-            _page=page,
-            _playwright=playwright,
+            status=status,
+            qrcode_image_base64=qr_image if status == "qrcode_ready" else None,
+            error_msg=error_msg,
+            _browser=browser if status == "qrcode_ready" else None,
+            _context=context if status == "qrcode_ready" else None,
+            _page=page if status == "qrcode_ready" else None,
+            _playwright=playwright if status == "qrcode_ready" else None,
         )
 
         async with self._lock:
             self._sessions[login_session_id] = session
 
-        session._task = asyncio.create_task(self._monitor_session(session))
+        if status == "qrcode_ready":
+            session._task = asyncio.create_task(self._monitor_session(session))
+        else:
+            await self._cleanup_browser(session)
         return session
 
     def get_session(self, login_session_id: str) -> Optional[LoginSessionState]:
@@ -107,14 +134,36 @@ class YtDlpLoginSessionManager:
     async def _prepare_page(self, site: str) -> tuple[Browser, BrowserContext, Page, str, Any]:
         playwright = await async_playwright().start()
         browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = await browser.new_context()
+        context = await browser.new_context(viewport={"width": 1280, "height": 720})
         page = await context.new_page()
-        await page.goto(LOGIN_URLS[site], wait_until="networkidle")
-        await self._enter_qr_mode(site, page)
-        await page.wait_for_timeout(1200)
-        screenshot = await page.screenshot(full_page=True)
-        qr_image = f"data:image/png;base64,{base64.b64encode(screenshot).decode()}"
-        return browser, context, page, qr_image, playwright
+        try:
+            if site == "tiktok":
+                qr_image = await self._prepare_tiktok_login(page)
+            else:
+                await page.goto(LOGIN_URLS[site], wait_until="networkidle")
+                await self._enter_qr_mode(site, page)
+                await page.wait_for_timeout(1200)
+                screenshot = await page.screenshot(full_page=True)
+                qr_image = f"data:image/png;base64,{base64.b64encode(screenshot).decode()}"
+            return browser, context, page, qr_image, playwright
+        except Exception:
+            await self._close_resources(browser, context, playwright)
+            raise
+
+    async def _prepare_tiktok_login(self, page: Page) -> str:
+        response = await page.goto(LOGIN_URLS["tiktok"], wait_until="networkidle")
+        status = response.status if response else None
+        if not status or status >= 400:
+            raise LoginFlowError(f"TikTok login page returned HTTP {status}")
+
+        await self._enter_qr_mode("tiktok", page)
+
+        qr_locator = await self._wait_for_tiktok_qr(page)
+        if not qr_locator:
+            raise LoginFlowError("QR code did not appear in time")
+
+        png_bytes = await qr_locator.screenshot(type="png")
+        return f"data:image/png;base64,{base64.b64encode(png_bytes).decode()}"
 
     async def _enter_qr_mode(self, site: str, page: Page) -> None:
         handlers: Dict[str, Callable[[Page], Awaitable[None]]] = {
@@ -131,9 +180,12 @@ class YtDlpLoginSessionManager:
 
     async def _tiktok_qr_flow(self, page: Page) -> None:
         try:
-            await page.wait_for_selector("text=Log in", timeout=5000)
-        except Error:
+            button = page.get_by_role("button", name=re.compile("QR code", re.IGNORECASE))
+            await button.click(timeout=5000)
             return
+        except Exception:
+            pass
+
         selectors = ["text=Use QR code", "text=Log in with QR", "text=QR code"]
         for selector in selectors:
             try:
@@ -143,6 +195,40 @@ class YtDlpLoginSessionManager:
                     return
             except Error:
                 continue
+
+    async def _wait_for_tiktok_qr(self, page: Page):
+        locators = [
+            "canvas[data-e2e='qr-code']",
+            "img[alt*='QR']",
+            "div[data-e2e='login-qr']",
+        ]
+        for selector in locators:
+            locator = page.locator(selector)
+            try:
+                await locator.wait_for(timeout=10000)
+                return locator
+            except Error:
+                continue
+        return None
+
+    async def _close_resources(
+        self, browser: Browser | None, context: BrowserContext | None, playwright: Any
+    ) -> None:
+        try:
+            if context:
+                await context.close()
+        except Exception:
+            pass
+        try:
+            if browser:
+                await browser.close()
+        except Exception:
+            pass
+        try:
+            if playwright:
+                await playwright.stop()
+        except Exception:
+            pass
 
     async def _douyin_qr_flow(self, page: Page) -> None:
         selectors = ["text=二维码登录", "text=扫码登录", "text=QR"]
