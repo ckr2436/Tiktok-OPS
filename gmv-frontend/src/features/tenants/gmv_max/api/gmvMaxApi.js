@@ -62,6 +62,36 @@ async function put(url, body, config) {
   return response.data;
 }
 
+function normalizeIdList(value) {
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((item) => (item === undefined || item === null ? '' : String(item)))
+    .filter(Boolean);
+}
+
+function appendParams(target, params) {
+  if (!params) return;
+  if (params instanceof URLSearchParams) {
+    params.forEach((value, key) => {
+      target.append(key, value);
+    });
+    return;
+  }
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item === undefined || item === null || item === '') return;
+        target.append(key, String(item));
+      });
+      return;
+    }
+    target.append(key, String(value));
+  });
+}
+
 export async function listProviders(workspaceId, config) {
   return get(`${tenantPrefix(workspaceId)}/providers`, config);
 }
@@ -199,17 +229,17 @@ export async function syncGmvMaxMetrics(workspaceId, provider, authId, campaignI
 export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config) {
   const normalizedParams = params ? { ...params } : {};
 
-  if (normalizedParams.campaign_id && !normalizedParams.campaign_ids) {
-    normalizedParams.campaign_ids = [normalizedParams.campaign_id];
-  }
-  if (normalizedParams.item_group_id && !normalizedParams.item_group_ids) {
-    normalizedParams.item_group_ids = [normalizedParams.item_group_id];
-  }
+  const campaignIds = normalizeIdList(
+    normalizedParams.campaign_ids ?? normalizedParams.campaign_id,
+  );
+  const itemGroupIds = normalizeIdList(
+    normalizedParams.item_group_ids ?? normalizedParams.item_group_id,
+  );
 
   const needsCampaignFilter =
     normalizedParams.level === 'product' || normalizedParams.level === 'creative';
-  if (needsCampaignFilter && !normalizedParams.campaign_ids && campaignId) {
-    normalizedParams.campaign_ids = [campaignId];
+  if (needsCampaignFilter && campaignIds.length === 0 && campaignId) {
+    campaignIds.push(String(campaignId));
   }
 
   const sanitizedParams =
@@ -217,7 +247,22 @@ export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId
       ? { ...normalizedParams, page_size: clampPageSize(normalizedParams.page_size) }
       : normalizedParams;
 
-  const axiosConfig = mergeConfig(config, sanitizedParams);
+  const effectiveParams = {
+    ...sanitizedParams,
+    campaign_ids: campaignIds.length ? campaignIds : undefined,
+    item_group_ids: itemGroupIds.length ? itemGroupIds : undefined,
+  };
+  delete effectiveParams.campaign_id;
+  delete effectiveParams.item_group_id;
+
+  const searchParams = new URLSearchParams();
+  appendParams(searchParams, config?.params);
+  appendParams(searchParams, effectiveParams);
+
+  const axiosConfig = {
+    ...(config || {}),
+    params: searchParams,
+  };
   return get(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/metrics`,
     axiosConfig,

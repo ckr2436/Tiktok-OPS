@@ -971,7 +971,7 @@ export default function GmvMaxCampaignDetailPage() {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
       level: 'campaign',
-      campaign_ids: campaignFilterId ? [campaignFilterId] : undefined,
+      campaign_id: campaignFilterId || undefined,
     },
     {
       enabled: commonEnabled && productFiltersReady,
@@ -987,7 +987,7 @@ export default function GmvMaxCampaignDetailPage() {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
       level: 'product',
-      campaign_ids: campaignFilterId ? [campaignFilterId] : undefined,
+      campaign_id: campaignFilterId || undefined,
     },
     {
       enabled: commonEnabled && productFiltersReady,
@@ -1003,8 +1003,8 @@ export default function GmvMaxCampaignDetailPage() {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
       level: 'creative',
-      campaign_ids: campaignFilterId ? [campaignFilterId] : undefined,
-      item_group_ids: itemGroupId ? [itemGroupId] : undefined,
+      campaign_id: campaignFilterId || undefined,
+      item_group_id: itemGroupId || undefined,
     },
     {
       enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
@@ -1020,8 +1020,8 @@ export default function GmvMaxCampaignDetailPage() {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
       level: 'creative',
-      campaign_ids: campaignFilterId ? [campaignFilterId] : undefined,
-      item_group_ids: itemGroupId ? [itemGroupId] : undefined,
+      campaign_id: campaignFilterId || undefined,
+      item_group_id: itemGroupId || undefined,
     },
     {
       enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
