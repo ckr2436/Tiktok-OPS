@@ -197,9 +197,26 @@ export async function syncGmvMaxMetrics(workspaceId, provider, authId, campaignI
 }
 
 export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config) {
-  const sanitizedParams = params && 'page_size' in params
-    ? { ...params, page_size: clampPageSize(params.page_size) }
-    : params;
+  const normalizedParams = params ? { ...params } : {};
+
+  if (normalizedParams.campaign_id && !normalizedParams.campaign_ids) {
+    normalizedParams.campaign_ids = [normalizedParams.campaign_id];
+  }
+  if (normalizedParams.item_group_id && !normalizedParams.item_group_ids) {
+    normalizedParams.item_group_ids = [normalizedParams.item_group_id];
+  }
+
+  const needsCampaignFilter =
+    normalizedParams.level === 'product' || normalizedParams.level === 'creative';
+  if (needsCampaignFilter && !normalizedParams.campaign_ids && campaignId) {
+    normalizedParams.campaign_ids = [campaignId];
+  }
+
+  const sanitizedParams =
+    normalizedParams && 'page_size' in normalizedParams
+      ? { ...normalizedParams, page_size: clampPageSize(normalizedParams.page_size) }
+      : normalizedParams;
+
   const axiosConfig = mergeConfig(config, sanitizedParams);
   return get(
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/metrics`,
