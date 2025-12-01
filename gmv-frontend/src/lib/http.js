@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { apiRoot } from '../core/config.js';
 
-export function isCanceledRequest(error) {
+function isCanceledRequest(error) {
   if (!error) return false;
 
   if (typeof axios.isCancel === 'function' && axios.isCancel(error)) return true;
