@@ -56,6 +56,10 @@ class TTBApiError(Exception):
         self.status = status
 
 
+class TTBBusinessError(TTBApiError):
+    """Non-retryable business error returned by TikTok Business APIs."""
+
+
 class TTBHttpError(Exception):
     """HTTP 层错误（4xx/5xx/429 触发重试或失败）"""
 
@@ -384,8 +388,16 @@ class TTBApiClient:
                 code,
                 json.dumps(data, ensure_ascii=False)[:1000],
             )
+            message = data.get("message") or "api error"
+            if str(code) == "40002":
+                raise TTBBusinessError(
+                    message,
+                    code=code,
+                    payload=data,
+                    status=status,
+                )
             raise TTBApiError(
-                data.get("message") or "api error",
+                message,
                 code=code,
                 payload=data,
                 status=status,
@@ -1137,5 +1149,11 @@ class TTBApiClient:
         return data if isinstance(data, dict) else {}
 
 
-__all__ = ["TTBApiClient", "TTBApiError", "TTBHttpError", "TTBPaths"]
+__all__ = [
+    "TTBApiClient",
+    "TTBApiError",
+    "TTBBusinessError",
+    "TTBHttpError",
+    "TTBPaths",
+]
 

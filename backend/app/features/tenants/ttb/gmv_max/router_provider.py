@@ -68,7 +68,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxStoreListRequest,
     TikTokBusinessGMVMaxClient,
 )
-from app.services.ttb_api import TTBApiError, TTBHttpError
+from app.services.ttb_api import TTBApiError, TTBBusinessError, TTBHttpError
 from app.services.ttb_binding_config import (
     BindingConfigStorageNotReady,
     get_binding_config,
@@ -2570,6 +2570,8 @@ async def query_gmvmax_metrics_provider(
     start_date: Optional[Union[date, datetime, str]] = Query(None),
     end_date: Optional[Union[date, datetime, str]] = Query(None),
     advertiser_id: Optional[str] = Query(None),
+    campaign_ids: Optional[List[str]] = Query(None),
+    item_group_ids: Optional[List[str]] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
     """Return GMV Max performance metrics for the requested campaign and level."""
@@ -2606,16 +2608,38 @@ async def query_gmvmax_metrics_provider(
             detail=f"invalid GMV Max metrics level: {level_param}",
         )
 
-    rows = await fetch_gmvmax_report_by_level(
-        client=context.client,
-        advertiser_id=effective_advertiser_id,
-        store_id=effective_store_id,
-        campaign_id=str(campaign_id),
-        level=level_param,
-        start_date=start,
-        end_date=end,
-        item_group_ids=None,
-    )
+    if level_param == "product" and not (campaign_ids and len(campaign_ids) > 0):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Item level metrics requires at least 1 campaign_id filter.",
+        )
+
+    if level_param == "creative" and (
+        not (campaign_ids and len(campaign_ids) > 0)
+        or not (item_group_ids and len(item_group_ids) > 0)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Creative level metrics requires at least 1 campaign_id and 1 item_group_id filter.",
+        )
+
+    try:
+        rows = await fetch_gmvmax_report_by_level(
+            client=context.client,
+            advertiser_id=effective_advertiser_id,
+            store_id=effective_store_id,
+            campaign_id=str(campaign_id),
+            campaign_ids=campaign_ids,
+            level=level_param,
+            start_date=start,
+            end_date=end,
+            item_group_ids=item_group_ids,
+        )
+    except TTBBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
     return {
         "report": {

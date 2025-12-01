@@ -1599,6 +1599,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         advertiser_id: str,
         store_id: str,
         campaign_id: str,
+        campaign_ids: Sequence[str] | None = None,
         level: GMVMaxMetricsLevel,
         start_date: str,
         end_date: str,
@@ -1612,10 +1613,16 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             dimensions = GMVMAX_DIMENSIONS_BY_LEVEL[level_value.value]
         except KeyError as exc:
             raise ValueError(f"unsupported GMV Max metrics level: {level}") from exc
+        campaign_id_list = (
+            [str(item) for item in campaign_ids]
+            if campaign_ids is not None
+            else [campaign_id]
+        )
+
         base_kwargs = dict(
             advertiser_id=advertiser_id,
             store_ids=[store_id],
-            campaign_ids=[campaign_id],
+            campaign_ids=campaign_id_list,
             start_date=start_date,
             end_date=end_date,
             enable_total_metrics=False,

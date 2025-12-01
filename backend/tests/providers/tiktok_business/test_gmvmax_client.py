@@ -25,8 +25,10 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxExclusiveAuthorizationGetRequest,
     GMVMaxIdentityGetRequest,
     GMVMaxOccupiedCustomShopAdsListRequest,
+    GMVMaxCampaignReportRequest,
     GMVMaxReportFiltering,
     GMVMaxReportGetRequest,
+    GMVMaxReportTimeRange,
     GMVMaxResponse,
     GMVMaxSessionCreateBody,
     GMVMaxSessionCreateRequest,
@@ -37,7 +39,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxVideoGetRequest,
     TikTokBusinessGMVMaxClient,
 )
-from app.services.ttb_api import TTBApiError
+from app.services.ttb_api import TTBApiError, TTBBusinessError
 
 
 pytestmark = pytest.mark.anyio
@@ -608,4 +610,23 @@ async def test_gmvmax_client_raises_for_business_error(request_obj, method_name)
     method = getattr(client, method_name)
     with pytest.raises(TTBApiError):
         await method(request_obj)
+    await client.aclose()
+
+
+async def test_gmvmax_client_raises_for_specific_business_error():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": 40002, "message": "requires filters"})
+
+    client = await _build_client(handler)
+    request_obj = GMVMaxReportGetRequest(
+        advertiser_id="1",
+        store_ids=["s"],
+        start_date="2024-01-01",
+        end_date="2024-01-02",
+        metrics=["metric"],
+        dimensions=["dimension"],
+    )
+
+    with pytest.raises(TTBBusinessError):
+        await client.gmv_max_report_get(request_obj)
     await client.aclose()
