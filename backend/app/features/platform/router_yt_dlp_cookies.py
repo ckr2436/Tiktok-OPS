@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -16,6 +18,8 @@ from app.services.yt_dlp_login_sessions import (
     LoginSessionSetupError,
     manager as login_session_manager,
 )
+
+logger = logging.getLogger("gmv.ytdlp.login")
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/yt-dlp",
@@ -131,15 +135,48 @@ def patch_site_cookie(cookie_id: str, payload: VideoSiteCookieActivation, db: Se
 
 @router.post("/login-sessions", response_model=LoginSessionOut)
 async def create_login_session(payload: LoginSessionCreate):
-    site = payload.site.lower()
-    if site not in video_site_cookies.SUPPORTED_SITES:
-        raise APIError("INVALID_SITE", f"Unsupported site: {site}", 400)
-
+    start = time.monotonic()
+    status_str = "exception"
+    logger.info(
+        "yt-dlp login-session start site=%s label=%s", payload.site, payload.label
+    )
     try:
-        session = await login_session_manager.create_session(site, payload.label)
-    except LoginSessionSetupError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    return _serialize_login_session(session, include_qr=True)
+        site = payload.site.lower()
+        if site not in video_site_cookies.SUPPORTED_SITES:
+            status_str = "failed"
+            raise APIError("INVALID_SITE", f"Unsupported site: {site}", 400)
+
+        try:
+            session = await login_session_manager.create_session(site, payload.label)
+            status_str = "success"
+        except LoginSessionSetupError as exc:
+            status_str = "failed"
+            logger.exception(
+                "yt-dlp login-session failed site=%s label=%s", site, payload.label
+            )
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return _serialize_login_session(session, include_qr=True)
+    except HTTPException:
+        raise
+    except APIError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "yt-dlp login-session unexpected error site=%s label=%s: %s",
+            payload.site,
+            payload.label,
+            exc,
+        )
+        raise HTTPException(status_code=500, detail="Failed to create login session")
+    finally:
+        elapsed = (time.monotonic() - start) * 1000
+        logger.info(
+            "yt-dlp login-session finish site=%s label=%s status=%s elapsed_ms=%.1f",
+            payload.site,
+            payload.label,
+            status_str,
+            elapsed,
+        )
 
 
 @router.get("/login-sessions/{login_session_id}", response_model=LoginSessionOut)

@@ -13,7 +13,7 @@ export async function updateCookieActivation(id, isActive) {
 }
 
 export async function createLoginSession(payload) {
-  const res = await http.post(`${base}/login-sessions`, payload)
+  const res = await http.post(`${base}/login-sessions`, payload, { timeout: 60000 })
   return res?.data ?? res
 }
 

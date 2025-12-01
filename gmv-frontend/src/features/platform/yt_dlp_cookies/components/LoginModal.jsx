@@ -89,7 +89,7 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
         err?.response?.data?.detail ||
         err?.response?.data?.error_msg ||
         err?.message ||
-        '生成二维码失败，请稍后再试。'
+        '请求失败，请稍后再试。'
       setError(msg)
     } finally {
       setCreating(false)
