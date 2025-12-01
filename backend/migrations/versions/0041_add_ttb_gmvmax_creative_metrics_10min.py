@@ -6,6 +6,7 @@ Create Date: 2025-01-24 00:00:00.000000
 """
 
 from alembic import op
+from sqlalchemy.dialects import mysql
 import sqlalchemy as sa
 
 
@@ -19,9 +20,19 @@ def upgrade() -> None:
     op.create_table(
         "ttb_gmvmax_creative_metrics_10min",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("workspace_id", sa.BigInteger().with_variant(sa.BigInteger(unsigned=True), "mysql"), sa.ForeignKey("workspaces.id", ondelete="CASCADE", onupdate="RESTRICT"), nullable=False),
+        sa.Column(
+            "workspace_id",
+            sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
+            sa.ForeignKey("workspaces.id", ondelete="CASCADE", onupdate="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("provider", sa.String(length=32), nullable=False, server_default="tiktok-business"),
-        sa.Column("auth_id", sa.BigInteger().with_variant(sa.BigInteger(unsigned=True), "mysql"), sa.ForeignKey("oauth_accounts_ttb.id", ondelete="CASCADE", onupdate="RESTRICT"), nullable=False),
+        sa.Column(
+            "auth_id",
+            sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
+            sa.ForeignKey("oauth_accounts_ttb.id", ondelete="CASCADE", onupdate="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("advertiser_id", sa.String(length=64), nullable=False),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("store_id", sa.String(length=64), nullable=True),
