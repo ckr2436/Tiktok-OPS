@@ -112,7 +112,17 @@ class StubGMVMaxClient:
 
     async def gmv_max_report_get(self, request):  # noqa: ANN001
         self.report_requests.append(request)
-        entry = GMVMaxReportEntry(metrics={"cost": "10"}, dimensions={})
+        entry = GMVMaxReportEntry(metrics={"cost": 10.0}, dimensions={})
+        return GMVMaxResponse(
+            code=0,
+            message="ok",
+            request_id="report",
+            data=GMVMaxReportData(list=[entry]),
+        )
+
+    async def fetch_gmvmax_report(self, **kwargs):  # noqa: ANN001
+        self.report_requests.append(kwargs)
+        entry = GMVMaxReportEntry(metrics={"cost": 10.0}, dimensions={})
         return GMVMaxResponse(
             code=0,
             message="ok",
@@ -396,6 +406,46 @@ def test_metrics_query_defaults(gmvmax_client_fixture):
     assert response.status_code == 200
     body = response.json()
     assert body["report"]["list"][0]["metrics"]["cost"] == 10.0
+
+
+def test_metrics_product_requires_campaign_ids(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics",
+        params={"level": "product"},
+    )
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Item level metrics requires at least 1 campaign_id filter."
+    )
+
+
+def test_metrics_creative_requires_campaign_and_item_group(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics",
+        params={"level": "creative", "campaign_ids": ["cmp-1"]},
+    )
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Creative level metrics requires at least 1 campaign_id and 1 item_group_id filter."
+    )
+
+
+def test_metrics_creative_accepts_required_filters(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics",
+        params={
+            "level": "creative",
+            "campaign_ids": ["cmp-1"],
+            "item_group_ids": ["spu-1"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["report"]["list"][0]["metrics"]["cost"] == 10.0
 
 
 def test_campaign_action_session_update(gmvmax_client_fixture):
