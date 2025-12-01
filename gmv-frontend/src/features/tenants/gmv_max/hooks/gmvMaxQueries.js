@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { isCanceledRequest } from '../../../lib/http.js';
 import {
   applyGmvMaxAction,
   createGmvMaxCampaign,
@@ -47,6 +48,16 @@ function resolveEnabled(defaultEnabled, extra) {
     return false;
   }
   return Boolean(defaultEnabled && normalized);
+}
+
+function ignoreCanceledOnError(handler) {
+  if (typeof handler !== 'function') return undefined;
+  return (error) => {
+    if (isCanceledRequest(error)) {
+      return;
+    }
+    handler(error);
+  };
 }
 
 export function useProvidersQuery(workspaceId, options = {}) {
@@ -184,12 +195,13 @@ export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId
 }
 
 export function useGmvMaxMetricsQuery(workspaceId, provider, authId, campaignId, params = {}, options = {}) {
-  const { enabled, refetchInterval, ...rest } = options;
+  const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
     queryKey: composeKey('metrics', workspaceId, provider, authId, campaignId, params),
     queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
+    onError: ignoreCanceledOnError(onError),
     ...rest,
   });
 }
@@ -260,12 +272,13 @@ export function useGmvMaxCreativeMetricsQuery(
   params = {},
   options = {},
 ) {
-  const { enabled, refetchInterval, ...rest } = options;
+  const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
     queryKey: composeKey('creative-metrics', workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
+    onError: ignoreCanceledOnError(onError),
     ...rest,
   });
 }
@@ -278,12 +291,13 @@ export function useGmvMaxCreativeHeatingQuery(
   params = {},
   options = {},
 ) {
-  const { enabled, refetchInterval, ...rest } = options;
+  const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
     queryKey: composeKey('creative-heating', workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
+    onError: ignoreCanceledOnError(onError),
     ...rest,
   });
 }

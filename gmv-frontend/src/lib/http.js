@@ -1,6 +1,24 @@
 import axios from 'axios';
 import { apiRoot } from '../core/config.js';
 
+export function isCanceledRequest(error) {
+  if (!error) return false;
+
+  if (typeof axios.isCancel === 'function' && axios.isCancel(error)) return true;
+  if (error.code === 'ERR_CANCELED') return true;
+  if (error.name === 'CanceledError') return true;
+
+  const message = String(error.message || '').toLowerCase();
+  if (message.includes('aborted') || message.includes('abort') || message.includes('canceled')) {
+    return true;
+  }
+
+  const status = error?.response?.status;
+  if (status === 0 || status === 499) return true;
+
+  return false;
+}
+
 const http = axios.create({
   baseURL: apiRoot,
   withCredentials: true,
@@ -143,6 +161,10 @@ http.interceptors.response.use(
       return http.request(config);
     }
 
+    if (isCanceledRequest(error)) {
+      return Promise.reject(error);
+    }
+
     const requestId =
       config?.metadata?.requestId || readHeader(config?.headers, 'x-request-id');
     const uiMessage = buildUiMessage(error);
@@ -189,4 +211,4 @@ http.interceptors.response.use(
 );
 
 export default http;
-export { http };
+export { http, isCanceledRequest };
