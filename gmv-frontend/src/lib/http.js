@@ -173,15 +173,18 @@ http.interceptors.response.use(
     const config = error.config ?? {};
     error.config = config;
     config.__retryCount = config.__retryCount || 0;
+
+    // ✅ 先判断是否是前端主动取消的请求，直接标记后返回，不再做重试和统一错误处理
+    if (isCanceledRequest(error)) {
+      return Promise.reject(markCanceledRequest(error));
+    }
+
+    // 只有真正的网络错误 / 5xx 才走重试逻辑
     if (shouldRetryGet(error) && config.__retryCount < 2) {
       config.__retryCount += 1;
       const delay = 300 * 2 ** (config.__retryCount - 1);
       await new Promise((resolve) => setTimeout(resolve, delay));
       return http.request(config);
-    }
-
-    if (isCanceledRequest(error)) {
-      return Promise.reject(markCanceledRequest(error));
     }
 
     const requestId =
@@ -233,3 +236,4 @@ http.interceptors.response.use(
 
 export default http;
 export { http, isCanceledRequest };
+
