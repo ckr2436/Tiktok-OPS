@@ -85,7 +85,12 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
       const data = await createLoginSession(payload)
       setSession(data)
     } catch (err) {
-      setError(err?.message || '生成二维码失败，请稍后再试。')
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error_msg ||
+        err?.message ||
+        '生成二维码失败，请稍后再试。'
+      setError(msg)
     } finally {
       setCreating(false)
     }
