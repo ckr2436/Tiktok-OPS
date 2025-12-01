@@ -33,7 +33,7 @@ LOGIN_URLS: Dict[str, str] = {
 }
 
 SESSION_COOKIE_NAMES: Dict[str, set[str]] = {
-    "tiktok": {"sessionid", "sessionid_ss", "sid_tt"},
+    "tiktok": {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "ssid_ucp"},
     "douyin": {"sessionid", "sessionid_ss", "passport_csrf_token"},
     "youtube": {"SAPISID", "SSID", "SID", "__Secure-1PSID", "__Secure-3PSID"},
 }
@@ -47,6 +47,21 @@ DOMAIN_FILTERS: Dict[str, str] = {
 LOGIN_TIMEOUT = timedelta(minutes=3)
 LOGIN_SESSION_TTL = video_site_login_sessions.DEFAULT_LOGIN_SESSION_TTL
 POLL_INTERVAL = 2.0
+LOGIN_WAITING_STATUS = "waiting_scan"
+
+
+def _earliest_expiry(cookies: list[dict[str, Any]]) -> datetime | None:
+    expiries: list[float] = []
+    for cookie in cookies:
+        if not cookie.get("expires"):
+            continue
+        try:
+            expiries.append(float(cookie["expires"]))
+        except (TypeError, ValueError):
+            continue
+    if not expiries:
+        return None
+    return datetime.utcfromtimestamp(min(expiries))
 
 
 class LoginFlowError(Exception):
@@ -326,16 +341,27 @@ class YtDlpLoginSessionManager:
 
     async def _monitor_session(self, session: LoginSessionState) -> None:
         deadline = datetime.utcnow() + LOGIN_TIMEOUT
+        self._persist_session_state(session, status=LOGIN_WAITING_STATUS)
         try:
             while datetime.utcnow() < deadline:
                 await asyncio.sleep(POLL_INTERVAL)
                 if not session._context:
                     continue
                 cookies = await session._context.cookies()
-                if self._is_logged_in(session.site, cookies):
+                logged_in = self._is_logged_in(session.site, cookies)
+                tiktok_logged_in = False
+                if not logged_in and session.site == "tiktok":
+                    tiktok_logged_in = await self._tiktok_logged_in(session)
+                    logged_in = tiktok_logged_in
+
+                if logged_in:
                     await self._handle_success(session, cookies)
                     return
-            self._persist_session_state(session, status="expired")
+            self._persist_session_state(
+                session,
+                status="expired",
+                error_msg=f"Timed out waiting for {session.site} login",
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("login session failed: %s", exc)
             self._persist_session_state(session, status="failed", error_msg=str(exc))
@@ -343,6 +369,30 @@ class YtDlpLoginSessionManager:
             await self._cleanup_browser(session)
             async with self._lock:
                 self._sessions.pop(session.login_session_id, None)
+
+    async def _tiktok_logged_in(self, session: LoginSessionState) -> bool:
+        page = session._page
+        if not page:
+            return False
+        selectors = [
+            "[data-e2e='nav-profile']",
+            "[data-e2e='profile-icon']",
+            "a[href^='/@'] img",
+        ]
+        for selector in selectors:
+            try:
+                await page.wait_for_selector(selector, timeout=1000)
+                return True
+            except Error:
+                continue
+        try:
+            has_cookie = await page.evaluate(
+                "() => document.cookie && /sessionid|sid_tt/.test(document.cookie)",
+                timeout=500,
+            )
+            return bool(has_cookie)
+        except Error:
+            return False
 
     def _is_logged_in(self, site: str, cookies: list[dict[str, Any]]) -> bool:
         target_names = SESSION_COOKIE_NAMES.get(site, set())
@@ -357,6 +407,7 @@ class YtDlpLoginSessionManager:
             for cookie in cookies
             if DOMAIN_FILTERS.get(session.site, "") in (cookie.get("domain") or "")
         ]
+        expires_at = _earliest_expiry(filtered)
         try:
             with SessionLocal() as db:
                 record = video_site_cookies.upsert_video_site_cookies(
@@ -366,6 +417,7 @@ class YtDlpLoginSessionManager:
                     cookies_json=json.dumps(filtered, ensure_ascii=False),
                     is_active=True,
                     last_login_at=datetime.utcnow(),
+                    expires_at=expires_at,
                 )
                 db.commit()
                 session.account = {
