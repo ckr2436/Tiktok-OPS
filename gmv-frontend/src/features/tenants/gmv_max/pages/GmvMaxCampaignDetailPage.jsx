@@ -192,6 +192,24 @@ function computeTimeRange(range, customRange, timeZone) {
   return formatRangeAsDateStrings(rangeDates);
 }
 
+function isMissingFilterError(error) {
+  if (!error) return false;
+  const status = error?.response?.status || error?.status;
+  if (status !== 422) return false;
+  const message = String(
+    error?.response?.data?.message || error?.response?.data?.detail || error?.message || '',
+  ).toLowerCase();
+  return message.includes('campaign_id') || message.includes('item_group_id');
+}
+
+function resolveMetricsError(error, defaultMessage = '数据加载失败') {
+  if (!error) return '';
+  if (isMissingFilterError(error)) {
+    return '暂无数据，请检查广告系列和商品组配置。';
+  }
+  return error?.response?.data?.message || error?.message || defaultMessage;
+}
+
 function normalizeStrategyResponse(data) {
   if (!data || typeof data !== 'object') {
     return {
@@ -873,6 +891,64 @@ export default function GmvMaxCampaignDetailPage() {
     enabled: commonEnabled,
   });
 
+  const campaignFilterId = useMemo(() => {
+    const campaign = campaignQuery.data?.campaign || campaignQuery.data;
+    const resolvedId = campaign?.campaign_id || campaign?.campaignId || campaign?.id || campaignId;
+    return resolvedId ? String(resolvedId) : '';
+  }, [campaignId, campaignQuery.data]);
+
+  const itemGroupId = useMemo(() => {
+    const detail = campaignQuery.data;
+    const campaign = detail?.campaign || detail;
+    const directId =
+      detail?.item_group_id ||
+      detail?.itemGroupId ||
+      campaign?.item_group_id ||
+      campaign?.itemGroupId;
+    if (directId !== undefined && directId !== null && String(directId) !== '') {
+      return String(directId);
+    }
+
+    const listCandidates = [
+      detail?.item_group_ids || detail?.itemGroupIds,
+      campaign?.item_group_ids || campaign?.itemGroupIds,
+    ];
+    for (const candidate of listCandidates) {
+      const first = ensureArray(candidate).find(
+        (value) => value !== undefined && value !== null && String(value) !== '',
+      );
+      if (first !== undefined && first !== null && String(first) !== '') {
+        return String(first);
+      }
+    }
+
+    const sessions = ensureArray(detail?.sessions || detail?.session_list);
+    for (const session of sessions) {
+      const sessionItemGroup = ensureArray(session?.item_group_ids || session?.itemGroupIds).find(
+        (value) => value !== undefined && value !== null && String(value) !== '',
+      );
+      if (sessionItemGroup !== undefined && sessionItemGroup !== null && String(sessionItemGroup) !== '') {
+        return String(sessionItemGroup);
+      }
+      const products = ensureArray(session?.product_list || session?.products);
+      for (const product of products) {
+        const productItemGroupId = product?.item_group_id || product?.itemGroupId;
+        if (
+          productItemGroupId !== undefined &&
+          productItemGroupId !== null &&
+          String(productItemGroupId) !== ''
+        ) {
+          return String(productItemGroupId);
+        }
+      }
+    }
+
+    return '';
+  }, [campaignQuery.data]);
+
+  const productFiltersReady = Boolean(campaignFilterId);
+  const creativeFiltersReady = Boolean(campaignFilterId && itemGroupId);
+
   const isDashboardTab = activeTab === 'dashboard';
   const isProductsTab = activeTab === 'products';
   const creativeStatusOptions = useMemo(
@@ -891,9 +967,14 @@ export default function GmvMaxCampaignDetailPage() {
     provider,
     authId,
     campaignId,
-    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'campaign' },
     {
-      enabled: commonEnabled,
+      ...metricsParams,
+      advertiser_id: advertiserId || undefined,
+      level: 'campaign',
+      campaign_id: campaignFilterId || undefined,
+    },
+    {
+      enabled: commonEnabled && productFiltersReady,
     },
   );
 
@@ -902,9 +983,14 @@ export default function GmvMaxCampaignDetailPage() {
     provider,
     authId,
     campaignId,
-    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'product' },
     {
-      enabled: commonEnabled,
+      ...metricsParams,
+      advertiser_id: advertiserId || undefined,
+      level: 'product',
+      campaign_id: campaignFilterId || undefined,
+    },
+    {
+      enabled: commonEnabled && productFiltersReady,
     },
   );
 
@@ -913,9 +999,15 @@ export default function GmvMaxCampaignDetailPage() {
     provider,
     authId,
     campaignId,
-    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'creative' },
     {
-      enabled: commonEnabled && isDashboardTab,
+      ...metricsParams,
+      advertiser_id: advertiserId || undefined,
+      level: 'creative',
+      campaign_id: campaignFilterId || undefined,
+      item_group_id: itemGroupId || undefined,
+    },
+    {
+      enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
     },
   );
 
@@ -928,9 +1020,11 @@ export default function GmvMaxCampaignDetailPage() {
       ...metricsParams,
       advertiser_id: advertiserId || undefined,
       level: 'creative',
+      campaign_id: campaignFilterId || undefined,
+      item_group_id: itemGroupId || undefined,
     },
     {
-      enabled: commonEnabled && isDashboardTab,
+      enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
     },
   );
 
@@ -1160,6 +1254,9 @@ export default function GmvMaxCampaignDetailPage() {
   const creativesLoading =
     creativesQuery.isLoading || creativeMetricsQuery.isLoading || creativeHeatingQuery.isLoading;
   const creativesError = creativesQuery.error || creativeMetricsQuery.error || creativeHeatingQuery.error;
+  const creativesErrorMessage = resolveMetricsError(creativesError);
+  const summaryError = campaignMetricsQuery.error || productMetricsQuery.error;
+  const summaryErrorMessage = resolveMetricsError(summaryError);
 
   const productsChanged = useMemo(() => {
     if (productSelection.size !== initialProductSet.size) return true;
@@ -1449,6 +1546,13 @@ export default function GmvMaxCampaignDetailPage() {
       pauseRule: `自动暂停：ROI < ${pauseRoi || '—'}`,
     };
   }, [strategyDraft]);
+
+  const missingProductFiltersMessage = productFiltersReady
+    ? ''
+    : '商品维度数据需要系列配置完成后才能展示。';
+  const missingCreativeFiltersMessage = creativeFiltersReady
+    ? ''
+    : '创意维度数据需要广告系列和商品组配置。';
 
   return (
     <div className="gmvmax-campaign-detail">
@@ -1900,9 +2004,11 @@ export default function GmvMaxCampaignDetailPage() {
           {campaignMetricsQuery.isFetching || productMetricsQuery.isFetching ? (
             <Loading text="数据加载中…" />
           ) : null}
-          {campaignMetricsQuery.error || productMetricsQuery.error ? (
-            <div className="gmvmax-error">
-              {(campaignMetricsQuery.error || productMetricsQuery.error)?.message || '数据加载失败'}
+          {!productFiltersReady ? (
+            <div className="gmvmax-text-muted">{missingProductFiltersMessage}</div>
+          ) : summaryErrorMessage ? (
+            <div className={isMissingFilterError(summaryError) ? 'gmvmax-text-muted' : 'gmvmax-error'}>
+              {summaryErrorMessage}
             </div>
           ) : null}
 
@@ -1992,8 +2098,16 @@ export default function GmvMaxCampaignDetailPage() {
               </div>
             </div>
             {creativesLoading ? <Loading text="创意加载中…" /> : null}
-            {creativesError ? (
-              <div className="gmvmax-error">创意数据加载失败：{creativesError.message || '未知错误'}</div>
+            {!creativeFiltersReady ? (
+              <div className="gmvmax-text-muted">{missingCreativeFiltersMessage}</div>
+            ) : creativesErrorMessage ? (
+              <div
+                className={
+                  isMissingFilterError(creativesError) ? 'gmvmax-text-muted' : 'gmvmax-error'
+                }
+              >
+                创意数据加载失败：{creativesErrorMessage}
+              </div>
             ) : null}
             {creativeActionMutation.error ? (
               <div className="gmvmax-error">
