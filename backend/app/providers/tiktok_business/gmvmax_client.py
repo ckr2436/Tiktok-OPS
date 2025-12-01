@@ -237,6 +237,19 @@ GMVMAX_BASE_METRICS = [
     "roi",
 ]
 
+GMVMAX_CAMPAIGN_ATTRIBUTE_METRICS = [
+    "campaign_id",
+    "operation_status",
+    "campaign_name",
+    "schedule_type",
+    "schedule_start_time",
+    "schedule_end_time",
+    "target_roi_budget",
+    "bid_type",
+    "max_delivery_budget",
+    "roas_bid",
+]
+
 GMVMAX_PERFORMANCE_METRICS = [
     "product_impressions",
     "product_clicks",
@@ -251,32 +264,39 @@ GMVMAX_PERFORMANCE_METRICS = [
     "ad_video_view_rate_p100",
 ]
 
-# 注意：campaign 级只用基础指标，避免 dataset 不支持时报 40002
-GMVMAX_CAMPAIGN_METRICS = list(GMVMAX_BASE_METRICS)
-
-# product 级别带上「曝光/点击/CTR/点击率/转化率」（不带完播率）
-GMVMAX_PRODUCT_METRICS = list(
-    dict.fromkeys(
-        list(GMVMAX_BASE_METRICS)
-        + [
-            "product_impressions",
-            "product_clicks",
-            "product_click_rate",
-            "ad_click_rate",
-            "ad_conversion_rate",
-        ]
-    )
+# 注意：campaign 级使用官方允许的属性+基础指标集合
+GMVMAX_CAMPAIGN_METRICS = list(
+    dict.fromkeys(list(GMVMAX_CAMPAIGN_ATTRIBUTE_METRICS) + list(GMVMAX_BASE_METRICS))
 )
 
-# creative 级别带上全部曝光/点击/完播率指标
+# product 级别按照官方示例仅请求收益/花费等基础指标
+GMVMAX_PRODUCT_METRICS = [
+    "cost",
+    "orders",
+    "cost_per_order",
+    "gross_revenue",
+    "roi",
+]
+
+# creative 级别带上状态 + 曝光/点击/完播率指标
 GMVMAX_CREATIVE_METRICS = list(
-    dict.fromkeys(list(GMVMAX_BASE_METRICS) + list(GMVMAX_PERFORMANCE_METRICS))
+    dict.fromkeys(
+        [
+            "creative_delivery_status",
+            "cost",
+            "orders",
+            "cost_per_order",
+            "gross_revenue",
+            "roi",
+        ]
+        + list(GMVMAX_PERFORMANCE_METRICS)
+    )
 )
 
 GMVMAX_DIMENSIONS_BY_LEVEL = {
     "campaign": ["campaign_id", "stat_time_day"],
     "product": ["campaign_id", "item_group_id", "stat_time_day"],
-    "creative": ["campaign_id", "item_group_id", "item_id", "stat_time_day"],
+    "creative": ["campaign_id", "item_group_id", "item_id"],
 }
 
 GMVMAX_METRICS_BY_LEVEL = {
@@ -772,7 +792,7 @@ _GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
     },
     # Product GMV Max, creative-level（campaign_ids + item_group_ids Required）
     GMVMaxDataset.CREATIVE: {
-        "promotion_types": ["PRODUCT"],
+        "promotion_types": None,  # 创意层禁止 gmv_max_promotion_types 过滤
         "dimensions": ["campaign_id", "item_group_id", "item_id"],
         "require_all_of": ("campaign_ids", "item_group_ids"),
         "require_any_of": (),
@@ -1290,7 +1310,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
 
     def _build_report_get_params(
-        self, request: GMVMaxReportGetRequest
+        self, request: GMVMaxReportGetRequest, *, inject_promotion_types: bool = True
     ) -> Dict[str, Any]:
         def _encode_seq(values: Sequence[Any] | None) -> str | None:
             if values is None:
@@ -1337,7 +1357,10 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             if value is not None:
                 params[key] = value
 
-        _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
+        if inject_promotion_types:
+            _ttb_api._ensure_gmvmax_campaign_filters(
+                params, promotion_type_format="report"
+            )
         return params
 
     async def gmv_max_campaign_report(
@@ -1418,7 +1441,6 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
 
         filtering_model = GMVMaxReportFiltering(
-            gmv_max_promotion_types=["PRODUCT"],
             store_ids=store_ids,
             campaign_ids=campaign_ids,
             item_group_ids=item_group_ids or None,
@@ -1450,7 +1472,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             page=request.page,
             page_size=request.page_size,
         )
-        params = self._build_report_get_params(get_request)
+        params = self._build_report_get_params(
+            get_request, inject_promotion_types=False
+        )
         return await self._gmv_max_report_get(params)
 
     async def gmv_max_room_report(
@@ -1468,7 +1492,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         return await self.gmv_max_campaign_report(request)
 
     async def gmv_max_report_get(
-        self, request: GMVMaxReportGetRequest
+        self, request: GMVMaxReportGetRequest, *, inject_promotion_types: bool = True
     ) -> GMVMaxResponse[GMVMaxReportData]:
         """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
 
@@ -1481,7 +1505,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         while True:
             request.page = page_value
             request.page_size = page_size_value
-            params = self._build_report_get_params(request)
+            params = self._build_report_get_params(
+                request, inject_promotion_types=inject_promotion_types
+            )
             response = await self._gmv_max_report_get(params)
             aggregated_entries.extend(response.data.list)
             if summary is None:
@@ -1561,7 +1587,11 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             sort_field=sort_field,
             sort_type=sort_type,
         )
-        return await self.gmv_max_report_get(request)
+        cfg = _GMV_MAX_DATASET_CONFIG[dataset]
+        inject_promotion_types = cfg.get("promotion_types") is not None
+        return await self.gmv_max_report_get(
+            request, inject_promotion_types=inject_promotion_types
+        )
 
     async def fetch_gmvmax_report(
         self,
@@ -1589,8 +1619,11 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             start_date=start_date,
             end_date=end_date,
             enable_total_metrics=False,
-            gmv_max_promotion_types=["PRODUCT"],
         )
+
+        inject_promotion_types = level_value is not GMVMaxMetricsLevel.CREATIVE
+        if inject_promotion_types:
+            base_kwargs["gmv_max_promotion_types"] = ["PRODUCT"]
 
         request_kwargs = dict(
             metrics=metrics,
@@ -1600,7 +1633,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
         request = GMVMaxReportGetRequest(**request_kwargs)
 
-        return await self.gmv_max_report_get(request)
+        return await self.gmv_max_report_get(
+            request, inject_promotion_types=inject_promotion_types
+        )
 
 
 __all__ = [
