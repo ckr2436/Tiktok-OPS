@@ -20,6 +20,9 @@ _MODEL_LOCK = threading.Lock()
 _MODEL = None
 _TRANSLATORS: Dict[tuple[str, str], TranslationPipeline] = {}
 _TRANSLATOR_LOCK = threading.Lock()
+_TRANSLATION_MODEL_OVERRIDES = {
+    ("es", "zh"): "Helsinki-NLP/opus-tatoeba-es-zh",
+}
 
 
 def _load_model():
@@ -38,16 +41,30 @@ def _get_model():
     return _MODEL
 
 
+def _resolve_translation_model(source_language: str, target_language: str) -> str:
+    key = (source_language.lower(), target_language.lower())
+    return _TRANSLATION_MODEL_OVERRIDES.get(
+        key, f"Helsinki-NLP/opus-mt-{source_language}-{target_language}"
+    )
+
+
 def _load_translation_pipeline(
     source_language: str, target_language: str
 ) -> TranslationPipeline:
-    model_name = f"Helsinki-NLP/opus-mt-{source_language}-{target_language}"
+    model_name = _resolve_translation_model(source_language, target_language)
+    cache_dir = Path(settings.OPENAI_WHISPER_STORAGE_DIR).expanduser() / "models"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     logger.info(
         "loading MarianMT translation model",
-        extra={"model": model_name, "source": source_language, "target": target_language},
+        extra={
+            "model": model_name,
+            "source": source_language,
+            "target": target_language,
+            "cache_dir": str(cache_dir),
+        },
     )
-    tokenizer = MarianTokenizer.from_pretrained(model_name)
-    model = MarianMTModel.from_pretrained(model_name)
+    tokenizer = MarianTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+    model = MarianMTModel.from_pretrained(model_name, cache_dir=cache_dir)
     return pipeline("translation", model=model, tokenizer=tokenizer)
 
 
