@@ -120,6 +120,15 @@ CATALOG: List[PeriodicTaskSpec] = [
         description="Sync the trailing daily GMV Max metrics window (e.g. last 7 days).",
     ),
     PeriodicTaskSpec(
+        name="gmvmax:creative:sync_10min",
+        task="gmvmax.sync_creative_metrics_10min",
+        crontab="*/10 * * * *",  # 每 10 分钟同步创意 10 分钟指标快照
+        args=[],
+        kwargs={},
+        queue="gmvmax",
+        description="Capture 10-minute creative metrics snapshots for active GMV Max campaigns.",
+    ),
+    PeriodicTaskSpec(
         name="gmvmax:campaigns:apply_action",
         task="gmvmax.apply_action",
         args=[],

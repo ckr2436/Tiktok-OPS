@@ -5,7 +5,7 @@ import contextlib
 import logging
 """Celery task layer orchestrating GMV Max syncs and actions."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
@@ -18,6 +18,10 @@ from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_balances import sync_advertiser_balance
 from app.services.gmvmax_heating import run_creative_heating_cycle
+from app.services.gmvmax_creative_metrics import (
+    latest_creative_metrics_snapshots,
+    sync_creative_metrics_10min_for_campaign,
+)
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action,
@@ -511,6 +515,139 @@ def task_gmvmax_sync_metrics(
         raise
     finally:
         _close_session(db)
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.sync_creative_metrics_10min_for_campaign",
+    autoretry_for=(Exception,),
+    retry_backoff=10,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    max_retries=5,
+    queue="gmvmax",
+)
+def task_gmvmax_sync_creative_metrics_10min_for_campaign(
+    self,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    store_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    schedule_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    params: Optional[dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    **extra: Any,
+) -> dict:
+    db = _db_session()
+    try:
+        campaign = _find_campaign_row(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            campaign_id=campaign_id,
+        )
+        if not campaign:
+            raise RuntimeError(f"campaign not found: {campaign_id}")
+
+        def _sync(client: Any) -> Awaitable[dict[str, Any]]:
+            start = start_date or date.today().isoformat()
+            end = end_date or start
+            return sync_creative_metrics_10min_for_campaign(
+                db,
+                client,
+                workspace_id=workspace_id,
+                provider=provider,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+                campaign=campaign,
+                start_date=date.fromisoformat(str(start)),
+                end_date=date.fromisoformat(str(end)),
+            )
+
+        result = _run_with_client(db, auth_id, _sync)
+        db.commit()
+        logger.info(
+            "gmvmax.sync_creative_metrics_10min_for_campaign done",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+                "result": result,
+                "schedule_id": schedule_id,
+                "idempotency_key": idempotency_key,
+                "run_id": run_id,
+            },
+        )
+        return result or {}
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "gmvmax.sync_creative_metrics_10min_for_campaign failed",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+                "schedule_id": schedule_id,
+                "idempotency_key": idempotency_key,
+                "run_id": run_id,
+                "params": params,
+            },
+        )
+        raise
+    finally:
+        _close_session(db)
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.sync_creative_metrics_10min",
+    queue="gmvmax",
+)
+def task_gmvmax_sync_creative_metrics_10min(self, **extra: Any) -> dict:
+    db = _db_session()
+    enqueued = 0
+    today = date.today()
+    try:
+        scopes = _iter_sync_scopes(db)
+        for workspace_id, auth_id, advertiser_id in scopes:
+            campaigns = _iter_active_campaigns(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+            )
+            for campaign in campaigns:
+                celery_app.send_task(
+                    "gmvmax.sync_creative_metrics_10min_for_campaign",
+                    kwargs={
+                        "workspace_id": workspace_id,
+                        "provider": getattr(campaign, "provider", "tiktok-business"),
+                        "auth_id": auth_id,
+                        "advertiser_id": str(advertiser_id),
+                        "campaign_id": str(campaign.campaign_id),
+                        "store_id": getattr(campaign, "store_id", None),
+                        "start_date": today.isoformat(),
+                        "end_date": today.isoformat(),
+                    },
+                    queue="gmvmax",
+                )
+                enqueued += 1
+    finally:
+        _close_session(db)
+
+    logger.info(
+        "gmvmax.sync_creative_metrics_10min sweep enqueued",
+        extra={"tasks": enqueued, "date": today.isoformat()},
+    )
+    return {"tasks": enqueued, "date": today.isoformat()}
 
 
 # Apply campaign actions (status/budget/strategy) and log to TTBGmvMaxActionLog;

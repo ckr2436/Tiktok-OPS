@@ -24,6 +24,7 @@ from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 
 from app.data.db import Base
+from app.data.models.ttb_gmvmax_creative_metrics_10min import TTBGmvMaxCreativeMetrics10Min
 
 
 UBigInt = (

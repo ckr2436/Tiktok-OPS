@@ -31,7 +31,13 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBProduct,
 )
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
+from app.data.models.ttb_gmvmax import (
+    TTBGmvMaxCampaign,
+    TTBGmvMaxCampaignProduct,
+    TTBGmvMaxMetricsDaily,
+    TTBGmvMaxCreativeMetric,
+    TTBGmvMaxCreativeMetrics10Min,
+)
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     list_heating_configs,
     update_heating_action_result,
@@ -76,6 +82,7 @@ from app.services.ttb_binding_config import (
 )
 from app.services.provider_registry import provider_registry
 from app.services.gmvmax_heating_actions import apply_boost_creative_action
+from app.services.gmvmax_creative_metrics import latest_creative_metrics_snapshots
 from app.services.ttb_sync import _normalize_identifier
 from app.tasks.ttb_sync_tasks import task_sync_products
 
@@ -98,7 +105,6 @@ from .service import _ensure_provider
 from app.services.ttb_gmvmax import (
     build_gmvmax_anchor_params,
     create_gmvmax_campaign,
-    fetch_gmvmax_report_by_level,
     ensure_gmvmax_store_authorized,
     log_campaign_action,
     _sanitize_id_list,
@@ -2565,6 +2571,30 @@ async def sync_gmvmax_metrics_provider(
             "task_id": async_res.id,
         },
     )
+    creative_async_res = celery_app.send_task(
+        "gmvmax.sync_creative_metrics_10min_for_campaign",
+        kwargs={
+            "workspace_id": workspace_id,
+            "provider": provider,
+            "auth_id": auth_id,
+            "advertiser_id": adv,
+            "campaign_id": campaign_id,
+            "store_id": context.store_id,
+            "start_date": payload.start_date.isoformat(),
+            "end_date": payload.end_date.isoformat(),
+        },
+        queue="gmvmax",
+    )
+
+    logger.info(
+        "gmvmax.creative metrics report enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "campaign_id": campaign_id,
+            "task_id": creative_async_res.id,
+        },
+    )
     return _build_task_response(
         async_res,
         workspace_id=workspace_id,
@@ -2645,44 +2675,260 @@ async def query_gmvmax_metrics_provider(
             detail="Creative level metrics requires at least 1 campaign_id and 1 item_group_id filter.",
         )
 
-    try:
-        rows = await fetch_gmvmax_report_by_level(
-            client=context.client,
-            advertiser_id=effective_advertiser_id,
-            store_id=effective_store_id,
-            campaign_id=str(campaign_id),
-            campaign_ids=clean_campaign_ids,
-            level=level_param,
+    db = context.db
+
+    def _serialize_campaign_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        serialized: list[dict[str, Any]] = []
+        for row in rows:
+            spend_cents = int(row.spend_cents or 0)
+            revenue_cents = int(row.gross_revenue_cents or 0)
+            cost_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
+            gross_value = float(Decimal(revenue_cents) / Decimal(100)) if revenue_cents else 0.0
+            orders_value = int(row.orders or 0)
+            impressions_value = int(row.impressions or 0)
+            clicks_value = int(row.clicks or 0)
+            roas_value: float | None = None
+            if spend_cents > 0:
+                roas_value = float(Decimal(revenue_cents) / Decimal(spend_cents))
+
+            serialized.append(
+                {
+                    "metrics": {
+                        "spend": cost_value,
+                        "cost": cost_value,
+                        "net_cost": cost_value,
+                        "gross_revenue": gross_value,
+                        "gmv": gross_value,
+                        "orders": orders_value,
+                        "impressions": impressions_value,
+                        "clicks": clicks_value,
+                        "roas": roas_value,
+                        "roi": roas_value,
+                    },
+                    "dimensions": {
+                        "campaign_id": row.campaign_id,
+                        "stat_time_day": row.stat_time_day.isoformat(),
+                    },
+                }
+            )
+        return serialized
+
+    def _serialize_creative_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        serialized: list[dict[str, Any]] = []
+        for row in rows:
+            cost_cents = getattr(row, "net_cost_cents", None) or getattr(row, "cost_cents", None)
+            gross_cents = getattr(row, "gross_revenue_cents", None)
+            spend_value = float(Decimal(cost_cents or 0) / Decimal(100)) if cost_cents else float(getattr(row, "net_cost", 0) or getattr(row, "cost", 0) or 0)
+            gross_value = (
+                float(Decimal(gross_cents or 0) / Decimal(100))
+                if gross_cents is not None
+                else float(getattr(row, "gross_revenue", 0) or 0)
+            )
+            impressions_value = int(getattr(row, "impressions", 0) or 0)
+            clicks_value = int(getattr(row, "clicks", 0) or 0)
+            orders_value = int(getattr(row, "orders", 0) or 0)
+            roas_value: float | None = None
+            if spend_value > 0:
+                roas_value = gross_value / spend_value
+
+            def _coerce_rate(attr: str) -> float | None:
+                val = getattr(row, attr, None)
+                return float(val) if val is not None else None
+
+            metrics_payload = {
+                "spend": spend_value,
+                "cost": float(spend_value),
+                "net_cost": float(spend_value),
+                "gross_revenue": gross_value,
+                "gmv": gross_value,
+                "orders": orders_value,
+                "impressions": impressions_value,
+                "clicks": clicks_value,
+                "roas": roas_value,
+                "roi": roas_value,
+                "product_impressions": getattr(row, "product_impressions", None),
+                "product_clicks": getattr(row, "product_clicks", None),
+                "product_click_rate": _coerce_rate("product_click_rate"),
+                "ad_click_rate": _coerce_rate("ad_click_rate"),
+                "ad_conversion_rate": _coerce_rate("ad_conversion_rate"),
+                "ad_video_view_rate_2s": _coerce_rate("ad_video_view_rate_2s"),
+                "ad_video_view_rate_6s": _coerce_rate("ad_video_view_rate_6s"),
+                "ad_video_view_rate_p25": _coerce_rate("ad_video_view_rate_p25"),
+                "ad_video_view_rate_p50": _coerce_rate("ad_video_view_rate_p50"),
+                "ad_video_view_rate_p75": _coerce_rate("ad_video_view_rate_p75"),
+                "ad_video_view_rate_p100": _coerce_rate("ad_video_view_rate_p100"),
+                "creative_delivery_status": getattr(row, "creative_delivery_status", None)
+                or getattr(row, "creative_status", None),
+            }
+
+            serialized.append(
+                {
+                    "metrics": {k: v for k, v in metrics_payload.items() if v is not None},
+                    "dimensions": {
+                        "campaign_id": row.campaign_id,
+                        "creative_id": getattr(row, "creative_id", None) or getattr(row, "item_id", None),
+                        "shop_content_id": getattr(row, "item_id", None) or getattr(row, "creative_id", None),
+                        "product_id": getattr(row, "product_id", None),
+                        "stat_time_day": (
+                            row.stat_time_day.isoformat()
+                            if isinstance(getattr(row, "stat_time_day", None), date)
+                            else getattr(row, "stat_time_day", None).date().isoformat()
+                        ),
+                    },
+                }
+            )
+        return serialized
+
+    rows: list[Any] = []
+    summary: dict[str, Any] | None = None
+
+    if level_param in {"campaign", "product"}:
+        campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
+        stmt = (
+            select(
+                TTBGmvMaxCampaign.campaign_id,
+                TTBGmvMaxMetricsDaily.date.label("stat_time_day"),
+                func.sum(func.coalesce(TTBGmvMaxMetricsDaily.net_cost_cents, TTBGmvMaxMetricsDaily.cost_cents, 0)).label(
+                    "spend_cents"
+                ),
+                func.sum(TTBGmvMaxMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
+                func.sum(TTBGmvMaxMetricsDaily.orders).label("orders"),
+                func.sum(TTBGmvMaxMetricsDaily.impressions).label("impressions"),
+                func.sum(TTBGmvMaxMetricsDaily.clicks).label("clicks"),
+            )
+            .join(TTBGmvMaxCampaign, TTBGmvMaxCampaign.id == TTBGmvMaxMetricsDaily.campaign_id)
+            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+            .where(TTBGmvMaxCampaign.auth_id == auth_id)
+            .where(TTBGmvMaxCampaign.advertiser_id == str(effective_advertiser_id))
+            .where(TTBGmvMaxCampaign.campaign_id.in_(campaign_filter_ids))
+            .where(TTBGmvMaxCampaign.store_id == str(effective_store_id))
+            .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+            .where(TTBGmvMaxMetricsDaily.date >= start)
+            .where(TTBGmvMaxMetricsDaily.date <= end)
+            .group_by(TTBGmvMaxCampaign.campaign_id, TTBGmvMaxMetricsDaily.date)
+            .order_by(TTBGmvMaxMetricsDaily.date.asc())
+        )
+        rows = db.execute(stmt).all()
+
+        totals = {
+            "spend_cents": 0,
+            "gross_revenue_cents": 0,
+            "orders": 0,
+            "impressions": 0,
+            "clicks": 0,
+        }
+        for row in rows:
+            totals["spend_cents"] += int(row.spend_cents or 0)
+            totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
+            totals["orders"] += int(row.orders or 0)
+            totals["impressions"] += int(row.impressions or 0)
+            totals["clicks"] += int(row.clicks or 0)
+
+        spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
+        gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
+        summary = {
+            "spend": float(spend_total),
+            "cost": float(spend_total),
+            "net_cost": float(spend_total),
+            "gmv": float(gmv_total),
+            "gross_revenue": float(gmv_total),
+            "orders": totals["orders"],
+            "impressions": totals["impressions"],
+            "clicks": totals["clicks"],
+            "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
+            "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
+        }
+    else:
+        campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
+        snapshots = latest_creative_metrics_snapshots(
+            db,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            campaign_ids=campaign_filter_ids,
             start_date=start,
             end_date=end,
-            item_group_ids=clean_item_group_ids,
+            store_ids=[str(effective_store_id)],
+            product_ids=clean_item_group_ids,
         )
-    except TTBApiError as exc:
-        if getattr(exc, "code", None) == 40100:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="TikTok API 限流，请稍后重试。",
-            ) from exc
-        if isinstance(exc, TTBBusinessError):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-        raise
+
+        rows = list(snapshots)
+
+        historical_end = min(end, date.today() - timedelta(days=1)) if start < date.today() else None
+        if historical_end and historical_end >= start:
+            creative_stmt = (
+                select(TTBGmvMaxCreativeMetric)
+                .where(TTBGmvMaxCreativeMetric.workspace_id == workspace_id)
+                .where(TTBGmvMaxCreativeMetric.provider == provider)
+                .where(TTBGmvMaxCreativeMetric.auth_id == auth_id)
+                .where(TTBGmvMaxCreativeMetric.campaign_id.in_(campaign_filter_ids))
+                .where(func.date(TTBGmvMaxCreativeMetric.stat_time_day) >= start)
+                .where(func.date(TTBGmvMaxCreativeMetric.stat_time_day) <= historical_end)
+                .order_by(TTBGmvMaxCreativeMetric.stat_time_day.asc())
+            )
+            if clean_item_group_ids:
+                creative_stmt = creative_stmt.where(TTBGmvMaxCreativeMetric.product_id.in_(clean_item_group_ids))
+
+            rows.extend(list(db.execute(creative_stmt).scalars().all()))
+
+        totals = {
+            "spend": Decimal("0"),
+            "gmv": Decimal("0"),
+            "orders": 0,
+            "impressions": 0,
+            "clicks": 0,
+        }
+        for row in rows:
+            spend_cents = getattr(row, "net_cost_cents", None) or getattr(row, "cost_cents", None)
+            spend_value = (
+                Decimal(spend_cents) / Decimal(100)
+                if spend_cents is not None
+                else Decimal(getattr(row, "net_cost", 0) or getattr(row, "cost", 0) or 0)
+            )
+            gross_cents = getattr(row, "gross_revenue_cents", None)
+            gross_value = (
+                Decimal(gross_cents) / Decimal(100)
+                if gross_cents is not None
+                else Decimal(getattr(row, "gross_revenue", 0) or 0)
+            )
+            totals["spend"] += spend_value
+            totals["gmv"] += gross_value
+            totals["orders"] += int(getattr(row, "orders", 0) or 0)
+            totals["impressions"] += int(getattr(row, "impressions", 0) or 0)
+            totals["clicks"] += int(getattr(row, "clicks", 0) or 0)
+
+        summary = {
+            "spend": float(totals["spend"]),
+            "cost": float(totals["spend"]),
+            "net_cost": float(totals["spend"]),
+            "gmv": float(totals["gmv"]),
+            "gross_revenue": float(totals["gmv"]),
+            "orders": totals["orders"],
+            "impressions": totals["impressions"],
+            "clicks": totals["clicks"],
+            "roas": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
+            "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
+        }
+
+    serialized_rows = (
+        _serialize_campaign_rows(rows)
+        if level_param in {"campaign", "product"}
+        else _serialize_creative_rows(rows)
+    )
 
     return {
         "report": {
-            "list": rows,
+            "list": serialized_rows,
             "page_info": {
                 "page": 1,
-                "page_size": len(rows),
-                "total_number": len(rows),
+                "page_size": len(serialized_rows),
+                "total_number": len(serialized_rows),
                 "total_page": 1,
                 "cursor": None,
                 "has_more": False,
                 "has_next": False,
             },
-            "summary": None,
+            "summary": summary,
         },
         "request_id": None,
     }
