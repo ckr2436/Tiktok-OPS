@@ -28,6 +28,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignReportRequest,
     GMVMaxReportFiltering,
     GMVMaxReportGetRequest,
+    GMVMaxDataset,
     GMVMaxReportTimeRange,
     GMVMaxResponse,
     GMVMaxSessionCreateBody,
@@ -37,6 +38,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxSessionUpdateBody,
     GMVMaxSessionUpdateRequest,
     GMVMaxVideoGetRequest,
+    build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
 )
 from app.services.ttb_api import TTBApiError, TTBBusinessError
@@ -343,6 +345,35 @@ async def test_gmvmax_campaign_report_uses_get_endpoint():
     assert json.loads(query["metrics"]) == ["cost"]
     filtering = json.loads(query["filtering"])
     assert filtering["gmv_max_promotion_types"] == ["PRODUCT_GMV_MAX"]
+
+
+def test_build_report_request_strips_sentinel_campaign_ids():
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.OVERVIEW,
+        advertiser_id="adv",
+        store_ids=["store"],
+        start_date="2024-01-01",
+        end_date="2024-01-02",
+        metrics=["spend"],
+        campaign_ids=["all", "1850141052477537"],
+    )
+
+    assert request.campaign_ids == ["1850141052477537"]
+    assert request.filtering
+    assert request.filtering.campaign_ids == ["1850141052477537"]
+
+
+def test_build_report_request_rejects_only_sentinel_ids():
+    with pytest.raises(ValueError):
+        build_gmv_max_report_request(
+            dataset=GMVMaxDataset.PRODUCT_PRODUCT,
+            advertiser_id="adv",
+            store_ids=["store"],
+            start_date="2024-01-01",
+            end_date="2024-01-02",
+            metrics=["spend"],
+            campaign_ids=["all"],
+        )
 
 
 @pytest.mark.anyio

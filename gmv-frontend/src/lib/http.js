@@ -9,6 +9,9 @@ function isCanceledRequest(error) {
   if (error.name === 'CanceledError' || error.name === 'CancelledError' || error.name === 'AbortError') {
     return true;
   }
+  if (error?.request?.aborted || error?.config?.signal?.aborted) {
+    return true;
+  }
 
   const message = String(error.message || '').toLowerCase();
   if (
