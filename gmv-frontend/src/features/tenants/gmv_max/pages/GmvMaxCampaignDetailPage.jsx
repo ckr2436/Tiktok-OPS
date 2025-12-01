@@ -210,8 +210,23 @@ function isMissingFilterError(error) {
   return message.includes('campaign_id') || message.includes('item_group_id');
 }
 
+function isCancelledRequest(error) {
+  if (!error) return false;
+  if (error.__cancelledRequest) return true;
+  const code = error.code || error?.response?.code;
+  if (code === 'ERR_CANCELED') return true;
+  const name = error.name || error?.response?.name;
+  if (name === 'AbortError' || name === 'CanceledError') return true;
+  return false;
+}
+
 function resolveMetricsError(error, defaultMessage = '数据加载失败') {
   if (!error) return '';
+
+  if (isCancelledRequest(error)) {
+    return '';
+  }
+
   if (isMissingFilterError(error)) {
     return '暂无数据，请检查广告系列和商品组配置。';
   }

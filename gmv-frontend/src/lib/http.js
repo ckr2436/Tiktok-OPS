@@ -4,6 +4,8 @@ import { apiRoot } from '../core/config.js';
 function isCanceledRequest(error) {
   if (!error) return false;
 
+  if (error.__cancelledRequest) return true;
+
   if (typeof axios.isCancel === 'function' && axios.isCancel(error)) return true;
   if (error.code === 'ERR_CANCELED') return true;
   if (error.name === 'CanceledError' || error.name === 'CancelledError' || error.name === 'AbortError') {
@@ -27,6 +29,14 @@ function isCanceledRequest(error) {
   if (status === 0 || status === 499) return true;
 
   return false;
+}
+
+function markCanceledRequest(error) {
+  if (error) {
+    // eslint-disable-next-line no-param-reassign
+    error.__cancelledRequest = true;
+  }
+  return error;
 }
 
 const http = axios.create({
@@ -171,7 +181,7 @@ http.interceptors.response.use(
     }
 
     if (isCanceledRequest(error)) {
-      return Promise.reject(error);
+      return Promise.reject(markCanceledRequest(error));
     }
 
     const requestId =
@@ -191,13 +201,15 @@ http.interceptors.response.use(
       error.message = uiMessage;
     }
     error.uiMessage = uiMessage;
-    console.error('[http] request failed', {
-      method: config?.method,
-      url: config?.url,
-      status,
-      requestId,
-      response: error?.response?.data,
-    });
+    if (!error?.__cancelledRequest) {
+      console.error('[http] request failed', {
+        method: config?.method,
+        url: config?.url,
+        status,
+        requestId,
+        response: error?.response?.data,
+      });
+    }
 
     if (isGmvMaxMetricsFilterError(error)) {
       return Promise.reject(error);

@@ -278,6 +278,9 @@ export function useGmvMaxCreativeMetricsQuery(
     queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30 * 1000,
     onError: ignoreCanceledOnError(onError),
     ...rest,
   });
