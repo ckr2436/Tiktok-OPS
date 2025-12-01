@@ -44,6 +44,10 @@ POLL_INTERVAL = 2.0
 class LoginFlowError(Exception):
     """Expected exception for QR/login flow failures."""
 
+    def __init__(self, message: str, status_code: int = 502) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class LoginSessionSetupError(Exception):
     def __init__(self, message: str, status_code: int = 502) -> None:
@@ -103,7 +107,7 @@ class YtDlpLoginSessionManager:
             browser, context, page, qr_image, playwright = await self._prepare_page(site)
         except LoginFlowError as exc:
             logger.warning("login flow failed for site=%s label=%s: %s", site, label, exc)
-            raise LoginSessionSetupError(str(exc), status_code=502)
+            raise LoginSessionSetupError(str(exc), status_code=exc.status_code)
         except Exception as exc:  # noqa: BLE001
             logger.exception("unexpected error preparing login page for %s: %s", site, exc)
             raise LoginSessionSetupError(f"login setup failed: {exc}", status_code=502)
@@ -152,20 +156,24 @@ class YtDlpLoginSessionManager:
         response = await page.goto(LOGIN_URLS["tiktok"], wait_until="networkidle")
         status = response.status if response else None
         if not status or status >= 400:
-            raise LoginFlowError(f"TikTok login page returned HTTP {status}")
+            raise LoginFlowError(
+                f"TikTok login page returned HTTP {status}", status_code=502
+            )
 
-        await self._enter_qr_mode("tiktok", page)
+        await self._tiktok_qr_flow(page)
 
         qr_locator = await self._wait_for_tiktok_qr(page)
         if not qr_locator:
-            raise LoginFlowError("QR code did not appear in time")
+            raise LoginFlowError(
+                "TikTok QR code did not appear in time (maybe region/network/captcha restricted)",
+                status_code=502,
+            )
 
         png_bytes = await qr_locator.screenshot(type="png")
         return f"data:image/png;base64,{base64.b64encode(png_bytes).decode()}"
 
     async def _enter_qr_mode(self, site: str, page: Page) -> None:
         handlers: Dict[str, Callable[[Page], Awaitable[None]]] = {
-            "tiktok": self._tiktok_qr_flow,
             "douyin": self._douyin_qr_flow,
             "youtube": self._youtube_qr_flow,
         }
@@ -177,33 +185,33 @@ class YtDlpLoginSessionManager:
                 logger.warning("qr flow setup failed for %s: %s", site, exc)
 
     async def _tiktok_qr_flow(self, page: Page) -> None:
-        try:
-            button = page.get_by_role("button", name=re.compile("QR code", re.IGNORECASE))
-            await button.click(timeout=5000)
-            return
-        except Exception:
-            pass
+        candidates = [
+            page.get_by_role("button", name=re.compile("QR code", re.IGNORECASE)),
+            page.get_by_text(re.compile("Use QR code", re.IGNORECASE)),
+            page.get_by_text(re.compile("使用二维码登录")),
+            page.get_by_text(re.compile("扫码登录")),
+        ]
 
-        selectors = ["text=Use QR code", "text=Log in with QR", "text=QR code"]
-        for selector in selectors:
+        for locator in candidates:
             try:
-                element = await page.wait_for_selector(selector, timeout=2000)
-                if element:
-                    await element.click()
-                    return
-            except Error:
+                await locator.click(timeout=3000)
+                return
+            except Exception:
                 continue
+
+        raise LoginFlowError(
+            "TikTok login page did not expose any QR-code login button", status_code=502
+        )
 
     async def _wait_for_tiktok_qr(self, page: Page):
         locators = [
-            "canvas[data-e2e='qr-code']",
-            "img[alt*='QR']",
-            "div[data-e2e='login-qr']",
+            page.locator("canvas[data-e2e='qr-code']"),
+            page.locator("img[alt*='QR']"),
+            page.locator("div[data-e2e='qr-code'] canvas"),
         ]
-        for selector in locators:
-            locator = page.locator(selector)
+        for locator in locators:
             try:
-                await locator.wait_for(timeout=10000)
+                await locator.wait_for(timeout=15000)
                 return locator
             except Error:
                 continue
