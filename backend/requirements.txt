@@ -24,6 +24,7 @@ sacremoses>=0.1.1
 transformers>=4.44.0
 sentencepiece>=0.2.0
 yt-dlp>=2024.8.6
+playwright>=1.44.0
 
 # Celery stack
 celery>=5.4.0

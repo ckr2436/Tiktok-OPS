@@ -42,6 +42,7 @@ from .ttb_gmvmax import (
 )
 from .openai_whisper import OpenAIWhisperJob
 from .email_settings import PlatformEmailSetting, MailSendMode, MailEncryption
+from .video_site_cookies import VideoSiteCookies
 
 __all__ = [
     "Base",
@@ -80,6 +81,7 @@ __all__ = [
     "TTBGmvMaxActionLog",
     "TTBGmvMaxStrategyConfig",
     "OpenAIWhisperJob",
+    "VideoSiteCookies",
     "PlatformEmailSetting",
     "MailSendMode",
     "MailEncryption",

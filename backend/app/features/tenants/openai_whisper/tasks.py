@@ -1,17 +1,21 @@
 """Celery tasks for running Whisper transcriptions in the background."""
 from __future__ import annotations
 
+import json
 import logging
 import math
 import mimetypes
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Iterable, List, Tuple
+from urllib.parse import urlparse
 
 from app.celery_app import celery_app
 from app.core.config import settings
 from app.data.db import SessionLocal
+from app.services import video_site_cookies
 
 from yt_dlp import YoutubeDL
 
@@ -51,8 +55,10 @@ def _is_authentication_required(error: Exception) -> bool:
     return any(marker in message for marker in markers)
 
 
-def _probe_downloadable(share_url: str) -> Tuple[dict, str]:
+def _probe_downloadable(share_url: str, cookiefile_path: str | None = None) -> Tuple[dict, str]:
     options = {"quiet": True, "skip_download": True, "noplaylist": True}
+    if cookiefile_path:
+        options["cookiefile"] = cookiefile_path
     try:
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(share_url, download=False)
@@ -76,9 +82,14 @@ def _probe_downloadable(share_url: str) -> Tuple[dict, str]:
 
 
 def _download_shared_video(
-    workspace_id: int, job_id: str, share_url: str, video_path: Path | None
+    workspace_id: int,
+    job_id: str,
+    share_url: str,
+    video_path: Path | None,
+    *,
+    cookiefile_path: str | None,
 ) -> Tuple[Path, str, str | None]:
-    entry, ext = _probe_downloadable(share_url)
+    entry, ext = _probe_downloadable(share_url, cookiefile_path)
     directory = storage.job_dir(workspace_id, job_id)
     filename = entry.get("title") or entry.get("id") or "shared-video"
 
@@ -99,6 +110,8 @@ def _download_shared_video(
         # concurrent downloads.
         "nopart": True,
     }
+    if cookiefile_path:
+        options["cookiefile"] = cookiefile_path
 
     try:
         with YoutubeDL(options) as ydl:
@@ -191,6 +204,71 @@ def _mark_download_status(
     return metadata
 
 
+def _detect_site_from_url(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or parsed.path).lower()
+    except Exception:
+        return None
+    if "douyin.com" in host:
+        return "douyin"
+    if "tiktok.com" in host:
+        return "tiktok"
+    if "youtube.com" in host or "youtu.be" in host:
+        return "youtube"
+    return None
+
+
+def _write_temp_cookiefile(cookies_json: str, site: str, job_id: str) -> str | None:
+    try:
+        cookies = json.loads(cookies_json)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to parse cookies JSON for %s: %s", site, exc)
+        return None
+    if not cookies:
+        return None
+
+    tmp_dir = Path(tempfile.gettempdir())
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    cookie_path = tmp_dir / f"yt_dlp_cookies_{site}_{job_id}.txt"
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for item in cookies:
+        name = item.get("name")
+        if not name:
+            continue
+        value = item.get("value") or ""
+        domain = item.get("domain") or item.get("host") or ""
+        include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
+        path_value = item.get("path") or "/"
+        secure = "TRUE" if item.get("secure") else "FALSE"
+        expires_raw = item.get("expires") or item.get("expirationDate")
+        try:
+            expires = int(expires_raw) if expires_raw is not None else 0
+        except Exception:  # noqa: BLE001
+            expires = 0
+        lines.append(
+            "\t".join([domain, include_subdomains, path_value, secure, str(expires), name, value])
+        )
+
+    cookie_path.write_text("\n".join(lines), encoding="utf-8")
+    return str(cookie_path)
+
+
+def _load_cookiefile_for_share(share_url: str, job_id: str) -> str | None:
+    site = _detect_site_from_url(share_url)
+    if not site:
+        return None
+    db = SessionLocal()
+    try:
+        record = video_site_cookies.get_active_site_cookies(db, site)
+    finally:
+        db.close()
+    if not record or not record.cookies_json:
+        return None
+    return _write_temp_cookiefile(record.cookies_json, site, job_id)
+
+
 def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> tuple[dict | None, Path | None, str | None]:
     raw_video_path = metadata.get("video_path")
     video_path = Path(raw_video_path) if raw_video_path else None
@@ -221,8 +299,13 @@ def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> t
                 status="processing",
             )
             db.commit()
+            cookiefile_path = _load_cookiefile_for_share(share_url, job_id)
             video_path, filename, content_type = _download_shared_video(
-                workspace_id, job_id, share_url, video_path
+                workspace_id,
+                job_id,
+                share_url,
+                video_path,
+                cookiefile_path=cookiefile_path,
             )
             size = video_path.stat().st_size
             metadata = _mark_download_status(
