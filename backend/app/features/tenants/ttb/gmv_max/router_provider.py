@@ -2635,11 +2635,18 @@ async def query_gmvmax_metrics_provider(
             end_date=end,
             item_group_ids=item_group_ids,
         )
-    except TTBBusinessError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+    except TTBApiError as exc:
+        if getattr(exc, "code", None) == 40100:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="TikTok API 限流，请稍后重试。",
+            ) from exc
+        if isinstance(exc, TTBBusinessError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        raise
 
     return {
         "report": {
