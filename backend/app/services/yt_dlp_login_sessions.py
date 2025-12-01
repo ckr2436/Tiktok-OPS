@@ -20,7 +20,7 @@ from playwright.async_api import (
 )
 
 from app.data.db import SessionLocal
-from app.services import video_site_cookies
+from app.services import video_site_cookies, video_site_login_sessions
 
 logger = logging.getLogger("gmv.ytdlp.login")
 
@@ -45,6 +45,7 @@ DOMAIN_FILTERS: Dict[str, str] = {
 }
 
 LOGIN_TIMEOUT = timedelta(minutes=3)
+LOGIN_SESSION_TTL = video_site_login_sessions.DEFAULT_LOGIN_SESSION_TTL
 POLL_INTERVAL = 2.0
 
 
@@ -72,6 +73,7 @@ class LoginSessionState:
     account: Optional[Dict[str, Any]] = None
     error_msg: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
+    expires_at: datetime | None = None
     _browser: Optional[Browser] = field(default=None, repr=False)
     _context: Optional[BrowserContext] = field(default=None, repr=False)
     _page: Optional[Page] = field(default=None, repr=False)
@@ -103,6 +105,7 @@ class YtDlpLoginSessionManager:
 
         logger.info("starting login session for site=%s label=%s", site, label)
         login_session_id = uuid4().hex
+        expires_at = datetime.utcnow() + LOGIN_SESSION_TTL
 
         browser: Browser | None = None
         context: BrowserContext | None = None
@@ -125,11 +128,24 @@ class YtDlpLoginSessionManager:
             label=label,
             status="qrcode_ready",
             qrcode_image_base64=qr_image,
+            expires_at=expires_at,
             _browser=browser,
             _context=context,
             _page=page,
             _playwright=playwright,
         )
+
+        with SessionLocal() as db:
+            video_site_login_sessions.create_login_session(
+                db,
+                login_session_id=login_session_id,
+                site=site,
+                label=label,
+                status=session.status,
+                qrcode_image_base64=qr_image,
+                expires_at=expires_at,
+            )
+            db.commit()
 
         async with self._lock:
             self._sessions[login_session_id] = session
@@ -139,6 +155,33 @@ class YtDlpLoginSessionManager:
 
     def get_session(self, login_session_id: str) -> Optional[LoginSessionState]:
         return self._sessions.get(login_session_id)
+
+    def _persist_session_state(
+        self,
+        session: LoginSessionState,
+        *,
+        status: str | None = None,
+        account: dict | None = None,
+        error_msg: str | None = None,
+    ) -> None:
+        if status:
+            session.status = status
+        if account is not None:
+            session.account = account
+        if error_msg is not None:
+            session.error_msg = error_msg
+
+        session.expires_at = datetime.utcnow() + LOGIN_SESSION_TTL
+        with SessionLocal() as db:
+            video_site_login_sessions.update_login_session(
+                db,
+                session.login_session_id,
+                status=session.status,
+                account=session.account,
+                error_msg=session.error_msg,
+                expires_at=session.expires_at,
+            )
+            db.commit()
 
     async def _prepare_page(self, site: str) -> tuple[Browser, BrowserContext, Page, str, Any]:
         playwright = await async_playwright().start()
@@ -292,13 +335,14 @@ class YtDlpLoginSessionManager:
                 if self._is_logged_in(session.site, cookies):
                     await self._handle_success(session, cookies)
                     return
-            session.status = "expired"
+            self._persist_session_state(session, status="expired")
         except Exception as exc:  # noqa: BLE001
-            session.status = "failed"
-            session.error_msg = str(exc)
             logger.exception("login session failed: %s", exc)
+            self._persist_session_state(session, status="failed", error_msg=str(exc))
         finally:
             await self._cleanup_browser(session)
+            async with self._lock:
+                self._sessions.pop(session.login_session_id, None)
 
     def _is_logged_in(self, site: str, cookies: list[dict[str, Any]]) -> bool:
         target_names = SESSION_COOKIE_NAMES.get(site, set())
@@ -308,7 +352,6 @@ class YtDlpLoginSessionManager:
         return False
 
     async def _handle_success(self, session: LoginSessionState, cookies: list[dict[str, Any]]) -> None:
-        session.status = "success"
         filtered = [
             cookie
             for cookie in cookies
@@ -332,10 +375,12 @@ class YtDlpLoginSessionManager:
                     "last_login_at": record.last_login_at,
                     "is_active": bool(record.is_active),
                 }
+            self._persist_session_state(session, status="success", account=session.account)
         except Exception as exc:  # noqa: BLE001
             logger.exception("failed to persist cookies: %s", exc)
-            session.status = "failed"
-            session.error_msg = f"persist cookies failed: {exc}"
+            self._persist_session_state(
+                session, status="failed", error_msg=f"persist cookies failed: {exc}"
+            )
 
     async def _cleanup_browser(self, session: LoginSessionState) -> None:
         try:

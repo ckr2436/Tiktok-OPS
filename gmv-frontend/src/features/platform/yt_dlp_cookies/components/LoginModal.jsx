@@ -8,6 +8,8 @@ const TERMINAL_STATUS = ['success', 'failed', 'expired']
 function StatusBadge({ status }) {
   const map = {
     qrcode_ready: { text: '等待扫码', color: '#2563eb' },
+    waiting_scan: { text: '等待扫码', color: '#2563eb' },
+    waiting_confirm: { text: '等待确认', color: '#2563eb' },
     success: { text: '登录成功', color: '#16a34a' },
     failed: { text: '登录失败', color: '#ef4444' },
     expired: { text: '已过期', color: '#9ca3af' },
@@ -29,6 +31,13 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
   const [pollError, setPollError] = useState('')
   const pollTimer = useRef(null)
 
+  const clearPollTimer = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current)
+      pollTimer.current = null
+    }
+  }
+
   useEffect(() => {
     if (!open) return
     setForm({ site: defaultSite || 'tiktok', label: defaultLabel || '' })
@@ -41,20 +50,31 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
     if (!open) return () => {}
     if (!session?.login_session_id || TERMINAL_STATUS.includes(session.status)) return () => {}
 
-    pollTimer.current && clearInterval(pollTimer.current)
+    clearPollTimer()
     pollTimer.current = setInterval(async () => {
       try {
         const data = await getLoginSession(session.login_session_id)
         setSession(data)
         setPollError('')
       } catch (err) {
-        const msg = err?.message || '查询登录状态失败'
-        setPollError(msg)
+        const code = err?.response?.status
+        const detail = err?.response?.data?.detail
+        if (code === 404) {
+          clearPollTimer()
+          setSession((prev) => {
+            if (!prev) return { status: 'expired', login_session_id: session?.login_session_id }
+            return { ...prev, status: 'expired', error_msg: detail || prev.error_msg }
+          })
+          setPollError(detail || '登录会话已失效，请重新扫码登录。')
+        } else {
+          const msg = detail || err?.message || '查询登录状态失败'
+          setPollError(msg)
+        }
       }
     }, 2500)
 
     return () => {
-      pollTimer.current && clearInterval(pollTimer.current)
+      clearPollTimer()
     }
   }, [open, session?.login_session_id, session?.status])
 
@@ -73,7 +93,7 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
   const account = session?.account
 
   const handleClose = () => {
-    pollTimer.current && clearInterval(pollTimer.current)
+    clearPollTimer()
     onClose?.()
   }
 

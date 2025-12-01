@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.deps import require_platform_admin
 from app.core.errors import APIError
 from app.data.db import get_db
-from app.services import video_site_cookies
+from app.services import video_site_cookies, video_site_login_sessions
 from app.services.yt_dlp_login_sessions import (
     LoginSessionSetupError,
     manager as login_session_manager,
@@ -93,8 +93,10 @@ def _serialize_login_session(state, include_qr: bool = False) -> LoginSessionOut
     if account:
         account_obj = LoginSessionAccount(**account)
 
+    login_session_id = getattr(state, "login_session_id", None) or getattr(state, "id", None)
+
     payload = {
-        "login_session_id": state.login_session_id,
+        "login_session_id": login_session_id,
         "site": state.site,
         "status": state.status,
         "account": account_obj,
@@ -180,9 +182,9 @@ async def create_login_session(payload: LoginSessionCreate):
 
 
 @router.get("/login-sessions/{login_session_id}", response_model=LoginSessionOut)
-async def get_login_session(login_session_id: str):
-    session = login_session_manager.get_session(login_session_id)
-    if not session:
-        raise APIError("NOT_FOUND", "Login session not found", 404)
-    include_qr = session.status == "qrcode_ready"
+async def get_login_session(login_session_id: str, db: Session = Depends(get_db)):
+    session = video_site_login_sessions.get_login_session(db, login_session_id)
+    if not session or (session.expires_at and session.expires_at < datetime.utcnow()):
+        raise APIError("NOT_FOUND", "Login session not found or expired.", 404)
+    include_qr = session.status in {"qrcode_ready", "waiting_scan", "waiting_confirm"}
     return _serialize_login_session(session, include_qr=include_qr)
