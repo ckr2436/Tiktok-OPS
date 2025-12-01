@@ -79,6 +79,13 @@ __all__ = [
 _DECIMAL_FOUR = Decimal("0.0001")
 _ONE_HUNDRED = Decimal("100")
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
+
+
+class GMVMaxReportEntry(TypedDict):
+    metrics: dict[str, Any]
+    dimensions: dict[str, Any]
+
+
 _CREATIVE_ATTRIBUTE_FIELDS = (
     "creative_name",
     "creative_status",
@@ -101,7 +108,7 @@ async def fetch_gmvmax_report_by_level(
     start_date: date | str,
     end_date: date | str,
     item_group_ids: Sequence[str] | None = None,
-):
+) -> list[GMVMaxReportEntry]:
     """Fetch GMV Max metrics from TikTok for the requested level."""
 
     level_value = GMVMaxMetricsLevel(level)
