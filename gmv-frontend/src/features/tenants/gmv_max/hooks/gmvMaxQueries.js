@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { isCanceledRequest } from '../../../lib/http.js';
+import { isCanceledRequest } from '../../../../lib/http.js';
 import {
   applyGmvMaxAction,
   createGmvMaxCampaign,
