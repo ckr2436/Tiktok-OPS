@@ -913,11 +913,16 @@ def build_gmv_max_report_request(
     if promotion_types:
         promotion_types = list(promotion_types)
 
-    report_filtering = (
-        GMVMaxReportFiltering(gmv_max_promotion_types=list(promotion_types))
-        if promotion_types
-        else None
-    )
+    report_filtering = None
+    if promotion_types or campaign_ids or item_group_ids or room_ids:
+        report_filtering = GMVMaxReportFiltering(
+            gmv_max_promotion_types=list(promotion_types)
+            if promotion_types
+            else None,
+            campaign_ids=list(campaign_ids) if campaign_ids else None,
+            item_group_ids=list(item_group_ids) if item_group_ids else None,
+            room_ids=list(room_ids) if room_ids else None,
+        )
 
     request = GMVMaxReportGetRequest(
         advertiser_id=advertiser_id,
@@ -1619,6 +1624,11 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             else [campaign_id]
         )
 
+        filters = GMVMaxReportFiltering(
+            campaign_ids=campaign_id_list,
+            item_group_ids=list(item_group_ids) if item_group_ids else None,
+        )
+
         base_kwargs = dict(
             advertiser_id=advertiser_id,
             store_ids=[store_id],
@@ -1637,6 +1647,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             dimensions=dimensions,
             item_group_ids=list(item_group_ids) if item_group_ids else None,
             **base_kwargs,
+            filtering=filters,
         )
         request = GMVMaxReportGetRequest(**request_kwargs)
 
