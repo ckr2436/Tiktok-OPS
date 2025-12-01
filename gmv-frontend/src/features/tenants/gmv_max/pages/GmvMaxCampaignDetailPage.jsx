@@ -231,6 +231,10 @@ function resolveMetricsError(error, defaultMessage = '数据加载失败') {
   if (isMissingFilterError(error)) {
     return '暂无数据，请检查广告系列和商品组配置。';
   }
+  const status = error?.response?.status;
+  if (error?.code === 'ECONNABORTED' || (status && status >= 500)) {
+    return '报表同步中或暂时不可用，请稍后再试。';
+  }
   return error?.response?.data?.message || error?.message || defaultMessage;
 }
 
@@ -1402,8 +1406,25 @@ export default function GmvMaxCampaignDetailPage() {
   const handleSyncMetrics = useCallback(async () => {
     if (isReadOnly) return;
     await ensureFresh();
-    syncMetricsMutation.mutate({ start_date: metricsParams.start_date, end_date: metricsParams.end_date });
-  }, [ensureFresh, isReadOnly, metricsParams.end_date, metricsParams.start_date, syncMetricsMutation]);
+    await syncMetricsMutation.mutateAsync({
+      start_date: metricsParams.start_date,
+      end_date: metricsParams.end_date,
+    });
+    await Promise.all([
+      campaignMetricsQuery.refetch(),
+      productMetricsQuery.refetch(),
+      creativeMetricsQuery.refetch(),
+    ]);
+  }, [
+    campaignMetricsQuery,
+    creativeMetricsQuery,
+    ensureFresh,
+    isReadOnly,
+    metricsParams.end_date,
+    metricsParams.start_date,
+    productMetricsQuery,
+    syncMetricsMutation,
+  ]);
 
   const handleToggleCreativeStatus = useCallback((status) => {
     setCreativeStatusFilters((prev) => {

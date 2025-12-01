@@ -10,11 +10,12 @@ def test_gmvmax_tasks_present():
     assert "gmvmax:campaigns:sync" in catalog
     assert "gmvmax:metrics:sync_hourly" in catalog
     assert "gmvmax:metrics:sync_daily" in catalog
+    assert "gmvmax:creative:sync_10min" in catalog
     assert "gmvmax:campaigns:apply_action" in catalog
 
     hourly = catalog["gmvmax:metrics:sync_hourly"]
     assert hourly.task == "gmvmax.sync_metrics"
-    assert hourly.crontab == "*/30 * * * *"
+    assert hourly.crontab == "*/10 * * * *"
     assert isinstance(hourly.kwargs, dict)
     assert hourly.kwargs.get("granularity") == "HOUR"
 
@@ -22,6 +23,10 @@ def test_gmvmax_tasks_present():
     assert daily.task == "gmvmax.sync_metrics"
     assert daily.crontab == "0 3 * * *"
     assert daily.kwargs.get("granularity") == "DAY"
+
+    creative = catalog["gmvmax:creative:sync_10min"]
+    assert creative.task == "gmvmax.sync_creative_metrics_10min"
+    assert creative.crontab == "*/10 * * * *"
 
     manual = catalog["gmvmax:campaigns:apply_action"]
     assert manual.task == "gmvmax.apply_action"
