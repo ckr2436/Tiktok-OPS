@@ -23,13 +23,21 @@ function StatusBadge({ status }) {
   )
 }
 
-export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel = '', onClose, onSuccess }) {
+export default function LoginModal({
+  open,
+  defaultSite = 'tiktok',
+  defaultLabel = '',
+  onClose,
+  onSuccess,
+  onToast,
+}) {
   const [form, setForm] = useState({ site: defaultSite || 'tiktok', label: defaultLabel || '' })
   const [session, setSession] = useState(null)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [pollError, setPollError] = useState('')
   const pollTimer = useRef(null)
+  const startAtRef = useRef(null)
 
   const clearPollTimer = () => {
     if (pollTimer.current) {
@@ -44,11 +52,15 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
     setSession(null)
     setError('')
     setPollError('')
+    startAtRef.current = null
   }, [open, defaultSite, defaultLabel])
 
   useEffect(() => {
     if (!open) return () => {}
-    if (!session?.login_session_id || TERMINAL_STATUS.includes(session.status)) return () => {}
+    if (!session?.login_session_id || TERMINAL_STATUS.includes(session.status)) {
+      clearPollTimer()
+      return () => {}
+    }
 
     clearPollTimer()
     pollTimer.current = setInterval(async () => {
@@ -56,6 +68,16 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
         const data = await getLoginSession(session.login_session_id)
         setSession(data)
         setPollError('')
+        const elapsed = startAtRef.current ? Date.now() - startAtRef.current : 0
+        if (!TERMINAL_STATUS.includes(data.status) && elapsed > 180000) {
+          clearPollTimer()
+          setSession((prev) => ({
+            ...(prev || {}),
+            status: 'expired',
+            error_msg: prev?.error_msg || '登录超时，请重新扫码登录。',
+          }))
+          setPollError('登录超时，请重新扫码登录。')
+        }
       } catch (err) {
         const code = err?.response?.status
         const detail = err?.response?.data?.detail
@@ -77,6 +99,12 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
       clearPollTimer()
     }
   }, [open, session?.login_session_id, session?.status])
+
+  useEffect(() => {
+    if (session?.status === 'success') {
+      onToast?.('登录成功，Cookies 已更新', 'success')
+    }
+  }, [session?.status, onToast])
 
   useEffect(() => {
     if (!open) return undefined
@@ -101,6 +129,7 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
     setCreating(true)
     setError('')
     setPollError('')
+    startAtRef.current = Date.now()
     try {
       const data = await createLoginSession(payload)
       setSession(data)
@@ -131,12 +160,13 @@ export default function LoginModal({ open, defaultSite = 'tiktok', defaultLabel 
   }
 
   const tips = useMemo(() => {
-    if (status === 'qrcode_ready') return '请使用对应 App 扫码并在手机上确认登录。'
+    if (status === 'qrcode_ready' || status === 'waiting_scan') return '请使用对应 App 扫码并在手机上确认登录。'
+    if (status === 'waiting_confirm') return '已扫码，请在手机上确认登录。'
     if (status === 'success') return '登录成功，正在刷新列表…'
-    if (status === 'expired') return '二维码已过期，请重新生成。'
-    if (status === 'failed') return '登录失败，请稍后重试或重新生成二维码。'
+    if (status === 'expired') return session?.error_msg || '二维码已过期，请重新生成。'
+    if (status === 'failed') return session?.error_msg || '登录失败，请稍后重试或重新生成二维码。'
     return '提交后将启动 Playwright 打开登录页并截取二维码用于扫码登录。'
-  }, [status])
+  }, [status, session?.error_msg])
 
   return (
     <Modal open={open} onClose={creating ? undefined : handleClose} title="扫码登录 / 刷新 Cookies" escClosable={!creating}>

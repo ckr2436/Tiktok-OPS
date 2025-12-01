@@ -1,10 +1,26 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import CookiesTable from '../components/CookiesTable.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import { SITE_OPTIONS, listCookies, updateCookieActivation } from '../api.js'
 
 const ALL_SITE = 'all'
+
+function useToast() {
+  const [toast, setToast] = useState(null)
+
+  const showToast = useCallback((message, tone = 'info', duration = 3000) => {
+    setToast({ id: Date.now(), message, tone, duration })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return undefined
+    const timer = setTimeout(() => setToast(null), toast.duration)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  return [toast, showToast]
+}
 
 function SiteTabs({ value, onChange }) {
   const options = useMemo(() => [{ value: ALL_SITE, label: '全部' }, ...SITE_OPTIONS], [])
@@ -37,6 +53,7 @@ export default function YtDlpCookiesPage() {
   const [siteFilter, setSiteFilter] = useState(ALL_SITE)
   const [modalOpen, setModalOpen] = useState(false)
   const [prefill, setPrefill] = useState({ site: SITE_OPTIONS[0].value, label: '' })
+  const [toast, showToast] = useToast()
 
   const cookiesQuery = useQuery({
     queryKey: ['platform', 'yt-dlp', 'cookies', siteFilter],
@@ -113,7 +130,14 @@ export default function YtDlpCookiesPage() {
         defaultLabel={prefill.label}
         onClose={() => setModalOpen(false)}
         onSuccess={refreshList}
+        onToast={showToast}
       />
+
+      {toast && (
+        <div className={`toast toast--${toast.tone}`} role="status">
+          {toast.message}
+        </div>
+      )}
     </div>
   )
 }
