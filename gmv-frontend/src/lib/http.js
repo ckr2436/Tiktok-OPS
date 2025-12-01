@@ -140,6 +140,12 @@ function shouldRetryGet(error) {
   if (!config) return false;
   const method = (config.method || '').toLowerCase();
   if (method !== 'get') return false;
+
+  const url = String(config.url || '');
+  if (url.includes('/gmvmax/') && url.includes('/metrics')) {
+    return false;
+  }
+
   const status = error?.response?.status;
   return !error.response || (status >= 500 && status !== 501);
 }

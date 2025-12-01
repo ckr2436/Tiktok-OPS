@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List
 
 import pytest
@@ -11,9 +11,16 @@ from fastapi.testclient import TestClient
 from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.router import router as ttb_router
+from app.features.tenants.ttb.gmv_max import router_provider
+from app.tasks import ttb_gmvmax_tasks
 from app.data.db import SessionLocal
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxMetricsDaily
+from app.data.models.ttb_gmvmax import (
+    TTBGmvMaxCampaign,
+    TTBGmvMaxMetricsDaily,
+    TTBGmvMaxCreativeMetric,
+    TTBGmvMaxCreativeMetrics10Min,
+)
 from app.data.models.workspaces import Workspace
 from app.providers.tiktok_business.gmvmax_client import (
     CampaignStatusUpdateData,
@@ -184,11 +191,16 @@ def gmvmax_client_fixture(monkeypatch):
     app.include_router(ttb_router)
 
     # override auth dependencies
+    class _StubUser:
+        email = "tester@example.com"
+        display_name = "tester"
+        username = "tester"
+
     def _member_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001, ARG001
-        return True
+        return _StubUser()
 
     def _admin_override(workspace_id: int, auth_id: int | None = None):  # noqa: ANN001, ARG001
-        return True
+        return _StubUser()
 
     app.dependency_overrides[require_tenant_member] = _member_override
     app.dependency_overrides[require_tenant_admin] = _admin_override
@@ -224,17 +236,104 @@ def gmvmax_client_fixture(monkeypatch):
         store_id="store-1",
         name="Primary",
     )
+    campaign_restore = TTBGmvMaxCampaign(
+        id=2,
+        workspace_id=workspace.id,
+        auth_id=account.id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-restore",
+        store_id="store-1",
+        name="Restorable",
+    )
+    campaign_blocked = TTBGmvMaxCampaign(
+        id=3,
+        workspace_id=workspace.id,
+        auth_id=account.id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-blocked",
+        store_id="store-1",
+        name="Blocked",
+    )
+    campaign_extra = TTBGmvMaxCampaign(
+        id=4,
+        workspace_id=workspace.id,
+        auth_id=account.id,
+        advertiser_id="adv-1",
+        campaign_id="cmp-extra",
+        store_id="store-1",
+        name="Extra",
+    )
     metric = TTBGmvMaxMetricsDaily(
         id=1,
         campaign_id=campaign.id,
         store_id="store-1",
         date=date.today(),
         cost_cents=1000,
-        net_cost_cents=900,
+        net_cost_cents=1000,
         orders=2,
         gross_revenue_cents=5000,
     )
-    session.add_all([workspace, provider_app, account, campaign, metric])
+    creative_metric = TTBGmvMaxCreativeMetric(
+        id=1,
+        workspace_id=workspace.id,
+        provider="tiktok-business",
+        auth_id=account.id,
+        campaign_id=campaign.campaign_id,
+        creative_id="creative-1",
+        product_id="spu-1",
+        stat_time_day=datetime.combine(date.today(), datetime.min.time()),
+        impressions=100,
+        clicks=10,
+        cost=Decimal("10"),
+        net_cost=Decimal("10"),
+        orders=2,
+        gross_revenue=Decimal("50"),
+    )
+    creative_snapshot = TTBGmvMaxCreativeMetrics10Min(
+        id=1,
+        workspace_id=workspace.id,
+        provider="tiktok-business",
+        auth_id=account.id,
+        advertiser_id="adv-1",
+        campaign_id=campaign.campaign_id,
+        store_id=campaign.store_id,
+        product_id="spu-1",
+        creative_id="creative-1",
+        stat_time_day=date.today(),
+        snapshot_at=datetime.utcnow().replace(minute=(datetime.utcnow().minute // 10) * 10, second=0, microsecond=0),
+        impressions=120,
+        clicks=12,
+        cost_cents=1200,
+        net_cost_cents=1200,
+        orders=3,
+        gross_revenue_cents=6000,
+        product_impressions=300,
+        product_clicks=30,
+        product_click_rate=Decimal("0.10"),
+        ad_click_rate=Decimal("0.04"),
+        ad_conversion_rate=Decimal("0.01"),
+        ad_video_view_rate_p25=Decimal("0.20"),
+        ad_video_view_rate_p50=Decimal("0.10"),
+        ad_video_view_rate_p75=Decimal("0.05"),
+        ad_video_view_rate_p100=Decimal("0.02"),
+        ad_video_view_rate_2s=Decimal("0.15"),
+        ad_video_view_rate_6s=Decimal("0.08"),
+        creative_delivery_status="DELIVERING",
+    )
+    session.add_all(
+        [
+            workspace,
+            provider_app,
+            account,
+            campaign,
+            campaign_restore,
+            campaign_blocked,
+            campaign_extra,
+            metric,
+            creative_metric,
+            creative_snapshot,
+        ]
+    )
     session.flush()
 
     context = router_provider.GMVMaxRouteContext(
@@ -256,6 +355,20 @@ def gmvmax_client_fixture(monkeypatch):
         return context
 
     app.dependency_overrides[router_provider.get_route_context] = _override_context
+
+    class _DummyTask:
+        def __init__(self) -> None:
+            self.id = "task"
+            self.state = "PENDING"
+
+    def _fake_send_task(*args, **kwargs):  # noqa: ANN001
+        return _DummyTask()
+
+    router_provider.celery_app.send_task = _fake_send_task
+    ttb_gmvmax_tasks.celery_app.send_task = _fake_send_task
+    import app.celery_app as celery_app_module
+
+    celery_app_module.celery_app.send_task = _fake_send_task
 
     with TestClient(app) as client:
         yield {
@@ -445,7 +558,27 @@ def test_metrics_creative_accepts_required_filters(gmvmax_client_fixture):
         },
     )
     assert response.status_code == 200
-    assert response.json()["report"]["list"][0]["metrics"]["cost"] == 10.0
+    payload = response.json()
+    entry = payload["report"]["list"][0]
+    assert entry["metrics"]["cost"] == 12.0
+    assert entry["metrics"]["gross_revenue"] == 60.0
+    assert entry["metrics"]["ad_video_view_rate_p25"] == 0.2
+    assert gmvmax_client_fixture["stub"].report_requests == []
+
+
+def test_metrics_creative_uses_latest_snapshot_only(gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    response = client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics",
+        params={
+            "level": "creative",
+            "campaign_ids": ["cmp-1"],
+            "item_group_ids": ["spu-1"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report"]["list"][0]["metrics"]["orders"] == 3
 
 
 def test_campaign_action_session_update(gmvmax_client_fixture):
@@ -477,6 +610,66 @@ def test_campaign_pause_uses_status_update(gmvmax_client_fixture):
     assert body["status"] == "success"
     assert body["response"]["status"] == "DISABLE"
     assert gmvmax_client_fixture["stub"].action_calls.count("campaign_status_update") == 1
+
+
+def test_metrics_sync_enqueues_creative_snapshot(monkeypatch, gmvmax_client_fixture):
+    client: TestClient = gmvmax_client_fixture["client"]
+    calls: list[str] = []
+
+    class DummyTask:
+        def __init__(self) -> None:
+            self.id = "task"
+            self.state = "PENDING"
+
+    def _fake_send_task(name: str, **kwargs):  # noqa: ANN001
+        calls.append(name)
+        return DummyTask()
+
+    monkeypatch.setattr(router_provider.celery_app, "send_task", _fake_send_task)
+
+    payload = {"start_date": date.today().isoformat(), "end_date": date.today().isoformat()}
+    response = client.post(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1/metrics/sync",
+        json=payload,
+    )
+    assert response.status_code == 200
+    assert "gmvmax.sync_metrics" in calls
+    assert "gmvmax.sync_creative_metrics_10min_for_campaign" in calls
+
+
+def test_periodic_creative_sync_skips_deleted_campaigns(monkeypatch, gmvmax_client_fixture):
+    session = gmvmax_client_fixture["session"]
+    inactive = TTBGmvMaxCampaign(
+        id=5,
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="adv-1",
+        campaign_id="cmp-deleted",
+        store_id="store-1",
+        name="Deleted",
+        is_deleted=True,
+    )
+    session.add(inactive)
+    session.commit()
+
+    calls: list[dict[str, Any]] = []
+
+    class DummyTask:
+        def __init__(self, name: str, kwargs: dict) -> None:
+            self.name = name
+            self.kwargs = kwargs
+            self.id = "task"
+
+    def _fake_send_task(name: str, **kwargs):  # noqa: ANN001
+        calls.append({"name": name, "kwargs": kwargs})
+        return DummyTask(name, kwargs)
+
+    monkeypatch.setattr(ttb_gmvmax_tasks.celery_app, "send_task", _fake_send_task)
+
+    result = ttb_gmvmax_tasks.task_gmvmax_sync_creative_metrics_10min(ttb_gmvmax_tasks.task_gmvmax_sync_creative_metrics_10min)
+
+    assert result["tasks"] == 1
+    assert all(call["kwargs"]["campaign_id"] != "cmp-deleted" for call in calls)
 
 
 def test_campaign_pause_refreshes_local_cache(gmvmax_client_fixture):
