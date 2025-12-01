@@ -45,6 +45,12 @@ class LoginFlowError(Exception):
     """Expected exception for QR/login flow failures."""
 
 
+class LoginSessionSetupError(Exception):
+    def __init__(self, message: str, status_code: int = 502) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 @dataclass
 class LoginSessionState:
     login_session_id: str
@@ -92,40 +98,32 @@ class YtDlpLoginSessionManager:
         page: Page | None = None
         playwright = None
         qr_image: str | None = None
-        status = "qrcode_ready"
-        error_msg: str | None = None
 
         try:
             browser, context, page, qr_image, playwright = await self._prepare_page(site)
         except LoginFlowError as exc:
-            status = "failed"
-            error_msg = str(exc)
             logger.warning("login flow failed for site=%s label=%s: %s", site, label, exc)
+            raise LoginSessionSetupError(str(exc), status_code=502)
         except Exception as exc:  # noqa: BLE001
-            status = "failed"
-            error_msg = f"login setup failed: {exc}"
             logger.exception("unexpected error preparing login page for %s: %s", site, exc)
+            raise LoginSessionSetupError(f"login setup failed: {exc}", status_code=502)
 
         session = LoginSessionState(
             login_session_id=login_session_id,
             site=site,
             label=label,
-            status=status,
-            qrcode_image_base64=qr_image if status == "qrcode_ready" else None,
-            error_msg=error_msg,
-            _browser=browser if status == "qrcode_ready" else None,
-            _context=context if status == "qrcode_ready" else None,
-            _page=page if status == "qrcode_ready" else None,
-            _playwright=playwright if status == "qrcode_ready" else None,
+            status="qrcode_ready",
+            qrcode_image_base64=qr_image,
+            _browser=browser,
+            _context=context,
+            _page=page,
+            _playwright=playwright,
         )
 
         async with self._lock:
             self._sessions[login_session_id] = session
 
-        if status == "qrcode_ready":
-            session._task = asyncio.create_task(self._monitor_session(session))
-        else:
-            await self._cleanup_browser(session)
+        session._task = asyncio.create_task(self._monitor_session(session))
         return session
 
     def get_session(self, login_session_id: str) -> Optional[LoginSessionState]:
