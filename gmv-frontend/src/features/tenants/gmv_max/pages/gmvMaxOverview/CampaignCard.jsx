@@ -73,6 +73,7 @@ export default function CampaignCard({
   }, [detail, campaign]);
   const statusMeta = getCampaignStatusMeta(
     campaign?.operation_status || campaign?.status || detail?.campaign?.operation_status || detail?.campaign?.status,
+    { isDeleted, deletedLabel: GmvMaxTexts.statusDeleted || '已删除' },
   );
   const statusLabel = statusMeta.label || formatCampaignStatus(campaign?.operation_status);
   const name = campaign?.campaign_name || campaign?.name || `系列 ${campaignId}`;
@@ -143,20 +144,23 @@ export default function CampaignCard({
 
   const handleEnable = useCallback(() => {
     if (!campaignId) return;
+    if (isDeleted) return;
     actionMutation.mutate({ type: 'resume' });
-  }, [actionMutation, campaignId]);
+  }, [actionMutation, campaignId, isDeleted]);
 
   const handleDisable = useCallback(() => {
     if (!campaignId) return;
+    if (isDeleted) return;
     actionMutation.mutate({ type: 'pause' });
-  }, [actionMutation, campaignId]);
+  }, [actionMutation, campaignId, isDeleted]);
 
   const handleDelete = useCallback(() => {
     if (!campaignId) return;
+    if (isDeleted) return;
     const confirmed = window.confirm(GmvMaxTexts.deleteSeries);
     if (!confirmed) return;
     actionMutation.mutate({ type: 'delete' });
-  }, [actionMutation, campaignId]);
+  }, [actionMutation, campaignId, isDeleted]);
 
   return (
     <article className="gmvmax-campaign-card">

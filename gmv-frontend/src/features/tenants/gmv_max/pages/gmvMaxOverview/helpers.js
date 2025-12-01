@@ -643,6 +643,8 @@ export function normalizeStatusValue(value) {
 }
 
 export function isCampaignDeleted(campaign) {
+  if (campaign?.is_deleted === true) return true;
+  if (campaign?.isDeleted === true) return true;
   const operationStatus = normalizeStatusValue(
     campaign?.operation_status ?? campaign?.operationStatus,
   );
@@ -808,7 +810,11 @@ export function isCampaignEnabledStatus(status) {
   return false;
 }
 
-export function getCampaignStatusMeta(status) {
+export function getCampaignStatusMeta(status, options = {}) {
+  const { isDeleted = false, deletedLabel = '已删除' } = options;
+  if (isDeleted) {
+    return { label: deletedLabel, category: 'ended', tone: 'muted' };
+  }
   const normalized = normalizeStatusValue(status);
   const label = formatCampaignStatus(status);
   if (normalized.includes('LEARN')) {

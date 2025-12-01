@@ -7,6 +7,7 @@ request/response models aligned with the official API surface.
 from __future__ import annotations
 
 from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar
+from datetime import datetime
 
 import json
 from enum import Enum
@@ -49,6 +50,8 @@ class GMVMaxCampaign(BaseModel):
     schedule_end_time: Optional[str] = None
     create_time: Optional[str] = None
     modify_time: Optional[str] = None
+    is_deleted: Optional[bool] = None
+    deleted_at: Optional[datetime | str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -135,6 +138,8 @@ class GMVMaxCampaignInfoData(BaseModel):
     schedule_end_time: Optional[str] = None
     identity_list: Optional[List[GMVMaxIdentityInfo]] = None
     custom_anchor_video_list: Optional[List[Dict[str, Any]]] = None
+    is_deleted: Optional[bool] = None
+    deleted_at: Optional[datetime | str] = None
 
     model_config = ConfigDict(extra="allow")
 

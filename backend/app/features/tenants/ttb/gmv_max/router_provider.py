@@ -218,7 +218,14 @@ _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
 def _campaign_row_to_schema(row: TTBGmvMaxCampaign) -> GMVMaxCampaign:
     if row.raw_json:
         try:
-            return GMVMaxCampaign.model_validate(row.raw_json)
+            payload = dict(row.raw_json)
+            payload.update(
+                {
+                    "is_deleted": bool(row.is_deleted),
+                    "deleted_at": row.deleted_at,
+                }
+            )
+            return GMVMaxCampaign.model_validate(payload)
         except Exception:  # noqa: BLE001
             logger.warning(
                 "gmvmax campaign raw_json parse failed",
@@ -244,6 +251,9 @@ def _campaign_row_to_schema(row: TTBGmvMaxCampaign) -> GMVMaxCampaign:
         payload["update_time"] = row.ext_updated_time
     if row.daily_budget_cents is not None:
         payload["daily_budget"] = row.daily_budget_cents
+    payload["is_deleted"] = bool(row.is_deleted)
+    if row.deleted_at:
+        payload["deleted_at"] = row.deleted_at
     return GMVMaxCampaign.model_validate(payload)
 
 
@@ -2349,9 +2359,7 @@ async def list_gmvmax_campaigns_provider(
         query = query.filter(TTBGmvMaxCampaign.name.ilike(f"%{campaign_name}%"))
     if primary_status:
         query = query.filter(TTBGmvMaxCampaign.status == str(primary_status))
-    if include_deleted:
-        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(True))
-    else:
+    if not include_deleted:
         query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False)).filter(
             or_(
                 TTBGmvMaxCampaign.operation_status.is_(None),
@@ -2412,8 +2420,9 @@ async def get_gmvmax_campaign_provider(
         )
 
     info_resp = await info_request
+    local_row: TTBGmvMaxCampaign | None = None
     if context.db is not None:
-        upsert_campaign_from_api(
+        local_row = upsert_campaign_from_api(
             context.db,
             workspace_id=context.workspace_id,
             auth_id=context.auth_id,
@@ -2435,8 +2444,17 @@ async def get_gmvmax_campaign_provider(
         sessions = session_resp.data.list
         sessions_page_info = session_resp.data.page_info
         sessions_request_id = session_resp.request_id
+    campaign_info = info_resp.data
+    if local_row is not None:
+        campaign_info = campaign_info.model_copy(
+            update={
+                "is_deleted": bool(local_row.is_deleted),
+                "deleted_at": local_row.deleted_at,
+            }
+        )
+
     return CampaignDetailResponse(
-        campaign=info_resp.data,
+        campaign=campaign_info,
         sessions=sessions,
         sessions_page_info=sessions_page_info,
         request_id=info_resp.request_id,
