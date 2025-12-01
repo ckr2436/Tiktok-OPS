@@ -828,6 +828,23 @@ _GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
 }
 
 
+def _sanitize_id_list(values: Optional[Sequence[str] | Sequence[int]]) -> list[str] | None:
+    """Normalize an ID list by dropping sentinels like ``"all"`` and blanks."""
+
+    if not values:
+        return None
+
+    cleaned: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text.lower() == "all":
+            continue
+        cleaned.append(text)
+    return cleaned or None
+
+
 def build_gmv_max_report_request(
     *,
     dataset: GMVMaxDataset,
@@ -862,6 +879,10 @@ def build_gmv_max_report_request(
 
     if not metrics:
         raise ValueError("metrics must contain at least one metric field")
+
+    campaign_ids = _sanitize_id_list(campaign_ids)
+    item_group_ids = _sanitize_id_list(item_group_ids)
+    room_ids = _sanitize_id_list(room_ids)
 
     cfg = _GMV_MAX_DATASET_CONFIG[dataset]
     require_all_of = cfg.get("require_all_of") or ()
@@ -1387,9 +1408,31 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         if not start_date or not end_date:
             raise ValueError("start_date and end_date are required for GMV Max report")
 
+        campaign_ids = _sanitize_id_list(
+            getattr(request, "campaign_ids", None) or legacy_filtering.get("campaign_ids")
+        )
+        item_group_ids = _sanitize_id_list(
+            getattr(request, "item_group_ids", None)
+            or legacy_filtering.get("item_group_ids")
+        )
+        room_ids = _sanitize_id_list(
+            getattr(request, "room_ids", None) or legacy_filtering.get("room_ids")
+        )
+
+        filtering_payload = dict(legacy_filtering)
+        for key, value in (
+            ("campaign_ids", campaign_ids),
+            ("item_group_ids", item_group_ids),
+            ("room_ids", room_ids),
+        ):
+            if value is None:
+                filtering_payload.pop(key, None)
+            else:
+                filtering_payload[key] = value
+
         filtering_model = (
-            GMVMaxReportFiltering.model_validate(legacy_filtering)
-            if legacy_filtering
+            GMVMaxReportFiltering.model_validate(filtering_payload)
+            if filtering_payload
             else None
         )
         get_request = GMVMaxReportGetRequest(
@@ -1400,9 +1443,9 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             metrics=list(request.metrics),
             dimensions=list(request.dimensions),
             gmv_max_promotion_types=getattr(request, "gmv_max_promotion_types", None),
-            campaign_ids=list(getattr(request, "campaign_ids", None) or []) or None,
-            item_group_ids=list(getattr(request, "item_group_ids", None) or []) or None,
-            room_ids=list(getattr(request, "room_ids", None) or []) or None,
+            campaign_ids=campaign_ids,
+            item_group_ids=item_group_ids,
+            room_ids=room_ids,
             filtering=filtering_model,
             page=request.page,
             page_size=request.page_size,
@@ -1437,18 +1480,17 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         if not start_date or not end_date:
             raise ValueError("start_date and end_date are required for GMV Max creative report")
 
-        campaign_ids = list(getattr(request, "campaign_ids", None) or []) or None
-        item_group_ids = list(
+        campaign_ids = _sanitize_id_list(getattr(request, "campaign_ids", None))
+        item_group_ids = _sanitize_id_list(
             getattr(request, "item_group_ids", None)
             or legacy_filtering.pop("item_group_ids", None)
             or legacy_filtering.pop("product_ids", None)
-            or []
         )
 
         filtering_model = GMVMaxReportFiltering(
             store_ids=store_ids,
             campaign_ids=campaign_ids,
-            item_group_ids=item_group_ids or None,
+            item_group_ids=item_group_ids,
             creative_types=legacy_filtering.pop("creative_types", None),
             creative_delivery_statuses=legacy_filtering.pop("creative_delivery_statuses", None),
             search_word=legacy_filtering.pop("search_word", None),
@@ -1618,15 +1660,14 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             dimensions = GMVMAX_DIMENSIONS_BY_LEVEL[level_value.value]
         except KeyError as exc:
             raise ValueError(f"unsupported GMV Max metrics level: {level}") from exc
-        campaign_id_list = (
-            [str(item) for item in campaign_ids]
-            if campaign_ids is not None
-            else [campaign_id]
+        campaign_id_list = _sanitize_id_list(campaign_ids) or _sanitize_id_list(
+            [campaign_id]
         )
+        item_group_list = _sanitize_id_list(item_group_ids)
 
         filters = GMVMaxReportFiltering(
             campaign_ids=campaign_id_list,
-            item_group_ids=list(item_group_ids) if item_group_ids else None,
+            item_group_ids=item_group_list,
         )
 
         base_kwargs = dict(
@@ -1645,7 +1686,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         request_kwargs = dict(
             metrics=metrics,
             dimensions=dimensions,
-            item_group_ids=list(item_group_ids) if item_group_ids else None,
+            item_group_ids=item_group_list,
             **base_kwargs,
             filtering=filters,
         )

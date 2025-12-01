@@ -65,9 +65,11 @@ async function put(url, body, config) {
 function normalizeIdList(value) {
   if (value === undefined || value === null) return [];
   const list = Array.isArray(value) ? value : [value];
-  return list
-    .map((item) => (item === undefined || item === null ? '' : String(item)))
-    .filter(Boolean);
+  const normalized = list
+    .map((item) => (item === undefined || item === null ? '' : String(item).trim()))
+    .filter(Boolean)
+    .filter((item) => item.toLowerCase() !== 'all');
+  return normalized;
 }
 
 function appendParams(target, params) {

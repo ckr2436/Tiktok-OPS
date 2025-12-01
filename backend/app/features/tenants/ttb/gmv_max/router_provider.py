@@ -101,6 +101,7 @@ from app.services.ttb_gmvmax import (
     fetch_gmvmax_report_by_level,
     ensure_gmvmax_store_authorized,
     log_campaign_action,
+    _sanitize_id_list,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
     update_gmvmax_campaign,
@@ -2587,6 +2588,9 @@ async def query_gmvmax_metrics_provider(
             },
         )
 
+    clean_campaign_ids = _sanitize_id_list(campaign_ids)
+    clean_item_group_ids = _sanitize_id_list(item_group_ids)
+
     effective_store_id = store_id or context.store_id
     if not effective_store_id:
         raise HTTPException(
@@ -2608,15 +2612,15 @@ async def query_gmvmax_metrics_provider(
             detail=f"invalid GMV Max metrics level: {level_param}",
         )
 
-    if level_param == "product" and not (campaign_ids and len(campaign_ids) > 0):
+    if level_param == "product" and not (clean_campaign_ids and len(clean_campaign_ids) > 0):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Item level metrics requires at least 1 campaign_id filter.",
         )
 
     if level_param == "creative" and (
-        not (campaign_ids and len(campaign_ids) > 0)
-        or not (item_group_ids and len(item_group_ids) > 0)
+        not (clean_campaign_ids and len(clean_campaign_ids) > 0)
+        or not (clean_item_group_ids and len(clean_item_group_ids) > 0)
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -2629,11 +2633,11 @@ async def query_gmvmax_metrics_provider(
             advertiser_id=effective_advertiser_id,
             store_id=effective_store_id,
             campaign_id=str(campaign_id),
-            campaign_ids=campaign_ids,
+            campaign_ids=clean_campaign_ids,
             level=level_param,
             start_date=start,
             end_date=end,
-            item_group_ids=item_group_ids,
+            item_group_ids=clean_item_group_ids,
         )
     except TTBApiError as exc:
         if getattr(exc, "code", None) == 40100:

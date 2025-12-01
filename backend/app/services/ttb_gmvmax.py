@@ -78,6 +78,23 @@ __all__ = [
 
 _DECIMAL_FOUR = Decimal("0.0001")
 _ONE_HUNDRED = Decimal("100")
+
+
+def _sanitize_id_list(values: Sequence[str] | Sequence[int] | None) -> list[str] | None:
+    """Drop falsy and sentinel values from an ID list."""
+
+    if not values:
+        return None
+
+    cleaned: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text.lower() == "all":
+            continue
+        cleaned.append(text)
+    return cleaned or None
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
 
 
@@ -112,6 +129,8 @@ async def fetch_gmvmax_report_by_level(
 ) -> list[GMVMaxReportEntry]:
     """Fetch GMV Max metrics from TikTok for the requested level."""
 
+    clean_campaign_ids = _sanitize_id_list(campaign_ids)
+    clean_item_group_ids = _sanitize_id_list(item_group_ids)
     level_value = GMVMaxMetricsLevel(level)
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
@@ -119,11 +138,11 @@ async def fetch_gmvmax_report_by_level(
         advertiser_id=str(advertiser_id),
         store_id=str(store_id),
         campaign_id=str(campaign_id),
-        campaign_ids=campaign_ids,
+        campaign_ids=clean_campaign_ids,
         level=level_value,
         start_date=start_date_str,
         end_date=end_date_str,
-        item_group_ids=item_group_ids,
+        item_group_ids=clean_item_group_ids,
     )
     data = getattr(response, "data", None)
     raw_entries = getattr(data, "list", None) or []
