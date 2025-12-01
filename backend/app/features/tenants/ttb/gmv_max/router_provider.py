@@ -12,7 +12,7 @@ from math import ceil
 from time import monotonic
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 from celery.result import AsyncResult
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -37,14 +37,7 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
     update_heating_action_result,
     upsert_creative_heating,
 )
-from app.data.repositories.tiktok_business.gmvmax_metrics import (
-    GMVMaxMetricDTO,
-    query_gmvmax_metrics,
-)
-from app.data.repositories.tiktok_business.gmvmax_creative_metrics import (
-    count_creative_metrics,
-    list_creative_metrics,
-)
+from app.data.repositories.tiktok_business.gmvmax_metrics import GMVMaxMetricDTO
 from app.providers.tiktok_business.gmvmax_client import (
     CampaignStatusUpdateRequest,
     GMVMaxBidRecommendRequest,
@@ -2567,6 +2560,7 @@ async def sync_gmvmax_metrics_provider(
     dependencies=[Depends(require_tenant_member)],
 )
 async def query_gmvmax_metrics_provider(
+    request: Request,
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -2575,16 +2569,10 @@ async def query_gmvmax_metrics_provider(
     level: str = Query("campaign"),
     start_date: Optional[Union[date, datetime, str]] = Query(None),
     end_date: Optional[Union[date, datetime, str]] = Query(None),
-    dimensions: Optional[List[str]] = Query(None),
-    seed_min_conversions: int = Query(_DEFAULT_SEED_CONVERSIONS, ge=0),
-    seed_min_roas: float = Query(_DEFAULT_SEED_ROAS, ge=0.0),
-    seed_min_spend: float = Query(_DEFAULT_SEED_SPEND, ge=0.0),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
     advertiser_id: Optional[str] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
-    """Return stored GMV Max performance metrics for the requested campaign."""
+    """Return GMV Max performance metrics for the requested campaign and level."""
 
     end = _normalize_date_value(end_date, field_name="end_date") or date.today()
     start = _normalize_date_value(start_date, field_name="start_date") or (end - timedelta(days=6))
@@ -2604,103 +2592,47 @@ async def query_gmvmax_metrics_provider(
             detail={"code": "missing_store", "message": "store_id is required"},
         )
 
-    normalized_level = str(level or "campaign").lower()
-    if normalized_level in {"campaign", "product", "creative"}:
-        rows = await fetch_gmvmax_report_by_level(
-            context.client,
-            advertiser_id=context.advertiser_id,
-            store_id=effective_store_id,
-            campaign_id=str(campaign_id),
-            level=normalized_level,
-            start_date=start,
-            end_date=end,
-        )
-        report = GMVMaxReportData(
-            list=[GMVMaxReportEntry.model_validate(item) for item in rows],
-            page_info=PageInfo(
-                page=1,
-                page_size=len(rows),
-                total_number=len(rows),
-                total_page=1,
-            ),
-            summary=None,
-        )
-        return MetricsResponse(report=report, request_id=None)
-    normalized_dimensions = [str(dim).lower() for dim in dimensions or []]
-    if any(dim in {"creative", "creative_id", "creativeid"} for dim in normalized_dimensions):
-        limit = page_size
-        offset = (page - 1) * page_size
-        creative_total = count_creative_metrics(
-            context.db,
-            workspace_id=context.workspace_id,
-            provider=context.provider,
-            auth_id=context.auth_id,
-            campaign_id=str(campaign_id),
-            date_from=start,
-            date_to=end,
-        )
-        creative_rows = await list_creative_metrics(
-            context.db,
-            workspace_id=context.workspace_id,
-            provider=context.provider,
-            auth_id=context.auth_id,
-            campaign_id=str(campaign_id),
-            date_from=start,
-            date_to=end,
-            limit=limit,
-            offset=offset,
-        )
-        return _build_creative_metrics_response(
-            rows=creative_rows,
-            start=start,
-            end=end,
-            page=page,
-            page_size=page_size,
-            total=creative_total,
-            seed_min_conversions=seed_min_conversions,
-            seed_min_roas=seed_min_roas,
-            seed_min_spend=seed_min_spend,
+    effective_advertiser_id = advertiser_id or context.advertiser_id
+    if not effective_advertiser_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_advertiser", "message": "advertiser_id is required"},
         )
 
-    cache_key = (
-        context.workspace_id,
-        context.provider,
-        context.auth_id,
-        str(campaign_id),
-        effective_store_id or "*",
-        start.isoformat(),
-        end.isoformat(),
-        page,
-        page_size,
-    )
-    cached = _metrics_cache.get(cache_key)
-    if cached:
-        return cached
+    level_param = (request.query_params.get("level") or level or "campaign").lower()
+    if level_param not in {"campaign", "product", "creative"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"invalid GMV Max metrics level: {level_param}",
+        )
 
-    limit = page_size
-    offset = (page - 1) * page_size
-    items, total = query_gmvmax_metrics(
-        context.db,
-        workspace_id=context.workspace_id,
-        provider=context.provider,
-        auth_id=context.auth_id,
-        campaign_id=str(campaign_id),
-        advertiser_id=context.advertiser_id,
+    rows = await fetch_gmvmax_report_by_level(
+        client=context.client,
+        advertiser_id=effective_advertiser_id,
         store_id=effective_store_id,
+        campaign_id=str(campaign_id),
+        level=level_param,
         start_date=start,
         end_date=end,
-        limit=limit,
-        offset=offset,
-        order_desc=True,
+        item_group_ids=None,
     )
-    response = _build_metrics_response(
-        items,
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
-    _metrics_cache.set(cache_key, response)
-    return response
+
+    return {
+        "report": {
+            "list": rows,
+            "page_info": {
+                "page": 1,
+                "page_size": len(rows),
+                "total_number": len(rows),
+                "total_page": 1,
+                "cursor": None,
+                "has_more": False,
+                "has_next": False,
+            },
+            "summary": None,
+        },
+        "request_id": None,
+    }
 
 
 # === GMV Max actions, creative heating, and strategy ===

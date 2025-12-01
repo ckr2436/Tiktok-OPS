@@ -508,11 +508,13 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
   if (Array.isArray(metricsItems)) {
     for (const entry of metricsItems) {
       const creativeId =
+        entry?.shop_content_id ||
         entry?.item_id ||
         entry?.creative_id ||
         entry?.creativeId ||
         entry?.id ||
         entry?.code ||
+        entry?.metrics?.shop_content_id ||
         entry?.metrics?.creative_id ||
         entry?.metrics?.item_id;
       if (!creativeId) continue;
@@ -538,6 +540,7 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
     for (const entry of ensureArray(metricsData.report?.list)) {
       const dimensions = entry.dimensions || entry.dimension || {};
       const creativeId =
+        dimensions.shop_content_id ||
         dimensions.item_id ||
         dimensions.creative ||
         dimensions.creative_id ||
@@ -883,7 +886,7 @@ export default function GmvMaxCampaignDetailPage() {
     [],
   );
 
-  const metricsQuery = useGmvMaxMetricsQuery(
+  const campaignMetricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
     authId,
@@ -894,12 +897,23 @@ export default function GmvMaxCampaignDetailPage() {
     },
   );
 
+  const productMetricsQuery = useGmvMaxMetricsQuery(
+    workspaceId,
+    provider,
+    authId,
+    campaignId,
+    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'product' },
+    {
+      enabled: commonEnabled,
+    },
+  );
+
   const creativesQuery = useGmvMaxCampaignCreativesQuery(
     workspaceId,
     provider,
     authId,
     campaignId,
-    undefined,
+    { ...metricsParams, advertiser_id: advertiserId || undefined, level: 'creative' },
     {
       enabled: commonEnabled && isDashboardTab,
     },
@@ -1023,12 +1037,18 @@ export default function GmvMaxCampaignDetailPage() {
   });
 
   const syncMetricsMutation = useSyncGmvMaxMetricsMutation(workspaceId, provider, authId, campaignId, {
-    onSuccess: () => metricsQuery.refetch(),
+    onSuccess: () => {
+      campaignMetricsQuery.refetch();
+      productMetricsQuery.refetch();
+      creativeMetricsQuery.refetch();
+    },
   });
   const applyActionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
       campaignQuery.refetch();
-      metricsQuery.refetch();
+      campaignMetricsQuery.refetch();
+      productMetricsQuery.refetch();
+      creativeMetricsQuery.refetch();
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'action-logs'] });
     },
   });
@@ -1071,16 +1091,17 @@ export default function GmvMaxCampaignDetailPage() {
     [campaignQuery.data],
   );
 
-  const metricsSummary = useMemo(() => summarizeMetrics(metricsQuery.data?.report), [
-    metricsQuery.data,
-  ]);
+  const metricsSummary = useMemo(
+    () => summarizeMetrics(campaignMetricsQuery.data?.report),
+    [campaignMetricsQuery.data],
+  );
   const trendSeries = useMemo(
-    () => buildTrendSeries(metricsQuery.data?.report),
-    [metricsQuery.data],
+    () => buildTrendSeries(campaignMetricsQuery.data?.report),
+    [campaignMetricsQuery.data],
   );
   const productTable = useMemo(
-    () => buildDimensionTable(metricsQuery.data?.report, 'item_group_id'),
-    [metricsQuery.data],
+    () => buildDimensionTable(productMetricsQuery.data?.report, 'product_id'),
+    [productMetricsQuery.data],
   );
   const creatives = useMemo(
     () =>
@@ -1876,9 +1897,13 @@ export default function GmvMaxCampaignDetailPage() {
               </button>
             </div>
           </div>
-          {metricsQuery.isFetching ? <Loading text="数据加载中…" /> : null}
-          {metricsQuery.error ? (
-            <div className="gmvmax-error">{metricsQuery.error.message || '数据加载失败'}</div>
+          {campaignMetricsQuery.isFetching || productMetricsQuery.isFetching ? (
+            <Loading text="数据加载中…" />
+          ) : null}
+          {campaignMetricsQuery.error || productMetricsQuery.error ? (
+            <div className="gmvmax-error">
+              {(campaignMetricsQuery.error || productMetricsQuery.error)?.message || '数据加载失败'}
+            </div>
           ) : null}
 
           <div className="gmvmax-summary__cards gmvmax-summary__cards--muted">
@@ -2022,6 +2047,11 @@ export default function GmvMaxCampaignDetailPage() {
                                 <div>
                                   <div className="gmvmax-creatives__label">{creative.name}</div>
                                   <div className="gmvmax-creatives__id">ID: {creative.creativeId}</div>
+                                  {creative.metadata?.product_id ? (
+                                    <div className="gmvmax-creatives__id">
+                                      商品: {creative.metadata.product_id}
+                                    </div>
+                                  ) : null}
                                 </div>
                               </div>
                             </td>
@@ -2092,7 +2122,7 @@ export default function GmvMaxCampaignDetailPage() {
             <table>
               <thead>
                 <tr>
-                  <th>商品</th>
+                  <th>商品 ID</th>
                   <th>花费</th>
                   <th>GMV</th>
                   <th>订单</th>
@@ -2113,7 +2143,12 @@ export default function GmvMaxCampaignDetailPage() {
                       const rowRoas = row.spend > 0 ? row.gmv / row.spend : null;
                       return (
                         <tr key={row.id}>
-                          <td>{row.name}</td>
+                          <td>
+                            <div>ID: {row.id}</div>
+                            {row.name && row.name !== row.id ? (
+                              <div className="gmvmax-text-muted">{row.name}</div>
+                            ) : null}
+                          </td>
                           <td>${formatMoney(row.spend)}</td>
                           <td>${formatMoney(row.gmv)}</td>
                           <td>{formatNumber(row.orders)}</td>

@@ -14,13 +14,16 @@ from typing import Final
 # Metrics documented under "Metrics in GMV Max Campaign reports". Keeping the
 # list explicit helps us gate-keep unsupported/typoed names before calling the
 # upstream API, which otherwise responds with 40002 errors.
-GMVMAX_SUPPORTED_METRICS: Final[set[str]] = {
+GMVMAX_BASE_METRICS: Final[tuple[str, ...]] = (
     "cost",
     "net_cost",
     "orders",
     "cost_per_order",
     "gross_revenue",
     "roi",
+)
+
+GMVMAX_PERFORMANCE_METRICS: Final[tuple[str, ...]] = (
     "product_impressions",
     "product_clicks",
     "product_click_rate",
@@ -32,12 +35,19 @@ GMVMAX_SUPPORTED_METRICS: Final[set[str]] = {
     "ad_video_view_rate_p50",
     "ad_video_view_rate_p75",
     "ad_video_view_rate_p100",
+)
+
+GMVMAX_LIVE_METRICS: Final[tuple[str, ...]] = (
     "live_views",
     "live_follows",
     "cost_per_live_view",
     "10_second_live_views",
     "cost_per_10_second_live_view",
-}
+)
+
+GMVMAX_SUPPORTED_METRICS: Final[set[str]] = set(
+    GMVMAX_BASE_METRICS + GMVMAX_PERFORMANCE_METRICS + GMVMAX_LIVE_METRICS
+)
 
 # Some tenants may still send deprecated field names (for example "spend").
 # Explicit aliases allow us to normalize them into supported names without
@@ -47,46 +57,12 @@ GMVMAX_METRIC_ALIASES: Final[dict[str, str]] = {
 }
 
 # Defaults used by both background sync jobs and tenant facing APIs.
-GMVMAX_DEFAULT_METRICS: Final[tuple[str, ...]] = (
-    # Campaign-level reports only support aggregate commerce metrics. Official
-    # API rejects product/video/live specific metrics when dimensions only
-    # contain campaign_id/stat_time_day, so keep defaults limited to the
-    # supported subset to avoid 40002 errors.
-    "cost",
-    "net_cost",
-    "orders",
-    "cost_per_order",
-    "gross_revenue",
-    "roi",
-)
+GMVMAX_DEFAULT_METRICS: Final[tuple[str, ...]] = GMVMAX_BASE_METRICS
 
-# Creative level monitoring needs a wider set because auto-heating relies on
-# click-through/conversion signals.
+# Creative level monitoring currently uses同样的基础指标，后续可在此扩展
 GMVMAX_CREATIVE_METRICS: Final[tuple[str, ...]] = (
-    "title",
-    "item_id",
-    "tt_account_name",
-    "tt_account_profile_image_url",
-    "tt_account_authorization_type",
-    "shop_content_type",
-    "creative_delivery_status",
-    "cost",
-    "net_cost",
-    "orders",
-    "cost_per_order",
-    "gross_revenue",
-    "roi",
-    "product_impressions",
-    "product_clicks",
-    "product_click_rate",
-    "ad_click_rate",
-    "ad_conversion_rate",
-    "ad_video_view_rate_2s",
-    "ad_video_view_rate_6s",
-    "ad_video_view_rate_p25",
-    "ad_video_view_rate_p50",
-    "ad_video_view_rate_p75",
-    "ad_video_view_rate_p100",
+    *GMVMAX_BASE_METRICS,
+    *GMVMAX_PERFORMANCE_METRICS,
 )
 
 
@@ -108,12 +84,8 @@ GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
     },
     GMVMaxReportLevel.PRODUCT: {
         "dimensions": ("campaign_id", "item_group_id", "stat_time_day"),
-        "metrics": (
-            "cost",
-            "net_cost",
-            "orders",
-            "gross_revenue",
-            "roi",
+        "metrics": GMVMAX_DEFAULT_METRICS
+        + (
             "product_impressions",
             "product_clicks",
             "product_click_rate",
@@ -123,18 +95,18 @@ GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
         "max_range": timedelta(days=30),
     },
     GMVMaxReportLevel.CREATIVE: {
-        "dimensions": ("campaign_id", "item_group_id", "item_id"),
+        "dimensions": ("campaign_id", "item_group_id", "item_id", "stat_time_day"),
         "metrics": GMVMAX_CREATIVE_METRICS,
         "max_range": timedelta(days=30),
     },
     GMVMaxReportLevel.ROOM: {
         "dimensions": ("campaign_id", "room_id", "stat_time_day"),
-        "metrics": GMVMAX_DEFAULT_METRICS,
+        "metrics": GMVMAX_DEFAULT_METRICS + GMVMAX_LIVE_METRICS,
         "max_range": timedelta(days=30),
     },
     GMVMaxReportLevel.SESSION: {
         "dimensions": ("campaign_id", "room_id", "duration", "stat_time_day"),
-        "metrics": GMVMAX_DEFAULT_METRICS,
+        "metrics": GMVMAX_DEFAULT_METRICS + GMVMAX_LIVE_METRICS,
         "max_range": timedelta(days=30),
     },
 }
@@ -158,6 +130,9 @@ GMVMAX_DEFAULT_DIMENSIONS: Final[tuple[str, ...]] = (
 
 
 __all__ = [
+    "GMVMAX_BASE_METRICS",
+    "GMVMAX_PERFORMANCE_METRICS",
+    "GMVMAX_LIVE_METRICS",
     "GMVMAX_SUPPORTED_METRICS",
     "GMVMAX_METRIC_ALIASES",
     "GMVMAX_DEFAULT_METRICS",

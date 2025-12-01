@@ -227,26 +227,17 @@ class GMVMaxStoreListData(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-# 维度：商品 GMV Max · 创意层级（带状态标识）
-GMVMAX_CREATIVE_DIMENSIONS = ["campaign_id", "item_group_id", "item_id"]
-
-# 指标：属性 + 投放 + 广告表现
-GMVMAX_CREATIVE_METRICS = [
-    # 属性指标
-    "title",
-    "item_id",
-    "tt_account_name",
-    "tt_account_profile_image_url",
-    "tt_account_authorization_type",
-    "shop_content_type",
-    "creative_delivery_status",
-    # 投放指标
+# 官方确认支持的基础指标集合
+GMVMAX_BASE_METRICS = [
     "cost",
+    "net_cost",
     "orders",
     "cost_per_order",
     "gross_revenue",
     "roi",
-    # 广告表现指标
+]
+
+GMVMAX_PERFORMANCE_METRICS = [
     "product_impressions",
     "product_clicks",
     "product_click_rate",
@@ -259,6 +250,40 @@ GMVMAX_CREATIVE_METRICS = [
     "ad_video_view_rate_p75",
     "ad_video_view_rate_p100",
 ]
+
+# 注意：campaign 级只用基础指标，避免 dataset 不支持时报 40002
+GMVMAX_CAMPAIGN_METRICS = list(GMVMAX_BASE_METRICS)
+
+# product 级别带上「曝光/点击/CTR/点击率/转化率」（不带完播率）
+GMVMAX_PRODUCT_METRICS = list(
+    dict.fromkeys(
+        list(GMVMAX_BASE_METRICS)
+        + [
+            "product_impressions",
+            "product_clicks",
+            "product_click_rate",
+            "ad_click_rate",
+            "ad_conversion_rate",
+        ]
+    )
+)
+
+# creative 级别带上全部曝光/点击/完播率指标
+GMVMAX_CREATIVE_METRICS = list(
+    dict.fromkeys(list(GMVMAX_BASE_METRICS) + list(GMVMAX_PERFORMANCE_METRICS))
+)
+
+GMVMAX_DIMENSIONS_BY_LEVEL = {
+    "campaign": ["campaign_id", "stat_time_day"],
+    "product": ["campaign_id", "item_group_id", "stat_time_day"],
+    "creative": ["campaign_id", "item_group_id", "item_id", "stat_time_day"],
+}
+
+GMVMAX_METRICS_BY_LEVEL = {
+    "campaign": GMVMAX_CAMPAIGN_METRICS,
+    "product": GMVMAX_PRODUCT_METRICS,
+    "creative": GMVMAX_CREATIVE_METRICS,
+}
 
 
 class GMVMaxMetricsLevel(str, Enum):
@@ -1407,8 +1432,14 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             store_ids=store_ids,
             start_date=start_date,
             end_date=end_date,
-            metrics=list(request.metrics or GMVMAX_CREATIVE_METRICS),
-            dimensions=list(request.dimensions or GMVMAX_CREATIVE_DIMENSIONS),
+            metrics=list(
+                request.metrics
+                or GMVMAX_METRICS_BY_LEVEL[GMVMaxMetricsLevel.CREATIVE.value]
+            ),
+            dimensions=list(
+                request.dimensions
+                or GMVMAX_DIMENSIONS_BY_LEVEL[GMVMaxMetricsLevel.CREATIVE.value]
+            ),
             gmv_max_promotion_types=filtering_model.gmv_max_promotion_types,
             campaign_ids=filtering_model.campaign_ids,
             item_group_ids=filtering_model.item_group_ids,
@@ -1546,6 +1577,11 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         """Build a GMV Max report request for the given level and execute it."""
 
         level_value = GMVMaxMetricsLevel(level)
+        try:
+            metrics = GMVMAX_METRICS_BY_LEVEL[level_value.value]
+            dimensions = GMVMAX_DIMENSIONS_BY_LEVEL[level_value.value]
+        except KeyError as exc:
+            raise ValueError(f"unsupported GMV Max metrics level: {level}") from exc
         base_kwargs = dict(
             advertiser_id=advertiser_id,
             store_ids=[store_id],
@@ -1556,26 +1592,13 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             gmv_max_promotion_types=["PRODUCT"],
         )
 
-        if level_value is GMVMaxMetricsLevel.CAMPAIGN:
-            request = GMVMaxReportGetRequest(
-                metrics=GMVMAX_CAMPAIGN_METRICS,
-                dimensions=["campaign_id", "stat_time_day"],
-                **base_kwargs,
-            )
-        elif level_value is GMVMaxMetricsLevel.PRODUCT:
-            request = GMVMaxReportGetRequest(
-                metrics=GMVMAX_PRODUCT_METRICS,
-                dimensions=["campaign_id", "item_group_id", "stat_time_day"],
-                item_group_ids=list(item_group_ids) if item_group_ids else None,
-                **base_kwargs,
-            )
-        else:
-            request = GMVMaxReportGetRequest(
-                metrics=GMVMAX_CREATIVE_METRICS,
-                dimensions=GMVMAX_CREATIVE_DIMENSIONS,
-                item_group_ids=list(item_group_ids) if item_group_ids else None,
-                **base_kwargs,
-            )
+        request_kwargs = dict(
+            metrics=metrics,
+            dimensions=dimensions,
+            item_group_ids=list(item_group_ids) if item_group_ids else None,
+            **base_kwargs,
+        )
+        request = GMVMaxReportGetRequest(**request_kwargs)
 
         return await self.gmv_max_report_get(request)
 
