@@ -32,6 +32,7 @@ export function buildMenus(session) {
           { to: '/platform/apis',        label: 'API 管理' },
           { to: '/platform/email',       label: '邮件服务器' },
           { to: '/platform/kie-ai',      label: 'KIE AI 接入' },
+          { to: '/platform/yt-dlp-cookies', label: 'yt-dlp Cookies 管理' },
         ],
       },
     ];

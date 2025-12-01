@@ -23,6 +23,7 @@ from app.features.platform.router_tasks import router as platform_tasks_router
 from app.features.platform.router_platform_policies import router as platform_policies_router
 from app.features.platform.kie_ai.routes import router as platform_kie_ai_router
 from app.features.platform.router_email import router as platform_email_router
+from app.features.platform.router_yt_dlp_cookies import router as platform_yt_dlp_cookies_router
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_policies_router)
     app.include_router(platform_kie_ai_router)
     app.include_router(platform_email_router)
+    app.include_router(platform_yt_dlp_cookies_router)
 
     # Tenant routes
     app.include_router(tenant_users_router)
