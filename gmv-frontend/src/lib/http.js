@@ -6,10 +6,17 @@ function isCanceledRequest(error) {
 
   if (typeof axios.isCancel === 'function' && axios.isCancel(error)) return true;
   if (error.code === 'ERR_CANCELED') return true;
-  if (error.name === 'CanceledError') return true;
+  if (error.name === 'CanceledError' || error.name === 'CancelledError' || error.name === 'AbortError') {
+    return true;
+  }
 
   const message = String(error.message || '').toLowerCase();
-  if (message.includes('aborted') || message.includes('abort') || message.includes('canceled')) {
+  if (
+    message.includes('aborted') ||
+    message.includes('abort') ||
+    message.includes('canceled') ||
+    message.includes('cancelled')
+  ) {
     return true;
   }
 
@@ -58,11 +65,10 @@ function emitHttpError(type, message, context) {
       detail,
       cancelable: true,
     });
-    const cancelled = !window.dispatchEvent(event) || event.defaultPrevented;
-    if (!cancelled && typeof window.alert === 'function') {
-      window.alert(message);
-    }
-  } else {
+    window.dispatchEvent(event);
+  }
+
+  if (console?.error) {
     console.error('[http]', message, context);
   }
 }
