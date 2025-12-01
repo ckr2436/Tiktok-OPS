@@ -10,7 +10,14 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Optional
 from uuid import uuid4
 
-from playwright.async_api import Browser, BrowserContext, Error, Page, async_playwright
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    Error,
+    Page,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+)
 
 from app.data.db import SessionLocal
 from app.services import video_site_cookies
@@ -142,7 +149,15 @@ class YtDlpLoginSessionManager:
             if site == "tiktok":
                 qr_image = await self._prepare_tiktok_login(page)
             else:
-                await page.goto(LOGIN_URLS[site], wait_until="networkidle")
+                try:
+                    await page.goto(
+                        LOGIN_URLS[site], wait_until="networkidle", timeout=20000
+                    )
+                except PlaywrightTimeoutError as exc:  # noqa: PERF203
+                    raise LoginFlowError(
+                        "Login page navigation timed out, please check server network/region",
+                        status_code=502,
+                    ) from exc
                 await self._enter_qr_mode(site, page)
                 await page.wait_for_timeout(1200)
                 screenshot = await page.screenshot(full_page=True)
@@ -153,7 +168,15 @@ class YtDlpLoginSessionManager:
             raise
 
     async def _prepare_tiktok_login(self, page: Page) -> str:
-        response = await page.goto(LOGIN_URLS["tiktok"], wait_until="networkidle")
+        try:
+            response = await page.goto(
+                LOGIN_URLS["tiktok"], wait_until="networkidle", timeout=20000
+            )
+        except PlaywrightTimeoutError as exc:  # noqa: PERF203
+            raise LoginFlowError(
+                "TikTok QR login timed out, please check server network / region access.",
+                status_code=502,
+            ) from exc
         status = response.status if response else None
         if not status or status >= 400:
             raise LoginFlowError(
