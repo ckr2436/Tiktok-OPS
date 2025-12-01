@@ -84,6 +84,20 @@ function buildUiMessage(error) {
   return serverMessage || '请求失败，请稍后再试。';
 }
 
+function isGmvMaxMetricsFilterError(error) {
+  const status = error?.response?.status;
+  if (status !== 422) return false;
+  const messageSource =
+    error?.response?.data?.detail || error?.response?.data?.message || error?.message || '';
+  const message = String(messageSource).toLowerCase();
+  const matchesDetail =
+    message.includes('item level metrics requires at least 1 campaign_id filter') ||
+    message.includes('creative level metrics requires at least 1 campaign_id and 1 item_group_id');
+  if (!matchesDetail) return false;
+  const url = error?.config?.url || '';
+  return typeof url === 'string' && url.includes('/gmvmax/') && url.includes('/metrics');
+}
+
 function shouldRetryGet(error) {
   const config = error?.config;
   if (!config) return false;
@@ -153,6 +167,10 @@ http.interceptors.response.use(
       requestId,
       response: error?.response?.data,
     });
+
+    if (isGmvMaxMetricsFilterError(error)) {
+      return Promise.reject(error);
+    }
 
     if (status === 401 || status === 403) {
       emitHttpError('auth', uiMessage, { status, requestId, error });
