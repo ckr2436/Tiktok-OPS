@@ -55,9 +55,7 @@ def list_gmvmax_campaigns(
         .filter(TTBGmvMaxCampaign.store_id == str(store_id))
     )
 
-    if include_deleted:
-        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(True))
-    else:
+    if not include_deleted:
         query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False))
         query = query.filter(_exclude_blocked_secondary_statuses())
         query = query.filter(_allowed_operation_status_clause())

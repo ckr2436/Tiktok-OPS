@@ -286,8 +286,8 @@ def test_list_campaigns_filters_deleted_flag(db_session):
         include_deleted=True,
     )
 
-    assert deleted_total == 1
-    assert [item.campaign_id for item in deleted_items] == ["cmp-deleted"]
+    assert deleted_total == 2
+    assert {item.campaign_id for item in deleted_items} == {"cmp-active", "cmp-deleted"}
 
 
 def test_list_campaigns_does_not_require_matching_auth(db_session):

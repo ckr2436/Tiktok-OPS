@@ -34,6 +34,7 @@ import {
   DEFAULT_REPORT_METRICS,
   getProductIdentifier,
   getStoreLabel,
+  isCampaignDeleted,
 } from './gmvMaxOverview/helpers.js';
 
 const MIN_MONITORING_INTERVAL = 10;
@@ -1207,6 +1208,11 @@ export default function GmvMaxCampaignDetailPage() {
     () => deriveCampaignMetadata(campaignQuery.data),
     [campaignQuery.data],
   );
+  const isDeleted = useMemo(
+    () => isCampaignDeleted(campaignQuery.data?.campaign || campaignQuery.data),
+    [campaignQuery.data],
+  );
+  const isReadOnly = isDeleted;
 
   const metricsSummary = useMemo(
     () => summarizeMetrics(campaignMetricsQuery.data?.report),
@@ -1336,6 +1342,7 @@ export default function GmvMaxCampaignDetailPage() {
   const clearProducts = useCallback(() => setProductSelection(new Set()), []);
 
   const handleSaveProducts = useCallback(async () => {
+    if (isReadOnly) return;
     if (!sessionId) {
       setProductMessage('无法更新商品：缺少 session 信息');
       return;
@@ -1350,7 +1357,7 @@ export default function GmvMaxCampaignDetailPage() {
     };
     setProductMessage('');
     await updateProductsMutation.mutateAsync(payload);
-  }, [campaignStoreId, identityList, productSelection, sessionId, storeIdFromQuery, updateProductsMutation]);
+  }, [campaignStoreId, identityList, isReadOnly, productSelection, sessionId, storeIdFromQuery, updateProductsMutation]);
 
   const handleTabChange = useCallback(
     (tab) => {
@@ -1393,9 +1400,10 @@ export default function GmvMaxCampaignDetailPage() {
   }, [customRange.end, customRange.start, searchParams, setSearchParams, timeRange]);
 
   const handleSyncMetrics = useCallback(async () => {
+    if (isReadOnly) return;
     await ensureFresh();
     syncMetricsMutation.mutate({ start_date: metricsParams.start_date, end_date: metricsParams.end_date });
-  }, [ensureFresh, metricsParams.end_date, metricsParams.start_date, syncMetricsMutation]);
+  }, [ensureFresh, isReadOnly, metricsParams.end_date, metricsParams.start_date, syncMetricsMutation]);
 
   const handleToggleCreativeStatus = useCallback((status) => {
     setCreativeStatusFilters((prev) => {
@@ -1413,39 +1421,44 @@ export default function GmvMaxCampaignDetailPage() {
     async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
       if (!creativeId || creativeActionMutation.isPending) return;
+      if (isReadOnly) return;
       await ensureFresh();
       creativeActionMutation.mutate({ type: 'boost', creative_id: creativeId });
     },
-    [creativeActionMutation, ensureFresh],
+    [creativeActionMutation, ensureFresh, isReadOnly],
   );
 
   const handleStopHeat = useCallback(
     async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
       if (!creativeId || creativeActionMutation.isPending) return;
+      if (isReadOnly) return;
       await ensureFresh();
       creativeActionMutation.mutate({ type: 'stop_heat', creative_id: creativeId });
     },
-    [creativeActionMutation, ensureFresh],
+    [creativeActionMutation, ensureFresh, isReadOnly],
   );
 
   const handlePause = useCallback(async () => {
+    if (isReadOnly) return;
     await ensureFresh();
     await applyActionMutation.mutateAsync({ type: 'pause' });
-  }, [applyActionMutation, ensureFresh]);
+  }, [applyActionMutation, ensureFresh, isReadOnly]);
 
   const handleResume = useCallback(async () => {
+    if (isReadOnly) return;
     await ensureFresh();
     await applyActionMutation.mutateAsync({ type: 'resume' });
-  }, [applyActionMutation, ensureFresh]);
+  }, [applyActionMutation, ensureFresh, isReadOnly]);
 
   const handleDelete = useCallback(() => {
+    if (isReadOnly) return;
     const confirmed = window.confirm('确定删除该系列？此操作无法恢复。');
     if (!confirmed) return;
     ensureFresh()
       .then(() => applyActionMutation.mutateAsync({ type: 'delete' }))
       .catch(() => {});
-  }, [applyActionMutation, ensureFresh]);
+  }, [applyActionMutation, ensureFresh, isReadOnly]);
 
   const openBudgetDialog = useCallback((mode) => {
     setBudgetDialog({ open: true, mode });
@@ -1457,6 +1470,7 @@ export default function GmvMaxCampaignDetailPage() {
 
   const handleBudgetSubmit = useCallback(
     (percent) => {
+      if (isReadOnly) return;
       const payload = {
         type: 'update_budget',
         payload: {
@@ -1469,7 +1483,7 @@ export default function GmvMaxCampaignDetailPage() {
         .catch(() => {});
       closeBudgetDialog();
     },
-    [applyActionMutation, budgetDialog.mode, closeBudgetDialog, ensureFresh],
+    [applyActionMutation, budgetDialog.mode, closeBudgetDialog, ensureFresh, isReadOnly],
   );
 
   const openActionLogs = useCallback(() => {
@@ -1526,11 +1540,13 @@ export default function GmvMaxCampaignDetailPage() {
   }, [strategyQuery.data]);
 
   const handleStrategySave = useCallback(() => {
+    if (isReadOnly) return;
     setLastSaveMessage('');
     updateStrategyMutation.mutate(buildStrategyPayload(strategyDraft));
-  }, [strategyDraft, updateStrategyMutation]);
+  }, [isReadOnly, strategyDraft, updateStrategyMutation]);
 
   const handleStrategyPreview = useCallback(() => {
+    if (isReadOnly) return;
     const payload = {
       store_id: storeIdFromQuery || campaignMetadata.storeId,
       shopping_ads_type: campaignMetadata.shoppingAdsType,
@@ -1542,11 +1558,13 @@ export default function GmvMaxCampaignDetailPage() {
       automation: buildStrategyPayload(strategyDraft),
     };
     previewStrategyMutation.mutate(payload);
-  }, [campaignMetadata, previewStrategyMutation, storeIdFromQuery, strategyDraft]);
+  }, [campaignMetadata, isReadOnly, previewStrategyMutation, storeIdFromQuery, strategyDraft]);
 
   const latestPreviewResult = previewStrategyMutation.data;
 
-  const statusLabel = determineStatusLabel(campaignMetadata.status);
+  const statusLabel = isDeleted
+    ? GmvMaxTexts.statusDeleted || '已删除'
+    : determineStatusLabel(campaignMetadata.status);
   const spend = metricsSummary.spend || 0;
   const gmv = metricsSummary.gmv || 0;
   const roas = spend > 0 ? gmv / spend : null;
@@ -1633,35 +1651,35 @@ export default function GmvMaxCampaignDetailPage() {
           <button
             type="button"
             onClick={handlePause}
-            disabled={applyActionMutation.isPending || isEnsuringFresh}
+            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
           >
             暂停
           </button>
           <button
             type="button"
             onClick={handleResume}
-            disabled={applyActionMutation.isPending || isEnsuringFresh}
+            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
           >
             启用
           </button>
           <button
             type="button"
             onClick={handleDelete}
-            disabled={applyActionMutation.isPending || isEnsuringFresh}
+            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
           >
             删除
           </button>
           <button
             type="button"
             onClick={() => openBudgetDialog('increase')}
-            disabled={applyActionMutation.isPending || isEnsuringFresh}
+            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
           >
             提升预算
           </button>
           <button
             type="button"
             onClick={() => openBudgetDialog('decrease')}
-            disabled={applyActionMutation.isPending || isEnsuringFresh}
+            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
           >
             降低预算
           </button>
@@ -1685,6 +1703,12 @@ export default function GmvMaxCampaignDetailPage() {
       ) : null}
       {notifications.error ? (
         <div className="gmvmax-error">{notifications.error.message || '通知刷新失败'}</div>
+      ) : null}
+
+      {isReadOnly ? (
+        <div className="gmvmax-status-banner gmvmax-status-banner--muted">
+          该 GMV Max 系列已在远端删除，当前为只读视图。
+        </div>
       ) : null}
 
       <section className="gmvmax-summary">
@@ -1902,13 +1926,13 @@ export default function GmvMaxCampaignDetailPage() {
               {lastSaveMessage ? <span>{lastSaveMessage}</span> : null}
             </div>
             <div className="gmvmax-automation__footer-actions">
-              <button type="button" onClick={handleStrategyReset} disabled={!strategyDirty}>
+              <button type="button" onClick={handleStrategyReset} disabled={isReadOnly || !strategyDirty}>
                 重置
               </button>
               <button
                 type="button"
                 onClick={handleStrategyPreview}
-                disabled={previewStrategyMutation.isPending}
+                disabled={previewStrategyMutation.isPending || isReadOnly}
               >
                 预览
               </button>
@@ -1916,7 +1940,7 @@ export default function GmvMaxCampaignDetailPage() {
                 type="button"
                 className="primary"
                 onClick={handleStrategySave}
-                disabled={updateStrategyMutation.isPending || !strategyDirty}
+                disabled={updateStrategyMutation.isPending || !strategyDirty || isReadOnly}
               >
                 {updateStrategyMutation.isPending ? '保存中…' : '保存配置'}
               </button>
@@ -1957,7 +1981,7 @@ export default function GmvMaxCampaignDetailPage() {
             storeNames={storeNameMap}
             loading={productsQuery.isLoading || productsQuery.isFetching}
             emptyMessage="暂无可管理的商品。"
-            disabled={updateProductsMutation.isPending}
+            disabled={updateProductsMutation.isPending || isReadOnly}
             onSelectAll={selectAllProducts}
             onClearAll={clearProducts}
             searchTerm={productSearch}
@@ -1965,13 +1989,17 @@ export default function GmvMaxCampaignDetailPage() {
           />
           <div className="gmvmax-products__actions">
             <span>已选 {productSelection.size} 个商品</span>
-            <button type="button" onClick={() => setProductSelection(new Set(initialProductSet))}>
+            <button
+              type="button"
+              onClick={() => setProductSelection(new Set(initialProductSet))}
+              disabled={isReadOnly}
+            >
               重置
             </button>
             <button
               type="button"
               className="primary"
-              disabled={!productsChanged || updateProductsMutation.isPending}
+              disabled={!productsChanged || updateProductsMutation.isPending || isReadOnly}
               onClick={handleSaveProducts}
             >
               保存商品
@@ -2018,7 +2046,7 @@ export default function GmvMaxCampaignDetailPage() {
                 type="button"
                 className="gmvmax-button gmvmax-button--secondary"
                 onClick={handleSyncMetrics}
-                disabled={syncMetricsMutation.isPending}
+                disabled={syncMetricsMutation.isPending || isReadOnly}
               >
                 {syncMetricsMutation.isPending ? '同步中…' : '同步数据'}
               </button>
@@ -2225,7 +2253,7 @@ export default function GmvMaxCampaignDetailPage() {
                                       type="button"
                                       className="gmvmax-button gmvmax-button--ghost"
                                       onClick={() => handleStopHeat(creative)}
-                                      disabled={creativeActionMutation.isPending}
+                                      disabled={creativeActionMutation.isPending || isReadOnly}
                                     >
                                       停止加热
                                     </button>
@@ -2234,7 +2262,7 @@ export default function GmvMaxCampaignDetailPage() {
                                       type="button"
                                       className="gmvmax-button gmvmax-button--ghost"
                                       onClick={() => handleBoostCreative(creative)}
-                                      disabled={creativeActionMutation.isPending}
+                                      disabled={creativeActionMutation.isPending || isReadOnly}
                                     >
                                       加热
                                     </button>

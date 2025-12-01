@@ -847,6 +847,7 @@ def _mark_missing_snapshot_campaigns_as_deleted(
         .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
         .where(TTBGmvMaxCampaign.auth_id == auth_id)
         .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+        .where(TTBGmvMaxCampaign.is_deleted.is_(False))
     )
     if store_scope:
         delete_stmt = delete_stmt.where(
@@ -1701,6 +1702,9 @@ def upsert_campaign_from_api(
 
     result.auth_id = auth_id
     result.advertiser_id = normalized_advertiser
+    if result.is_deleted:
+        result.is_deleted = False
+        result.deleted_at = None
     name_value = _extract_field_from_sources(
         ("campaign_name", "name"), payload, campaign_details
     )

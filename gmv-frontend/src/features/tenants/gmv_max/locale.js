@@ -78,6 +78,7 @@ export const GmvMaxTexts = {
   statusRunning: '投放中',
   statusPaused: '已暂停',
   statusEnded: '已结束',
+  statusDeleted: '已删除',
   statusUnknown: '未知状态',
   toggleEnableTooltip: '启动系列',
   togglePauseTooltip: '暂停系列',

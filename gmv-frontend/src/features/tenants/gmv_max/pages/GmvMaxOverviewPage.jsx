@@ -1251,11 +1251,16 @@ export default function GmvMaxOverviewPage() {
     const metricMap = metricsByCampaign || new Map();
     return filteredCampaignCards.map((card) => {
       const campaignId = card.campaign?.campaign_id || card.campaign?.id;
+      const deleted = isCampaignDeleted(card.campaign);
       const statusMeta = getCampaignStatusMeta(
         card.campaign?.operation_status ||
           card.campaign?.status ||
           card.detail?.campaign?.operation_status ||
           card.detail?.campaign?.status,
+        {
+          isDeleted: deleted,
+          deletedLabel: GmvMaxTexts.statusDeleted || '已删除',
+        },
       );
       const createdAt =
         Date.parse(card.campaign?.created_time || card.campaign?.create_time || card.campaign?.createdAt || '') ||
@@ -1263,6 +1268,7 @@ export default function GmvMaxOverviewPage() {
         0;
       return {
         ...card,
+        isDeleted: deleted,
         statusMeta,
         createdAt,
         storeName: resolveStoreName(card.campaign),
@@ -1969,7 +1975,16 @@ export default function GmvMaxOverviewPage() {
                     return (
                       <li key={campaignId}>
                         <div className="gmvmax-series-name">{name}</div>
-                        <span className="gmvmax-deleted-label">{GmvMaxTexts.statusEnded}</span>
+                        <span className="gmvmax-deleted-label">{GmvMaxTexts.statusDeleted}</span>
+                        <div className="gmvmax-series-actions">
+                          <button
+                            type="button"
+                            className="gmvmax-button gmvmax-button--secondary"
+                            onClick={() => handleDashboard(campaignId)}
+                          >
+                            {GmvMaxTexts.viewData}
+                          </button>
+                        </div>
                       </li>
                     );
                   })}
