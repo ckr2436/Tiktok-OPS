@@ -1638,7 +1638,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             enable_total_metrics=False,
         )
 
-        inject_promotion_types = level_value is not GMVMaxMetricsLevel.CREATIVE
+        inject_promotion_types = level_value is GMVMaxMetricsLevel.CAMPAIGN
         if inject_promotion_types:
             base_kwargs["gmv_max_promotion_types"] = ["PRODUCT"]
 

@@ -81,6 +81,13 @@ function formatMoney(value) {
   });
 }
 
+function formatRoas(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toFixed(2);
+}
+
 function parseOptionalNumber(value) {
   if (value === '' || value === undefined || value === null) return undefined;
   const parsed = Number(value);
@@ -115,7 +122,8 @@ function parseCreativeMetrics(metrics) {
   const orders = Number(metrics.orders ?? metrics.total_orders ?? metrics.conversions ?? 0) || 0;
   const ctr = metrics.ctr ?? metrics.click_through_rate ?? (impressions > 0 ? clicks / impressions : 0);
   const cpc = metrics.cpc ?? metrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
-  const roas = metrics.roas ?? metrics.roi ?? (spend > 0 ? gmv / spend : 0);
+  const roasValue = metrics.roas ?? metrics.roi ?? (spend > 0 ? gmv / spend : 0);
+  const roas = Number(roasValue) || 0;
   return { impressions, clicks, spend, gmv, orders, ctr, cpc, roas };
 }
 
@@ -1532,7 +1540,7 @@ export default function GmvMaxCampaignDetailPage() {
     { label: '花费', value: `$${formatMoney(spend)}` },
     { label: 'GMV', value: `$${formatMoney(gmv)}` },
     { label: '订单', value: formatNumber(metricsSummary.orders) },
-    { label: 'ROAS', value: roas === null ? '—' : roas.toFixed(2) },
+    { label: 'ROAS', value: formatRoas(roas) },
   ];
 
   const strategyHighlights = useMemo(() => {
@@ -2179,7 +2187,7 @@ export default function GmvMaxCampaignDetailPage() {
                             <td>{formatNumber(metrics.orders)}</td>
                             <td>${formatMoney(metrics.spend)}</td>
                             <td>${formatMoney(metrics.gmv)}</td>
-                            <td>{metrics.roas ? metrics.roas.toFixed(2) : '—'}</td>
+                            <td>{formatRoas(metrics.roas)}</td>
                             <td>
                               <div className="gmvmax-tag-list">
                                 {boosting ? (
