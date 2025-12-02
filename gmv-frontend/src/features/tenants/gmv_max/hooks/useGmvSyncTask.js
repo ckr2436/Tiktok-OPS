@@ -20,13 +20,6 @@ function isTerminalState(state) {
   return TERMINAL_STATES.includes(state);
 }
 
-function normalizeStatusUrl(statusUrl) {
-  if (!statusUrl) return null;
-  if (statusUrl.startsWith('/api/v1')) return statusUrl;
-  if (statusUrl.startsWith('/')) return `/api/v1${statusUrl}`;
-  return `/api/v1/${statusUrl}`;
-}
-
 function getStorageKey(workspaceId, provider, authId) {
   if (!workspaceId || !provider || !authId) return '';
   return `${STORAGE_PREFIX}:${workspaceId}:${provider}:${authId}`;
@@ -73,11 +66,11 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   useEffect(() => {
     if (!storageKey) return;
     const persisted = restoreTask(storageKey);
-    if (persisted?.statusUrl) {
-      setStatusUrl(persisted.statusUrl);
-      setLastTaskId(persisted.taskId || null);
-      setLastState('PENDING');
-    }
+    if (!persisted?.statusUrl) return;
+
+    setStatusUrl(persisted.statusUrl);
+    setLastTaskId(persisted.taskId || null);
+    setLastState('PENDING');
   }, [storageKey]);
 
   useEffect(() => {
@@ -158,8 +151,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
     queryKey: ['gmvmax-sync-task', statusUrl],
     queryFn: () => {
       if (!statusUrl) return Promise.resolve(null);
-      const normalizedUrl = normalizeStatusUrl(statusUrl);
-      return http.get(normalizedUrl).then((response) => response?.data ?? response ?? null);
+      return http.get(statusUrl).then((response) => response?.data ?? response ?? null);
     },
     enabled: Boolean(statusUrl),
     refetchInterval: (data) => {
@@ -177,10 +169,12 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       }
     },
     onError: (pollError) => {
-      setError(pollError);
+      setLastState('FAILURE');
       setStatusUrl(null);
+      setError(pollError);
       onFailure?.(pollError);
     },
+    retry: false,
   });
 
   const isSyncing = useMemo(() => {
