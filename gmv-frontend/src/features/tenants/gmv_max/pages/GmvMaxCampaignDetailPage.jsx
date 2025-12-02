@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 
 import FormField from '@/components/ui/FormField.jsx';
@@ -16,10 +17,11 @@ import {
   useGmvMaxMetricsQuery,
   useGmvMaxStrategyQuery,
   usePreviewGmvMaxStrategyMutation,
-  useSyncGmvMaxMetricsMutation,
   useUpdateGmvMaxStrategyMutation,
+  composeMetricsQueryBaseKey,
 } from '../hooks/gmvMaxQueries.js';
 import { useEnsureFreshGmvData } from '../hooks/useGmvSyncTask.js';
+import { useGmvMaxMetricsSync } from '../hooks/useGmvMaxMetricsSync.js';
 import useGmvMaxNotifications from '../hooks/useGmvMaxNotifications.js';
 import { GmvMaxTexts } from '../locale.js';
 import ActionLogsTable from '../components/ActionLogsTable.jsx';
@@ -1158,27 +1160,28 @@ export default function GmvMaxCampaignDetailPage() {
     enabled: commonEnabled,
   });
 
-  const syncMetricsMutation = useSyncGmvMaxMetricsMutation(workspaceId, provider, authId, campaignId, {
-    onSuccess: () => {
-      campaignMetricsQuery.refetch();
-      productMetricsQuery.refetch();
-      creativeMetricsQuery.refetch();
-    },
-  });
+  const metricsSync = useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId });
   const applyActionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
       campaignQuery.refetch();
-      campaignMetricsQuery.refetch();
-      productMetricsQuery.refetch();
-      creativeMetricsQuery.refetch();
+      queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+        exact: false,
+      });
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'action-logs'] });
     },
   });
   const creativeActionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-metrics'] });
+      queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+        exact: false,
+      });
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-heating'] });
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaign-creatives'] });
+      queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+        exact: false,
+      });
     },
   });
   const updateProductsMutation = useUpdateGmvMaxStrategyMutation(workspaceId, provider, authId, campaignId, {
@@ -1404,27 +1407,30 @@ export default function GmvMaxCampaignDetailPage() {
   }, [customRange.end, customRange.start, searchParams, setSearchParams, timeRange]);
 
   const handleSyncMetrics = useCallback(async () => {
-    if (isReadOnly) return;
-    await ensureFresh();
-    await syncMetricsMutation.mutateAsync({
-      start_date: metricsParams.start_date,
-      end_date: metricsParams.end_date,
-    });
-    await Promise.all([
-      campaignMetricsQuery.refetch(),
-      productMetricsQuery.refetch(),
-      creativeMetricsQuery.refetch(),
-    ]);
+    if (isReadOnly || metricsSync.isSyncing) return;
+    try {
+      await ensureFresh();
+      await metricsSync.startSyncAsync({
+        start_date: metricsParams.start_date,
+        end_date: metricsParams.end_date,
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to sync GMV Max metrics', error);
+    }
   }, [
-    campaignMetricsQuery,
-    creativeMetricsQuery,
     ensureFresh,
     isReadOnly,
+    metricsSync,
     metricsParams.end_date,
     metricsParams.start_date,
-    productMetricsQuery,
-    syncMetricsMutation,
   ]);
+
+  useEffect(() => {
+    if (metricsSync.syncError) {
+      message.error(metricsSync.syncError.message || 'GMV Max 数据同步失败，请稍后重试。');
+    }
+  }, [metricsSync.syncError]);
 
   const handleToggleCreativeStatus = useCallback((status) => {
     setCreativeStatusFilters((prev) => {
@@ -2067,9 +2073,9 @@ export default function GmvMaxCampaignDetailPage() {
                 type="button"
                 className="gmvmax-button gmvmax-button--secondary"
                 onClick={handleSyncMetrics}
-                disabled={syncMetricsMutation.isPending || isReadOnly}
+                disabled={metricsSync.isSyncing || isReadOnly}
               >
-                {syncMetricsMutation.isPending ? '同步中…' : '同步数据'}
+                {metricsSync.isSyncing ? '同步中…' : '同步数据'}
               </button>
             </div>
           </div>
