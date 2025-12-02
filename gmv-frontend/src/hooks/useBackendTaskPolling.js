@@ -75,9 +75,16 @@ export function useBackendTaskPolling({
     retry: false,
   });
 
+  const normalizedState = normalizeTaskState(taskQuery.data?.state || taskQuery.data?.status);
+  const isTerminal = TERMINAL_STATES.includes(normalizedState);
+
   return {
     task: taskQuery.data,
-    isPolling: Boolean(effectiveStatusUrl && taskQuery.isFetching),
+    isPolling: Boolean(
+      effectiveStatusUrl &&
+        !isTerminal &&
+        (taskQuery.isFetching || taskQuery.isRefetching || taskQuery.isPending),
+    ),
     error: taskQuery.error,
   };
 }

@@ -47,7 +47,15 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
-  const clearStatusUrl = useCallback(() => setStatusUrl(null), []);
+  const clearStatusUrl = useCallback(() => {
+    setStatusUrl(null);
+    setLastTaskId(null);
+  }, []);
+
+  const resetTaskTracking = useCallback(() => {
+    setLastState(null);
+    clearStatusUrl();
+  }, [clearStatusUrl]);
 
   const queryClient = useQueryClient();
 
@@ -77,6 +85,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const handleSuccess = useCallback(
     async (task) => {
       const normalizedState = normalizeTaskState(task?.state || task?.status);
+      setLastTaskId(task?.task_id || task?.taskId || lastTaskId || null);
       setLastState(normalizedState || null);
       clearStatusUrl();
       setError(null);
@@ -86,12 +95,13 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       });
       onSuccess?.(task);
     },
-    [authId, clearStatusUrl, onSuccess, provider, queryClient, workspaceId],
+    [authId, clearStatusUrl, lastTaskId, onSuccess, provider, queryClient, workspaceId],
   );
 
   const handleFailure = useCallback(
     (task, message) => {
       const normalizedState = normalizeTaskState(task?.state || task?.status || "FAILURE");
+      setLastTaskId(task?.task_id || task?.taskId || lastTaskId || null);
       setLastState(normalizedState || null);
       clearStatusUrl();
       const errorMessage = message || formatError(task?.error) || "同步失败，请稍后再试。";
@@ -99,7 +109,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       setError(syncError);
       onFailure?.(syncError);
     },
-    [clearStatusUrl, onFailure],
+    [clearStatusUrl, lastTaskId, onFailure],
   );
 
   const handleTerminalState = useCallback(
@@ -121,6 +131,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       }
 
       setError(null);
+      resetTaskTracking();
 
       try {
         const response = await startMutation.mutateAsync(payload);
@@ -149,7 +160,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
         throw syncError;
       }
     },
-    [authId, handleTerminalState, onFailure, provider, startMutation, workspaceId],
+    [authId, handleTerminalState, onFailure, provider, resetTaskTracking, startMutation, workspaceId],
   );
 
   const { task, isPolling } = useBackendTaskPolling({
