@@ -13,14 +13,13 @@ import {
   useGmvMaxCampaignQuery,
   useProductsQuery,
   useGmvMaxCreativeHeatingQuery,
-  useGmvMaxCreativeMetricsQuery,
-  useGmvMaxMetricsQuery,
   useGmvMaxStrategyQuery,
   usePreviewGmvMaxStrategyMutation,
   useUpdateGmvMaxStrategyMutation,
   composeMetricsQueryBaseKey,
 } from '../hooks/gmvMaxQueries.js';
 import { useEnsureFreshGmvData } from '../hooks/useGmvSyncTask.js';
+import { useGmvMaxMetrics } from '../hooks/useGmvMaxMetrics.js';
 import { useGmvMaxMetricsSync } from '../hooks/useGmvMaxMetricsSync.js';
 import useGmvMaxNotifications from '../hooks/useGmvMaxNotifications.js';
 import { GmvMaxTexts } from '../locale.js';
@@ -992,56 +991,24 @@ export default function GmvMaxCampaignDetailPage() {
     [],
   );
 
-  const campaignMetricsQuery = useGmvMaxMetricsQuery(
+  const {
+    campaignMetrics: campaignMetricsQuery,
+    productMetrics: productMetricsQuery,
+    creativeMetrics: creativeMetricsQuery,
+  } = useGmvMaxMetrics({
     workspaceId,
     provider,
     authId,
     campaignId,
-    {
-      ...metricsParams,
-      advertiser_id: advertiserId || undefined,
-      level: 'campaign',
-      campaign_id: campaignFilterId || undefined,
-    },
-    {
-      enabled: commonEnabled && productFiltersReady,
-    },
-  );
-
-  const productMetricsQuery = useGmvMaxMetricsQuery(
-    workspaceId,
-    provider,
-    authId,
-    campaignId,
-    {
-      ...metricsParams,
-      advertiser_id: advertiserId || undefined,
-      level: 'product',
-      campaign_id: campaignFilterId || undefined,
-    },
-    {
-      enabled: commonEnabled && productFiltersReady,
-    },
-  );
+    advertiserId,
+    metricsParams,
+    campaignFilterId,
+    itemGroupId,
+    enabled: commonEnabled && productFiltersReady,
+    creativeEnabled: commonEnabled && isDashboardTab && creativeFiltersReady,
+  });
 
   const creativesQuery = useGmvMaxCampaignCreativesQuery(
-    workspaceId,
-    provider,
-    authId,
-    campaignId,
-    {
-      ...metricsParams,
-      advertiser_id: advertiserId || undefined,
-      level: 'creative',
-      campaign_id: campaignFilterId || undefined,
-      item_group_id: itemGroupId || undefined,
-    },
-    {
-      enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
-    },
-  );
-
-  const creativeMetricsQuery = useGmvMaxCreativeMetricsQuery(
     workspaceId,
     provider,
     authId,
