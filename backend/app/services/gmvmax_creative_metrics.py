@@ -16,7 +16,7 @@ from app.data.models.ttb_gmvmax_creative_metrics_10min import (
 from app.providers.tiktok_business.gmvmax_client import TikTokBusinessGMVMaxClient
 from app.services.gmvmax_spec import GMVMaxReportLevel
 from app.services.ttb_gmvmax import (
-    _list_campaign_product_ids,
+    get_item_group_ids_for_campaign,
     fetch_gmvmax_report_by_level,
 )
 
@@ -74,7 +74,7 @@ async def sync_creative_metrics_10min_for_campaign(
     start_date: date,
     end_date: date,
 ) -> dict[str, Any]:
-    item_group_ids = _list_campaign_product_ids(session, campaign=campaign)
+    item_group_ids = get_item_group_ids_for_campaign(session, campaign=campaign)
     if not item_group_ids:
         logger.warning(
             "gmvmax creative metrics missing item groups",
