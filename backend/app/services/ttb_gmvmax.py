@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -73,6 +74,7 @@ __all__ = [
     "create_gmvmax_campaign",
     "update_gmvmax_campaign",
     "fetch_gmvmax_report_by_level",
+    "get_item_group_ids_for_campaign",
 ]
 
 
@@ -1222,12 +1224,89 @@ def _list_campaign_product_ids(
         db.execute(
             select(TTBGmvMaxCampaignProduct.item_group_id)
             .where(TTBGmvMaxCampaignProduct.campaign_pk == int(campaign.id))
-            .where(TTBGmvMaxCampaignProduct.store_id == str(campaign.store_id))
+            .where(TTBGmvMaxCampaignProduct.store_id == str(campaign.store_id or ""))
+            .where(TTBGmvMaxCampaignProduct.operation_status == "ENABLE")
         )
         .scalars()
         .all()
     )
     return [item for item in (_normalize_identifier(row) for row in rows) if item]
+
+
+def _extract_item_group_ids_from_campaign_payload(raw_payload: Any) -> list[str]:
+    if not raw_payload:
+        return []
+
+    payload: Mapping[str, Any] | None
+    if isinstance(raw_payload, str):
+        try:
+            payload = json.loads(raw_payload)
+        except Exception:  # noqa: BLE001
+            return []
+    elif isinstance(raw_payload, Mapping):
+        payload = raw_payload
+    else:
+        return []
+
+    item_group_ids: Any = payload.get("item_group_ids")
+    if not item_group_ids:
+        campaign_info = payload.get("_campaign_info")
+        if isinstance(campaign_info, Mapping):
+            item_group_ids = campaign_info.get("item_group_ids")
+
+    if not item_group_ids:
+        return []
+
+    if isinstance(item_group_ids, str):
+        item_group_ids = [item_group_ids]
+
+    normalized = [_normalize_identifier(value) for value in item_group_ids]
+    deduped = list(dict.fromkeys(filter(None, normalized)))
+    return deduped
+
+
+def get_item_group_ids_for_campaign(
+    db: Session, *, campaign: TTBGmvMaxCampaign
+) -> list[str]:
+    """Return item_group_ids for a campaign, backfilling product rows when needed."""
+
+    item_group_ids = _list_campaign_product_ids(db, campaign=campaign)
+    if item_group_ids:
+        return item_group_ids
+
+    raw_item_group_ids = _extract_item_group_ids_from_campaign_payload(campaign.raw_json)
+    if not raw_item_group_ids:
+        return []
+
+    store_id = str(campaign.store_id or "")
+    for item_group_id in raw_item_group_ids:
+        exists = (
+            db.query(TTBGmvMaxCampaignProduct)
+            .filter(
+                TTBGmvMaxCampaignProduct.workspace_id == campaign.workspace_id,
+                TTBGmvMaxCampaignProduct.auth_id == campaign.auth_id,
+                TTBGmvMaxCampaignProduct.campaign_id == campaign.campaign_id,
+                TTBGmvMaxCampaignProduct.store_id == store_id,
+                TTBGmvMaxCampaignProduct.item_group_id == item_group_id,
+            )
+            .first()
+        )
+        if exists:
+            continue
+        db.add(
+            TTBGmvMaxCampaignProduct(
+                workspace_id=campaign.workspace_id,
+                auth_id=campaign.auth_id,
+                campaign_pk=campaign.id,
+                campaign_id=campaign.campaign_id,
+                store_id=store_id,
+                item_group_id=item_group_id,
+                operation_status="ENABLE",
+            )
+        )
+
+    db.flush()
+    return raw_item_group_ids
 
 
 def _lookup_store_id_from_links(
@@ -2382,7 +2461,7 @@ async def sync_gmvmax_reports_for_campaign(
 
     creative_rows = 0
     if _normalize_identifier(campaign.shopping_ads_type) != "LIVE":
-        item_group_ids = _list_campaign_product_ids(db, campaign=campaign)
+        item_group_ids = get_item_group_ids_for_campaign(db, campaign=campaign)
         if item_group_ids:
             creative_rows += await _sync_creative_level_daily(
                 db,
