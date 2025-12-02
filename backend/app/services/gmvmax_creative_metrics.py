@@ -15,7 +15,10 @@ from app.data.models.ttb_gmvmax_creative_metrics_10min import (
 )
 from app.providers.tiktok_business.gmvmax_client import TikTokBusinessGMVMaxClient
 from app.services.gmvmax_spec import GMVMaxReportLevel
-from app.services.ttb_gmvmax import fetch_gmvmax_report_by_level
+from app.services.ttb_gmvmax import (
+    _list_campaign_product_ids,
+    fetch_gmvmax_report_by_level,
+)
 
 logger = logging.getLogger("gmv.services.gmvmax.creative_metrics")
 
@@ -71,6 +74,19 @@ async def sync_creative_metrics_10min_for_campaign(
     start_date: date,
     end_date: date,
 ) -> dict[str, Any]:
+    item_group_ids = _list_campaign_product_ids(session, campaign=campaign)
+    if not item_group_ids:
+        logger.warning(
+            "gmvmax creative metrics missing item groups",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "campaign_id": campaign.campaign_id,
+                "store_id": campaign.store_id,
+            },
+        )
+        return {"rows": 0}
+
     entries = await fetch_gmvmax_report_by_level(
         client,
         advertiser_id=advertiser_id,
@@ -80,7 +96,7 @@ async def sync_creative_metrics_10min_for_campaign(
         level=GMVMaxReportLevel.CREATIVE.value,
         start_date=start_date,
         end_date=end_date,
-        item_group_ids=None,
+        item_group_ids=item_group_ids,
     )
 
     if not entries:

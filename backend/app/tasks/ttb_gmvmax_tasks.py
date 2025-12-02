@@ -22,6 +22,7 @@ from app.services.gmvmax_creative_metrics import (
     latest_creative_metrics_snapshots,
     sync_creative_metrics_10min_for_campaign,
 )
+from app.services.ttb_api import TTBBusinessError
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action,
@@ -586,6 +587,27 @@ def task_gmvmax_sync_creative_metrics_10min_for_campaign(
             },
         )
         return result or {}
+    except TTBBusinessError as exc:
+        db.rollback()
+        code = getattr(exc, "code", None)
+        if code in {"40002", 40002, "GMVMAX_REPORT_ITEM_GROUP_REQUIRED"}:
+            logger.warning(
+                "gmvmax.sync_creative_metrics_10min_for_campaign business error",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign_id,
+                    "schedule_id": schedule_id,
+                    "idempotency_key": idempotency_key,
+                    "run_id": run_id,
+                    "params": params,
+                    "code": code,
+                    "message": str(exc),
+                },
+            )
+            return {"error": str(exc), "code": code}
+        raise
     except Exception:
         db.rollback()
         logger.exception(
