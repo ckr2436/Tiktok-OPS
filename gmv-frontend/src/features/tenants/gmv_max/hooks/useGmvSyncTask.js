@@ -4,10 +4,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { startGmvMaxSync } from "../api/gmvMaxApi.js";
 import { formatError } from "../utils/errors.js";
+import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
 import { useGmvTaskPolling } from "./useGmvTaskPolling.js";
-
-const TASK_QUERY_KEY = (workspaceId, provider, authId) => ["gmvmax-task", workspaceId, provider, authId];
 
 function createSyncError(error) {
   const message = formatError(error) || "同步失败，请稍后再试。";
@@ -84,7 +83,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       setLastTaskId(null);
       setCurrentTaskId(undefined);
       queryClient.removeQueries({
-        queryKey: TASK_QUERY_KEY(workspaceId, provider, authId),
+        queryKey: composeGmvTaskQueryKey(workspaceId, provider, authId),
         exact: false,
       });
     },

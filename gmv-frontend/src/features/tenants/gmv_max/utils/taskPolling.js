@@ -1,9 +1,11 @@
 import http from '@/lib/http.js';
 
-const IDLE_STATES = ['PENDING', 'STARTED', 'RETRY'];
+import { ACTIVE_STATES, normalizeTaskState } from './taskState.js';
+
+const IDLE_STATES = ACTIVE_STATES;
 
 function normalizeState(value) {
-  return String(value || '').toUpperCase();
+  return normalizeTaskState(value);
 }
 
 /**

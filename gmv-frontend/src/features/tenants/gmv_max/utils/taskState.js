@@ -1,8 +1,14 @@
-export const ACTIVE_STATES = ["PENDING", "STARTED"];
+export const ACTIVE_STATES = ["PENDING", "STARTED", "RETRY"];
 export const TERMINAL_STATES = ["SUCCESS", "FAILURE", "REVOKED"];
 
+export function resolveTaskState(raw) {
+  const value = String(raw || "").toUpperCase();
+  if (value === "SUCCEED" || value === "SUCCEEDED") return "SUCCESS";
+  return value;
+}
+
 export function normalizeTaskState(value) {
-  return String(value || "").toUpperCase();
+  return resolveTaskState(value);
 }
 
 export function isActiveTaskState(state) {

@@ -2,6 +2,7 @@ import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getGmvMaxTaskStatus } from "../api/gmvMaxApi.js";
+import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, normalizeTaskState } from "../utils/taskState.js";
 
 const POLLING_INTERVAL_MS = 2000;
@@ -10,7 +11,7 @@ export function useGmvTaskPolling({ taskId, tenantId, provider, authId, onSucces
   const queryClient = useQueryClient();
   const normalizedTaskId = taskId ? String(taskId).trim() : "";
 
-  const queryKey = ["gmvmax-task", tenantId, provider, authId, normalizedTaskId || undefined];
+  const queryKey = composeGmvTaskQueryKey(tenantId, provider, authId, normalizedTaskId || undefined);
 
   return useQuery({
     queryKey,
@@ -20,12 +21,15 @@ export function useGmvTaskPolling({ taskId, tenantId, provider, authId, onSucces
         throw new Error("missing taskId");
       }
       const data = await getGmvMaxTaskStatus(tenantId, provider, authId, normalizedTaskId);
-      return { ...data, state: normalizeTaskState(data?.state) };
+      const state = normalizeTaskState(data?.state || data?.status);
+      return { ...data, state };
     },
-    refetchInterval: (task) => {
+    refetchInterval: (query) => {
+      const task = query?.state?.data;
       if (!task) return POLLING_INTERVAL_MS;
       return isActiveTaskState(task.state) ? POLLING_INTERVAL_MS : false;
     },
+    refetchIntervalInBackground: true,
     retry: 2,
     onSuccess: (task) => {
       if (!task || isActiveTaskState(task.state)) return;
@@ -34,6 +38,8 @@ export function useGmvTaskPolling({ taskId, tenantId, provider, authId, onSucces
       } else {
         onFailure?.(task);
       }
+
+      queryClient.removeQueries({ queryKey, exact: true });
     },
     onError: (error) => {
       const failure = {
@@ -53,6 +59,7 @@ export function useGmvTaskPolling({ taskId, tenantId, provider, authId, onSucces
 
       queryClient.removeQueries({ queryKey, exact: true });
     },
-    select: (task) => (task ? { ...task, state: normalizeTaskState(task.state) } : task),
+    select: (task) =>
+      task ? { ...task, state: normalizeTaskState(task.state || task.status) } : task,
   });
 }
