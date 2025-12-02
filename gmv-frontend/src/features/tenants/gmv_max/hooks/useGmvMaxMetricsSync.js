@@ -1,98 +1,106 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-
-import {
-  normalizeTaskState,
-  useBackendTaskPolling,
-} from "@/hooks/useBackendTaskPolling.js";
 
 import { syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
-import { isActiveTaskState, isTerminalTaskState } from "../utils/taskState.js";
+import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
+import { useGmvTaskPolling } from "./useGmvTaskPolling.js";
+
+const TASK_QUERY_KEY = (workspaceId, provider, authId) => [
+  "gmvmax-task",
+  workspaceId,
+  provider,
+  authId,
+];
+
+function createSyncError(message) {
+  return new Error(message || "GMV Max 数据同步失败，请稍后重试。");
+}
 
 export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId }) {
   const queryClient = useQueryClient();
-  const [statusUrl, setStatusUrl] = useState(null);
+  const [currentTaskId, setCurrentTaskId] = useState();
   const [task, setTask] = useState(null);
   const [taskError, setTaskError] = useState(null);
-  const clearStatusUrl = useCallback(() => setStatusUrl(null), []);
 
-  const resetTask = useCallback(() => {
-    setStatusUrl(null);
-    setTask(null);
-    setTaskError(null);
-  }, []);
-
-  const handleTerminalState = useCallback(
-    (nextTask, message) => {
-      const state = normalizeTaskState(nextTask?.state);
-      if (!isTerminalTaskState(state)) return;
-
-      setTask(nextTask || null);
-      clearStatusUrl();
-
-      if (state === "SUCCESS") {
-        setTaskError(null);
-        queryClient.invalidateQueries({
-          queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
-          exact: false,
-        });
-        return;
-      }
-
-      setTaskError(new Error(message || "GMV Max 数据同步失败，请稍后重试。"));
+  const handleSuccess = useCallback(
+    (nextTask) => {
+      const normalizedState = normalizeTaskState(nextTask?.state || "SUCCESS");
+      setTask(nextTask ? { ...nextTask, state: normalizedState } : null);
+      setTaskError(null);
+      setCurrentTaskId(undefined);
+      queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+        exact: false,
+      });
     },
-    [authId, campaignId, clearStatusUrl, provider, queryClient, workspaceId],
+    [authId, campaignId, provider, queryClient, workspaceId],
   );
+
+  const handleFailure = useCallback((nextTask) => {
+    const normalizedState = normalizeTaskState(nextTask?.state || "FAILURE");
+    setTask(nextTask ? { ...nextTask, state: normalizedState } : null);
+    setCurrentTaskId(undefined);
+    const message = nextTask?.error || nextTask?.message;
+    setTaskError(createSyncError(message));
+  }, []);
 
   const syncMutation = useMutation({
     mutationFn: (payload) => syncGmvMaxMetrics(workspaceId, provider, authId, campaignId, payload),
     onMutate: () => {
       setTaskError(null);
+      setTask(null);
+      setCurrentTaskId(undefined);
+      queryClient.removeQueries({
+        queryKey: TASK_QUERY_KEY(workspaceId, provider, authId),
+        exact: false,
+      });
     },
     onSuccess: (response) => {
-      const nextStatusUrl = response?.status_url || response?.statusUrl || null;
-      const nextState = normalizeTaskState(response?.state);
+      const nextTaskId = response?.task_id || response?.taskId;
+      const nextState = normalizeTaskState(response?.state || "PENDING");
+      const nextTask = { ...response, task_id: nextTaskId, state: nextState };
 
-      setTask(response || null);
+      setTask(nextTask);
 
-      if (nextStatusUrl && isActiveTaskState(nextState)) {
-        setStatusUrl(nextStatusUrl);
+      if (nextTaskId && isActiveTaskState(nextState)) {
+        setCurrentTaskId(nextTaskId);
         return;
       }
 
-      if (nextStatusUrl && !isTerminalTaskState(nextState)) {
-        setStatusUrl(nextStatusUrl);
+      if (isTerminalTaskState(nextState)) {
+        if (nextState === "SUCCESS") {
+          handleSuccess(nextTask);
+        } else {
+          handleFailure(nextTask);
+        }
+        return;
       }
 
-      if (isTerminalTaskState(nextState)) {
-        handleTerminalState({ ...response, state: nextState });
+      if (!nextTaskId) {
+        handleFailure({ ...nextTask, error: "GMV Max 同步任务创建失败：缺少 taskId" });
       }
     },
     onError: (error) => {
-      setTaskError(error);
-      clearStatusUrl();
+      setTaskError(error instanceof Error ? error : createSyncError());
+      setCurrentTaskId(undefined);
     },
   });
 
-  const { task: polledTask, isPolling, error: pollingError } = useBackendTaskPolling({
-    statusUrl,
-    intervalMs: 2000,
-    clearStatusUrl,
-    onSuccess: (data) => handleTerminalState(data),
-    onFailure: (data, message) => handleTerminalState(data || { state: "FAILURE" }, message),
+  const { data: polledTask, isFetching: isPolling } = useGmvTaskPolling({
+    taskId: currentTaskId,
+    tenantId: workspaceId,
+    provider,
+    authId,
+    onSuccess: handleSuccess,
+    onFailure: handleFailure,
   });
-
-  useEffect(() => {
-    resetTask();
-  }, [campaignId, provider, authId, workspaceId, resetTask]);
 
   const isSyncing = useMemo(() => {
     if (syncMutation.isPending) return true;
-    if (!statusUrl) return false;
     const state = normalizeTaskState(polledTask?.state || task?.state);
-    return isActiveTaskState(state) && !pollingError;
-  }, [pollingError, polledTask?.state, statusUrl, syncMutation.isPending, task?.state]);
+    return Boolean(currentTaskId && isActiveTaskState(state));
+  }, [currentTaskId, polledTask?.state, syncMutation.isPending, task?.state]);
 
   const startSync = useCallback(
     (payload) => {
@@ -115,9 +123,9 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     startSyncAsync,
     isSyncing,
     isCreatingTask: syncMutation.isPending,
-    isPolling: Boolean(statusUrl && (isPolling || isActiveTaskState(polledTask?.state))),
+    isPolling: Boolean(currentTaskId && isPolling),
     syncState: polledTask?.state || task?.state || (syncMutation.isPending ? "PENDING" : undefined),
-    syncError: taskError || syncMutation.error || pollingError,
+    syncError: taskError || syncMutation.error,
     task: polledTask || task,
   };
 }

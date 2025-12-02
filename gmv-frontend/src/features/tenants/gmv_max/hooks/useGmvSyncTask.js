@@ -1,203 +1,160 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { useBackendTaskPolling, normalizeTaskState } from "@/hooks/useBackendTaskPolling.js";
-
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { startGmvMaxSync } from "../api/gmvMaxApi.js";
 import { formatError } from "../utils/errors.js";
-import {
-  isActiveTaskState,
-  isTerminalTaskState,
-} from "../utils/taskState.js";
+import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
+import { useGmvTaskPolling } from "./useGmvTaskPolling.js";
 
-const STORAGE_PREFIX = 'gmvmax:syncTask';
+const TASK_QUERY_KEY = (workspaceId, provider, authId) => ["gmvmax-task", workspaceId, provider, authId];
 
-function getStorageKey(workspaceId, provider, authId) {
-  if (!workspaceId || !provider || !authId) return '';
-  return `${STORAGE_PREFIX}:${workspaceId}:${provider}:${authId}`;
-}
-
-function persistTask(storageKey, task) {
-  if (!storageKey || typeof window === 'undefined') return;
-  try {
-    if (!task) {
-      window.localStorage?.removeItem(storageKey);
-      return;
-    }
-    window.localStorage?.setItem(storageKey, JSON.stringify(task));
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('Failed to persist GMV Max sync task', err);
-  }
-}
-
-function restoreTask(storageKey) {
-  if (!storageKey || typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage?.getItem(storageKey);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('Failed to restore GMV Max sync task', err);
-    return null;
-  }
+function createSyncError(error) {
+  const message = formatError(error) || "同步失败，请稍后再试。";
+  return new Error(message);
 }
 
 export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFailure }) {
-  const [statusUrl, setStatusUrl] = useState(null);
+  const queryClient = useQueryClient();
+  const [currentTaskId, setCurrentTaskId] = useState();
   const [lastTaskId, setLastTaskId] = useState(null);
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
-  const clearStatusUrl = useCallback(() => {
-    setStatusUrl(null);
-    setLastTaskId(null);
-  }, []);
 
-  const resetTaskTracking = useCallback(() => {
-    setLastState(null);
-    clearStatusUrl();
-  }, [clearStatusUrl]);
+  const handleSuccess = useCallback(
+    async (task) => {
+      const normalizedState = normalizeTaskState(task?.state || "SUCCESS");
+      const resolvedTaskId = task?.task_id || task?.taskId || currentTaskId || lastTaskId || null;
+      setLastTaskId(resolvedTaskId);
+      setLastState(normalizedState);
+      setCurrentTaskId(undefined);
+      setError(null);
+      setLastSyncedAt(Date.now());
+      await queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, "all"),
+        exact: false,
+      });
+      onSuccess?.(task);
+    },
+    [authId, currentTaskId, lastTaskId, onSuccess, provider, queryClient, workspaceId],
+  );
 
-  const queryClient = useQueryClient();
+  const handleFailure = useCallback(
+    (task) => {
+      const normalizedState = normalizeTaskState(task?.state || "FAILURE");
+      const resolvedTaskId = task?.task_id || task?.taskId || currentTaskId || lastTaskId || null;
+      setLastTaskId(resolvedTaskId);
+      setLastState(normalizedState);
+      setCurrentTaskId(undefined);
+      const syncError = task instanceof Error ? task : createSyncError(task?.error || task?.message || task);
+      setError(syncError);
+      onFailure?.(syncError);
+    },
+    [currentTaskId, lastTaskId, onFailure],
+  );
 
-  const storageKey = useMemo(() => getStorageKey(workspaceId, provider, authId), [authId, provider, workspaceId]);
+  const { data: polledTask, isFetching: isPolling } = useGmvTaskPolling({
+    taskId: currentTaskId,
+    tenantId: workspaceId,
+    provider,
+    authId,
+    onSuccess: handleSuccess,
+    onFailure: handleFailure,
+  });
 
   useEffect(() => {
-    if (!storageKey) return;
-    const persisted = restoreTask(storageKey);
-    if (!persisted?.statusUrl) return;
-
-    setStatusUrl(persisted.statusUrl);
-    setLastTaskId(persisted.taskId || null);
-    setLastState('PENDING');
-  }, [storageKey]);
-
-  useEffect(() => {
-    persistTask(storageKey, statusUrl ? { taskId: lastTaskId, statusUrl } : null);
-  }, [lastTaskId, statusUrl, storageKey]);
+    if (!polledTask) return;
+    if (polledTask.task_id) {
+      setLastTaskId(polledTask.task_id);
+    }
+    if (polledTask.state) {
+      setLastState(normalizeTaskState(polledTask.state));
+    }
+  }, [polledTask]);
 
   const startMutation = useMutation({
     mutationFn: (payload) =>
       startGmvMaxSync(workspaceId, payload, {
         params: { provider, auth_id: authId },
       }),
-  });
-
-  const handleSuccess = useCallback(
-    async (task) => {
-      const normalizedState = normalizeTaskState(task?.state || task?.status);
-      setLastTaskId(task?.task_id || task?.taskId || lastTaskId || null);
-      setLastState(normalizedState || null);
-      clearStatusUrl();
+    onMutate: () => {
       setError(null);
-      setLastSyncedAt(Date.now());
-      await queryClient.invalidateQueries({
-        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, "all"),
+      setLastState(null);
+      setLastTaskId(null);
+      setCurrentTaskId(undefined);
+      queryClient.removeQueries({
+        queryKey: TASK_QUERY_KEY(workspaceId, provider, authId),
+        exact: false,
       });
-      onSuccess?.(task);
     },
-    [authId, clearStatusUrl, lastTaskId, onSuccess, provider, queryClient, workspaceId],
-  );
+    onSuccess: async (response) => {
+      const taskId = response?.task_id || response?.taskId;
+      const state = normalizeTaskState(response?.state || "PENDING");
+      const nextTask = { ...response, task_id: taskId, state };
 
-  const handleFailure = useCallback(
-    (task, message) => {
-      const normalizedState = normalizeTaskState(task?.state || task?.status || "FAILURE");
-      setLastTaskId(task?.task_id || task?.taskId || lastTaskId || null);
-      setLastState(normalizedState || null);
-      clearStatusUrl();
-      const errorMessage = message || formatError(task?.error) || "同步失败，请稍后再试。";
-      const syncError = new Error(errorMessage);
-      setError(syncError);
-      onFailure?.(syncError);
-    },
-    [clearStatusUrl, lastTaskId, onFailure],
-  );
+      setLastTaskId(taskId || null);
+      setLastState(state);
 
-  const handleTerminalState = useCallback(
-    async (task, message) => {
-      const normalizedState = normalizeTaskState(task?.state || task?.status);
-      if (!isTerminalTaskState(normalizedState)) return;
-      if (normalizedState === "SUCCESS") {
-        await handleSuccess({ ...task, state: normalizedState });
+      if (taskId && isActiveTaskState(state)) {
+        setCurrentTaskId(taskId);
         return;
       }
-      handleFailure(task ? { ...task, state: normalizedState } : null, message);
-    },
-    [handleFailure, handleSuccess],
-  );
 
-  const startSync = useCallback(
-    async (payload) => {
-      if (!workspaceId || !provider || !authId) {
-        throw new Error('缺少同步所需的账户信息。');
+      if (isTerminalTaskState(state)) {
+        if (state === "SUCCESS") {
+          await handleSuccess(nextTask);
+        } else {
+          handleFailure(nextTask);
+        }
+        return;
       }
 
-      setError(null);
-      resetTaskTracking();
-
-      try {
-        const response = await startMutation.mutateAsync(payload);
-        const taskId = response?.task_id || response?.taskId;
-        const nextStatusUrl = response?.status_url || response?.statusUrl;
-        const initialState = normalizeTaskState(response?.state || 'PENDING');
-
-        if (!taskId && !nextStatusUrl) {
-          throw new Error('同步任务未被创建。');
-        }
-
-        setLastTaskId(taskId || null);
-        setLastState(initialState || null);
-        if (nextStatusUrl && !isTerminalTaskState(initialState)) {
-          setStatusUrl(nextStatusUrl);
-        }
-
-        if (isTerminalTaskState(initialState)) {
-          await handleTerminalState({ ...response, state: initialState });
-        }
-
-        return { state: initialState, taskId };
-      } catch (syncError) {
-        setError(syncError);
-        onFailure?.(syncError);
-        throw syncError;
+      if (!taskId) {
+        handleFailure({ ...nextTask, error: "同步任务未返回 taskId" });
       }
     },
-    [authId, handleTerminalState, onFailure, provider, resetTaskTracking, startMutation, workspaceId],
-  );
-
-  const { task, isPolling } = useBackendTaskPolling({
-    statusUrl,
-    intervalMs: 2000,
-    clearStatusUrl,
-    onSuccess: handleTerminalState,
-    onFailure: (polledTask, message) => {
-      handleFailure(polledTask, message);
+    onError: (mutationError) => {
+      const syncError = mutationError instanceof Error ? mutationError : createSyncError(mutationError);
+      setError(syncError);
+      onFailure?.(syncError);
     },
   });
 
   const isSyncing = useMemo(() => {
-    const state = normalizeTaskState(task?.state || task?.status || lastState);
-    if (!statusUrl) return false;
-    if (!state) return true;
-    if (isTerminalTaskState(state)) return false;
-    return isActiveTaskState(state);
-  }, [lastState, statusUrl, task]);
+    if (startMutation.isPending) return true;
+    const state = normalizeTaskState(polledTask?.state || lastState);
+    return Boolean(currentTaskId && isActiveTaskState(state));
+  }, [currentTaskId, lastState, polledTask?.state, startMutation.isPending]);
 
-  const mutationPending = startMutation.isPending;
+  const startSync = useCallback(
+    async (payload) => {
+      if (!workspaceId || !provider || !authId) {
+        const missingError = new Error("缺少同步所需的账户信息。");
+        setError(missingError);
+        onFailure?.(missingError);
+        return;
+      }
+      if (startMutation.isPending || isSyncing) return;
+      const response = await startMutation.mutateAsync(payload);
+      return {
+        state: normalizeTaskState(response?.state || "PENDING"),
+        taskId: response?.task_id || response?.taskId,
+      };
+    },
+    [authId, isSyncing, onFailure, provider, startMutation, workspaceId],
+  );
 
   return useMemo(
     () => ({
       startSync,
-      isSyncing: isSyncing || mutationPending || isPolling,
+      isSyncing: isSyncing || isPolling,
       lastTaskId,
       lastState,
       lastSyncedAt,
       error,
     }),
-    [error, isPolling, isSyncing, lastState, lastSyncedAt, lastTaskId, mutationPending, startSync],
+    [error, isPolling, isSyncing, lastState, lastSyncedAt, lastTaskId, startSync],
   );
 }
 
@@ -218,6 +175,9 @@ export function useEnsureFreshGmvData({
       if (lastEnsuredRef.current && now - lastEnsuredRef.current < freshnessMs) {
         return true;
       }
+      if (!workspaceId || !provider || !authId) {
+        return false;
+      }
       const normalizedStoreId = storeId ? String(storeId) : undefined;
       const payload = { store_id: normalizedStoreId };
       if (reportParams) {
@@ -233,7 +193,7 @@ export function useEnsureFreshGmvData({
       }
       return false;
     },
-    [freshnessMs, reportParams, storeId, syncTask],
+    [freshnessMs, reportParams, storeId, syncTask, workspaceId, provider, authId],
   );
 
   return {
