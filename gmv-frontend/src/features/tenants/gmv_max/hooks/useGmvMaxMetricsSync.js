@@ -1,22 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { getGmvMaxTaskStatus, syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
+import {
+  normalizeTaskState,
+  TERMINAL_STATES,
+  useBackendTaskPolling,
+} from "@/hooks/useBackendTaskPolling.js";
+
+import { syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 
 const PENDING_STATES = new Set(["PENDING", "STARTED", "RETRY"]);
-const TERMINAL_STATES = new Set(["SUCCESS", "FAILURE", "REVOKED"]);
-
-function normalizeState(value) {
-  return String(value || "").toUpperCase();
-}
 
 function isPending(state) {
-  return PENDING_STATES.has(normalizeState(state));
-}
-
-function isTerminal(state) {
-  return TERMINAL_STATES.has(normalizeState(state));
+  return PENDING_STATES.has(normalizeTaskState(state));
 }
 
 export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId }) {
@@ -24,6 +21,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   const [statusUrl, setStatusUrl] = useState(null);
   const [task, setTask] = useState(null);
   const [taskError, setTaskError] = useState(null);
+  const clearStatusUrl = useCallback(() => setStatusUrl(null), []);
 
   const resetTask = useCallback(() => {
     setStatusUrl(null);
@@ -32,12 +30,12 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   }, []);
 
   const handleTerminalState = useCallback(
-    (nextTask) => {
-      const state = normalizeState(nextTask?.state);
+    (nextTask, message) => {
+      const state = normalizeTaskState(nextTask?.state);
       if (!state) return;
 
       setTask(nextTask || null);
-      setStatusUrl(null);
+      clearStatusUrl();
 
       if (state === "SUCCESS") {
         setTaskError(null);
@@ -48,9 +46,9 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
         return;
       }
 
-      setTaskError(new Error("GMV Max 数据同步失败，请稍后重试。"));
+      setTaskError(new Error(message || "GMV Max 数据同步失败，请稍后重试。"));
     },
-    [authId, campaignId, provider, queryClient, workspaceId],
+    [authId, campaignId, clearStatusUrl, provider, queryClient, workspaceId],
   );
 
   const syncMutation = useMutation({
@@ -60,7 +58,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     },
     onSuccess: (response) => {
       const nextStatusUrl = response?.status_url || response?.statusUrl || null;
-      const nextState = normalizeState(response?.state);
+      const nextState = normalizeTaskState(response?.state);
 
       setTask(response || null);
 
@@ -69,45 +67,26 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
         return;
       }
 
-      if (nextStatusUrl) {
+      if (nextStatusUrl && !TERMINAL_STATES.includes(nextState)) {
         setStatusUrl(nextStatusUrl);
-        return;
       }
 
-      if (isTerminal(nextState)) {
+      if (TERMINAL_STATES.includes(nextState)) {
         handleTerminalState({ ...response, state: nextState });
       }
     },
     onError: (error) => {
       setTaskError(error);
-      setStatusUrl(null);
+      clearStatusUrl();
     },
   });
 
-  const taskKey = useMemo(
-    () => ["gmvMax", "metrics-sync-task", workspaceId, provider, authId, campaignId, statusUrl],
-    [authId, campaignId, provider, statusUrl, workspaceId],
-  );
-
-  const taskQuery = useQuery({
-    queryKey: taskKey,
-    enabled: Boolean(workspaceId && provider && authId && campaignId && statusUrl),
-    queryFn: () => getGmvMaxTaskStatus(workspaceId, provider, authId, statusUrl),
-    refetchInterval: (data) => (isPending(data?.state) ? 2000 : false),
-    retry: false,
-    onSuccess: (data) => {
-      if (!data) return;
-      const state = normalizeState(data.state);
-      if (isTerminal(state)) {
-        handleTerminalState({ ...data, state });
-      } else {
-        setTask({ ...data, state });
-      }
-    },
-    onError: (error) => {
-      setTaskError(error);
-      setStatusUrl(null);
-    },
+  const { task: polledTask, isPolling, error: pollingError } = useBackendTaskPolling({
+    statusUrl,
+    intervalMs: 2000,
+    clearStatusUrl,
+    onSuccess: (data) => handleTerminalState(data),
+    onFailure: (data, message) => handleTerminalState(data || { state: "FAILURE" }, message),
   });
 
   useEffect(() => {
@@ -117,9 +96,9 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   const isSyncing = useMemo(() => {
     if (syncMutation.isPending) return true;
     if (!statusUrl) return false;
-    const state = normalizeState(taskQuery.data?.state || task?.state);
-    return isPending(state) && !taskQuery.isError;
-  }, [statusUrl, syncMutation.isPending, taskQuery.data?.state, taskQuery.isError, task?.state]);
+    const state = normalizeTaskState(polledTask?.state || task?.state);
+    return isPending(state) && !pollingError;
+  }, [pollingError, polledTask?.state, statusUrl, syncMutation.isPending, task?.state]);
 
   const startSync = useCallback(
     (payload) => {
@@ -142,9 +121,9 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     startSyncAsync,
     isSyncing,
     isCreatingTask: syncMutation.isPending,
-    isPolling: Boolean(statusUrl && (taskQuery.isFetching || isPending(taskQuery.data?.state))),
-    syncState: taskQuery.data?.state || task?.state || (syncMutation.isPending ? "PENDING" : undefined),
-    syncError: taskError || syncMutation.error || taskQuery.error,
-    task: taskQuery.data || task,
+    isPolling: Boolean(statusUrl && (isPolling || isPending(polledTask?.state))),
+    syncState: polledTask?.state || task?.state || (syncMutation.isPending ? "PENDING" : undefined),
+    syncError: taskError || syncMutation.error || pollingError,
+    task: polledTask || task,
   };
 }
