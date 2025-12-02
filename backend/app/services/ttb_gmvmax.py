@@ -49,7 +49,7 @@ from app.services.gmvmax_spec import (
     GMVMaxReportLevel,
     GMV_REPORT_CONFIG,
 )
-from app.services.ttb_api import TTBApiError
+from app.services.ttb_api import TTBApiError, TTBBusinessError
 
 
 logger = logging.getLogger("gmv.tenants.gmvmax")
@@ -132,6 +132,18 @@ async def fetch_gmvmax_report_by_level(
     clean_campaign_ids = _sanitize_id_list(campaign_ids)
     clean_item_group_ids = _sanitize_id_list(item_group_ids)
     level_value = GMVMaxMetricsLevel(level)
+
+    if level_value is GMVMaxMetricsLevel.CREATIVE and not clean_item_group_ids:
+        raise TTBBusinessError(
+            "item_group_ids are required for creative level reports",
+            code="GMVMAX_REPORT_ITEM_GROUP_REQUIRED",
+            payload={
+                "campaign_id": campaign_id,
+                "campaign_ids": clean_campaign_ids,
+                "item_group_ids": item_group_ids,
+            },
+        )
+
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
     response = await client.fetch_gmvmax_report(
