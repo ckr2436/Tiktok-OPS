@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import http from '@/lib/http.js';
@@ -10,8 +10,40 @@ import { isTaskInProgress } from '../utils/taskPolling.js';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 40; // ~2 minutes
 
-async function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const normalizeState = (value) => String(value || '').toUpperCase();
+
+const STORAGE_PREFIX = 'gmvmax:syncTask';
+
+function getStorageKey(workspaceId, provider, authId) {
+  if (!workspaceId || !provider || !authId) return '';
+  return `${STORAGE_PREFIX}:${workspaceId}:${provider}:${authId}`;
+}
+
+function persistTask(storageKey, task) {
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    if (!task) {
+      window.localStorage?.removeItem(storageKey);
+      return;
+    }
+    window.localStorage?.setItem(storageKey, JSON.stringify(task));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('Failed to persist GMV Max sync task', err);
+  }
+}
+
+function restoreTask(storageKey) {
+  if (!storageKey || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage?.getItem(storageKey);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('Failed to restore GMV Max sync task', err);
+    return null;
+  }
 }
 
 export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFailure }) {
@@ -20,6 +52,46 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
   const [syncing, setSyncing] = useState(false);
+
+  const timerRef = useRef(null);
+  const taskRef = useRef(null);
+
+  const storageKey = useMemo(() => getStorageKey(workspaceId, provider, authId), [authId, provider, workspaceId]);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const finalizeSuccess = useCallback(
+    (state) => {
+      clearTimer();
+      setSyncing(false);
+      taskRef.current = null;
+      persistTask(storageKey, null);
+      setLastState(state || 'SUCCESS');
+      setLastSyncedAt(Date.now());
+      onSuccess?.();
+    },
+    [clearTimer, onSuccess, storageKey],
+  );
+
+  const finalizeFailure = useCallback(
+    (syncError, state) => {
+      clearTimer();
+      setSyncing(false);
+      taskRef.current = null;
+      persistTask(storageKey, null);
+      if (state) {
+        setLastState(state);
+      }
+      setError(syncError);
+      onFailure?.(syncError);
+    },
+    [clearTimer, onFailure, storageKey],
+  );
 
   const startMutation = useMutation({
     mutationFn: (payload) =>
@@ -43,27 +115,46 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   );
 
   const pollStatus = useCallback(
-    async (statusUrl, taskId, attempt = 0) => {
-      try {
-        const status = await fetchTaskStatus(statusUrl, taskId);
-        const state = String(status?.state || status?.status || '').toUpperCase();
-        setLastState(state || 'PENDING');
+    (statusUrl, taskId, attempt = 0) => {
+      let settled = false;
+      const pollOnce = async (currentAttempt, resolve, reject) => {
+        try {
+          const status = await fetchTaskStatus(statusUrl, taskId);
+          const state = normalizeState(status?.state || status?.status || 'PENDING');
+          setLastState(state || 'PENDING');
 
-        if (!isTaskInProgress(state)) {
-          return { ...status, state };
+          if (!isTaskInProgress(state)) {
+            settled = true;
+            clearTimer();
+            resolve({ ...status, state });
+            return;
+          }
+
+          if (currentAttempt >= MAX_POLL_ATTEMPTS) {
+            settled = true;
+            clearTimer();
+            reject(new Error('GMV Max 数据同步超时，请稍后重试。'));
+            return;
+          }
+
+          clearTimer();
+          timerRef.current = window.setTimeout(
+            () => pollOnce(currentAttempt + 1, resolve, reject),
+            POLL_INTERVAL_MS,
+          );
+        } catch (pollError) {
+          if (settled) return;
+          settled = true;
+          clearTimer();
+          reject(pollError);
         }
+      };
 
-        if (attempt >= MAX_POLL_ATTEMPTS) {
-          throw new Error('同步任务超时，请稍后重试。');
-        }
-
-        await wait(POLL_INTERVAL_MS);
-        return pollStatus(statusUrl, taskId, attempt + 1);
-      } catch (pollError) {
-        throw pollError;
-      }
+      return new Promise((resolve, reject) => {
+        pollOnce(attempt, resolve, reject);
+      });
     },
-    [fetchTaskStatus],
+    [clearTimer, fetchTaskStatus],
   );
 
   const startSync = useCallback(
@@ -74,53 +165,87 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
 
       setError(null);
       setSyncing(true);
+      clearTimer();
 
       try {
         const response = await startMutation.mutateAsync(payload);
         const taskId = response?.task_id || response?.taskId;
         const statusUrl = response?.status_url || response?.statusUrl;
-        const initialState = String(response?.state || '').toUpperCase();
+        const initialState = normalizeState(response?.state || 'PENDING');
 
-        if (!taskId) {
+        if (!taskId && !statusUrl) {
           throw new Error('同步任务未被创建。');
         }
 
-        setLastTaskId(taskId);
+        setLastTaskId(taskId || null);
         setLastState(initialState || 'PENDING');
+        taskRef.current = { taskId, statusUrl };
+        persistTask(storageKey, { taskId, statusUrl });
 
         if (!isTaskInProgress(initialState)) {
-          if (initialState === 'SUCCESS') {
-            setLastSyncedAt(Date.now());
-            onSuccess?.();
-          } else {
-            const message = formatError(response?.error) || '同步失败，请稍后再试。';
-            throw new Error(message);
+          const normalizedState = initialState || 'PENDING';
+          if (normalizedState === 'SUCCESS') {
+            finalizeSuccess(normalizedState);
+            return { state: normalizedState, taskId };
           }
-
-          return { state: initialState || 'PENDING', taskId };
+          const message = formatError(response?.error) || '同步失败，请稍后再试。';
+          const syncError = new Error(message);
+          finalizeFailure(syncError, normalizedState);
+          throw syncError;
         }
 
         const status = await pollStatus(statusUrl, taskId);
-        const finalState = String(status?.state || '').toUpperCase();
+        const finalState = normalizeState(status?.state || '');
 
         if (finalState === 'SUCCESS') {
-          setLastSyncedAt(Date.now());
-          onSuccess?.();
+          finalizeSuccess(finalState);
           return { state: finalState, taskId };
         }
 
         const message = formatError(status?.error) || '同步失败，请稍后再试。';
-        throw new Error(message);
-      } catch (syncError) {
-        setError(syncError);
-        onFailure?.(syncError);
+        const syncError = new Error(message);
+        finalizeFailure(syncError, finalState);
         throw syncError;
-      } finally {
-        setSyncing(false);
+      } catch (syncError) {
+        finalizeFailure(syncError);
+        throw syncError;
       }
     },
-    [authId, onFailure, onSuccess, pollStatus, provider, startMutation, workspaceId],
+    [authId, finalizeFailure, finalizeSuccess, pollStatus, provider, startMutation, storageKey, workspaceId],
   );
+
+  useEffect(() => {
+    if (!storageKey) return undefined;
+    const persisted = restoreTask(storageKey);
+    if (!persisted?.taskId && !persisted?.statusUrl) return undefined;
+
+    setSyncing(true);
+    setError(null);
+    taskRef.current = { ...persisted };
+    setLastTaskId(persisted.taskId || null);
+    setLastState('PENDING');
+
+    pollStatus(persisted.statusUrl, persisted.taskId)
+      .then((status) => {
+        const finalState = normalizeState(status?.state || '');
+        if (finalState === 'SUCCESS') {
+          finalizeSuccess(finalState);
+          return;
+        }
+        const message = formatError(status?.error) || '同步失败，请稍后再试。';
+        const syncError = new Error(message);
+        finalizeFailure(syncError, finalState);
+      })
+      .catch((syncError) => {
+        finalizeFailure(syncError);
+      });
+
+    return () => {
+      clearTimer();
+    };
+  }, [finalizeFailure, finalizeSuccess, pollStatus, storageKey, clearTimer]);
+
+  useEffect(() => () => clearTimer(), [clearTimer]);
 
   return useMemo(
     () => ({
