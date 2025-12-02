@@ -69,7 +69,7 @@ function normalizeIdList(value) {
     .map((item) => (item === undefined || item === null ? '' : String(item).trim()))
     .filter(Boolean)
     .filter((item) => item.toLowerCase() !== 'all');
-  return normalized;
+  return Array.from(new Set(normalized)).sort();
 }
 
 function appendParams(target, params) {
@@ -198,6 +198,16 @@ export async function getGmvMaxSyncStatus(workspaceId, provider, authId, taskId,
     `${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync/${encode(taskId)}`,
     config,
   );
+}
+
+export async function getGmvMaxTaskStatus(workspaceId, provider, authId, taskIdOrUrl, config) {
+  const baseUrl = `${accountPrefix(workspaceId, provider, authId)}/gmvmax/tasks`;
+  const normalizedTask = taskIdOrUrl ? String(taskIdOrUrl).trim() : '';
+  const targetUrl =
+    normalizedTask.startsWith('/') || normalizedTask.startsWith('http')
+      ? normalizedTask
+      : `${baseUrl}/${encode(normalizedTask)}`;
+  return get(targetUrl, config);
 }
 
 export async function listGmvMaxCampaigns(workspaceId, provider, authId, params, config) {
@@ -366,3 +376,5 @@ export async function previewGmvMaxStrategy(workspaceId, provider, authId, campa
     config,
   );
 }
+
+export { normalizeIdList };

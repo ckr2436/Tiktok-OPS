@@ -36,10 +36,42 @@ import {
   updateGmvMaxConfig,
   updateGmvMaxCampaign,
   updateGmvMaxStrategy,
+  normalizeIdList,
 } from '../api/gmvMaxApi.js';
 
 function composeKey(...parts) {
   return ['gmvMax', ...parts];
+}
+
+export function composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId) {
+  return composeKey('metrics', workspaceId, provider, authId, campaignId);
+}
+
+function normalizeMetricsKeyParams(params = {}, campaignId) {
+  const normalized = params ? { ...params } : {};
+  const level = String(normalized.level || '').toLowerCase();
+  const campaignIds = normalizeIdList(normalized.campaign_ids ?? normalized.campaign_id);
+  const itemGroupIds = normalizeIdList(normalized.item_group_ids ?? normalized.item_group_id);
+
+  const needsCampaignFilter = level === 'product' || level === 'creative';
+  if (needsCampaignFilter && campaignIds.length === 0 && campaignId) {
+    campaignIds.push(String(campaignId));
+  }
+
+  return {
+    ...normalized,
+    start_date: normalized.start_date || normalized.startDate || '',
+    end_date: normalized.end_date || normalized.endDate || '',
+    advertiser_id: normalized.advertiser_id ?? normalized.advertiserId ?? '',
+    level,
+    campaign_ids: campaignIds,
+    item_group_ids: itemGroupIds,
+  };
+}
+
+export function composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params) {
+  const normalizedParams = normalizeMetricsKeyParams(params, campaignId);
+  return [...composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId), normalizedParams];
 }
 
 function resolveEnabled(defaultEnabled, extra) {
@@ -197,7 +229,7 @@ export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId
 export function useGmvMaxMetricsQuery(workspaceId, provider, authId, campaignId, params = {}, options = {}) {
   const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
-    queryKey: composeKey('metrics', workspaceId, provider, authId, campaignId, params),
+    queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
     queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
@@ -240,7 +272,7 @@ export function useGmvMaxCampaignCreativesQuery(
 ) {
   const { enabled, ...rest } = options;
   return useQuery({
-    queryKey: composeKey('campaign-creatives', workspaceId, provider, authId, campaignId, params),
+    queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     ...rest,
@@ -278,7 +310,7 @@ export function useGmvMaxCreativeMetricsQuery(
 ) {
   const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
-    queryKey: composeKey('creative-metrics', workspaceId, provider, authId, campaignId, params),
+    queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
     queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,

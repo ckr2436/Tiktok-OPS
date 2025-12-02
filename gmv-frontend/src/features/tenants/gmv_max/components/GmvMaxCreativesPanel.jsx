@@ -11,6 +11,7 @@ import {
   useGmvMaxCreativeMetricsQuery,
   useStartGmvMaxCreativeHeatingMutation,
   useStopGmvMaxCreativeHeatingMutation,
+  composeMetricsQueryBaseKey,
 } from '../hooks/gmvMaxQueries.js';
 import { GmvMaxTexts } from '../locale.js';
 
@@ -293,8 +294,10 @@ function GmvMaxCreativesPanel({ workspaceId, provider, authId, campaignId }) {
 
   const sharedSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-heating'] });
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-metrics'] });
-    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'campaign-creatives'] });
+    queryClient.invalidateQueries({
+      queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+      exact: false,
+    });
   };
   const sharedError = (error) => {
     const errorMessage = error?.message || error?.response?.data?.message || 'Failed to update creative heating.';
