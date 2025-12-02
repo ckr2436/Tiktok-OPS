@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { useBackendTaskPolling, normalizeTaskState, TERMINAL_STATES } from "@/hooks/useBackendTaskPolling.js";
+import { useBackendTaskPolling, normalizeTaskState } from "@/hooks/useBackendTaskPolling.js";
 
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { startGmvMaxSync } from "../api/gmvMaxApi.js";
 import { formatError } from "../utils/errors.js";
+import {
+  isActiveTaskState,
+  isTerminalTaskState,
+} from "../utils/taskState.js";
 
 const STORAGE_PREFIX = 'gmvmax:syncTask';
 
@@ -115,6 +119,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const handleTerminalState = useCallback(
     async (task, message) => {
       const normalizedState = normalizeTaskState(task?.state || task?.status);
+      if (!isTerminalTaskState(normalizedState)) return;
       if (normalizedState === "SUCCESS") {
         await handleSuccess({ ...task, state: normalizedState });
         return;
@@ -145,11 +150,11 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
 
         setLastTaskId(taskId || null);
         setLastState(initialState || null);
-        if (nextStatusUrl && !TERMINAL_STATES.includes(initialState)) {
+        if (nextStatusUrl && !isTerminalTaskState(initialState)) {
           setStatusUrl(nextStatusUrl);
         }
 
-        if (TERMINAL_STATES.includes(initialState)) {
+        if (isTerminalTaskState(initialState)) {
           await handleTerminalState({ ...response, state: initialState });
         }
 
@@ -175,9 +180,10 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
 
   const isSyncing = useMemo(() => {
     const state = normalizeTaskState(task?.state || task?.status || lastState);
-    if (statusUrl && state && !TERMINAL_STATES.includes(state)) return true;
-    if (statusUrl && !state) return true;
-    return false;
+    if (!statusUrl) return false;
+    if (!state) return true;
+    if (isTerminalTaskState(state)) return false;
+    return isActiveTaskState(state);
   }, [lastState, statusUrl, task]);
 
   const mutationPending = startMutation.isPending;
