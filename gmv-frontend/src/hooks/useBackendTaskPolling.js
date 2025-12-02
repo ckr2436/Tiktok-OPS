@@ -2,8 +2,13 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import http from "@/lib/http.js";
+import {
+  isActiveTaskState,
+  isTerminalTaskState,
+  TERMINAL_STATES,
+} from "@/features/tenants/gmv_max/utils/taskState.js";
 
-export const TERMINAL_STATES = ["SUCCESS", "FAILURE", "REVOKED"];
+export { TERMINAL_STATES };
 
 export function normalizeTaskState(value) {
   return String(value || "").toUpperCase();
@@ -51,13 +56,13 @@ export function useBackendTaskPolling({
       if (!effectiveStatusUrl) return false;
       const state = normalizeTaskState(data?.state || data?.status);
       if (!state) return intervalMs;
-      if (!TERMINAL_STATES.includes(state)) return intervalMs;
+      if (isActiveTaskState(state)) return intervalMs;
       return false;
     },
     select: (data) => (data ? { ...data, state: normalizeTaskState(data.state || data.status) } : null),
     onSuccess: (data) => {
       if (!data) return;
-      if (!TERMINAL_STATES.includes(data.state)) return;
+      if (!isTerminalTaskState(data.state)) return;
       clearStatusUrl?.();
       if (data.state === "SUCCESS") {
         onSuccess?.(data);
@@ -76,7 +81,7 @@ export function useBackendTaskPolling({
   });
 
   const normalizedState = normalizeTaskState(taskQuery.data?.state || taskQuery.data?.status);
-  const isTerminal = TERMINAL_STATES.includes(normalizedState);
+  const isTerminal = isTerminalTaskState(normalizedState);
 
   return {
     task: taskQuery.data,

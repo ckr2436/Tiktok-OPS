@@ -3,18 +3,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   normalizeTaskState,
-  TERMINAL_STATES,
   useBackendTaskPolling,
 } from "@/hooks/useBackendTaskPolling.js";
 
 import { syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
-
-const PENDING_STATES = new Set(["PENDING", "STARTED", "RETRY"]);
-
-function isPending(state) {
-  return PENDING_STATES.has(normalizeTaskState(state));
-}
+import { isActiveTaskState, isTerminalTaskState } from "../utils/taskState.js";
 
 export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId }) {
   const queryClient = useQueryClient();
@@ -32,7 +26,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   const handleTerminalState = useCallback(
     (nextTask, message) => {
       const state = normalizeTaskState(nextTask?.state);
-      if (!state) return;
+      if (!isTerminalTaskState(state)) return;
 
       setTask(nextTask || null);
       clearStatusUrl();
@@ -62,16 +56,16 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
 
       setTask(response || null);
 
-      if (nextStatusUrl && isPending(nextState)) {
+      if (nextStatusUrl && isActiveTaskState(nextState)) {
         setStatusUrl(nextStatusUrl);
         return;
       }
 
-      if (nextStatusUrl && !TERMINAL_STATES.includes(nextState)) {
+      if (nextStatusUrl && !isTerminalTaskState(nextState)) {
         setStatusUrl(nextStatusUrl);
       }
 
-      if (TERMINAL_STATES.includes(nextState)) {
+      if (isTerminalTaskState(nextState)) {
         handleTerminalState({ ...response, state: nextState });
       }
     },
@@ -97,7 +91,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     if (syncMutation.isPending) return true;
     if (!statusUrl) return false;
     const state = normalizeTaskState(polledTask?.state || task?.state);
-    return isPending(state) && !pollingError;
+    return isActiveTaskState(state) && !pollingError;
   }, [pollingError, polledTask?.state, statusUrl, syncMutation.isPending, task?.state]);
 
   const startSync = useCallback(
@@ -121,7 +115,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     startSyncAsync,
     isSyncing,
     isCreatingTask: syncMutation.isPending,
-    isPolling: Boolean(statusUrl && (isPolling || isPending(polledTask?.state))),
+    isPolling: Boolean(statusUrl && (isPolling || isActiveTaskState(polledTask?.state))),
     syncState: polledTask?.state || task?.state || (syncMutation.isPending ? "PENDING" : undefined),
     syncError: taskError || syncMutation.error || pollingError,
     task: polledTask || task,
