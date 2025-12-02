@@ -1177,6 +1177,19 @@ export default function GmvMaxOverviewPage() {
     [todayReport],
   );
 
+  const refreshMetrics = useCallback(async () => {
+    const metricsPromises = [];
+    if (typeof overallMetricsQuery.refetch === 'function') {
+      metricsPromises.push(overallMetricsQuery.refetch());
+    }
+    if (typeof todayMetricsQuery.refetch === 'function') {
+      metricsPromises.push(todayMetricsQuery.refetch());
+    }
+    if (metricsPromises.length > 0) {
+      await Promise.all(metricsPromises);
+    }
+  }, [overallMetricsQuery.refetch, todayMetricsQuery.refetch]);
+
   const campaignDetailQueries = useQueries({
     queries: campaignsQueryEnabled
       ? campaigns.map((campaign) => {
@@ -1339,7 +1352,7 @@ export default function GmvMaxOverviewPage() {
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
-  const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
+  const syncTask = useGmvSyncTask({ workspaceId, provider, authId, onSuccess: refreshMetrics });
   const isSyncInProgress = isSyncing || syncTask.isSyncing;
   const syncStatusLabel = useMemo(() => {
     const state = (syncTask.lastState || '').toUpperCase();
@@ -1349,6 +1362,12 @@ export default function GmvMaxOverviewPage() {
     if (state === 'FAILURE' || state === 'REVOKED') return '同步失败';
     return isSyncInProgress ? '同步中…' : '';
   }, [isSyncInProgress, syncTask.lastState]);
+
+  useEffect(() => {
+    if (!syncTask.error) return;
+    const message = formatError(syncTask.error) || '同步失败，请稍后再试。';
+    setSyncError(message);
+  }, [syncTask.error]);
 
   const refreshScopeQueries = useCallback(() => {
     if (!workspaceId || !provider || !authId) {
@@ -1384,7 +1403,7 @@ export default function GmvMaxOverviewPage() {
       },
     };
 
-    const result = await syncTask.runSync(payload);
+    const result = await syncTask.startSync(payload);
     if (result?.state === 'SUCCESS') {
       await refreshScopeQueries();
       return 'SUCCESS';
@@ -1469,16 +1488,7 @@ export default function GmvMaxOverviewPage() {
 
       const finalState = await performCampaignSync();
       if (finalState === 'SUCCESS') {
-        const metricsPromises = [];
-        if (typeof overallMetricsQuery.refetch === 'function') {
-          metricsPromises.push(overallMetricsQuery.refetch());
-        }
-        if (typeof todayMetricsQuery.refetch === 'function') {
-          metricsPromises.push(todayMetricsQuery.refetch());
-        }
-        if (metricsPromises.length > 0) {
-          await Promise.all(metricsPromises);
-        }
+        await refreshMetrics();
         nextNotice = { variant: 'success', message: '同步完成，数据已刷新。' };
       }
     } catch (error) {
@@ -1511,17 +1521,16 @@ export default function GmvMaxOverviewPage() {
     isSyncing,
     lastSyncAt,
     metadataSyncMutation,
-    overallMetricsQuery,
     performCampaignSync,
     productSyncMutation,
     provider,
     queryClient,
+    refreshMetrics,
     savedAdvertiserId,
     savedBusinessCenterId,
     scopeOptionsQuery,
     scopeOptionsQueryKey,
     syncTask,
-    todayMetricsQuery,
     storeId,
     workspaceId,
   ]);
