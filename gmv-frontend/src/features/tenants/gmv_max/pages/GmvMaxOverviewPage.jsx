@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 
@@ -97,6 +97,49 @@ import CreateSeriesModal from './gmvMaxOverview/CreateSeriesModal.jsx';
 import EditSeriesModal from './gmvMaxOverview/EditSeriesModal.jsx';
 import { GmvMaxTexts } from '../locale.js';
 import { useGmvSyncTask } from '../hooks/useGmvSyncTask.js';
+
+class GmvMaxPageErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+    this.handleRetry = this.handleRetry.bind(this);
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('GMV Max overview failed to render', error, errorInfo);
+  }
+
+  handleRetry() {
+    this.setState({ hasError: false, error: null });
+    this.props.onReset?.();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="gmvmax-error-card" role="alert">
+          <div>
+            <h3>GMV Max 模块出现异常</h3>
+            <p>请刷新页面或重试同步。如果问题持续，请联系技术支持。</p>
+          </div>
+          <button
+            type="button"
+            className="gmvmax-button gmvmax-button--primary"
+            onClick={this.handleRetry}
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertiserId }) => {
   if (!config || !storeId) return false;
@@ -1127,6 +1170,13 @@ export default function GmvMaxOverviewPage() {
     [storeId, todayRange],
   );
 
+  const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
+  const isSyncInProgress = isSyncing || syncTask.isSyncing;
+  const shouldFetchMetrics = useMemo(
+    () => Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
+    [authId, campaignsQueryEnabled, isSyncInProgress, storeId, workspaceId],
+  );
+
   const overallMetricsQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
@@ -1138,9 +1188,10 @@ export default function GmvMaxOverviewPage() {
       store_ids: metricsRangeParams.store_ids,
     },
     {
-      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
+      enabled: shouldFetchMetrics,
       staleTime: 60 * 1000,
-      refetchInterval: !isSyncInProgress ? autoRefreshMs : undefined,
+      refetchInterval: shouldFetchMetrics ? autoRefreshMs : undefined,
+      keepPreviousData: true,
     },
   );
   const overallReport =
@@ -1165,9 +1216,10 @@ export default function GmvMaxOverviewPage() {
       store_ids: todayRangeParams.store_ids,
     },
     {
-      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
+      enabled: shouldFetchMetrics,
       staleTime: 60 * 1000,
-      refetchInterval: !isSyncInProgress ? autoRefreshMs : undefined,
+      refetchInterval: shouldFetchMetrics ? autoRefreshMs : undefined,
+      keepPreviousData: true,
     },
   );
   const todayReport =
@@ -1352,8 +1404,6 @@ export default function GmvMaxOverviewPage() {
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
-  const syncTask = useGmvSyncTask({ workspaceId, provider, authId, onSuccess: refreshMetrics });
-  const isSyncInProgress = isSyncing || syncTask.isSyncing;
   const syncStatusLabel = useMemo(() => {
     const state = (syncTask.lastState || '').toUpperCase();
     if (state === 'PENDING') return '排队中…';
@@ -1400,6 +1450,11 @@ export default function GmvMaxOverviewPage() {
       setSyncError(null);
     }
   }, [isSyncInProgress, syncTask.lastState]);
+
+  useEffect(() => {
+    if (syncTask.lastState !== 'SUCCESS' || isSyncInProgress) return;
+    refreshMetrics();
+  }, [isSyncInProgress, refreshMetrics, syncTask.lastState]);
 
   const performCampaignSync = useCallback(async () => {
     const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
@@ -1599,6 +1654,12 @@ export default function GmvMaxOverviewPage() {
     refreshScopeQueries();
   }
 
+  const resetPageError = useCallback(() => {
+    setSyncError(null);
+    setSyncNotice(null);
+    refreshMetrics();
+  }, [refreshMetrics]);
+
   const buildCampaignSearchParams = useCallback(
     (tab) => {
       const params = new URLSearchParams();
@@ -1656,7 +1717,8 @@ export default function GmvMaxOverviewPage() {
   );
 
   return (
-    <div className="gmvmax-page">
+    <GmvMaxPageErrorBoundary onReset={resetPageError}>
+      <div className="gmvmax-page">
       {isSyncInProgress ? (
         <div className="gmvmax-status-banner gmvmax-status-banner--muted">
           {syncStatusLabel || '数据同步中…'}
@@ -2074,6 +2136,7 @@ export default function GmvMaxOverviewPage() {
         storeNameById={storeNameById}
         onUpdated={handleSeriesUpdated}
       />
-    </div>
+      </div>
+    </GmvMaxPageErrorBoundary>
   );
 }
