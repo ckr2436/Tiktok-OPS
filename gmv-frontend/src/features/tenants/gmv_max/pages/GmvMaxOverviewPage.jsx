@@ -1360,6 +1360,7 @@ export default function GmvMaxOverviewPage() {
     if (state === 'STARTED' || state === 'RETRY') return '同步中…';
     if (state === 'SUCCESS') return '同步完成';
     if (state === 'FAILURE' || state === 'REVOKED') return '同步失败';
+    if (state === 'TIMEOUT') return '同步超时';
     return isSyncInProgress ? '同步中…' : '';
   }, [isSyncInProgress, syncTask.lastState]);
 
@@ -1367,6 +1368,7 @@ export default function GmvMaxOverviewPage() {
     if (!syncTask.error) return;
     const message = formatError(syncTask.error) || '同步失败，请稍后再试。';
     setSyncError(message);
+    setSyncNotice(null);
   }, [syncTask.error]);
 
   const refreshScopeQueries = useCallback(() => {
@@ -1382,6 +1384,22 @@ export default function GmvMaxOverviewPage() {
     return Promise.all([invalidateCampaigns, invalidateProducts]);
   }, [authId, provider, queryClient, workspaceId]);
   const canCreateSeries = Boolean(isScopeReady);
+
+  useEffect(() => {
+    if (!syncTask.isSyncing) return;
+    setSyncNotice((prev) =>
+      prev?.variant === 'info'
+        ? prev
+        : { variant: 'info', message: '正在同步 GMV Max 数据，请稍候…' },
+    );
+  }, [syncTask.isSyncing]);
+
+  useEffect(() => {
+    if (!isSyncInProgress && syncTask.lastState === 'SUCCESS') {
+      setSyncNotice({ variant: 'success', message: '同步完成，数据已刷新。' });
+      setSyncError(null);
+    }
+  }, [isSyncInProgress, syncTask.lastState]);
 
   const performCampaignSync = useCallback(async () => {
     const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
@@ -1448,7 +1466,7 @@ export default function GmvMaxOverviewPage() {
     if (syncInFlightRef.current || isSyncing || syncTask.isSyncing) return;
 
     syncInFlightRef.current = true;
-    setSyncNotice(null);
+    setSyncNotice({ variant: 'info', message: '正在同步 GMV Max 数据，请稍候…' });
     setSyncError(null);
     setIsSyncing(true);
     setLastSyncAt(now);
