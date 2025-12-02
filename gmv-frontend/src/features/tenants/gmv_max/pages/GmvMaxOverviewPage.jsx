@@ -1138,9 +1138,9 @@ export default function GmvMaxOverviewPage() {
       store_ids: metricsRangeParams.store_ids,
     },
     {
-      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled),
+      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
       staleTime: 60 * 1000,
-      refetchInterval: autoRefreshMs,
+      refetchInterval: !isSyncInProgress ? autoRefreshMs : undefined,
     },
   );
   const overallReport =
@@ -1165,9 +1165,9 @@ export default function GmvMaxOverviewPage() {
       store_ids: todayRangeParams.store_ids,
     },
     {
-      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled),
+      enabled: Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
       staleTime: 60 * 1000,
-      refetchInterval: autoRefreshMs,
+      refetchInterval: !isSyncInProgress ? autoRefreshMs : undefined,
     },
   );
   const todayReport =
@@ -1340,6 +1340,15 @@ export default function GmvMaxOverviewPage() {
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
+  const isSyncInProgress = isSyncing || syncTask.isSyncing;
+  const syncStatusLabel = useMemo(() => {
+    const state = (syncTask.lastState || '').toUpperCase();
+    if (state === 'PENDING') return '排队中…';
+    if (state === 'STARTED' || state === 'RETRY') return '同步中…';
+    if (state === 'SUCCESS') return '同步完成';
+    if (state === 'FAILURE' || state === 'REVOKED') return '同步失败';
+    return isSyncInProgress ? '同步中…' : '';
+  }, [isSyncInProgress, syncTask.lastState]);
 
   const refreshScopeQueries = useCallback(() => {
     if (!workspaceId || !provider || !authId) {
@@ -1460,6 +1469,16 @@ export default function GmvMaxOverviewPage() {
 
       const finalState = await performCampaignSync();
       if (finalState === 'SUCCESS') {
+        const metricsPromises = [];
+        if (typeof overallMetricsQuery.refetch === 'function') {
+          metricsPromises.push(overallMetricsQuery.refetch());
+        }
+        if (typeof todayMetricsQuery.refetch === 'function') {
+          metricsPromises.push(todayMetricsQuery.refetch());
+        }
+        if (metricsPromises.length > 0) {
+          await Promise.all(metricsPromises);
+        }
         nextNotice = { variant: 'success', message: '同步完成，数据已刷新。' };
       }
     } catch (error) {
@@ -1492,6 +1511,7 @@ export default function GmvMaxOverviewPage() {
     isSyncing,
     lastSyncAt,
     metadataSyncMutation,
+    overallMetricsQuery,
     performCampaignSync,
     productSyncMutation,
     provider,
@@ -1501,6 +1521,7 @@ export default function GmvMaxOverviewPage() {
     scopeOptionsQuery,
     scopeOptionsQueryKey,
     syncTask,
+    todayMetricsQuery,
     storeId,
     workspaceId,
   ]);
@@ -1609,8 +1630,10 @@ export default function GmvMaxOverviewPage() {
 
   return (
     <div className="gmvmax-page">
-      {isSyncing ? (
-        <div className="gmvmax-status-banner gmvmax-status-banner--muted">数据同步中…</div>
+      {isSyncInProgress ? (
+        <div className="gmvmax-status-banner gmvmax-status-banner--muted">
+          {syncStatusLabel || '数据同步中…'}
+        </div>
       ) : null}
       {bindingErrorMessage ? (
         <div className="gmvmax-status-banner gmvmax-status-banner--error gmvmax-status-banner--actions">
@@ -1654,14 +1677,14 @@ export default function GmvMaxOverviewPage() {
             className="gmvmax-button gmvmax-button--primary"
             onClick={performSync}
             disabled={
-              isSyncing ||
+              isSyncInProgress ||
               !isScopeReady ||
               bindingConfigPending ||
               !bindingReady
             }
             title={bindingReady ? undefined : '请先完成店铺-广告主绑定'}
           >
-            {isSyncing ? '同步中…' : '同步数据'}
+            {isSyncInProgress ? syncStatusLabel || '同步中…' : '同步数据'}
           </button>
           <div className="gmvmax-balance-chip">
             <div className="gmvmax-balance-chip__row">
