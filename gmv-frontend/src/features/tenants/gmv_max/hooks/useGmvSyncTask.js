@@ -1,19 +1,25 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
+import http from '@/lib/http.js';
+
 import { startGmvMaxSync, getTaskStatus } from '../api/gmvMaxApi.js';
-import { formatError } from '../pages/gmvMaxOverview/helpers.js';
-import { pollTaskStatus } from '../utils/taskPolling.js';
+import { formatError } from '../utils/errors.js';
+import { isTaskInProgress } from '../utils/taskPolling.js';
 
-const POLL_INTERVAL_MS = 2000;
-const MAX_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 40; // ~2 minutes
 
-export function useGmvSyncTask({ workspaceId, provider, authId }) {
+async function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFailure }) {
   const [lastTaskId, setLastTaskId] = useState(null);
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
-  const inflightRef = useRef(false);
+  const [syncing, setSyncing] = useState(false);
 
   const startMutation = useMutation({
     mutationFn: (payload) =>
@@ -22,99 +28,110 @@ export function useGmvSyncTask({ workspaceId, provider, authId }) {
       }),
   });
 
-  const runSync = useCallback(
+  const fetchTaskStatus = useCallback(
+    async (statusUrl, taskId) => {
+      if (statusUrl) {
+        const response = await http.get(statusUrl);
+        return response?.data ?? response ?? {};
+      }
+      const status = await getTaskStatus(workspaceId, taskId, {
+        params: { provider, auth_id: authId },
+      });
+      return status;
+    },
+    [authId, provider, workspaceId],
+  );
+
+  const pollStatus = useCallback(
+    async (statusUrl, taskId, attempt = 0) => {
+      try {
+        const status = await fetchTaskStatus(statusUrl, taskId);
+        const state = String(status?.state || status?.status || '').toUpperCase();
+        setLastState(state || 'PENDING');
+
+        if (!isTaskInProgress(state)) {
+          return { ...status, state };
+        }
+
+        if (attempt >= MAX_POLL_ATTEMPTS) {
+          throw new Error('同步任务超时，请稍后重试。');
+        }
+
+        await wait(POLL_INTERVAL_MS);
+        return pollStatus(statusUrl, taskId, attempt + 1);
+      } catch (pollError) {
+        throw pollError;
+      }
+    },
+    [fetchTaskStatus],
+  );
+
+  const startSync = useCallback(
     async (payload) => {
       if (!workspaceId || !provider || !authId) {
         throw new Error('缺少同步所需的账户信息。');
       }
-      if (inflightRef.current) {
-        return { state: 'RUNNING', taskId: lastTaskId };
-      }
-      inflightRef.current = true;
+
       setError(null);
+      setSyncing(true);
+
       try {
         const response = await startMutation.mutateAsync(payload);
         const taskId = response?.task_id || response?.taskId;
         const statusUrl = response?.status_url || response?.statusUrl;
         const initialState = String(response?.state || '').toUpperCase();
+
         if (!taskId) {
           throw new Error('同步任务未被创建。');
         }
+
         setLastTaskId(taskId);
         setLastState(initialState || 'PENDING');
 
-        if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(initialState)) {
+        if (!isTaskInProgress(initialState)) {
           if (initialState === 'SUCCESS') {
             setLastSyncedAt(Date.now());
+            onSuccess?.();
+          } else {
+            const message = formatError(response?.error) || '同步失败，请稍后再试。';
+            throw new Error(message);
           }
-          if (initialState === 'SUCCESS') {
-            return { state: initialState, taskId };
-          }
-          const message = formatError(response?.error) || '同步失败，请稍后再试。';
-          throw new Error(message);
+
+          return { state: initialState || 'PENDING', taskId };
         }
 
-        const startTime = Date.now();
-        const pollFn = async () => {
-          if (statusUrl) {
-            return pollTaskStatus(statusUrl, {
-              intervalMs: POLL_INTERVAL_MS,
-              timeoutMs: MAX_TIMEOUT_MS,
-              onProgress: (state) => setLastState(state),
-            });
-          }
-
-          let attempt = 0;
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-            // eslint-disable-next-line no-await-in-loop
-            const status = await getTaskStatus(workspaceId, taskId, {
-              params: { provider, auth_id: authId },
-            });
-            const state = String(status?.state || status?.status || '').toUpperCase();
-            setLastState(state);
-            attempt += 1;
-            if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(state)) {
-              return { ...status, state };
-            }
-            if (Date.now() - startTime > MAX_TIMEOUT_MS) {
-              throw new Error('同步时间较长，请稍后查看任务状态。');
-            }
-          }
-        };
-
-        const status = await pollFn();
+        const status = await pollStatus(statusUrl, taskId);
         const finalState = String(status?.state || '').toUpperCase();
 
-        if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(finalState)) {
-          if (finalState === 'SUCCESS') {
-            setLastSyncedAt(Date.now());
-            return { state: finalState, taskId };
-          }
-          const message = formatError(status?.error) || '同步失败，请稍后再试。';
-          throw new Error(message);
+        if (finalState === 'SUCCESS') {
+          setLastSyncedAt(Date.now());
+          onSuccess?.();
+          return { state: finalState, taskId };
         }
 
-        return { state: finalState || 'PENDING', taskId };
+        const message = formatError(status?.error) || '同步失败，请稍后再试。';
+        throw new Error(message);
+      } catch (syncError) {
+        setError(syncError);
+        onFailure?.(syncError);
+        throw syncError;
       } finally {
-        inflightRef.current = false;
+        setSyncing(false);
       }
     },
-    [authId, lastTaskId, provider, startMutation, workspaceId],
+    [authId, onFailure, onSuccess, pollStatus, provider, startMutation, workspaceId],
   );
 
   return useMemo(
     () => ({
-      runSync,
-      isSyncing: inflightRef.current || startMutation.isPending,
+      startSync,
+      isSyncing: syncing || startMutation.isPending,
       lastTaskId,
       lastState,
       lastSyncedAt,
       error,
     }),
-    [error, lastState, lastSyncedAt, lastTaskId, runSync, startMutation.isPending],
+    [error, lastState, lastSyncedAt, lastTaskId, startMutation.isPending, startSync, syncing],
   );
 }
 
@@ -143,7 +160,7 @@ export function useEnsureFreshGmvData({
           store_ids: reportParams.store_ids || (normalizedStoreId ? [normalizedStoreId] : undefined),
         };
       }
-      const result = await syncTask.runSync(payload);
+      const result = await syncTask.startSync(payload);
       if (result?.state === 'SUCCESS') {
         lastEnsuredRef.current = Date.now();
         return true;
