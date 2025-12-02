@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { startGmvMaxSync } from "../api/gmvMaxApi.js";
 import { formatError } from "../utils/errors.js";
 import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
@@ -31,7 +30,11 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       setError(null);
       setLastSyncedAt(Date.now());
       await queryClient.invalidateQueries({
-        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, "all"),
+        queryKey: ["gmvMax", "metrics", workspaceId, provider, authId],
+        exact: false,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["gmvMax", "campaigns", workspaceId, provider, authId],
         exact: false,
       });
       onSuccess?.(task);
