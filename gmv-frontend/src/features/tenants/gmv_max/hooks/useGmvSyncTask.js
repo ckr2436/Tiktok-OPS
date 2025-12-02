@@ -1,24 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import http from '@/lib/http.js';
+import { useBackendTaskPolling, normalizeTaskState, TERMINAL_STATES } from "@/hooks/useBackendTaskPolling.js";
 
-import { composeMetricsQueryBaseKey } from './gmvMaxQueries.js';
-import { startGmvMaxSync } from '../api/gmvMaxApi.js';
-import { formatError } from '../utils/errors.js';
+import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
+import { startGmvMaxSync } from "../api/gmvMaxApi.js";
+import { formatError } from "../utils/errors.js";
 
 const STORAGE_PREFIX = 'gmvmax:syncTask';
-
-const TERMINAL_STATES = ['SUCCESS', 'FAILURE', 'REVOKED'];
-
-function normalizeState(value) {
-  return String(value || '').toUpperCase();
-}
-
-function isTerminalState(state) {
-  if (!state) return false;
-  return TERMINAL_STATES.includes(state);
-}
 
 function getStorageKey(workspaceId, provider, authId) {
   if (!workspaceId || !provider || !authId) return '';
@@ -58,6 +47,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
+  const clearStatusUrl = useCallback(() => setStatusUrl(null), []);
 
   const queryClient = useQueryClient();
 
@@ -84,28 +74,44 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       }),
   });
 
-  const handleTerminalState = useCallback(
+  const handleSuccess = useCallback(
     async (task) => {
-      const normalizedState = normalizeState(task?.state || task?.status);
+      const normalizedState = normalizeTaskState(task?.state || task?.status);
       setLastState(normalizedState || null);
-      setStatusUrl(null);
+      clearStatusUrl();
+      setError(null);
+      setLastSyncedAt(Date.now());
+      await queryClient.invalidateQueries({
+        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, "all"),
+      });
+      onSuccess?.(task);
+    },
+    [authId, clearStatusUrl, onSuccess, provider, queryClient, workspaceId],
+  );
 
-      if (normalizedState === 'SUCCESS') {
-        setError(null);
-        setLastSyncedAt(Date.now());
-        await queryClient.invalidateQueries({
-          queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, 'all'),
-        });
-        onSuccess?.(task);
-        return;
-      }
-
-      const message = formatError(task?.error) || '同步失败，请稍后再试。';
-      const syncError = new Error(message);
+  const handleFailure = useCallback(
+    (task, message) => {
+      const normalizedState = normalizeTaskState(task?.state || task?.status || "FAILURE");
+      setLastState(normalizedState || null);
+      clearStatusUrl();
+      const errorMessage = message || formatError(task?.error) || "同步失败，请稍后再试。";
+      const syncError = new Error(errorMessage);
       setError(syncError);
       onFailure?.(syncError);
     },
-    [onFailure, onSuccess, provider, queryClient, workspaceId],
+    [clearStatusUrl, onFailure],
+  );
+
+  const handleTerminalState = useCallback(
+    async (task, message) => {
+      const normalizedState = normalizeTaskState(task?.state || task?.status);
+      if (normalizedState === "SUCCESS") {
+        await handleSuccess({ ...task, state: normalizedState });
+        return;
+      }
+      handleFailure(task ? { ...task, state: normalizedState } : null, message);
+    },
+    [handleFailure, handleSuccess],
   );
 
   const startSync = useCallback(
@@ -120,7 +126,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
         const response = await startMutation.mutateAsync(payload);
         const taskId = response?.task_id || response?.taskId;
         const nextStatusUrl = response?.status_url || response?.statusUrl;
-        const initialState = normalizeState(response?.state || 'PENDING');
+        const initialState = normalizeTaskState(response?.state || 'PENDING');
 
         if (!taskId && !nextStatusUrl) {
           throw new Error('同步任务未被创建。');
@@ -128,9 +134,11 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
 
         setLastTaskId(taskId || null);
         setLastState(initialState || null);
-        setStatusUrl(nextStatusUrl || null);
+        if (nextStatusUrl && !TERMINAL_STATES.includes(initialState)) {
+          setStatusUrl(nextStatusUrl);
+        }
 
-        if (isTerminalState(initialState)) {
+        if (TERMINAL_STATES.includes(initialState)) {
           await handleTerminalState({ ...response, state: initialState });
         }
 
@@ -144,42 +152,20 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
     [authId, handleTerminalState, onFailure, provider, startMutation, workspaceId],
   );
 
-  const {
-    data: task,
-    isFetching: isPolling,
-  } = useQuery({
-    queryKey: ['gmvmax-sync-task', statusUrl],
-    queryFn: () => {
-      if (!statusUrl) return Promise.resolve(null);
-      return http.get(statusUrl).then((response) => response?.data ?? response ?? null);
+  const { task, isPolling } = useBackendTaskPolling({
+    statusUrl,
+    intervalMs: 2000,
+    clearStatusUrl,
+    onSuccess: handleTerminalState,
+    onFailure: (polledTask, message) => {
+      handleFailure(polledTask, message);
     },
-    enabled: Boolean(statusUrl),
-    refetchInterval: (data) => {
-      if (!data) return 2000;
-      const state = normalizeState(data?.state || data?.status);
-      if (!isTerminalState(state)) return 2000;
-      return false;
-    },
-    onSuccess: (data) => {
-      if (!data) return;
-      const state = normalizeState(data?.state || data?.status);
-      setLastState(state || null);
-      if (isTerminalState(state)) {
-        handleTerminalState({ ...data, state });
-      }
-    },
-    onError: (pollError) => {
-      setLastState('FAILURE');
-      setStatusUrl(null);
-      setError(pollError);
-      onFailure?.(pollError);
-    },
-    retry: false,
   });
 
   const isSyncing = useMemo(() => {
-    const state = normalizeState(task?.state || task?.status || lastState);
-    if (statusUrl && !isTerminalState(state)) return true;
+    const state = normalizeTaskState(task?.state || task?.status || lastState);
+    if (statusUrl && state && !TERMINAL_STATES.includes(state)) return true;
+    if (statusUrl && !state) return true;
     return false;
   }, [lastState, statusUrl, task]);
 
