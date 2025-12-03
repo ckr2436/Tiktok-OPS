@@ -7,6 +7,12 @@ import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
 import { useGmvTaskPolling } from "./useGmvTaskPolling.js";
 
+function normalizeTaskId(taskId) {
+  if (taskId === undefined || taskId === null) return null;
+  const normalized = String(taskId).trim();
+  return normalized === "" ? null : normalized;
+}
+
 function createSyncError(error) {
   const message = formatError(error) || "同步失败，请稍后再试。";
   return new Error(message);
@@ -22,12 +28,13 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const completionResolversRef = useRef([]);
 
   const resolveCompletion = useCallback((task, isError = false) => {
-    const resolvedTaskId = task?.task_id || task?.taskId || null;
+    const resolvedTaskId = normalizeTaskId(task?.task_id || task?.taskId);
     const matchers = completionResolversRef.current;
     completionResolversRef.current = [];
     matchers.forEach(({ taskId, resolve, reject }) => {
-      if (taskId && resolvedTaskId && taskId !== resolvedTaskId) {
-        completionResolversRef.current.push({ taskId, resolve, reject });
+      const normalizedTaskId = normalizeTaskId(taskId);
+      if (normalizedTaskId && resolvedTaskId && normalizedTaskId !== resolvedTaskId) {
+        completionResolversRef.current.push({ taskId: normalizedTaskId, resolve, reject });
         return;
       }
       if (isError) {
@@ -41,7 +48,8 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const handleSuccess = useCallback(
     async (task) => {
       const normalizedState = normalizeTaskState(task?.state || "SUCCESS");
-      const resolvedTaskId = task?.task_id || task?.taskId || currentTaskId || lastTaskId || null;
+      const resolvedTaskId =
+        normalizeTaskId(task?.task_id || task?.taskId || currentTaskId || lastTaskId) || null;
       setLastTaskId(resolvedTaskId);
       setLastState(normalizedState);
       setCurrentTaskId(undefined);
@@ -64,7 +72,8 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const handleFailure = useCallback(
     (task) => {
       const normalizedState = normalizeTaskState(task?.state || "FAILURE");
-      const resolvedTaskId = task?.task_id || task?.taskId || currentTaskId || lastTaskId || null;
+      const resolvedTaskId =
+        normalizeTaskId(task?.task_id || task?.taskId || currentTaskId || lastTaskId) || null;
       setLastTaskId(resolvedTaskId);
       setLastState(normalizedState);
       setCurrentTaskId(undefined);
@@ -111,7 +120,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       });
     },
     onSuccess: async (response) => {
-      const taskId = response?.task_id || response?.taskId;
+      const taskId = normalizeTaskId(response?.task_id || response?.taskId);
       const state = normalizeTaskState(response?.state || "PENDING");
       const nextTask = { ...response, task_id: taskId, state };
 
@@ -160,7 +169,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       if (startMutation.isPending || isSyncing) return;
       const response = await startMutation.mutateAsync(payload);
       const normalizedState = normalizeTaskState(response?.state || "PENDING");
-      const taskId = response?.task_id || response?.taskId;
+      const taskId = normalizeTaskId(response?.task_id || response?.taskId);
       const completionPromise = new Promise((resolve, reject) => {
         completionResolversRef.current.push({ taskId, resolve, reject });
       });
