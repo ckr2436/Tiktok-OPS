@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
+from app.data.models.gmv_restructured import GmvCampaign
 
 
 _BLOCKED_SECONDARY_STATUSES = {
@@ -24,15 +24,15 @@ def _order_desc_nulls_last(col):
 
 def _allowed_operation_status_clause():
     return or_(
-        TTBGmvMaxCampaign.operation_status.is_(None),
-        TTBGmvMaxCampaign.operation_status != "DELETE",
+        GmvCampaign.operation_status.is_(None),
+        GmvCampaign.operation_status != "DELETE",
     )
 
 
 def _exclude_blocked_secondary_statuses():
     return or_(
-        TTBGmvMaxCampaign.secondary_status.is_(None),
-        TTBGmvMaxCampaign.secondary_status.notin_(tuple(_BLOCKED_SECONDARY_STATUSES)),
+        GmvCampaign.secondary_status.is_(None),
+        GmvCampaign.secondary_status.notin_(tuple(_BLOCKED_SECONDARY_STATUSES)),
     )
 
 
@@ -47,29 +47,29 @@ def list_gmvmax_campaigns(
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[TTBGmvMaxCampaign], int]:
+) -> tuple[list[GmvCampaign], int]:
     query = (
-        db.query(TTBGmvMaxCampaign)
-        .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
-        .filter(TTBGmvMaxCampaign.store_id == str(store_id))
+        db.query(GmvCampaign)
+        .filter(GmvCampaign.workspace_id == int(workspace_id))
+        .filter(GmvCampaign.advertiser_id == str(advertiser_id))
+        .filter(GmvCampaign.store_id == str(store_id))
     )
 
     if not include_deleted:
-        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False))
+        query = query.filter(GmvCampaign.is_deleted.is_(False))
         query = query.filter(_exclude_blocked_secondary_statuses())
         query = query.filter(_allowed_operation_status_clause())
 
     if status_filter:
-        query = query.filter(TTBGmvMaxCampaign.status == status_filter)
+        query = query.filter(GmvCampaign.status == status_filter)
     if search:
         pattern = f"%{search}%"
-        query = query.filter(TTBGmvMaxCampaign.name.ilike(pattern))
+        query = query.filter(GmvCampaign.name.ilike(pattern))
 
     total = query.count()
     offset = (page - 1) * page_size
     items = (
-        query.order_by(*_order_desc_nulls_last(TTBGmvMaxCampaign.ext_created_time))
+        query.order_by(*_order_desc_nulls_last(GmvCampaign.ext_created_time))
         .offset(offset)
         .limit(page_size)
         .all()
