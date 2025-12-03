@@ -40,15 +40,15 @@ import {
 import { normalizeTaskState } from '../utils/taskState.js';
 
 const ALL_CREATIVE_STATUS_KEYS = [
-  'IN_QUEUE',
-  'LEARNING',
   'DELIVERING',
-  'NOT_DELIVERING',
+  'LEARNING',
+  'IN_QUEUE',
   'AUTHORIZATION_NEEDED',
-  'EXCLUDED',
-  'UNAVAILABLE',
-  'REJECTED',
   'NOT_ACTIVE',
+  'NOT_DELIVERING',
+  'EXCLUDED',
+  'REJECTED',
+  'UNAVAILABLE',
 ];
 
 const MIN_MONITORING_INTERVAL = 10;
@@ -128,16 +128,23 @@ function parseCreativeMetrics(metrics) {
       roas: 0,
     };
   }
-  const spend = Number(metrics.cost ?? metrics.net_cost ?? metrics.spend ?? 0) || 0;
-  const gmv = Number(metrics.gross_revenue ?? metrics.gmv ?? metrics.revenue ?? 0) || 0;
-  const clicks = Number(
-    metrics.product_clicks ?? metrics.clicks ?? metrics.total_clicks ?? metrics.ad_clicks ?? 0,
-  ) || 0;
-  const impressions = Number(metrics.product_impressions ?? metrics.impressions ?? metrics.views ?? 0) || 0;
-  const orders = Number(metrics.orders ?? metrics.total_orders ?? metrics.conversions ?? 0) || 0;
-  const ctr = metrics.ctr ?? metrics.click_through_rate ?? (impressions > 0 ? clicks / impressions : 0);
-  const cpc = metrics.cpc ?? metrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
-  const roasValue = metrics.roas ?? metrics.roi ?? (spend > 0 ? gmv / spend : 0);
+  const resolvedMetrics = metrics.metrics ?? metrics.metrics_data ?? metrics.metricsData ?? metrics;
+  const spend = Number(resolvedMetrics.cost ?? resolvedMetrics.net_cost ?? resolvedMetrics.spend ?? 0) || 0;
+  const gmv =
+    Number(resolvedMetrics.gross_revenue ?? resolvedMetrics.gmv ?? resolvedMetrics.revenue ?? 0) || 0;
+  const clicks =
+    Number(
+      resolvedMetrics.product_clicks ?? resolvedMetrics.clicks ?? resolvedMetrics.total_clicks ?? resolvedMetrics.ad_clicks ?? 0,
+    ) || 0;
+  const impressions =
+    Number(resolvedMetrics.product_impressions ?? resolvedMetrics.impressions ?? resolvedMetrics.views ?? 0) || 0;
+  const orders = Number(resolvedMetrics.orders ?? resolvedMetrics.total_orders ?? resolvedMetrics.conversions ?? 0) || 0;
+  const ctr =
+    resolvedMetrics.ctr ??
+    resolvedMetrics.click_through_rate ??
+    (impressions > 0 ? clicks / impressions : 0);
+  const cpc = resolvedMetrics.cpc ?? resolvedMetrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
+  const roasValue = resolvedMetrics.roas ?? resolvedMetrics.roi ?? (spend > 0 ? gmv / spend : 0);
   const roas = Number(roasValue) || 0;
   return { impressions, clicks, spend, gmv, orders, ctr, cpc, roas };
 }
@@ -995,15 +1002,15 @@ export default function GmvMaxCampaignDetailPage() {
   const isProductsTab = activeTab === 'products';
   const creativeStatusOptions = useMemo(
     () => [
-      { key: 'IN_QUEUE', label: GmvMaxTexts.creativeStatusInQueue },
-      { key: 'LEARNING', label: GmvMaxTexts.creativeStatusLearning },
       { key: 'DELIVERING', label: GmvMaxTexts.creativeStatusDelivering },
-      { key: 'NOT_DELIVERING', label: GmvMaxTexts.creativeStatusNotDelivering },
+      { key: 'LEARNING', label: GmvMaxTexts.creativeStatusLearning },
+      { key: 'IN_QUEUE', label: GmvMaxTexts.creativeStatusInQueue },
       { key: 'AUTHORIZATION_NEEDED', label: GmvMaxTexts.creativeStatusAuthorizationNeeded },
-      { key: 'EXCLUDED', label: GmvMaxTexts.creativeStatusExcluded },
-      { key: 'UNAVAILABLE', label: GmvMaxTexts.creativeStatusUnavailable },
-      { key: 'REJECTED', label: GmvMaxTexts.creativeStatusRejected },
       { key: 'NOT_ACTIVE', label: GmvMaxTexts.creativeStatusNotActive },
+      { key: 'NOT_DELIVERING', label: GmvMaxTexts.creativeStatusNotDelivering },
+      { key: 'EXCLUDED', label: GmvMaxTexts.creativeStatusExcluded },
+      { key: 'REJECTED', label: GmvMaxTexts.creativeStatusRejected },
+      { key: 'UNAVAILABLE', label: GmvMaxTexts.creativeStatusUnavailable },
       { key: 'UNKNOWN', label: GmvMaxTexts.creativeStatusUnknown },
     ],
     [],
@@ -1283,12 +1290,13 @@ export default function GmvMaxCampaignDetailPage() {
       }
       groups.get(key).push(creative);
     });
-    return creativeStatusOptions.map((option) => ({
+    const visibleStatuses = creativeStatusOptions.filter((option) => creativeStatusFilters.has(option.key));
+    return visibleStatuses.map((option) => ({
       key: option.key,
       label: option.label,
       items: groups.get(option.key) || [],
     }));
-  }, [creativeStatusOptions, sortedCreatives]);
+  }, [creativeStatusFilters, creativeStatusOptions, sortedCreatives]);
 
   const creativeStatusLabelMap = useMemo(
     () => new Map(creativeStatusOptions.map((item) => [item.key, item.label])),
