@@ -39,6 +39,18 @@ import {
 } from './gmvMaxOverview/helpers.js';
 import { normalizeTaskState } from '../utils/taskState.js';
 
+const ALL_CREATIVE_STATUS_KEYS = [
+  'IN_QUEUE',
+  'LEARNING',
+  'DELIVERING',
+  'NOT_DELIVERING',
+  'AUTHORIZATION_NEEDED',
+  'EXCLUDED',
+  'UNAVAILABLE',
+  'REJECTED',
+  'NOT_ACTIVE',
+];
+
 const MIN_MONITORING_INTERVAL = 10;
 const METRIC_CHOICES = [
   { value: 'roi', label: 'ROAS' },
@@ -878,7 +890,7 @@ export default function GmvMaxCampaignDetailPage() {
   const [lastSaveMessage, setLastSaveMessage] = useState('');
   const [showAdvancedRules, setShowAdvancedRules] = useState(false);
   const [creativeStatusFilters, setCreativeStatusFilters] = useState(
-    () => new Set(['DELIVERING', 'LEARNING', 'IN_QUEUE', 'NOT_DELIVERING', 'UNKNOWN']),
+    () => new Set([...ALL_CREATIVE_STATUS_KEYS, 'UNKNOWN']),
   );
   const [showOnlyHeated, setShowOnlyHeated] = useState(false);
   const [showSeedOnly, setShowSeedOnly] = useState(false);
@@ -983,10 +995,15 @@ export default function GmvMaxCampaignDetailPage() {
   const isProductsTab = activeTab === 'products';
   const creativeStatusOptions = useMemo(
     () => [
-      { key: 'DELIVERING', label: GmvMaxTexts.creativeStatusDelivering },
-      { key: 'LEARNING', label: GmvMaxTexts.creativeStatusLearning },
       { key: 'IN_QUEUE', label: GmvMaxTexts.creativeStatusInQueue },
+      { key: 'LEARNING', label: GmvMaxTexts.creativeStatusLearning },
+      { key: 'DELIVERING', label: GmvMaxTexts.creativeStatusDelivering },
       { key: 'NOT_DELIVERING', label: GmvMaxTexts.creativeStatusNotDelivering },
+      { key: 'AUTHORIZATION_NEEDED', label: GmvMaxTexts.creativeStatusAuthorizationNeeded },
+      { key: 'EXCLUDED', label: GmvMaxTexts.creativeStatusExcluded },
+      { key: 'UNAVAILABLE', label: GmvMaxTexts.creativeStatusUnavailable },
+      { key: 'REJECTED', label: GmvMaxTexts.creativeStatusRejected },
+      { key: 'NOT_ACTIVE', label: GmvMaxTexts.creativeStatusNotActive },
       { key: 'UNKNOWN', label: GmvMaxTexts.creativeStatusUnknown },
     ],
     [],
@@ -2213,6 +2230,8 @@ export default function GmvMaxCampaignDetailPage() {
                         const metrics = creative.metrics || {};
                         const boosting = isCreativeBoosting(creative);
                         const isSeed = isSeedCreative(creative);
+                        const isProductCard = creative.creativeId === '-1' || creative.creativeId === -1;
+                        const displayCreativeId = isProductCard ? '商品卡' : creative.creativeId;
                         return (
                           <tr key={creative.creativeId}>
                             <td>
@@ -2228,7 +2247,7 @@ export default function GmvMaxCampaignDetailPage() {
                                 )}
                                 <div>
                                   <div className="gmvmax-creatives__label">{creative.name}</div>
-                                  <div className="gmvmax-creatives__id">ID: {creative.creativeId}</div>
+                                  <div className="gmvmax-creatives__id">ID: {displayCreativeId}</div>
                                   {creative.metadata?.product_id ? (
                                     <div className="gmvmax-creatives__id">
                                       商品: {creative.metadata.product_id}
