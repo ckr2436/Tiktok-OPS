@@ -1266,6 +1266,7 @@ def get_item_group_ids_for_campaign(
         )
         if exists:
             continue
+        promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
         db.add(
             GmvCampaignProduct(
                 workspace_id=campaign.workspace_id,
@@ -1274,6 +1275,7 @@ def get_item_group_ids_for_campaign(
                 campaign_id=campaign.campaign_id,
                 store_id=store_id,
                 item_group_id=item_group_id,
+                promotion_type=promotion_type,
                 operation_status="ENABLE",
             )
         )
