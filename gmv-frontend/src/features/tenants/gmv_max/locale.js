@@ -95,6 +95,11 @@ export const GmvMaxTexts = {
   creativeStatusLearning: '学习中',
   creativeStatusInQueue: '排队中',
   creativeStatusNotDelivering: '未投放',
+  creativeStatusAuthorizationNeeded: '需要授权',
+  creativeStatusExcluded: '已排除',
+  creativeStatusUnavailable: '不可用',
+  creativeStatusRejected: '拒绝',
+  creativeStatusNotActive: '不活跃',
   creativeStatusUnknown: '未知',
 };
 
