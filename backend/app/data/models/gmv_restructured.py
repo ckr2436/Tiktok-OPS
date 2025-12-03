@@ -89,11 +89,14 @@ class GmvCampaign(Base):
 
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
     name: Mapped[str | None] = mapped_column(String(255), default=None)
     status: Mapped[str | None] = mapped_column(String(64), default=None)
+    operation_status: Mapped[str | None] = mapped_column(String(128), default=None)
+    secondary_status: Mapped[str | None] = mapped_column(String(128), default=None)
     schedule_type: Mapped[str | None] = mapped_column(String(64), default=None)
     schedule_start_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
     schedule_end_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
@@ -214,22 +217,48 @@ class GmvCampaignProduct(Base):
     __tablename__ = "gmv_campaign_products"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
             "campaign_id",
+            "store_id",
             "item_group_id",
-            "promotion_type",
             name="uk_gmv_campaign_product",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "store_id",
+            "item_group_id",
+            name="uk_gmv_store_product_unique",
         ),
         Index("idx_gmv_campaign_product_campaign", "campaign_id"),
         Index("idx_gmv_campaign_product_item", "item_group_id"),
+        Index("idx_gmv_campaign_product_store", "store_id"),
+        Index("idx_gmv_campaign_product_workspace", "workspace_id", "auth_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    campaign_pk: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("gmv_campaigns.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
-    store_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     operation_status: Mapped[str | None] = mapped_column(String(64), default=None)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -302,6 +331,104 @@ class GmvCampaignLivestream(Base):
     )
 
 
+class GmvActionLog(Base):
+    """Record of campaign actions executed within GMV Max."""
+
+    __tablename__ = "gmv_action_logs"
+    __table_args__ = (
+        Index("idx_gmv_action_workspace", "workspace_id"),
+        Index("idx_gmv_action_auth", "auth_id"),
+        Index("idx_gmv_action_campaign", "campaign_id"),
+        Index("idx_gmv_action_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    campaign_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("gmv_campaigns.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), default=None)
+    before_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    after_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    performed_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    result: Mapped[str | None] = mapped_column(String(32), default=None)
+    error_message: Mapped[str | None] = mapped_column(Text, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+
+
+class GmvStrategyConfig(Base):
+    """Per-campaign strategy tuning configuration for GMV Max."""
+
+    __tablename__ = "gmv_strategy_configs"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "campaign_id",
+            name="uq_gmv_strategy_workspace_auth_campaign",
+        ),
+        Index("idx_gmv_strategy_workspace", "workspace_id"),
+        Index("idx_gmv_strategy_auth", "auth_id"),
+        Index("idx_gmv_strategy_campaign", "campaign_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    auth_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
+
+    target_roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    min_roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    max_roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    min_impressions: Mapped[int | None] = mapped_column(Integer, default=None)
+    min_clicks: Mapped[int | None] = mapped_column(Integer, default=None)
+
+    max_budget_raise_pct_per_day: Mapped[float | None] = mapped_column(
+        Numeric(5, 2), default=None
+    )
+    max_budget_cut_pct_per_day: Mapped[float | None] = mapped_column(
+        Numeric(5, 2), default=None
+    )
+    max_roas_step_per_adjust: Mapped[float | None] = mapped_column(Numeric(10, 4), default=None)
+
+    cooldown_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
+    min_runtime_minutes_before_first_change: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )
+
+    config_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class BaseMetricMixin:
     """Common metric columns reused across tables."""
 
@@ -357,13 +484,18 @@ class GmvCampaignMetricsDaily(Base, BaseMetricMixin):
     __tablename__ = "gmv_campaign_metrics_daily"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "stat_time_day", "promotion_type", name="uk_campaign_daily"
+            "campaign_id",
+            "stat_time_day",
+            "promotion_type",
+            name="uk_campaign_daily",
         ),
         Index("idx_campaign_daily_campaign", "campaign_id", "stat_time_day"),
+        Index("idx_campaign_daily_store", "store_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
@@ -379,13 +511,18 @@ class GmvCampaignMetricsHourly(Base, BaseMetricMixin):
     __tablename__ = "gmv_campaign_metrics_hourly"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "stat_time_hour", "promotion_type", name="uk_campaign_hourly"
+            "campaign_id",
+            "stat_time_hour",
+            "promotion_type",
+            name="uk_campaign_hourly",
         ),
         Index("idx_campaign_hourly_campaign", "campaign_id", "stat_time_hour"),
+        Index("idx_campaign_hourly_store", "store_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )

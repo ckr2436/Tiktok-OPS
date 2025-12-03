@@ -11,10 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from app.data.models.ttb_gmvmax import (
-    TTBGmvMaxCampaign,
-    TTBGmvMaxMetricsDaily,
-)
+from app.data.models.gmv_restructured import GmvCampaign, GmvCampaignMetricsDaily
 
 
 def _cents_to_amount(value: Optional[int]) -> float | None:
@@ -54,7 +51,7 @@ class GMVMaxMetricDTO(BaseModel):
 
 @dataclass(slots=True)
 class _MetricsRow:
-    metric: TTBGmvMaxMetricsDaily
+    metric: GmvCampaignMetricsDaily
     campaign_id: str
     store_id: Optional[str]
 
@@ -67,7 +64,7 @@ def _serialize_row(row: _MetricsRow) -> GMVMaxMetricDTO:
         cost_per_order = cost / orders
 
     return GMVMaxMetricDTO(
-        stat_time_day=row.metric.date,
+        stat_time_day=row.metric.stat_time_day,
         campaign_id=row.campaign_id,
         store_id=row.store_id,
         impressions=row.metric.impressions,
@@ -98,23 +95,23 @@ def _base_query(
     store_id: str,
     start_date: date,
     end_date: date,
-) -> Select[tuple[TTBGmvMaxMetricsDaily, str, Optional[str]]]:
-    query: Select[tuple[TTBGmvMaxMetricsDaily, str, Optional[str]]] = (
+) -> Select[tuple[GmvCampaignMetricsDaily, str, Optional[str]]]:
+    query: Select[tuple[GmvCampaignMetricsDaily, str, Optional[str]]] = (
         select(
-            TTBGmvMaxMetricsDaily,
-            TTBGmvMaxCampaign.campaign_id,
-            TTBGmvMaxMetricsDaily.store_id,
+            GmvCampaignMetricsDaily,
+            GmvCampaign.campaign_id,
+            GmvCampaignMetricsDaily.store_id,
         )
         .join(
-            TTBGmvMaxCampaign,
-            TTBGmvMaxCampaign.id == TTBGmvMaxMetricsDaily.campaign_id,
+            GmvCampaign,
+            GmvCampaign.campaign_id == GmvCampaignMetricsDaily.campaign_id,
         )
-        .where(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
-        .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
-        .where(TTBGmvMaxMetricsDaily.store_id == str(store_id))
-        .where(TTBGmvMaxMetricsDaily.date >= start_date)
-        .where(TTBGmvMaxMetricsDaily.date <= end_date)
+        .where(GmvCampaign.workspace_id == int(workspace_id))
+        .where(GmvCampaign.advertiser_id == str(advertiser_id))
+        .where(GmvCampaign.campaign_id == str(campaign_id))
+        .where(GmvCampaignMetricsDaily.store_id == str(store_id))
+        .where(GmvCampaignMetricsDaily.stat_time_day >= start_date)
+        .where(GmvCampaignMetricsDaily.stat_time_day <= end_date)
     )
 
     return query
@@ -149,13 +146,13 @@ def query_gmvmax_metrics(
     )
 
     order_columns = (
-        TTBGmvMaxMetricsDaily.date.desc(),
-        TTBGmvMaxMetricsDaily.id.desc(),
+        GmvCampaignMetricsDaily.stat_time_day.desc(),
+        GmvCampaignMetricsDaily.id.desc(),
     )
     if not order_desc:
         order_columns = (
-            TTBGmvMaxMetricsDaily.date.asc(),
-            TTBGmvMaxMetricsDaily.id.asc(),
+            GmvCampaignMetricsDaily.stat_time_day.asc(),
+            GmvCampaignMetricsDaily.id.asc(),
         )
 
     stmt = base.order_by(*order_columns).limit(limit).offset(offset)
