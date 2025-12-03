@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Iterable, Optional, Sequence
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, case
+from sqlalchemy import select, case, func
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_gmvmax import (
@@ -449,7 +449,8 @@ def list_action_logs(
     campaign_id: str,
     limit: int,
     offset: int,
-) -> tuple[TTBGmvMaxCampaign, Sequence[TTBGmvMaxActionLog]]:
+    sort: str = "-timestamp",
+) -> tuple[TTBGmvMaxCampaign, Sequence[TTBGmvMaxActionLog], int]:
     """Return campaign with paginated action logs stored locally."""
     provider = _ensure_provider(provider)
     ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
@@ -461,15 +462,31 @@ def list_action_logs(
         campaign_id=campaign_id,
     )
 
+    sort_key = str(sort or "").lower()
+    sort_desc = sort_key.startswith("-")
+    order_clause = (
+        TTBGmvMaxActionLog.created_at.desc()
+        if sort_desc
+        else TTBGmvMaxActionLog.created_at.asc()
+    )
+
     query = (
         select(TTBGmvMaxActionLog)
         .where(TTBGmvMaxActionLog.campaign_id == campaign.id)
-        .order_by(TTBGmvMaxActionLog.id.desc())
+        .order_by(order_clause, TTBGmvMaxActionLog.id.desc())
         .limit(limit)
         .offset(offset)
     )
     rows = db.execute(query).scalars().all()
-    return campaign, rows
+
+    count_query = (
+        select(func.count())
+        .select_from(TTBGmvMaxActionLog)
+        .where(TTBGmvMaxActionLog.campaign_id == campaign.id)
+    )
+    total = db.scalar(count_query) or 0
+
+    return campaign, rows, int(total)
 
 
 def get_strategy(

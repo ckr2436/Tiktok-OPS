@@ -549,9 +549,10 @@ class StrategyPreviewResponse(BaseModel):
 
 
 class ActionLogEntry(BaseModel):
-    """Placeholder action log representation (empty for now)."""
+    """Stored campaign action logs returned by the actions list route."""
 
     entries: List[Dict[str, Any]] = Field(default_factory=list)
+    total: Optional[int] = None
 
 
 class AutoBindingRequest(BaseModel):

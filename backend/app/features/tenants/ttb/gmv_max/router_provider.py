@@ -33,6 +33,7 @@ from app.data.models.ttb_entities import (
 )
 from app.data.models.ttb_gmvmax import (
     TTBGmvMaxCampaign,
+    TTBGmvMaxActionLog,
     TTBGmvMaxCampaignProduct,
     TTBGmvMaxMetricsDaily,
     TTBGmvMaxCreativeMetric,
@@ -101,7 +102,7 @@ from app.services.gmvmax_spec import (
     GMV_REPORT_CONFIG,
     GMVMaxReportLevel,
 )
-from .service import _ensure_provider
+from .service import _ensure_provider, list_action_logs
 from app.services.ttb_gmvmax import (
     build_gmvmax_anchor_params,
     create_gmvmax_campaign,
@@ -3017,6 +3018,29 @@ def _extract_error_message(detail: Any) -> str:
     return str(detail)
 
 
+def _serialize_action_log_row(
+    campaign: TTBGmvMaxCampaign, row: TTBGmvMaxActionLog
+) -> Dict[str, Any]:
+    campaign_identifier = getattr(campaign, "campaign_id", None) or getattr(
+        campaign, "id", None
+    )
+    return {
+        "id": row.id,
+        "campaign_id": campaign_identifier,
+        "action_type": row.action,
+        "reason": row.reason,
+        "before": row.before_json,
+        "after": row.after_json,
+        "before_value": row.before_json,
+        "after_value": row.after_json,
+        "operator": row.performed_by,
+        "result": row.result,
+        "error_message": row.error_message,
+        "timestamp": row.created_at,
+        "created_at": row.created_at,
+    }
+
+
 async def _apply_creative_heating_action(
     *,
     context: GMVMaxRouteContext,
@@ -3231,12 +3255,29 @@ async def list_gmvmax_action_logs_provider(
     provider: str,
     auth_id: int,
     campaign_id: str,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=200, alias="page_size"),
+    sort: str = Query("-timestamp", description="Sort by timestamp, use - for desc"),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> ActionLogEntry:
-    """Return placeholder action logs until storage is implemented."""
+    """Return stored campaign action logs (paginated)."""
 
-    # TODO: Wire this endpoint to persisted action logs in a future task.
-    return ActionLogEntry(entries=[])
+    limit = page_size
+    offset = (page - 1) * page_size
+
+    campaign, rows, total = list_action_logs(
+        context.db,
+        workspace_id=context.workspace_id,
+        provider=context.provider,
+        auth_id=context.auth_id,
+        campaign_id=str(campaign_id),
+        limit=limit,
+        offset=offset,
+        sort=sort,
+    )
+
+    entries = [_serialize_action_log_row(campaign, row) for row in rows]
+    return ActionLogEntry(entries=entries, total=total)
 
 
 @router.get(
