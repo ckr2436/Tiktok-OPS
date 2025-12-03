@@ -102,7 +102,22 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
     if (polledTask.state) {
       setLastState(normalizeTaskState(polledTask.state));
     }
-  }, [polledTask]);
+    const normalizedState = normalizeTaskState(polledTask.state);
+    if (
+      polledTask.task_id &&
+      !isActiveTaskState(normalizedState) &&
+      completionResolversRef.current.length > 0
+    ) {
+      resolveCompletion(
+        {
+          ...polledTask,
+          task_id: polledTask.task_id,
+          state: normalizedState,
+        },
+        normalizedState !== "SUCCESS",
+      );
+    }
+  }, [polledTask, resolveCompletion]);
 
   const startMutation = useMutation({
     mutationFn: (payload) =>
