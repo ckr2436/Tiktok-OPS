@@ -10,6 +10,12 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return column_name in [col["name"] for col in inspector.get_columns(table_name)]
+
 revision = "0043_gmv_action_strategy"
 down_revision = "0042_gmv_restructure_schema"
 branch_labels = None
@@ -17,18 +23,32 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "gmv_campaigns",
-        sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
-    )
-    op.add_column(
-        "gmv_campaigns",
-        sa.Column("operation_status", sa.String(length=128), nullable=True),
-    )
-    op.add_column(
-        "gmv_campaigns",
-        sa.Column("secondary_status", sa.String(length=128), nullable=True),
-    )
+    if not _column_exists("gmv_campaigns", "store_id"):
+        op.add_column(
+            "gmv_campaigns",
+            sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
+        )
+        op.alter_column("gmv_campaigns", "store_id", server_default=None)
+    else:
+        op.execute("UPDATE gmv_campaigns SET store_id='' WHERE store_id IS NULL")
+        op.alter_column(
+            "gmv_campaigns",
+            "store_id",
+            existing_type=sa.String(length=64),
+            nullable=False,
+            server_default=None,
+        )
+
+    if not _column_exists("gmv_campaigns", "operation_status"):
+        op.add_column(
+            "gmv_campaigns",
+            sa.Column("operation_status", sa.String(length=128), nullable=True),
+        )
+    if not _column_exists("gmv_campaigns", "secondary_status"):
+        op.add_column(
+            "gmv_campaigns",
+            sa.Column("secondary_status", sa.String(length=128), nullable=True),
+        )
 
     op.add_column(
         "gmv_campaign_products",
@@ -47,9 +67,15 @@ def upgrade():
             server_default="0",
         ),
     )
-    op.add_column(
+    op.execute(
+        "UPDATE gmv_campaign_products SET store_id='' WHERE store_id IS NULL"
+    )
+    op.alter_column(
         "gmv_campaign_products",
-        sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
+        "store_id",
+        existing_type=sa.String(length=64),
+        nullable=False,
+        server_default="",
     )
     op.alter_column("gmv_campaign_products", "store_id", server_default=None)
     op.alter_column("gmv_campaign_products", "workspace_id", server_default=None)
@@ -174,14 +200,15 @@ def upgrade():
         sa.Index("idx_gmv_strategy_campaign", "campaign_id"),
     )
 
-    op.alter_column("gmv_campaigns", "store_id", server_default=None)
-
 
 def downgrade():
-    op.alter_column("gmv_campaigns", "store_id", server_default="")
-    op.drop_column("gmv_campaigns", "secondary_status")
-    op.drop_column("gmv_campaigns", "operation_status")
-    op.drop_column("gmv_campaigns", "store_id")
+    if _column_exists("gmv_campaigns", "store_id"):
+        op.alter_column("gmv_campaigns", "store_id", server_default="")
+        op.drop_column("gmv_campaigns", "store_id")
+    if _column_exists("gmv_campaigns", "secondary_status"):
+        op.drop_column("gmv_campaigns", "secondary_status")
+    if _column_exists("gmv_campaigns", "operation_status"):
+        op.drop_column("gmv_campaigns", "operation_status")
 
     op.drop_index("idx_campaign_hourly_store", table_name="gmv_campaign_metrics_hourly")
     op.drop_index("idx_campaign_daily_store", table_name="gmv_campaign_metrics_daily")
@@ -199,9 +226,16 @@ def downgrade():
         )
         batch.drop_constraint("fk_gmv_campaign_products_campaign_pk", type_="foreignkey")
         batch.drop_column("campaign_pk")
-        batch.drop_column("store_id")
         batch.drop_column("auth_id")
         batch.drop_column("workspace_id")
+
+    op.alter_column(
+        "gmv_campaign_products",
+        "store_id",
+        existing_type=sa.String(length=64),
+        nullable=True,
+        server_default=None,
+    )
 
     op.drop_table("gmv_strategy_configs")
     op.drop_table("gmv_action_logs")
