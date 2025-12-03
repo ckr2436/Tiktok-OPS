@@ -19,6 +19,24 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState(null);
+  const completionResolversRef = useRef([]);
+
+  const resolveCompletion = useCallback((task, isError = false) => {
+    const resolvedTaskId = task?.task_id || task?.taskId || null;
+    const matchers = completionResolversRef.current;
+    completionResolversRef.current = [];
+    matchers.forEach(({ taskId, resolve, reject }) => {
+      if (taskId && resolvedTaskId && taskId !== resolvedTaskId) {
+        completionResolversRef.current.push({ taskId, resolve, reject });
+        return;
+      }
+      if (isError) {
+        reject?.(task);
+      } else {
+        resolve?.(task);
+      }
+    });
+  }, []);
 
   const handleSuccess = useCallback(
     async (task) => {
@@ -38,8 +56,9 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
         exact: false,
       });
       onSuccess?.(task);
+      resolveCompletion({ ...task, task_id: resolvedTaskId });
     },
-    [authId, currentTaskId, lastTaskId, onSuccess, provider, queryClient, workspaceId],
+    [authId, currentTaskId, lastTaskId, onSuccess, provider, queryClient, resolveCompletion, workspaceId],
   );
 
   const handleFailure = useCallback(
@@ -52,8 +71,9 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       const syncError = task instanceof Error ? task : createSyncError(task?.error || task?.message || task);
       setError(syncError);
       onFailure?.(syncError);
+      resolveCompletion({ ...task, task_id: resolvedTaskId }, true);
     },
-    [currentTaskId, lastTaskId, onFailure],
+    [currentTaskId, lastTaskId, onFailure, resolveCompletion],
   );
 
   const { data: polledTask, isFetching: isPolling } = useGmvTaskPolling({
@@ -139,12 +159,27 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       }
       if (startMutation.isPending || isSyncing) return;
       const response = await startMutation.mutateAsync(payload);
+      const normalizedState = normalizeTaskState(response?.state || "PENDING");
+      const taskId = response?.task_id || response?.taskId;
+      const completionPromise = new Promise((resolve, reject) => {
+        completionResolversRef.current.push({ taskId, resolve, reject });
+      });
+
+      if (isTerminalTaskState(normalizedState)) {
+        if (normalizedState === "SUCCESS") {
+          resolveCompletion({ ...response, state: normalizedState, task_id: taskId });
+        } else {
+          resolveCompletion({ ...response, state: normalizedState, task_id: taskId }, true);
+        }
+      }
+
       return {
-        state: normalizeTaskState(response?.state || "PENDING"),
-        taskId: response?.task_id || response?.taskId,
+        state: normalizedState,
+        taskId,
+        completion: completionPromise,
       };
     },
-    [authId, isSyncing, onFailure, provider, startMutation, workspaceId],
+    [authId, isSyncing, onFailure, provider, resolveCompletion, startMutation, workspaceId],
   );
 
   return useMemo(
@@ -190,6 +225,27 @@ export function useEnsureFreshGmvData({
       }
       const result = await syncTask.startSync(payload);
       if (result?.state === 'SUCCESS') {
+        lastEnsuredRef.current = Date.now();
+        return true;
+      }
+      if (result?.completion) {
+        try {
+          const completed = await result.completion;
+          if (normalizeTaskState(completed?.state) === 'SUCCESS') {
+            lastEnsuredRef.current = Date.now();
+            return true;
+          }
+          return false;
+        } catch (completionError) {
+          // eslint-disable-next-line no-console
+          console.error("GMV Max sync preflight failed", completionError);
+          return false;
+        }
+      }
+      if (result?.taskId) {
+        return false;
+      }
+      if (!result) {
         lastEnsuredRef.current = Date.now();
         return true;
       }
