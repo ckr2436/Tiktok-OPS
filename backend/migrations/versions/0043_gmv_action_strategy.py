@@ -50,23 +50,62 @@ def upgrade():
             sa.Column("secondary_status", sa.String(length=128), nullable=True),
         )
 
-    op.add_column(
-        "gmv_campaign_products",
-        sa.Column("workspace_id", sa.BigInteger(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "gmv_campaign_products",
-        sa.Column("auth_id", sa.BigInteger(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "gmv_campaign_products",
-        sa.Column(
-            "campaign_pk",
-            sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
+    if not _column_exists("gmv_campaign_products", "workspace_id"):
+        op.add_column(
+            "gmv_campaign_products",
+            sa.Column("workspace_id", sa.BigInteger(), nullable=False, server_default="0"),
+        )
+        op.alter_column("gmv_campaign_products", "workspace_id", server_default=None)
+    else:
+        op.execute(
+            "UPDATE gmv_campaign_products SET workspace_id=0 WHERE workspace_id IS NULL"
+        )
+        op.alter_column(
+            "gmv_campaign_products",
+            "workspace_id",
+            existing_type=sa.BigInteger(),
             nullable=False,
-            server_default="0",
-        ),
-    )
+            server_default=None,
+        )
+
+    if not _column_exists("gmv_campaign_products", "auth_id"):
+        op.add_column(
+            "gmv_campaign_products",
+            sa.Column("auth_id", sa.BigInteger(), nullable=False, server_default="0"),
+        )
+        op.alter_column("gmv_campaign_products", "auth_id", server_default=None)
+    else:
+        op.execute("UPDATE gmv_campaign_products SET auth_id=0 WHERE auth_id IS NULL")
+        op.alter_column(
+            "gmv_campaign_products",
+            "auth_id",
+            existing_type=sa.BigInteger(),
+            nullable=False,
+            server_default=None,
+        )
+
+    if not _column_exists("gmv_campaign_products", "campaign_pk"):
+        op.add_column(
+            "gmv_campaign_products",
+            sa.Column(
+                "campaign_pk",
+                sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
+                nullable=False,
+                server_default="0",
+            ),
+        )
+        op.alter_column("gmv_campaign_products", "campaign_pk", server_default=None)
+    else:
+        op.execute(
+            "UPDATE gmv_campaign_products SET campaign_pk=0 WHERE campaign_pk IS NULL"
+        )
+        op.alter_column(
+            "gmv_campaign_products",
+            "campaign_pk",
+            existing_type=sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
+            nullable=False,
+            server_default=None,
+        )
     op.execute(
         "UPDATE gmv_campaign_products SET store_id='' WHERE store_id IS NULL"
     )
@@ -78,9 +117,6 @@ def upgrade():
         server_default="",
     )
     op.alter_column("gmv_campaign_products", "store_id", server_default=None)
-    op.alter_column("gmv_campaign_products", "workspace_id", server_default=None)
-    op.alter_column("gmv_campaign_products", "auth_id", server_default=None)
-    op.alter_column("gmv_campaign_products", "campaign_pk", server_default=None)
 
     with op.batch_alter_table("gmv_campaign_products") as batch:
         batch.create_foreign_key(
@@ -103,14 +139,41 @@ def upgrade():
         batch.create_index("idx_gmv_campaign_product_store", ["store_id"], unique=False)
         batch.create_index("idx_gmv_campaign_product_workspace", ["workspace_id", "auth_id"], unique=False)
 
-    op.add_column(
-        "gmv_campaign_metrics_daily",
-        sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
-    )
-    op.add_column(
-        "gmv_campaign_metrics_hourly",
-        sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
-    )
+    if not _column_exists("gmv_campaign_metrics_daily", "store_id"):
+        op.add_column(
+            "gmv_campaign_metrics_daily",
+            sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
+        )
+    else:
+        op.execute(
+            "UPDATE gmv_campaign_metrics_daily SET store_id='' WHERE store_id IS NULL"
+        )
+        op.alter_column(
+            "gmv_campaign_metrics_daily",
+            "store_id",
+            existing_type=sa.String(length=64),
+            nullable=False,
+            server_default=None,
+        )
+    op.alter_column("gmv_campaign_metrics_daily", "store_id", server_default=None)
+
+    if not _column_exists("gmv_campaign_metrics_hourly", "store_id"):
+        op.add_column(
+            "gmv_campaign_metrics_hourly",
+            sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
+        )
+    else:
+        op.execute(
+            "UPDATE gmv_campaign_metrics_hourly SET store_id='' WHERE store_id IS NULL"
+        )
+        op.alter_column(
+            "gmv_campaign_metrics_hourly",
+            "store_id",
+            existing_type=sa.String(length=64),
+            nullable=False,
+            server_default=None,
+        )
+    op.alter_column("gmv_campaign_metrics_hourly", "store_id", server_default=None)
     op.create_index(
         "idx_campaign_daily_store",
         "gmv_campaign_metrics_daily",
@@ -121,8 +184,6 @@ def upgrade():
         "gmv_campaign_metrics_hourly",
         ["store_id"],
     )
-    op.alter_column("gmv_campaign_metrics_daily", "store_id", server_default=None)
-    op.alter_column("gmv_campaign_metrics_hourly", "store_id", server_default=None)
 
     op.create_table(
         "gmv_action_logs",
