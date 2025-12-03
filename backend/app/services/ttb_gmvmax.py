@@ -14,8 +14,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.models.gmv_restructured import (
-    GmvCampaign,
-    GmvCampaignProduct,
+    GmvCampaignMetricsDaily,
+    GmvCampaignMetricsHourly,
+    GmvCreativeMetricsDaily,
+    GmvCreativeMetricsHourly,
+    GmvProductMetricsDaily,
+    GmvProductMetricsHourly,
     PromotionTypeEnum,
 )
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
@@ -23,11 +27,9 @@ from app.data.models.ttb_gmvmax import (
     TTBGmvMaxActionLog,
     TTBGmvMaxCampaign,
     TTBGmvMaxCampaignProduct,
-    TTBGmvMaxMetricsDaily,
-    TTBGmvMaxMetricsHourly,
+    TTBGmvMaxCampaignSyncSnapshot,
     TTBGmvMaxStrategyConfig,
 )
-from app.data.repositories.tiktok_business.gmvmax_creative_metrics import upsert_creative_metrics
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
@@ -813,34 +815,170 @@ async def update_gmvmax_campaign(
     return row
 
 
-def _migrate_metric_rows(
+def _mark_missing_snapshot_campaigns_as_deleted(
     db: Session,
     *,
-    model: type[TTBGmvMaxMetricsDaily] | type[TTBGmvMaxMetricsHourly],
-    key_attr: str,
-    source_id: int,
-    target_id: int,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_scope: Collection[str] | None,
+    synced_at: datetime,
+) -> int:
+    """Soft-delete campaigns missing from the latest sync snapshot."""
+
+    snapshot_stmt = (
+        select(TTBGmvMaxCampaignSyncSnapshot.campaign_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == advertiser_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.synced_at == synced_at)
+    )
+    if store_scope:
+        snapshot_stmt = snapshot_stmt.where(
+            TTBGmvMaxCampaignSyncSnapshot.store_id.in_(store_scope)
+        )
+    snapshot_ids = {
+        str(value)
+        for value in db.execute(snapshot_stmt.distinct()).scalars()
+        if value is not None
+    }
+
+    campaign_stmt = (
+        select(TTBGmvMaxCampaign.campaign_id)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+    )
+    if store_scope:
+        campaign_stmt = campaign_stmt.where(
+            TTBGmvMaxCampaign.store_id.in_(store_scope)
+        )
+    campaign_ids = {
+        str(value)
+        for value in db.execute(campaign_stmt).scalars()
+        if value is not None
+    }
+    missing_snapshot_ids = campaign_ids - snapshot_ids
+    if not missing_snapshot_ids:
+        return 0
+
+    delete_stmt = (
+        update(TTBGmvMaxCampaign)
+        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaign.auth_id == auth_id)
+        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+        .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+    )
+    if store_scope:
+        delete_stmt = delete_stmt.where(
+            TTBGmvMaxCampaign.store_id.in_(store_scope)
+        )
+    delete_stmt = delete_stmt.where(
+        TTBGmvMaxCampaign.campaign_id.in_(missing_snapshot_ids)
+    ).values(
+        status="DELETE",
+        operation_status="DELETE",
+        secondary_status="CAMPAIGN_STATUS_DELETE",
+        is_deleted=True,
+        deleted_at=datetime.now(timezone.utc),
+    )
+    result = db.execute(delete_stmt)
+
+    product_cleanup = (
+        update(TTBGmvMaxCampaignProduct)
+        .where(TTBGmvMaxCampaignProduct.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaignProduct.campaign_id.in_(missing_snapshot_ids))
+        .values(operation_status="DELETE")
+    )
+    if store_scope:
+        product_cleanup = product_cleanup.where(
+            TTBGmvMaxCampaignProduct.store_id.in_(store_scope)
+        )
+    db.execute(product_cleanup)
+
+    return result.rowcount or 0
+
+
+def _bulk_upsert_snapshots(
+    db: Session, rows: Sequence[Mapping[str, Any]]
 ) -> None:
-    if not source_id or not target_id or source_id == target_id:
+    if not rows:
         return
-    key_column = getattr(model, key_attr)
-    existing_keys = set(
-        db.execute(
-            select(key_column).where(model.campaign_id == int(target_id))
-        ).scalars()
+    bind = db.get_bind()
+    rows_to_insert = list(rows)
+    if bind and bind.dialect.name == "sqlite":
+        next_id = db.execute(
+            select(func.coalesce(func.max(TTBGmvMaxCampaignSyncSnapshot.id), 0))
+        ).scalar_one()
+        rows_with_ids: list[Mapping[str, Any]] = []
+        for row in rows_to_insert:
+            if row.get("id"):
+                rows_with_ids.append(row)
+                continue
+            next_id = int(next_id or 0) + 1
+            rows_with_ids.append({**row, "id": next_id})
+        stmt = sqlite_insert(TTBGmvMaxCampaignSyncSnapshot).values(rows_with_ids)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[
+                TTBGmvMaxCampaignSyncSnapshot.workspace_id,
+                TTBGmvMaxCampaignSyncSnapshot.advertiser_id,
+                TTBGmvMaxCampaignSyncSnapshot.store_id,
+                TTBGmvMaxCampaignSyncSnapshot.campaign_id,
+            ],
+            set_={
+                "auth_id": stmt.excluded.auth_id,
+                "synced_at": stmt.excluded.synced_at,
+                "raw_json": stmt.excluded.raw_json,
+            },
+        )
+    else:
+        stmt = mysql_insert(TTBGmvMaxCampaignSyncSnapshot).values(rows_to_insert)
+        stmt = stmt.on_duplicate_key_update(
+            auth_id=stmt.inserted.auth_id,
+            synced_at=stmt.inserted.synced_at,
+            raw_json=stmt.inserted.raw_json,
+        )
+    db.execute(stmt)
+
+
+def _prune_outdated_snapshots(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    synced_at: datetime,
+    store_scope: Collection[str] | None,
+    campaign_ids: Collection[str] | None,
+) -> None:
+    delete_stmt = (
+        delete(TTBGmvMaxCampaignSyncSnapshot)
+        .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == advertiser_id)
+        .where(TTBGmvMaxCampaignSyncSnapshot.synced_at < synced_at)
     )
-    source_rows = (
-        db.execute(select(model).where(model.campaign_id == int(source_id)))
-        .scalars()
-        .all()
-    )
-    for row in source_rows:
-        key_value = getattr(row, key_attr)
-        if key_value in existing_keys:
-            db.delete(row)
-            continue
-        row.campaign_id = int(target_id)
-        existing_keys.add(key_value)
+    if store_scope:
+        delete_stmt = delete_stmt.where(
+            TTBGmvMaxCampaignSyncSnapshot.store_id.in_(store_scope)
+        )
+    if campaign_ids:
+        delete_stmt = delete_stmt.where(
+            TTBGmvMaxCampaignSyncSnapshot.campaign_id.in_(campaign_ids)
+        )
+    db.execute(delete_stmt)
+
+
+def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
+        return
+    if getattr(row, "id", None):
+        return
+    next_value = db.execute(
+        select(func.coalesce(func.max(TTBGmvMaxCampaign.id), 0))
+    ).scalar_one()
+    row.id = int(next_value or 0) + 1
 
 
 def _migrate_campaign_products(db: Session, *, source_id: int, target_id: int) -> None:
@@ -889,20 +1027,6 @@ def _merge_duplicate_campaign_rows(
         },
     )
     for duplicate in duplicates:
-        _migrate_metric_rows(
-            db,
-            model=TTBGmvMaxMetricsDaily,
-            key_attr="date",
-            source_id=int(duplicate.id),
-            target_id=int(primary.id),
-        )
-        _migrate_metric_rows(
-            db,
-            model=TTBGmvMaxMetricsHourly,
-            key_attr="interval_start",
-            source_id=int(duplicate.id),
-            target_id=int(primary.id),
-        )
         _migrate_campaign_products(
             db,
             source_id=int(duplicate.id),
@@ -1392,35 +1516,75 @@ def _extract_field_from_sources(keys: Sequence[str], *sources: Mapping[str, Any]
     return None
 
 
-def _normalize_creative_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
-    metrics = dict(row)
-    for key in ("cost", "net_cost", "gross_revenue", "cost_per_order"):
-        if key in metrics:
-            metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
-    for key in (
-        "orders",
-        "impressions",
-        "clicks",
-        "product_impressions",
-        "product_clicks",
-    ):
-        if key in metrics:
-            metrics[key] = _to_int(metrics[key])
-    for key in (
-        "roi",
-        "ad_click_rate",
-        "ad_conversion_rate",
-        "product_click_rate",
-        "ad_video_view_rate_2s",
-        "ad_video_view_rate_6s",
-        "ad_video_view_rate_p25",
-        "ad_video_view_rate_p50",
-        "ad_video_view_rate_p75",
-        "ad_video_view_rate_p100",
-    ):
-        if key in metrics:
-            metrics[key] = _to_decimal(metrics[key], quantize=_DECIMAL_FOUR)
-    return metrics
+def _normalize_promotion_type(value: Any, fallback: PromotionTypeEnum = PromotionTypeEnum.PRODUCT) -> PromotionTypeEnum:
+    normalized = _normalize_identifier(value)
+    if normalized:
+        candidate = normalized.upper()
+        if candidate == "PRODUCT_GMV_MAX":
+            candidate = "PRODUCT"
+        try:
+            return PromotionTypeEnum(candidate)
+        except ValueError:  # pragma: no cover - defensive fallback
+            return fallback
+    return fallback
+
+
+def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    cost_cents_value = _extract_field(row, "cost_cents")
+    net_cost_cents_value = _extract_field(row, "net_cost_cents")
+    gross_revenue_cents_value = _extract_field(row, "gross_revenue_cents")
+
+    return {
+        "impressions": _to_int(
+            _extract_field(row, "impressions", "show_cnt", "views", "product_impressions")
+        ),
+        "clicks": _to_int(_extract_field(row, "clicks", "click", "click_cnt")),
+        "product_clicks": _to_int(
+            _extract_field(row, "product_clicks", "product_click", "product_click_cnt")
+        ),
+        "cost_cents": _to_int(cost_cents_value)
+        if cost_cents_value is not None
+        else _to_cents(_extract_field(row, "cost", "spend", "total_spend", "total_cost")),
+        "net_cost_cents": _to_int(net_cost_cents_value)
+        if net_cost_cents_value is not None
+        else _to_cents(_extract_field(row, "net_cost")),
+        "orders": _to_int(_extract_field(row, "orders", "order_num", "conversions")),
+        "gross_revenue_cents": _to_int(gross_revenue_cents_value)
+        if gross_revenue_cents_value is not None
+        else _to_cents(_extract_field(row, "gross_revenue", "gmv", "revenue")),
+        "roi": _to_decimal(_extract_field(row, "roi", "roas"), quantize=_DECIMAL_FOUR),
+        "ad_click_rate": _to_decimal(
+            _extract_field(row, "ad_click_rate", "ctr"), quantize=_DECIMAL_FOUR
+        ),
+        "conversion_rate": _to_decimal(
+            _extract_field(row, "conversion_rate", "ad_conversion_rate", "cvr"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_2s": _to_decimal(
+            _extract_field(row, "video_view_rate_2s", "ad_video_view_rate_2s"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_6s": _to_decimal(
+            _extract_field(row, "video_view_rate_6s", "ad_video_view_rate_6s"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_25": _to_decimal(
+            _extract_field(row, "video_view_rate_25", "ad_video_view_rate_p25"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_50": _to_decimal(
+            _extract_field(row, "video_view_rate_50", "ad_video_view_rate_p50"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_75": _to_decimal(
+            _extract_field(row, "video_view_rate_75", "ad_video_view_rate_p75"),
+            quantize=_DECIMAL_FOUR,
+        ),
+        "video_view_rate_100": _to_decimal(
+            _extract_field(row, "video_view_rate_100", "ad_video_view_rate_p100"),
+            quantize=_DECIMAL_FOUR,
+        ),
+    }
 
 
 def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -1718,107 +1882,197 @@ def upsert_campaign_from_api(
     return result
 
 
+def _upsert_product_metrics_hourly(
+    db: Session,
+    *,
+    campaign_id: str,
+    stat_time_hour: datetime,
+    item_group_id: str,
+    metrics: Mapping[str, Any],
+    bid_type: Any | None = None,
+) -> GmvProductMetricsHourly:
+    stmt = (
+        select(GmvProductMetricsHourly)
+        .where(GmvProductMetricsHourly.campaign_id == campaign_id)
+        .where(GmvProductMetricsHourly.item_group_id == item_group_id)
+        .where(GmvProductMetricsHourly.stat_time_hour == stat_time_hour)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvProductMetricsHourly(
+            campaign_id=campaign_id,
+            item_group_id=item_group_id,
+            stat_time_hour=stat_time_hour,
+        )
+        db.add(instance)
+
+    for field, value in metrics.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    if bid_type is not None:
+        instance.bid_type = str(bid_type)
+
+    db.flush()
+    return instance
+
+
+def _upsert_product_metrics_daily(
+    db: Session,
+    *,
+    campaign_id: str,
+    stat_time_day: date,
+    item_group_id: str,
+    metrics: Mapping[str, Any],
+    bid_type: Any | None = None,
+) -> GmvProductMetricsDaily:
+    stmt = (
+        select(GmvProductMetricsDaily)
+        .where(GmvProductMetricsDaily.campaign_id == campaign_id)
+        .where(GmvProductMetricsDaily.item_group_id == item_group_id)
+        .where(GmvProductMetricsDaily.stat_time_day == stat_time_day)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvProductMetricsDaily(
+            campaign_id=campaign_id,
+            item_group_id=item_group_id,
+            stat_time_day=stat_time_day,
+        )
+        db.add(instance)
+
+    for field, value in metrics.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    if bid_type is not None:
+        instance.bid_type = str(bid_type)
+
+    db.flush()
+    return instance
+
+
+def _upsert_creative_metrics(
+    db: Session,
+    *,
+    campaign_id: str,
+    creative_id: str,
+    metrics_row: Mapping[str, Any],
+    stat_time_day: date | None = None,
+    stat_time_hour: datetime | None = None,
+    item_group_id: str | None = None,
+) -> GmvCreativeMetricsDaily | GmvCreativeMetricsHourly:
+    if stat_time_day is None and stat_time_hour is None:
+        raise ValueError("stat_time required")
+
+    metrics = _normalize_metric_payload(metrics_row)
+    normalized_item = _normalize_identifier(item_group_id) if item_group_id else None
+
+    if stat_time_day is not None:
+        stmt = (
+            select(GmvCreativeMetricsDaily)
+            .where(GmvCreativeMetricsDaily.campaign_id == campaign_id)
+            .where(GmvCreativeMetricsDaily.creative_id == creative_id)
+            .where(GmvCreativeMetricsDaily.stat_time_day == stat_time_day)
+        )
+        instance = db.execute(stmt).scalars().first()
+        if instance is None:
+            instance = GmvCreativeMetricsDaily(
+                campaign_id=campaign_id,
+                creative_id=creative_id,
+                stat_time_day=stat_time_day,
+            )
+            db.add(instance)
+    else:
+        stmt = (
+            select(GmvCreativeMetricsHourly)
+            .where(GmvCreativeMetricsHourly.campaign_id == campaign_id)
+            .where(GmvCreativeMetricsHourly.creative_id == creative_id)
+            .where(GmvCreativeMetricsHourly.stat_time_hour == stat_time_hour)
+        )
+        instance = db.execute(stmt).scalars().first()
+        if instance is None and stat_time_hour is not None:
+            instance = GmvCreativeMetricsHourly(
+                campaign_id=campaign_id,
+                creative_id=creative_id,
+                stat_time_hour=stat_time_hour,
+            )
+            db.add(instance)
+
+    if normalized_item:
+        instance.item_group_id = normalized_item
+
+    for field, value in metrics.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    db.flush()
+    return instance
+
+
 def upsert_metrics_hourly_row(
     db: Session,
     *,
     campaign: TTBGmvMaxCampaign,
     row: dict,
-) -> TTBGmvMaxMetricsHourly:
+) -> GmvCampaignMetricsHourly:
     if not isinstance(row, dict):
         raise ValueError("row must be dict")
-    interval_start_value = _extract_field(
+    stat_time_value = _extract_field(
         row,
+        "stat_time_hour",
         "interval_start",
         "interval_start_time",
         "start_time",
-        "stat_time_hour",
         "stat_time",
     )
-    interval_start = _parse_datetime(interval_start_value)
-    if interval_start is None:
+    stat_time_hour = _parse_datetime(stat_time_value)
+    if stat_time_hour is None:
         raise ValueError("interval_start missing")
 
+    promotion_type = _normalize_promotion_type(
+        _extract_field(row, "promotion_type", "gmv_max_promotion_type", "gmv_max_promotion_types"),
+        fallback=_normalize_promotion_type(campaign.shopping_ads_type),
+    )
+
     stmt = (
-        select(TTBGmvMaxMetricsHourly)
-        .where(TTBGmvMaxMetricsHourly.campaign_id == campaign.id)
-        .where(TTBGmvMaxMetricsHourly.interval_start == interval_start)
+        select(GmvCampaignMetricsHourly)
+        .where(GmvCampaignMetricsHourly.campaign_id == str(campaign.campaign_id))
+        .where(GmvCampaignMetricsHourly.promotion_type == promotion_type)
+        .where(GmvCampaignMetricsHourly.stat_time_hour == stat_time_hour)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
-        instance = TTBGmvMaxMetricsHourly(
-            campaign_id=campaign.id,
-            interval_start=interval_start,
+        instance = GmvCampaignMetricsHourly(
+            campaign_id=str(campaign.campaign_id),
+            promotion_type=promotion_type,
+            stat_time_hour=stat_time_hour,
         )
         db.add(instance)
 
-    interval_end_value = _extract_field(
-        row,
-        "interval_end",
-        "interval_end_time",
-        "end_time",
-        "stat_time_hour_end",
-    )
-    instance.interval_end = _parse_datetime(interval_end_value)
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
 
-    instance.impressions = _to_int(_extract_field(row, "impressions", "show_cnt", "views"))
-    instance.clicks = _to_int(_extract_field(row, "clicks", "click", "click_cnt"))
-    cost_cents_value = _extract_field(row, "cost_cents")
-    if cost_cents_value is not None:
-        instance.cost_cents = _to_int(cost_cents_value)
-    else:
-        instance.cost_cents = _to_cents(
-            _extract_field(row, "cost", "spend", "total_spend", "total_cost")
-        )
-    net_cost_cents_value = _extract_field(row, "net_cost_cents")
-    if net_cost_cents_value is not None:
-        instance.net_cost_cents = _to_int(net_cost_cents_value)
-    else:
-        instance.net_cost_cents = _to_cents(_extract_field(row, "net_cost"))
-    instance.orders = _to_int(_extract_field(row, "orders", "order_num", "conversions"))
-    gross_revenue_cents_value = _extract_field(row, "gross_revenue_cents")
-    if gross_revenue_cents_value is not None:
-        instance.gross_revenue_cents = _to_int(gross_revenue_cents_value)
-    else:
-        instance.gross_revenue_cents = _to_cents(
-            _extract_field(row, "gross_revenue", "gmv", "revenue")
-        )
-    instance.roi = _to_decimal(_extract_field(row, "roi", "roas"), quantize=_DECIMAL_FOUR)
-    instance.product_impressions = _to_int(
-        _extract_field(row, "product_impressions", "product_show", "product_show_cnt")
-    )
-    instance.product_clicks = _to_int(
-        _extract_field(row, "product_clicks", "product_click", "product_click_cnt")
-    )
-    instance.product_click_rate = _to_decimal(
-        _extract_field(row, "product_click_rate", "product_ctr"), quantize=_DECIMAL_FOUR
-    )
-    instance.ad_click_rate = _to_decimal(
-        _extract_field(row, "ad_click_rate", "ctr"), quantize=_DECIMAL_FOUR
-    )
-    instance.ad_conversion_rate = _to_decimal(
-        _extract_field(row, "ad_conversion_rate", "cvr"), quantize=_DECIMAL_FOUR
-    )
-    instance.video_views_2s = _to_int(
-        _extract_field(row, "video_views_2s", "video_play_2s", "video_views_2_sec")
-    )
-    instance.video_views_6s = _to_int(
-        _extract_field(row, "video_views_6s", "video_play_6s", "video_views_6_sec")
-    )
-    instance.video_views_p25 = _to_int(
-        _extract_field(row, "video_views_p25", "video_play_actions_25", "video_views_25")
-    )
-    instance.video_views_p50 = _to_int(
-        _extract_field(row, "video_views_p50", "video_play_actions_50", "video_views_50")
-    )
-    instance.video_views_p75 = _to_int(
-        _extract_field(row, "video_views_p75", "video_play_actions_75", "video_views_75")
-    )
-    instance.video_views_p100 = _to_int(
-        _extract_field(row, "video_views_p100", "video_play_actions_100", "video_views_100")
-    )
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
+    instance.live_10s_views = _to_int(
+        _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+    )
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
-    instance.store_id = str(campaign.store_id or "")
+
+    item_group_id = _normalize_identifier(
+        _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
+    )
+    if item_group_id:
+        _upsert_product_metrics_hourly(
+            db,
+            campaign_id=str(campaign.campaign_id),
+            stat_time_hour=stat_time_hour,
+            item_group_id=item_group_id,
+            metrics=metrics_payload,
+            bid_type=_extract_field(row, "bid_type"),
+        )
 
     db.flush()
     return instance
@@ -1892,68 +2146,57 @@ def upsert_metrics_daily_row(
     *,
     campaign: TTBGmvMaxCampaign,
     row: dict,
-) -> TTBGmvMaxMetricsDaily:
+) -> GmvCampaignMetricsDaily:
     if not isinstance(row, dict):
         raise ValueError("row must be dict")
-    date_value = _extract_field(row, "date", "stat_time_day", "stat_time")
+    date_value = _extract_field(row, "stat_time_day", "date", "stat_time")
     stat_date = _parse_date(date_value)
     if stat_date is None:
         raise ValueError("date missing")
 
+    promotion_type = _normalize_promotion_type(
+        _extract_field(row, "promotion_type", "gmv_max_promotion_type", "gmv_max_promotion_types"),
+        fallback=_normalize_promotion_type(campaign.shopping_ads_type),
+    )
+
     stmt = (
-        select(TTBGmvMaxMetricsDaily)
-        .where(TTBGmvMaxMetricsDaily.campaign_id == campaign.id)
-        .where(TTBGmvMaxMetricsDaily.date == stat_date)
+        select(GmvCampaignMetricsDaily)
+        .where(GmvCampaignMetricsDaily.campaign_id == str(campaign.campaign_id))
+        .where(GmvCampaignMetricsDaily.promotion_type == promotion_type)
+        .where(GmvCampaignMetricsDaily.stat_time_day == stat_date)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
-        instance = TTBGmvMaxMetricsDaily(
-            campaign_id=campaign.id,
-            date=stat_date,
+        instance = GmvCampaignMetricsDaily(
+            campaign_id=str(campaign.campaign_id),
+            promotion_type=promotion_type,
+            stat_time_day=stat_date,
         )
         db.add(instance)
 
-    instance.impressions = _to_int(_extract_field(row, "impressions", "show_cnt", "views"))
-    instance.clicks = _to_int(_extract_field(row, "clicks", "click", "click_cnt"))
-    cost_cents_value = _extract_field(row, "cost_cents")
-    if cost_cents_value is not None:
-        instance.cost_cents = _to_int(cost_cents_value)
-    else:
-        instance.cost_cents = _to_cents(
-            _extract_field(row, "cost", "spend", "total_spend", "total_cost")
-        )
-    net_cost_cents_value = _extract_field(row, "net_cost_cents")
-    if net_cost_cents_value is not None:
-        instance.net_cost_cents = _to_int(net_cost_cents_value)
-    else:
-        instance.net_cost_cents = _to_cents(_extract_field(row, "net_cost"))
-    instance.orders = _to_int(_extract_field(row, "orders", "order_num", "conversions"))
-    gross_revenue_cents_value = _extract_field(row, "gross_revenue_cents")
-    if gross_revenue_cents_value is not None:
-        instance.gross_revenue_cents = _to_int(gross_revenue_cents_value)
-    else:
-        instance.gross_revenue_cents = _to_cents(
-            _extract_field(row, "gross_revenue", "gmv", "revenue")
-        )
-    instance.roi = _to_decimal(_extract_field(row, "roi", "roas"), quantize=_DECIMAL_FOUR)
-    instance.product_impressions = _to_int(
-        _extract_field(row, "product_impressions", "product_show", "product_show_cnt")
-    )
-    instance.product_clicks = _to_int(
-        _extract_field(row, "product_clicks", "product_click", "product_click_cnt")
-    )
-    instance.product_click_rate = _to_decimal(
-        _extract_field(row, "product_click_rate", "product_ctr"), quantize=_DECIMAL_FOUR
-    )
-    instance.ad_click_rate = _to_decimal(
-        _extract_field(row, "ad_click_rate", "ctr"), quantize=_DECIMAL_FOUR
-    )
-    instance.ad_conversion_rate = _to_decimal(
-        _extract_field(row, "ad_conversion_rate", "cvr"), quantize=_DECIMAL_FOUR
-    )
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
     instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
+    instance.live_10s_views = _to_int(
+        _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+    )
     instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
-    instance.store_id = str(campaign.store_id or "")
+
+    item_group_id = _normalize_identifier(
+        _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
+    )
+    if item_group_id:
+        _upsert_product_metrics_daily(
+            db,
+            campaign_id=str(campaign.campaign_id),
+            stat_time_day=stat_date,
+            item_group_id=item_group_id,
+            metrics=metrics_payload,
+            bid_type=_extract_field(row, "bid_type"),
+        )
 
     db.flush()
     return instance
@@ -2145,27 +2388,17 @@ async def _sync_creative_level_daily(
                 payload.get("item_id") or payload.get("creative_id")
             )
             stat_time = payload.get("stat_time_day") or payload.get("date") or start_date
-            if not creative_id or not stat_time:
+            stat_time_day = _parse_date(stat_time)
+            if not creative_id or stat_time_day is None:
                 continue
-            metrics_payload = _normalize_creative_metrics(payload)
-            if "item_group_id" in payload:
-                metrics_payload.setdefault("product_id", payload.get("item_group_id"))
-            if "item_id" in payload:
-                metrics_payload.setdefault("item_id", payload.get("item_id"))
-            if "creative_delivery_status" in payload:
-                metrics_payload.setdefault(
-                    "creative_delivery_status", payload.get("creative_delivery_status")
-                )
             try:
-                await upsert_creative_metrics(
+                _upsert_creative_metrics(
                     db,
-                    workspace_id=workspace_id,
-                    provider="tiktok-business",
-                    auth_id=auth_id,
                     campaign_id=str(campaign.campaign_id),
                     creative_id=str(creative_id),
-                    stat_time_day=_parse_date(stat_time),
-                    metrics=metrics_payload,
+                    stat_time_day=stat_time_day,
+                    item_group_id=payload.get("item_group_id"),
+                    metrics_row=payload,
                 )
                 rows += 1
             except Exception:  # noqa: BLE001
@@ -2497,24 +2730,28 @@ def aggregate_recent_metrics(
 ) -> dict[str, Any]:
     now = datetime.utcnow()
 
-    rows_day: list[TTBGmvMaxMetricsDaily] = []
+    promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
+
+    rows_day: list[GmvCampaignMetricsDaily] = []
     if days_window > 0:
         day_from = now.date() - timedelta(days=days_window)
         stmt_day = (
-            select(TTBGmvMaxMetricsDaily)
-            .where(TTBGmvMaxMetricsDaily.campaign_id == campaign.id)
-            .where(TTBGmvMaxMetricsDaily.date >= day_from)
-            .where(TTBGmvMaxMetricsDaily.date <= now.date())
+            select(GmvCampaignMetricsDaily)
+            .where(GmvCampaignMetricsDaily.campaign_id == str(campaign.campaign_id))
+            .where(GmvCampaignMetricsDaily.promotion_type == promotion_type)
+            .where(GmvCampaignMetricsDaily.stat_time_day >= day_from)
+            .where(GmvCampaignMetricsDaily.stat_time_day <= now.date())
         )
         rows_day = db.execute(stmt_day).scalars().all()
 
-    rows_hour: list[TTBGmvMaxMetricsHourly] = []
+    rows_hour: list[GmvCampaignMetricsHourly] = []
     if hours_window > 0:
         ts_from = now - timedelta(hours=hours_window)
         stmt_hour = (
-            select(TTBGmvMaxMetricsHourly)
-            .where(TTBGmvMaxMetricsHourly.campaign_id == campaign.id)
-            .where(TTBGmvMaxMetricsHourly.interval_start >= ts_from)
+            select(GmvCampaignMetricsHourly)
+            .where(GmvCampaignMetricsHourly.campaign_id == str(campaign.campaign_id))
+            .where(GmvCampaignMetricsHourly.promotion_type == promotion_type)
+            .where(GmvCampaignMetricsHourly.stat_time_hour >= ts_from)
         )
         rows_hour = db.execute(stmt_hour).scalars().all()
 
