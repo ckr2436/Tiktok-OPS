@@ -727,7 +727,7 @@ async def create_gmvmax_campaign(
     advertiser_id: str,
     client: TikTokBusinessGMVMaxClient,
     body: GMVMaxCampaignCreateBody,
-) -> TTBGmvMaxCampaign:
+) -> GmvCampaign:
     body_dump = body.model_dump(exclude_none=False)
     if body_dump.get("store_id") and not body_dump.get("store_authorized_bc_id"):
         authorized_bc_id = await ensure_gmvmax_store_authorized(
@@ -780,7 +780,7 @@ async def update_gmvmax_campaign(
     advertiser_id: str,
     client: TikTokBusinessGMVMaxClient,
     body: GMVMaxCampaignUpdateBody,
-) -> TTBGmvMaxCampaign:
+) -> GmvCampaign:
     request = GMVMaxCampaignUpdateRequest(advertiser_id=str(advertiser_id), body=body)
     response = await client.gmv_max_campaign_update(request)
     raw_data = response.data
@@ -1133,47 +1133,55 @@ def _extract_item_group_ids_from_payload(payload: Mapping[str, Any] | None) -> l
 def _sync_campaign_product_assignments(
     db: Session,
     *,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     product_ids: Sequence[str],
+    store_id_hint: str | None,
+    operation_status: Any,
+    promotion_type: PromotionTypeEnum,
 ) -> None:
-    if not getattr(campaign, "id", None):
-        return
-    db.execute(
-        delete(TTBGmvMaxCampaignProduct).where(
-            TTBGmvMaxCampaignProduct.campaign_pk == campaign.id
-        )
-    )
-    normalized_status = _normalize_status_value(campaign.operation_status)
-    if normalized_status != "ENABLE":
-        return
-    store_id = _normalize_identifier(campaign.store_id)
-    if not store_id or not product_ids:
-        return
-
-    existing_conflicts = (
-        delete(TTBGmvMaxCampaignProduct)
-        .where(TTBGmvMaxCampaignProduct.workspace_id == campaign.workspace_id)
-        .where(TTBGmvMaxCampaignProduct.auth_id == campaign.auth_id)
-        .where(TTBGmvMaxCampaignProduct.store_id == store_id)
-        .where(TTBGmvMaxCampaignProduct.item_group_id.in_(list(product_ids)))
-    )
-    db.execute(existing_conflicts)
-
+    normalized_status = _normalize_status_value(operation_status)
+    store_id = _normalize_identifier(store_id_hint)
+    rows: list[dict[str, Any]] = []
     for product_id in product_ids:
         normalized = _normalize_identifier(product_id)
         if not normalized:
             continue
-        db.add(
-            TTBGmvMaxCampaignProduct(
-                workspace_id=campaign.workspace_id,
-                auth_id=campaign.auth_id,
-                campaign_pk=campaign.id,
-                campaign_id=campaign.campaign_id,
-                store_id=store_id,
-                item_group_id=normalized,
-                operation_status=normalized_status,
-            )
+        rows.append(
+            {
+                "workspace_id": campaign.workspace_id,
+                "auth_id": campaign.auth_id,
+                "campaign_id": campaign.campaign_id,
+                "item_group_id": normalized,
+                "promotion_type": promotion_type,
+                "store_id": store_id,
+                "operation_status": normalized_status,
+            }
         )
+
+    if not rows:
+        return
+
+    bind = db.get_bind()
+    if bind and bind.dialect.name == "sqlite":
+        stmt = sqlite_insert(GmvCampaignProduct).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[
+                GmvCampaignProduct.campaign_id,
+                GmvCampaignProduct.item_group_id,
+                GmvCampaignProduct.promotion_type,
+            ],
+            set_={
+                "store_id": stmt.excluded.store_id,
+                "operation_status": stmt.excluded.operation_status,
+            },
+        )
+    else:
+        stmt = mysql_insert(GmvCampaignProduct).values(rows)
+        stmt = stmt.on_duplicate_key_update(
+            store_id=stmt.inserted.store_id,
+            operation_status=stmt.inserted.operation_status,
+        )
+    db.execute(stmt)
 
 
 def _list_campaign_product_ids(
@@ -1628,21 +1636,9 @@ async def sync_gmvmax_campaigns(
     **filters: Any,
 ) -> dict:
     provided_filters = {k: v for k, v in filters.items() if v is not None}
-    filtered_run = bool(provided_filters)
 
-    normalized_advertiser = str(advertiser_id)
-    filter_keys = set(provided_filters)
-    normalized_store_scope: list[str] = []
-    for item in provided_filters.get("store_ids", []):
-        normalized = _normalize_identifier(item)
-        if normalized:
-            normalized_store_scope.append(normalized)
-
-    sync_started_at = datetime.now(timezone.utc)
     synced = 0
     details_cache: dict[str, Mapping[str, Any] | None] = {}
-    campaign_ids_seen: set[str] = set()
-    snapshot_rows: list[dict[str, Any]] = []
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **provided_filters
     ):
@@ -1683,65 +1679,10 @@ async def sync_gmvmax_campaigns(
             store_id_hint=resolved_store_id,
             campaign_details=campaign_details,
         )
-        if campaign_identifier:
-            campaign_ids_seen.add(campaign_identifier)
-            snapshot_rows.append(
-                {
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "advertiser_id": normalized_advertiser,
-                    "store_id": str(resolved_store_id or ""),
-                    "campaign_id": campaign_identifier,
-                    "synced_at": sync_started_at,
-                    "raw_json": payload,
-                }
-            )
         synced += 1
     db.flush()
 
-    if normalized_store_scope:
-        scoped_campaign_ids = {
-            str(value)
-            for value in db.execute(
-                select(TTBGmvMaxCampaign.campaign_id)
-                .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-                .where(TTBGmvMaxCampaign.auth_id == auth_id)
-                .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
-                .where(TTBGmvMaxCampaign.store_id.in_(normalized_store_scope))
-            ).scalars()
-            if value is not None
-        }
-        campaign_ids_seen.update(scoped_campaign_ids)
-
-    _bulk_upsert_snapshots(db, snapshot_rows)
-
-    removed = 0
-    removal_filter_keys = {"store_ids", "gmv_max_promotion_types"}
-    allow_scoped_removal = bool(normalized_store_scope) and filter_keys.issubset(
-        removal_filter_keys
-    )
-    if "gmv_max_promotion_types" in filter_keys:
-        allow_scoped_removal = False
-    if not filtered_run or allow_scoped_removal:
-        _prune_outdated_snapshots(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=normalized_advertiser,
-            synced_at=sync_started_at,
-            store_scope=normalized_store_scope or None,
-            campaign_ids=campaign_ids_seen,
-        )
-        removed = _mark_missing_snapshot_campaigns_as_deleted(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=normalized_advertiser,
-            store_scope=normalized_store_scope or None,
-            synced_at=sync_started_at,
-        )
-
-    return {"synced": synced, "removed": removed}
+    return {"synced": synced, "removed": 0}
 
 
 def upsert_campaign_from_api(
@@ -1753,7 +1694,7 @@ def upsert_campaign_from_api(
     payload: dict,
     store_id_hint: str | None = None,
     campaign_details: Mapping[str, Any] | None = None,
-) -> TTBGmvMaxCampaign:
+) -> GmvCampaign:
     if not isinstance(payload, dict):
         raise ValueError("payload must be dict")
     campaign_identifier = _extract_field(payload, "campaign_id", "id")
@@ -1762,39 +1703,39 @@ def upsert_campaign_from_api(
     campaign_id = str(campaign_identifier)
 
     normalized_advertiser = str(advertiser_id)
-    by_advertiser_stmt = (
-        select(TTBGmvMaxCampaign)
-        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.advertiser_id == normalized_advertiser)
-        .where(TTBGmvMaxCampaign.campaign_id == campaign_id)
-        .order_by(TTBGmvMaxCampaign.id.asc())
+    existing = (
+        db.execute(
+            select(GmvCampaign)
+            .where(GmvCampaign.workspace_id == workspace_id)
+            .where(GmvCampaign.auth_id == auth_id)
+            .where(GmvCampaign.campaign_id == campaign_id)
+        )
+        .scalars()
+        .first()
     )
-    rows = db.execute(by_advertiser_stmt).scalars().all()
-    result: TTBGmvMaxCampaign | None = None
-    if rows:
-        result = _merge_duplicate_campaign_rows(db, campaign_rows=rows)
+    promotion_type_raw = _extract_field_from_sources(
+        ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
+        payload,
+        campaign_details,
+    )
+    promotion_type_value = (_normalize_identifier(promotion_type_raw) or "PRODUCT").upper()
+    promotion_type = (
+        PromotionTypeEnum.LIVE if promotion_type_value.startswith("LIVE") else PromotionTypeEnum.PRODUCT
+    )
 
-    if result is None:
-        legacy_stmt = (
-            select(TTBGmvMaxCampaign)
-            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-            .where(TTBGmvMaxCampaign.auth_id == auth_id)
-            .where(TTBGmvMaxCampaign.campaign_id == campaign_id)
-        )
-        result = db.execute(legacy_stmt).scalars().first()
-
-    if result is None:
-        result = TTBGmvMaxCampaign(
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=normalized_advertiser,
-            campaign_id=campaign_id,
-        )
+    result = existing or GmvCampaign(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=normalized_advertiser,
+        campaign_id=campaign_id,
+        promotion_type=promotion_type,
+    )
+    if existing is None:
         db.add(result)
-        _assign_sqlite_pk(db, result)
 
     result.auth_id = auth_id
     result.advertiser_id = normalized_advertiser
+    result.promotion_type = promotion_type
     if result.is_deleted:
         result.is_deleted = False
         result.deleted_at = None
@@ -1870,25 +1811,10 @@ def upsert_campaign_from_api(
             )
         result.store_id = str(store_identifier)
 
-    operation_status_value = _extract_field_from_sources(
-        ("operation_status",), payload, campaign_details
-    )
-    result.operation_status = _normalize_status_value(operation_status_value)
-
     status_value = _extract_field_from_sources(
         ("status", "campaign_status"), payload, campaign_details
     )
-    if status_value is None:
-        status_value = _extract_field_from_sources(
-            ("primary_status",), payload, campaign_details
-        )
-    if status_value is None and result.operation_status is not None:
-        status_value = result.operation_status
     result.status = _normalize_status_value(status_value)
-    secondary_status_value = _extract_field_from_sources(
-        ("secondary_status",), payload, campaign_details
-    )
-    result.secondary_status = _normalize_status_value(secondary_status_value)
     result.is_deleted = False
     result.deleted_at = None
     result.shopping_ads_type = _extract_field_from_sources(
@@ -1935,12 +1861,22 @@ def upsert_campaign_from_api(
     else:
         result.raw_json = payload
 
+    operation_status_value = _extract_field_from_sources(
+        ("operation_status",), payload, campaign_details
+    )
     product_ids = _extract_item_group_ids_from_payload(payload)
     if isinstance(campaign_details, Mapping):
         detail_products = _extract_item_group_ids_from_payload(campaign_details)
         if detail_products:
             product_ids = sorted({*product_ids, *detail_products})
-    _sync_campaign_product_assignments(db, campaign=result, product_ids=product_ids)
+    _sync_campaign_product_assignments(
+        db,
+        campaign=result,
+        product_ids=product_ids,
+        store_id_hint=store_identifier,
+        operation_status=operation_status_value,
+        promotion_type=promotion_type,
+    )
 
     db.flush()
     return result
