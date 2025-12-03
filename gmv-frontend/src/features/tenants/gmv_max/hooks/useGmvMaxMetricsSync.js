@@ -23,10 +23,9 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
       setTask(nextTask ? { ...nextTask, state: normalizedState } : null);
       setTaskError(null);
       setCurrentTaskId(undefined);
-      queryClient.invalidateQueries({
-        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
-        exact: false,
-      });
+      const metricsQueryKey = composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId);
+      queryClient.invalidateQueries({ queryKey: metricsQueryKey, exact: false });
+      queryClient.refetchQueries({ queryKey: metricsQueryKey, exact: false, type: "active" });
     },
     [authId, campaignId, provider, queryClient, workspaceId],
   );
