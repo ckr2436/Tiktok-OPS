@@ -1166,13 +1166,16 @@ def _sync_campaign_product_assignments(
         stmt = sqlite_insert(GmvCampaignProduct).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=[
+                GmvCampaignProduct.workspace_id,
+                GmvCampaignProduct.auth_id,
                 GmvCampaignProduct.campaign_id,
+                GmvCampaignProduct.store_id,
                 GmvCampaignProduct.item_group_id,
-                GmvCampaignProduct.promotion_type,
             ],
             set_={
                 "store_id": stmt.excluded.store_id,
                 "operation_status": stmt.excluded.operation_status,
+                "promotion_type": stmt.excluded.promotion_type,
             },
         )
     else:
@@ -2050,6 +2053,10 @@ def upsert_metrics_hourly_row(
         )
         db.add(instance)
 
+    store_id = _normalize_identifier(getattr(campaign, "store_id", None))
+    if store_id:
+        instance.store_id = store_id
+
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
         if hasattr(instance, field):
@@ -2173,6 +2180,10 @@ def upsert_metrics_daily_row(
             stat_time_day=stat_date,
         )
         db.add(instance)
+
+    store_id = _normalize_identifier(getattr(campaign, "store_id", None))
+    if store_id:
+        instance.store_id = store_id
 
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
