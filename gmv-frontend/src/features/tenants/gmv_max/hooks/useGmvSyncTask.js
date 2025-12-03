@@ -62,7 +62,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       await queryClient.refetchQueries({
         queryKey: ["gmvMax", "metrics", workspaceId, provider, authId],
         exact: false,
-        type: "active",
+        type: "all",
       });
       await queryClient.invalidateQueries({
         queryKey: ["gmvMax", "campaign", workspaceId, provider, authId],
@@ -71,7 +71,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       await queryClient.refetchQueries({
         queryKey: ["gmvMax", "campaign", workspaceId, provider, authId],
         exact: false,
-        type: "active",
+        type: "all",
       });
       await queryClient.invalidateQueries({
         queryKey: ["gmvMax", "campaigns", workspaceId, provider, authId],
