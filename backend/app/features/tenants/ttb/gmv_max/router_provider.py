@@ -2858,8 +2858,6 @@ async def query_gmvmax_metrics_provider(
         if historical_end and historical_end >= start:
             creative_stmt = (
                 select(GmvCreativeMetricsDaily)
-                .where(GmvCreativeMetricsDaily.workspace_id == workspace_id)
-                .where(GmvCreativeMetricsDaily.auth_id == auth_id)
                 .where(GmvCreativeMetricsDaily.campaign_id.in_(campaign_filter_ids))
                 .where(func.date(GmvCreativeMetricsDaily.stat_time_day) >= start)
                 .where(func.date(GmvCreativeMetricsDaily.stat_time_day) <= historical_end)
