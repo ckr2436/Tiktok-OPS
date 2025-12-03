@@ -14,22 +14,22 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.models.gmv_restructured import (
+    GmvActionLog,
+    GmvCampaign,
+    GmvCampaignCreative,
+    GmvCampaignLivestream,
     GmvCampaignMetricsDaily,
     GmvCampaignMetricsHourly,
+    GmvCampaignProduct,
     GmvCreativeMetricsDaily,
     GmvCreativeMetricsHourly,
     GmvProductMetricsDaily,
     GmvProductMetricsHourly,
+    GmvStrategyConfig,
     PromotionTypeEnum,
 )
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
-from app.data.models.ttb_gmvmax import (
-    TTBGmvMaxActionLog,
-    TTBGmvMaxCampaign,
-    TTBGmvMaxCampaignProduct,
-    TTBGmvMaxCampaignSyncSnapshot,
-    TTBGmvMaxStrategyConfig,
-)
+from app.data.models.ttb_gmvmax import TTBGmvMaxCampaignSyncSnapshot
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
@@ -543,7 +543,7 @@ def _resolve_store_id_for_metrics(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
 ) -> str | None:
     """Pick the best-effort store_id for metrics sync.
 
@@ -599,7 +599,7 @@ def _resolve_store_id_for_metrics(
 
 
 def _pick_dataset_for_level(
-    *, campaign: TTBGmvMaxCampaign, level: GMVMaxReportLevel
+    *, campaign: GmvCampaign, level: GMVMaxReportLevel
 ) -> GMVMaxDataset:
     promotion_type = (_normalize_identifier(campaign.shopping_ads_type) or "PRODUCT").upper()
     if level == GMVMaxReportLevel.CAMPAIGN:
@@ -657,7 +657,7 @@ def _apply_attribute_scope_constraints(
 
 def _build_level_report_request(
     *,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     store_id: str,
     level: GMVMaxReportLevel,
     start_date: str,
@@ -844,14 +844,14 @@ def _mark_missing_snapshot_campaigns_as_deleted(
     }
 
     campaign_stmt = (
-        select(TTBGmvMaxCampaign.campaign_id)
-        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.auth_id == auth_id)
-        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
+        select(GmvCampaign.campaign_id)
+        .where(GmvCampaign.workspace_id == workspace_id)
+        .where(GmvCampaign.auth_id == auth_id)
+        .where(GmvCampaign.advertiser_id == advertiser_id)
     )
     if store_scope:
         campaign_stmt = campaign_stmt.where(
-            TTBGmvMaxCampaign.store_id.in_(store_scope)
+            GmvCampaign.store_id.in_(store_scope)
         )
     campaign_ids = {
         str(value)
@@ -863,18 +863,18 @@ def _mark_missing_snapshot_campaigns_as_deleted(
         return 0
 
     delete_stmt = (
-        update(TTBGmvMaxCampaign)
-        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.auth_id == auth_id)
-        .where(TTBGmvMaxCampaign.advertiser_id == advertiser_id)
-        .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+        update(GmvCampaign)
+        .where(GmvCampaign.workspace_id == workspace_id)
+        .where(GmvCampaign.auth_id == auth_id)
+        .where(GmvCampaign.advertiser_id == advertiser_id)
+        .where(GmvCampaign.is_deleted.is_(False))
     )
     if store_scope:
         delete_stmt = delete_stmt.where(
-            TTBGmvMaxCampaign.store_id.in_(store_scope)
+            GmvCampaign.store_id.in_(store_scope)
         )
     delete_stmt = delete_stmt.where(
-        TTBGmvMaxCampaign.campaign_id.in_(missing_snapshot_ids)
+        GmvCampaign.campaign_id.in_(missing_snapshot_ids)
     ).values(
         status="DELETE",
         operation_status="DELETE",
@@ -885,14 +885,14 @@ def _mark_missing_snapshot_campaigns_as_deleted(
     result = db.execute(delete_stmt)
 
     product_cleanup = (
-        update(TTBGmvMaxCampaignProduct)
-        .where(TTBGmvMaxCampaignProduct.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaignProduct.campaign_id.in_(missing_snapshot_ids))
+        update(GmvCampaignProduct)
+        .where(GmvCampaignProduct.workspace_id == workspace_id)
+        .where(GmvCampaignProduct.campaign_id.in_(missing_snapshot_ids))
         .values(operation_status="DELETE")
     )
     if store_scope:
         product_cleanup = product_cleanup.where(
-            TTBGmvMaxCampaignProduct.store_id.in_(store_scope)
+            GmvCampaignProduct.store_id.in_(store_scope)
         )
     db.execute(product_cleanup)
 
@@ -969,14 +969,14 @@ def _prune_outdated_snapshots(
     db.execute(delete_stmt)
 
 
-def _assign_sqlite_pk(db: Session, row: TTBGmvMaxCampaign) -> None:
+def _assign_sqlite_pk(db: Session, row: GmvCampaign) -> None:
     bind = db.get_bind()
     if bind is None or bind.dialect.name != "sqlite":
         return
     if getattr(row, "id", None):
         return
     next_value = db.execute(
-        select(func.coalesce(func.max(TTBGmvMaxCampaign.id), 0))
+        select(func.coalesce(func.max(GmvCampaign.id), 0))
     ).scalar_one()
     row.id = int(next_value or 0) + 1
 
@@ -985,8 +985,8 @@ def _migrate_campaign_products(db: Session, *, source_id: int, target_id: int) -
     if not source_id or not target_id or source_id == target_id:
         return
     stmt = (
-        update(TTBGmvMaxCampaignProduct)
-        .where(TTBGmvMaxCampaignProduct.campaign_pk == int(source_id))
+        update(GmvCampaignProduct)
+        .where(GmvCampaignProduct.campaign_pk == int(source_id))
         .values(campaign_pk=int(target_id))
     )
     db.execute(stmt)
@@ -996,8 +996,8 @@ def _migrate_action_logs(db: Session, *, source_id: int, target_id: int) -> None
     if not source_id or not target_id or source_id == target_id:
         return
     stmt = (
-        update(TTBGmvMaxActionLog)
-        .where(TTBGmvMaxActionLog.campaign_id == int(source_id))
+        update(GmvActionLog)
+        .where(GmvActionLog.campaign_id == int(source_id))
         .values(campaign_id=int(target_id))
     )
     db.execute(stmt)
@@ -1006,8 +1006,8 @@ def _migrate_action_logs(db: Session, *, source_id: int, target_id: int) -> None
 def _merge_duplicate_campaign_rows(
     db: Session,
     *,
-    campaign_rows: Sequence[TTBGmvMaxCampaign],
-) -> TTBGmvMaxCampaign:
+    campaign_rows: Sequence[GmvCampaign],
+) -> GmvCampaign:
     if not campaign_rows:
         raise ValueError("campaign_rows must not be empty")
     primary = campaign_rows[0]
@@ -1188,17 +1188,17 @@ def _sync_campaign_product_assignments(
 
 
 def _list_campaign_product_ids(
-    db: Session, *, campaign: TTBGmvMaxCampaign
+    db: Session, *, campaign: GmvCampaign
 ) -> list[str]:
     if not getattr(campaign, "id", None):
         return []
 
     rows = (
         db.execute(
-            select(TTBGmvMaxCampaignProduct.item_group_id)
-            .where(TTBGmvMaxCampaignProduct.campaign_pk == int(campaign.id))
-            .where(TTBGmvMaxCampaignProduct.store_id == str(campaign.store_id or ""))
-            .where(TTBGmvMaxCampaignProduct.operation_status == "ENABLE")
+            select(GmvCampaignProduct.item_group_id)
+            .where(GmvCampaignProduct.campaign_pk == int(campaign.id))
+            .where(GmvCampaignProduct.store_id == str(campaign.store_id or ""))
+            .where(GmvCampaignProduct.operation_status == "ENABLE")
         )
         .scalars()
         .all()
@@ -1239,7 +1239,7 @@ def _extract_item_group_ids_from_campaign_payload(raw_payload: Any) -> list[str]
 
 
 def get_item_group_ids_for_campaign(
-    db: Session, *, campaign: TTBGmvMaxCampaign
+    db: Session, *, campaign: GmvCampaign
 ) -> list[str]:
     """Return item_group_ids for a campaign, backfilling product rows when needed."""
 
@@ -1254,20 +1254,20 @@ def get_item_group_ids_for_campaign(
     store_id = str(campaign.store_id or "")
     for item_group_id in raw_item_group_ids:
         exists = (
-            db.query(TTBGmvMaxCampaignProduct)
+            db.query(GmvCampaignProduct)
             .filter(
-                TTBGmvMaxCampaignProduct.workspace_id == campaign.workspace_id,
-                TTBGmvMaxCampaignProduct.auth_id == campaign.auth_id,
-                TTBGmvMaxCampaignProduct.campaign_id == campaign.campaign_id,
-                TTBGmvMaxCampaignProduct.store_id == store_id,
-                TTBGmvMaxCampaignProduct.item_group_id == item_group_id,
+                GmvCampaignProduct.workspace_id == campaign.workspace_id,
+                GmvCampaignProduct.auth_id == campaign.auth_id,
+                GmvCampaignProduct.campaign_id == campaign.campaign_id,
+                GmvCampaignProduct.store_id == store_id,
+                GmvCampaignProduct.item_group_id == item_group_id,
             )
             .first()
         )
         if exists:
             continue
         db.add(
-            TTBGmvMaxCampaignProduct(
+            GmvCampaignProduct(
                 workspace_id=campaign.workspace_id,
                 auth_id=campaign.auth_id,
                 campaign_pk=campaign.id,
@@ -2016,7 +2016,7 @@ def _upsert_creative_metrics(
 def upsert_metrics_hourly_row(
     db: Session,
     *,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     row: dict,
 ) -> GmvCampaignMetricsHourly:
     if not isinstance(row, dict):
@@ -2092,7 +2092,7 @@ async def sync_gmvmax_metrics_hourly(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     start_date: date | str,
     end_date: date | str,
 ) -> dict:
@@ -2151,7 +2151,7 @@ async def sync_gmvmax_metrics_hourly(
 def upsert_metrics_daily_row(
     db: Session,
     *,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     row: dict,
 ) -> GmvCampaignMetricsDaily:
     if not isinstance(row, dict):
@@ -2253,7 +2253,7 @@ async def sync_gmvmax_metrics_daily(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     start_date: date | str,
     end_date: date | str,
 ) -> dict:
@@ -2315,7 +2315,7 @@ async def _sync_campaign_level_daily(
     *,
     workspace_id: int,
     auth_id: int,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     store_id: str,
     start_date: str,
     end_date: str,
@@ -2359,7 +2359,7 @@ async def _sync_creative_level_daily(
     *,
     workspace_id: int,
     auth_id: int,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     store_id: str,
     start_date: str,
     end_date: str,
@@ -2449,7 +2449,7 @@ async def sync_gmvmax_reports_for_campaign(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     start_date: date | str,
     end_date: date | str,
 ) -> dict[str, int]:
@@ -2515,7 +2515,7 @@ def log_campaign_action(
     *,
     workspace_id: int,
     auth_id: int,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     action: str,
     reason: str | None = None,
     before: dict | None = None,
@@ -2524,8 +2524,8 @@ def log_campaign_action(
     result: str = "SUCCESS",
     error_message: str | None = None,
     audit_hook: Callable[..., Any] | None = None,
-) -> TTBGmvMaxActionLog:
-    log_row = TTBGmvMaxActionLog(
+) -> GmvActionLog:
+    log_row = GmvActionLog(
         workspace_id=workspace_id,
         auth_id=auth_id,
         campaign_id=campaign.id,
@@ -2595,13 +2595,13 @@ async def apply_campaign_action(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     action: str,
     payload: dict | None = None,
     reason: str | None = None,
     performed_by: str = "system",
     audit_hook: Callable[..., Any] | None = None,
-) -> TTBGmvMaxActionLog:
+) -> GmvActionLog:
     requested_action = str(action or "").strip().upper()
     normalized_action = _ACTION_NORMALIZATION.get(requested_action, requested_action)
     if normalized_action not in _ALLOWED_ACTIONS:
@@ -2696,17 +2696,17 @@ def get_or_create_strategy_config(
     *,
     workspace_id: int,
     auth_id: int,
-    campaign: TTBGmvMaxCampaign,
-) -> TTBGmvMaxStrategyConfig:
+    campaign: GmvCampaign,
+) -> GmvStrategyConfig:
     stmt = (
-        select(TTBGmvMaxStrategyConfig)
-        .where(TTBGmvMaxStrategyConfig.workspace_id == workspace_id)
-        .where(TTBGmvMaxStrategyConfig.auth_id == auth_id)
-        .where(TTBGmvMaxStrategyConfig.campaign_id == campaign.campaign_id)
+        select(GmvStrategyConfig)
+        .where(GmvStrategyConfig.workspace_id == workspace_id)
+        .where(GmvStrategyConfig.auth_id == auth_id)
+        .where(GmvStrategyConfig.campaign_id == campaign.campaign_id)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
-        instance = TTBGmvMaxStrategyConfig(
+        instance = GmvStrategyConfig(
             workspace_id=workspace_id,
             auth_id=auth_id,
             campaign_id=campaign.campaign_id,
@@ -2735,7 +2735,7 @@ def _calc_roi(gross_cents: Optional[int], cost_cents: Optional[int]) -> Optional
 def aggregate_recent_metrics(
     db: Session,
     *,
-    campaign: TTBGmvMaxCampaign,
+    campaign: GmvCampaign,
     hours_window: int = 6,
     days_window: int = 1,
 ) -> dict[str, Any]:
@@ -2786,8 +2786,8 @@ def aggregate_recent_metrics(
 
 def decide_campaign_action(
     *,
-    campaign: TTBGmvMaxCampaign,
-    strategy: TTBGmvMaxStrategyConfig,
+    campaign: GmvCampaign,
+    strategy: GmvStrategyConfig,
     metrics: dict[str, Any],
 ) -> Optional[StrategyDecision]:
     if not strategy.enabled:

@@ -31,13 +31,12 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBProduct,
 )
-from app.data.models.ttb_gmvmax import (
-    TTBGmvMaxCampaign,
-    TTBGmvMaxActionLog,
-    TTBGmvMaxCampaignProduct,
-    TTBGmvMaxMetricsDaily,
-    TTBGmvMaxCreativeMetric,
-    TTBGmvMaxCreativeMetrics10Min,
+from app.data.models.gmv_restructured import (
+    GmvActionLog,
+    GmvCampaign,
+    GmvCampaignMetricsDaily,
+    GmvCampaignProduct,
+    GmvCreativeMetricsDaily,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     list_heating_configs,
@@ -222,7 +221,7 @@ class _TTLCache:
 _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
 
 
-def _campaign_row_to_schema(row: TTBGmvMaxCampaign) -> GMVMaxCampaign:
+def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
     if row.raw_json:
         try:
             payload = dict(row.raw_json)
@@ -374,21 +373,21 @@ def _resolve_actor_label(me: SessionUser | None) -> str:
 def _load_campaign_row(
     context: GMVMaxRouteContext,
     campaign_id: str,
-) -> TTBGmvMaxCampaign | None:
+) -> GmvCampaign | None:
     db = getattr(context, "db", None)
     if db is None or not hasattr(db, "execute"):
         return None
     stmt = (
-        select(TTBGmvMaxCampaign)
-        .where(TTBGmvMaxCampaign.workspace_id == int(context.workspace_id))
-        .where(TTBGmvMaxCampaign.auth_id == int(context.auth_id))
-        .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
+        select(GmvCampaign)
+        .where(GmvCampaign.workspace_id == int(context.workspace_id))
+        .where(GmvCampaign.auth_id == int(context.auth_id))
+        .where(GmvCampaign.campaign_id == str(campaign_id))
     )
     return db.execute(stmt).scalars().first()
 
 
 def _snapshot_campaign_state(
-    campaign: TTBGmvMaxCampaign | None,
+    campaign: GmvCampaign | None,
 ) -> Dict[str, Any]:
     if campaign is None:
         return {}
@@ -403,7 +402,7 @@ def _log_action_entry(
     context: GMVMaxRouteContext,
     *,
     campaign_id: str,
-    campaign: TTBGmvMaxCampaign | None,
+    campaign: GmvCampaign | None,
     action: str,
     actor: str,
     before: Mapping[str, Any] | None,
@@ -546,7 +545,7 @@ def _build_creative_metrics_response(
         dimensions = {
             "campaign_id": getattr(row, "campaign_id", None),
             "item_group_id": metrics_data.get("item_group_id")
-            or getattr(row, "product_id", None),
+            or getattr(row, "item_group_id", None),
             "item_id": metrics.get("item_id"),
             "stat_time_day": getattr(row, "stat_time_day", None) or end,
         }
@@ -1136,7 +1135,7 @@ def _extract_item_group_ids(sessions: Sequence[GMVMaxSession]) -> List[str]:
 
 async def _resolve_campaign_product_ids(
     context: GMVMaxRouteContext,
-    campaign: TTBGmvMaxCampaign | None,
+    campaign: GmvCampaign | None,
     advertiser_id: str,
 ) -> list[str]:
     """Load product bindings for a campaign, refreshing from TikTok if needed."""
@@ -1201,7 +1200,7 @@ async def _resolve_campaign_product_ids(
 async def _ensure_campaign_products_available(
     context: GMVMaxRouteContext,
     *,
-    campaign: TTBGmvMaxCampaign | None,
+    campaign: GmvCampaign | None,
     advertiser_id: str,
 ) -> None:
     """Verify that campaign product bindings are not occupied by other campaigns."""
@@ -1225,22 +1224,22 @@ async def _ensure_campaign_products_available(
 
     conflict_stmt = (
         select(
-            TTBGmvMaxCampaignProduct.item_group_id,
-            TTBGmvMaxCampaignProduct.campaign_id,
+            GmvCampaignProduct.item_group_id,
+            GmvCampaignProduct.campaign_id,
         )
         .join(
-            TTBGmvMaxCampaign,
-            TTBGmvMaxCampaign.id == TTBGmvMaxCampaignProduct.campaign_pk,
+            GmvCampaign,
+            GmvCampaign.id == GmvCampaignProduct.campaign_pk,
         )
-        .where(TTBGmvMaxCampaignProduct.workspace_id == int(context.workspace_id))
-        .where(TTBGmvMaxCampaignProduct.auth_id == int(context.auth_id))
-        .where(TTBGmvMaxCampaignProduct.store_id == str(store_id))
-        .where(TTBGmvMaxCampaignProduct.item_group_id.in_(product_ids))
-        .where(func.lower(TTBGmvMaxCampaign.operation_status) == "enable")
+        .where(GmvCampaignProduct.workspace_id == int(context.workspace_id))
+        .where(GmvCampaignProduct.auth_id == int(context.auth_id))
+        .where(GmvCampaignProduct.store_id == str(store_id))
+        .where(GmvCampaignProduct.item_group_id.in_(product_ids))
+        .where(func.lower(GmvCampaign.operation_status) == "enable")
     )
     if getattr(campaign, "id", None) is not None:
         conflict_stmt = conflict_stmt.where(
-            TTBGmvMaxCampaignProduct.campaign_pk != int(campaign.id)
+            GmvCampaignProduct.campaign_pk != int(campaign.id)
         )
 
     conflicts = db.execute(conflict_stmt).all()
@@ -2354,34 +2353,34 @@ async def list_gmvmax_campaigns_provider(
     page_size_value = page_size or 20
 
     query = (
-        context.db.query(TTBGmvMaxCampaign)
-        .filter(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
-        .filter(TTBGmvMaxCampaign.advertiser_id == str(adv))
+        context.db.query(GmvCampaign)
+        .filter(GmvCampaign.workspace_id == int(workspace_id))
+        .filter(GmvCampaign.advertiser_id == str(adv))
     )
     if store_ids:
-        query = query.filter(TTBGmvMaxCampaign.store_id.in_([str(item) for item in store_ids]))
+        query = query.filter(GmvCampaign.store_id.in_([str(item) for item in store_ids]))
     if campaign_ids:
-        query = query.filter(TTBGmvMaxCampaign.campaign_id.in_([str(item) for item in campaign_ids]))
+        query = query.filter(GmvCampaign.campaign_id.in_([str(item) for item in campaign_ids]))
     if campaign_name:
-        query = query.filter(TTBGmvMaxCampaign.name.ilike(f"%{campaign_name}%"))
+        query = query.filter(GmvCampaign.name.ilike(f"%{campaign_name}%"))
     if primary_status:
-        query = query.filter(TTBGmvMaxCampaign.status == str(primary_status))
+        query = query.filter(GmvCampaign.status == str(primary_status))
     if not include_deleted:
-        query = query.filter(TTBGmvMaxCampaign.is_deleted.is_(False)).filter(
+        query = query.filter(GmvCampaign.is_deleted.is_(False)).filter(
             or_(
-                TTBGmvMaxCampaign.operation_status.is_(None),
-                TTBGmvMaxCampaign.operation_status != "DELETE",
+                GmvCampaign.operation_status.is_(None),
+                GmvCampaign.operation_status != "DELETE",
             )
         ).filter(
             or_(
-                TTBGmvMaxCampaign.secondary_status.is_(None),
-                TTBGmvMaxCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
+                GmvCampaign.secondary_status.is_(None),
+                GmvCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
             )
         )
 
     total = query.count()
     rows = (
-        query.order_by(TTBGmvMaxCampaign.updated_at.desc())
+        query.order_by(GmvCampaign.updated_at.desc())
         .offset((page_value - 1) * page_size_value)
         .limit(page_size_value)
         .all()
@@ -2427,7 +2426,7 @@ async def get_gmvmax_campaign_provider(
         )
 
     info_resp = await info_request
-    local_row: TTBGmvMaxCampaign | None = None
+    local_row: GmvCampaign | None = None
     if context.db is not None:
         local_row = upsert_campaign_from_api(
             context.db,
@@ -2769,7 +2768,7 @@ async def query_gmvmax_metrics_provider(
                         "campaign_id": row.campaign_id,
                         "creative_id": getattr(row, "creative_id", None) or getattr(row, "item_id", None),
                         "shop_content_id": getattr(row, "item_id", None) or getattr(row, "creative_id", None),
-                        "product_id": getattr(row, "product_id", None),
+                        "product_id": getattr(row, "item_group_id", None),
                         "stat_time_day": (
                             row.stat_time_day.isoformat()
                             if isinstance(getattr(row, "stat_time_day", None), date)
@@ -2787,27 +2786,27 @@ async def query_gmvmax_metrics_provider(
         campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
         stmt = (
             select(
-                TTBGmvMaxCampaign.campaign_id,
-                TTBGmvMaxMetricsDaily.date.label("stat_time_day"),
-                func.sum(func.coalesce(TTBGmvMaxMetricsDaily.net_cost_cents, TTBGmvMaxMetricsDaily.cost_cents, 0)).label(
+                GmvCampaign.campaign_id,
+                GmvCampaignMetricsDaily.stat_time_day.label("stat_time_day"),
+                func.sum(func.coalesce(GmvCampaignMetricsDaily.net_cost_cents, GmvCampaignMetricsDaily.cost_cents, 0)).label(
                     "spend_cents"
                 ),
-                func.sum(TTBGmvMaxMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
-                func.sum(TTBGmvMaxMetricsDaily.orders).label("orders"),
-                func.sum(TTBGmvMaxMetricsDaily.impressions).label("impressions"),
-                func.sum(TTBGmvMaxMetricsDaily.clicks).label("clicks"),
+                func.sum(GmvCampaignMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
+                func.sum(GmvCampaignMetricsDaily.orders).label("orders"),
+                func.sum(GmvCampaignMetricsDaily.impressions).label("impressions"),
+                func.sum(GmvCampaignMetricsDaily.clicks).label("clicks"),
             )
-            .join(TTBGmvMaxCampaign, TTBGmvMaxCampaign.id == TTBGmvMaxMetricsDaily.campaign_id)
-            .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-            .where(TTBGmvMaxCampaign.auth_id == auth_id)
-            .where(TTBGmvMaxCampaign.advertiser_id == str(effective_advertiser_id))
-            .where(TTBGmvMaxCampaign.campaign_id.in_(campaign_filter_ids))
-            .where(TTBGmvMaxCampaign.store_id == str(effective_store_id))
-            .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-            .where(TTBGmvMaxMetricsDaily.date >= start)
-            .where(TTBGmvMaxMetricsDaily.date <= end)
-            .group_by(TTBGmvMaxCampaign.campaign_id, TTBGmvMaxMetricsDaily.date)
-            .order_by(TTBGmvMaxMetricsDaily.date.asc())
+            .join(GmvCampaign, GmvCampaign.campaign_id == GmvCampaignMetricsDaily.campaign_id)
+            .where(GmvCampaign.workspace_id == workspace_id)
+            .where(GmvCampaign.auth_id == auth_id)
+            .where(GmvCampaign.advertiser_id == str(effective_advertiser_id))
+            .where(GmvCampaign.campaign_id.in_(campaign_filter_ids))
+            .where(GmvCampaign.store_id == str(effective_store_id))
+            .where(GmvCampaign.is_deleted.is_(False))
+            .where(GmvCampaignMetricsDaily.stat_time_day >= start)
+            .where(GmvCampaignMetricsDaily.stat_time_day <= end)
+            .group_by(GmvCampaign.campaign_id, GmvCampaignMetricsDaily.stat_time_day)
+            .order_by(GmvCampaignMetricsDaily.stat_time_day.asc())
         )
         rows = db.execute(stmt).all()
 
@@ -2858,17 +2857,16 @@ async def query_gmvmax_metrics_provider(
         historical_end = min(end, date.today() - timedelta(days=1)) if start < date.today() else None
         if historical_end and historical_end >= start:
             creative_stmt = (
-                select(TTBGmvMaxCreativeMetric)
-                .where(TTBGmvMaxCreativeMetric.workspace_id == workspace_id)
-                .where(TTBGmvMaxCreativeMetric.provider == provider)
-                .where(TTBGmvMaxCreativeMetric.auth_id == auth_id)
-                .where(TTBGmvMaxCreativeMetric.campaign_id.in_(campaign_filter_ids))
-                .where(func.date(TTBGmvMaxCreativeMetric.stat_time_day) >= start)
-                .where(func.date(TTBGmvMaxCreativeMetric.stat_time_day) <= historical_end)
-                .order_by(TTBGmvMaxCreativeMetric.stat_time_day.asc())
+                select(GmvCreativeMetricsDaily)
+                .where(GmvCreativeMetricsDaily.workspace_id == workspace_id)
+                .where(GmvCreativeMetricsDaily.auth_id == auth_id)
+                .where(GmvCreativeMetricsDaily.campaign_id.in_(campaign_filter_ids))
+                .where(func.date(GmvCreativeMetricsDaily.stat_time_day) >= start)
+                .where(func.date(GmvCreativeMetricsDaily.stat_time_day) <= historical_end)
+                .order_by(GmvCreativeMetricsDaily.stat_time_day.asc())
             )
             if clean_item_group_ids:
-                creative_stmt = creative_stmt.where(TTBGmvMaxCreativeMetric.product_id.in_(clean_item_group_ids))
+                creative_stmt = creative_stmt.where(GmvCreativeMetricsDaily.item_group_id.in_(clean_item_group_ids))
 
             rows.extend(list(db.execute(creative_stmt).scalars().all()))
 
@@ -3019,7 +3017,7 @@ def _extract_error_message(detail: Any) -> str:
 
 
 def _serialize_action_log_row(
-    campaign: TTBGmvMaxCampaign, row: TTBGmvMaxActionLog
+    campaign: GmvCampaign, row: GmvActionLog
 ) -> Dict[str, Any]:
     campaign_identifier = getattr(campaign, "campaign_id", None) or getattr(
         campaign, "id", None
