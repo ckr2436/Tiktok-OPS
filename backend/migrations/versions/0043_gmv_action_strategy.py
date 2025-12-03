@@ -47,9 +47,15 @@ def upgrade():
             server_default="0",
         ),
     )
-    op.add_column(
+    op.execute(
+        "UPDATE gmv_campaign_products SET store_id='' WHERE store_id IS NULL"
+    )
+    op.alter_column(
         "gmv_campaign_products",
-        sa.Column("store_id", sa.String(length=64), nullable=False, server_default=""),
+        "store_id",
+        existing_type=sa.String(length=64),
+        nullable=False,
+        server_default="",
     )
     op.alter_column("gmv_campaign_products", "store_id", server_default=None)
     op.alter_column("gmv_campaign_products", "workspace_id", server_default=None)
@@ -199,9 +205,16 @@ def downgrade():
         )
         batch.drop_constraint("fk_gmv_campaign_products_campaign_pk", type_="foreignkey")
         batch.drop_column("campaign_pk")
-        batch.drop_column("store_id")
         batch.drop_column("auth_id")
         batch.drop_column("workspace_id")
+
+    op.alter_column(
+        "gmv_campaign_products",
+        "store_id",
+        existing_type=sa.String(length=64),
+        nullable=True,
+        server_default=None,
+    )
 
     op.drop_table("gmv_strategy_configs")
     op.drop_table("gmv_action_logs")
