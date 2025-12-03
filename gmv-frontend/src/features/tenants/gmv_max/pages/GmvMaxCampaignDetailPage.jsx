@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,7 @@ import {
   getStoreLabel,
   isCampaignDeleted,
 } from './gmvMaxOverview/helpers.js';
+import { normalizeTaskState } from '../utils/taskState.js';
 
 const MIN_MONITORING_INTERVAL = 10;
 const METRIC_CHOICES = [
@@ -1128,6 +1129,28 @@ export default function GmvMaxCampaignDetailPage() {
   });
 
   const metricsSync = useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId });
+  const lastMetricsSyncIdRef = useRef(null);
+
+  useEffect(() => {
+    const taskId = metricsSync.task?.task_id || metricsSync.task?.taskId;
+    const state = normalizeTaskState(metricsSync.task?.state);
+    if (!taskId || state !== 'SUCCESS') return;
+    if (lastMetricsSyncIdRef.current === taskId) return;
+    lastMetricsSyncIdRef.current = taskId;
+
+    const metricsQueryKey = composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId);
+    queryClient.invalidateQueries({ queryKey: metricsQueryKey, exact: false });
+    queryClient.refetchQueries({ queryKey: metricsQueryKey, exact: false, type: 'all' });
+  }, [
+    authId,
+    campaignId,
+    metricsSync.task?.state,
+    metricsSync.task?.taskId,
+    metricsSync.task?.task_id,
+    provider,
+    queryClient,
+    workspaceId,
+  ]);
   const applyActionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
       campaignQuery.refetch();
