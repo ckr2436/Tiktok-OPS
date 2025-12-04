@@ -3,7 +3,11 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignSyncSnapshot
+from app.data.models.gmv_restructured import (
+    GmvCampaign,
+    GmvCampaignSyncSnapshot,
+    PromotionTypeEnum,
+)
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax import list_gmvmax_campaigns
 
@@ -61,9 +65,9 @@ def _create_campaign(
     status: str | None = None,
     is_deleted: bool = False,
     deleted_at: datetime | None = None,
-) -> TTBGmvMaxCampaign:
-    campaign = TTBGmvMaxCampaign(
-        id=_next_id(db_session, TTBGmvMaxCampaign),
+) -> GmvCampaign:
+    campaign = GmvCampaign(
+        id=_next_id(db_session, GmvCampaign),
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
@@ -74,6 +78,7 @@ def _create_campaign(
         operation_status=operation_status,
         secondary_status=secondary_status,
         ext_created_time=created_at,
+        promotion_type=PromotionTypeEnum.PRODUCT,
         is_deleted=is_deleted,
         deleted_at=deleted_at,
     )
@@ -92,13 +97,14 @@ def _create_snapshot(
     store_id: str,
     synced_at: datetime,
 ):
-    snapshot = TTBGmvMaxCampaignSyncSnapshot(
-        id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+    snapshot = GmvCampaignSyncSnapshot(
+        id=_next_id(db_session, GmvCampaignSyncSnapshot),
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
         campaign_id=campaign_id,
         store_id=store_id,
+        snapshot_type="CAMPAIGN",
         synced_at=synced_at,
     )
     db_session.add(snapshot)

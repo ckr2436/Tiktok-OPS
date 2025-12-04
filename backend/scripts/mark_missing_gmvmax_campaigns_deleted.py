@@ -1,10 +1,11 @@
 """Mark GMV Max campaigns as deleted when missing from the latest sync snapshots.
 
-This one-off utility compares ``ttb_gmvmax_campaigns`` against
-``ttb_gmvmax_campaign_sync_snapshots`` and soft-deletes any campaign that no
-longer appears in the snapshot table for the same workspace/auth/advertiser
-and store scope. The update is idempotent and can be scoped by workspace or
-account if desired.
+This one-off utility compares ``gmv_campaigns`` against
+``gmv_campaign_sync_snapshots`` (backfilled from the legacy
+``ttb_gmvmax_campaign_sync_snapshots``) and soft-deletes any campaign that no
+longer appears in the snapshot table for the same workspace/auth/advertiser and
+store scope. The update is idempotent and can be scoped by workspace or account
+if desired.
 """
 from __future__ import annotations
 
@@ -27,10 +28,7 @@ for path in ROOT_HINTS:
         sys.path.insert(0, path)
 
 from app.data.db import get_db  # noqa: E402
-from app.data.models.ttb_gmvmax import (  # noqa: E402
-    TTBGmvMaxCampaign,
-    TTBGmvMaxCampaignSyncSnapshot,
-)
+from app.data.models.gmv_restructured import GmvCampaign, GmvCampaignSyncSnapshot  # noqa: E402
 
 
 def _open_db() -> Session:
@@ -54,11 +52,11 @@ def _build_scope_filters(
 ) -> Iterable:
     conditions = []
     if workspace_id is not None:
-        conditions.append(TTBGmvMaxCampaign.workspace_id == int(workspace_id))
+        conditions.append(GmvCampaign.workspace_id == int(workspace_id))
     if auth_id is not None:
-        conditions.append(TTBGmvMaxCampaign.auth_id == int(auth_id))
+        conditions.append(GmvCampaign.auth_id == int(auth_id))
     if advertiser_id is not None:
-        conditions.append(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
+        conditions.append(GmvCampaign.advertiser_id == str(advertiser_id))
     return conditions
 
 
@@ -79,26 +77,19 @@ def mark_missing_campaigns(
     )
 
     snapshot_exists = (
-        select(TTBGmvMaxCampaignSyncSnapshot.id)
-        .where(
-            TTBGmvMaxCampaignSyncSnapshot.workspace_id
-            == TTBGmvMaxCampaign.workspace_id
-        )
-        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == TTBGmvMaxCampaign.auth_id)
-        .where(
-            TTBGmvMaxCampaignSyncSnapshot.advertiser_id
-            == TTBGmvMaxCampaign.advertiser_id
-        )
-        .where(TTBGmvMaxCampaignSyncSnapshot.store_id == TTBGmvMaxCampaign.store_id)
-        .where(
-            TTBGmvMaxCampaignSyncSnapshot.campaign_id == TTBGmvMaxCampaign.campaign_id
-        )
+        select(GmvCampaignSyncSnapshot.id)
+        .where(GmvCampaignSyncSnapshot.workspace_id == GmvCampaign.workspace_id)
+        .where(GmvCampaignSyncSnapshot.auth_id == GmvCampaign.auth_id)
+        .where(GmvCampaignSyncSnapshot.advertiser_id == GmvCampaign.advertiser_id)
+        .where(GmvCampaignSyncSnapshot.store_id == GmvCampaign.store_id)
+        .where(GmvCampaignSyncSnapshot.campaign_id == GmvCampaign.campaign_id)
+        .where(GmvCampaignSyncSnapshot.snapshot_type == "CAMPAIGN")
     )
 
     delete_stmt = (
-        update(TTBGmvMaxCampaign)
+        update(GmvCampaign)
         .where(~exists(snapshot_exists))
-        .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+        .where(GmvCampaign.is_deleted.is_(False))
         .values(
             status="DELETE",
             operation_status="DELETE",

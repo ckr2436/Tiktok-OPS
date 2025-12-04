@@ -33,6 +33,9 @@ creative_delivery_enum = sa.Enum(
 )
 
 
+ID_TYPE = sa.Integer().with_variant(mysql.BIGINT(unsigned=True), "mysql")
+
+
 def _metric_columns():
     return [
         sa.Column("impressions", sa.BigInteger(), nullable=True),
@@ -57,7 +60,7 @@ def _metric_columns():
 def upgrade():
     op.create_table(
         "gmv_campaigns",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("workspace_id", sa.BigInteger(), nullable=False),
         sa.Column("auth_id", sa.BigInteger(), nullable=False),
         sa.Column("advertiser_id", sa.String(length=64), nullable=False),
@@ -100,7 +103,7 @@ def upgrade():
 
     op.create_table(
         "gmv_products",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("item_group_id", sa.String(length=64), nullable=False),
         sa.Column("product_name", sa.String(length=255), nullable=True),
         sa.Column("product_image_url", sa.Text(), nullable=True),
@@ -124,7 +127,7 @@ def upgrade():
 
     op.create_table(
         "gmv_creatives",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("creative_id", sa.String(length=64), nullable=False),
         sa.Column("campaign_id", sa.String(length=64), nullable=True),
         sa.Column("item_group_id", sa.String(length=64), nullable=True),
@@ -153,7 +156,7 @@ def upgrade():
 
     op.create_table(
         "gmv_livestreams",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("room_id", sa.String(length=64), nullable=False),
         sa.Column("campaign_id", sa.String(length=64), nullable=True),
         sa.Column("live_name", sa.String(length=255), nullable=True),
@@ -178,7 +181,7 @@ def upgrade():
 
     op.create_table(
         "gmv_campaign_products",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=False),
         sa.Column("promotion_type", promotion_enum, nullable=False),
@@ -206,7 +209,7 @@ def upgrade():
 
     op.create_table(
         "gmv_campaign_creatives",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("creative_id", sa.String(length=64), nullable=False),
         sa.Column("promotion_type", promotion_enum, nullable=False),
@@ -232,7 +235,7 @@ def upgrade():
 
     op.create_table(
         "gmv_campaign_livestreams",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("room_id", sa.String(length=64), nullable=False),
         sa.Column("promotion_type", promotion_enum, nullable=False),
@@ -257,7 +260,7 @@ def upgrade():
 
     op.create_table(
         "gmv_overview_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("advertiser_id", sa.String(length=64), nullable=False),
         sa.Column("stat_time_day", sa.Date(), nullable=False),
         *_metric_columns(),
@@ -267,7 +270,7 @@ def upgrade():
 
     op.create_table(
         "gmv_overview_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("advertiser_id", sa.String(length=64), nullable=False),
         sa.Column("stat_time_hour", mysql.DATETIME(fsp=6), nullable=False),
         *_metric_columns(),
@@ -277,7 +280,7 @@ def upgrade():
 
     op.create_table(
         "gmv_campaign_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("promotion_type", promotion_enum, nullable=False),
         sa.Column("stat_time_day", sa.Date(), nullable=False),
@@ -291,7 +294,7 @@ def upgrade():
 
     op.create_table(
         "gmv_campaign_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("promotion_type", promotion_enum, nullable=False),
         sa.Column("stat_time_hour", mysql.DATETIME(fsp=6), nullable=False),
@@ -305,7 +308,7 @@ def upgrade():
 
     op.create_table(
         "gmv_product_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=False),
         sa.Column("stat_time_day", sa.Date(), nullable=False),
@@ -322,7 +325,7 @@ def upgrade():
 
     op.create_table(
         "gmv_product_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=False),
         sa.Column("stat_time_hour", mysql.DATETIME(fsp=6), nullable=False),
@@ -339,7 +342,7 @@ def upgrade():
 
     op.create_table(
         "gmv_creative_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("creative_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=True),
@@ -356,7 +359,7 @@ def upgrade():
 
     op.create_table(
         "gmv_creative_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("creative_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=True),
@@ -373,7 +376,7 @@ def upgrade():
 
     op.create_table(
         "gmv_creative_metrics_10min",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("creative_id", sa.String(length=64), nullable=False),
         sa.Column("stat_time_day", sa.Date(), nullable=False),
@@ -393,7 +396,7 @@ def upgrade():
 
     op.create_table(
         "gmv_duration_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=True),
         sa.Column("duration", sa.String(length=64), nullable=False),
@@ -413,7 +416,7 @@ def upgrade():
 
     op.create_table(
         "gmv_duration_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("campaign_id", sa.String(length=64), nullable=False),
         sa.Column("item_group_id", sa.String(length=64), nullable=True),
         sa.Column("duration", sa.String(length=64), nullable=False),
@@ -433,7 +436,7 @@ def upgrade():
 
     op.create_table(
         "gmv_livestream_metrics_daily",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("room_id", sa.String(length=64), nullable=False),
         sa.Column("campaign_id", sa.String(length=64), nullable=True),
         sa.Column("stat_time_day", sa.Date(), nullable=False),
@@ -444,7 +447,7 @@ def upgrade():
 
     op.create_table(
         "gmv_livestream_metrics_hourly",
-        sa.Column("id", sa.BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), primary_key=True),
+        sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         sa.Column("room_id", sa.String(length=64), nullable=False),
         sa.Column("campaign_id", sa.String(length=64), nullable=True),
         sa.Column("stat_time_hour", mysql.DATETIME(fsp=6), nullable=False),
