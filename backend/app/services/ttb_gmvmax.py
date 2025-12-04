@@ -1141,6 +1141,14 @@ def _sync_campaign_product_assignments(
 ) -> None:
     normalized_status = _normalize_status_value(operation_status)
     store_id = _normalize_identifier(store_id_hint)
+
+    campaign_pk = getattr(campaign, "id", None)
+    if campaign_pk is None:
+        db.flush([campaign])
+        campaign_pk = getattr(campaign, "id", None)
+    if campaign_pk is None:
+        raise ValueError("campaign.id must be available before syncing products")
+
     rows: list[dict[str, Any]] = []
     for product_id in product_ids:
         normalized = _normalize_identifier(product_id)
@@ -1150,6 +1158,7 @@ def _sync_campaign_product_assignments(
             {
                 "workspace_id": campaign.workspace_id,
                 "auth_id": campaign.auth_id,
+                "campaign_pk": campaign_pk,
                 "campaign_id": campaign.campaign_id,
                 "item_group_id": normalized,
                 "promotion_type": promotion_type,
