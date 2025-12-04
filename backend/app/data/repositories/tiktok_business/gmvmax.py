@@ -488,7 +488,16 @@ def list_campaign_ids_for_scope(
     if not include_deleted:
         query = query.filter(GmvCampaign.is_deleted.is_(False))
 
-    return {str(value) for value in query.distinct().scalars() if value is not None}
+    values = query.distinct().all()
+    results: set[str] = set()
+
+    for value in values:
+        if isinstance(value, tuple):
+            value = value[0]
+        if value is not None:
+            results.add(str(value))
+
+    return results
 
 
 def mark_campaigns_deleted_for_scope(
