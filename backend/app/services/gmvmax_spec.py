@@ -94,6 +94,7 @@ GMVMAX_CREATIVE_METRICS: Final[tuple[str, ...]] = (
 class GMVMaxReportLevel(str, Enum):
     """Supported aggregation levels for GMV Max reports."""
 
+    OVERVIEW = "overview"
     CAMPAIGN = "campaign"
     PRODUCT = "product"
     CREATIVE = "creative"
@@ -102,6 +103,11 @@ class GMVMaxReportLevel(str, Enum):
 
 
 GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
+    GMVMaxReportLevel.OVERVIEW: {
+        "dimensions": ("advertiser_id", "stat_time_day"),
+        "metrics": GMVMAX_BASE_METRICS,
+        "max_range": timedelta(days=30),
+    },
     GMVMaxReportLevel.CAMPAIGN: {
         "dimensions": ("campaign_id", "stat_time_day"),
         "metrics": (

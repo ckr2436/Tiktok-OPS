@@ -33,6 +33,7 @@ from app.services.ttb_gmvmax import (
     sync_gmvmax_campaigns,
     sync_gmvmax_metrics_daily,
     sync_gmvmax_metrics_hourly,
+    sync_gmvmax_overview_metrics,
 )
 from app.services.redis_locks import RedisDistributedLock
 from app.providers.tiktok_business.gmvmax_client import (
@@ -523,11 +524,29 @@ def task_gmvmax_sync_metrics(
                     advertiser_id=str(advertiser_id),
                 )
                 if not campaigns:
-                    return {"campaign_rows": 0, "creative_rows": 0}
+                    return {"campaign_rows": 0, "creative_rows": 0, "overview_rows": 0}
 
                 today = datetime.utcnow().date()
                 window_start = today - timedelta(days=2)
-                totals = {"campaign_rows": 0, "creative_rows": 0}
+                totals = {"campaign_rows": 0, "creative_rows": 0, "overview_rows": 0}
+                store_ids = {
+                    str(c.store_id)
+                    for c in campaigns
+                    if getattr(c, "store_id", None)
+                }
+                if store_ids:
+                    overview_result = await sync_gmvmax_overview_metrics(
+                        db,
+                        client,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=str(advertiser_id),
+                        store_ids=sorted(store_ids),
+                        start_date=window_start,
+                        end_date=today,
+                        granularity=granularity,
+                    )
+                    totals["overview_rows"] += overview_result.get("synced_rows", 0)
                 for campaign in campaigns:
                     result = await sync_gmvmax_reports_for_campaign(
                         db,
