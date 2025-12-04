@@ -38,7 +38,6 @@ logger = logging.getLogger("gmv.services.gmvmax.heating")
 # Creative 级别报表使用的指标集合（维度由 GMVMaxDataset.CREATIVE 统一管理）
 _CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
 _REPORT_PAGE_SIZE = 200
-_DEFAULT_PROVIDER = "tiktok-business"
 _HEATABLE_STATUSES = {"DELIVERING", "LEARNING", "IN_QUEUE"}
 
 
@@ -217,10 +216,10 @@ def _parse_stat_time(value: Any) -> datetime:
 
 def _group_configs(
     rows: Iterable[TTBGmvMaxCreativeHeating],
-) -> Dict[Tuple[int, str, int, str], List[TTBGmvMaxCreativeHeating]]:
-    groups: Dict[Tuple[int, str, int, str], List[TTBGmvMaxCreativeHeating]] = defaultdict(list)
+) -> Dict[Tuple[int, int, str], List[TTBGmvMaxCreativeHeating]]:
+    groups: Dict[Tuple[int, int, str], List[TTBGmvMaxCreativeHeating]] = defaultdict(list)
     for row in rows:
-        key = (row.workspace_id, row.provider, row.auth_id, row.campaign_id)
+        key = (row.workspace_id, row.auth_id, row.campaign_id)
         groups[key].append(row)
     return groups
 
@@ -365,18 +364,7 @@ async def run_creative_heating_cycle(
 
     clients: Dict[int, TikTokBusinessGMVMaxClient] = {}
     try:
-        for (workspace_id, provider, auth_id, campaign_id), items in grouped.items():
-            if provider and provider != _DEFAULT_PROVIDER:
-                for heating in items:
-                    await update_heating_evaluation(
-                        db,
-                        heating_id=heating.id,
-                        evaluated_at=cycle_time,
-                        evaluation_result="unsupported_provider",
-                        is_heating_active=False,
-                    )
-                continue
-
+        for (workspace_id, auth_id, campaign_id), items in grouped.items():
             campaign = _load_campaign(
                 db,
                 workspace_id=workspace_id,
@@ -430,7 +418,7 @@ async def run_creative_heating_cycle(
                     db,
                     client,
                     workspace_id=workspace_id,
-                    provider=provider or _DEFAULT_PROVIDER,
+                    provider="tiktok-business",
                     auth_id=auth_id,
                     campaign=campaign,
                     start_date=start_day,
@@ -452,7 +440,7 @@ async def run_creative_heating_cycle(
                     metrics_map = await get_recent_creative_metrics(
                         db,
                         workspace_id=workspace_id,
-                        provider=provider or _DEFAULT_PROVIDER,
+                        provider="tiktok-business",
                         auth_id=auth_id,
                         campaign_id=campaign_id,
                         window_minutes=window,
