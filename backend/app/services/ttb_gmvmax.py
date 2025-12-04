@@ -1323,11 +1323,16 @@ def get_item_group_ids_for_campaign(
         return item_group_ids
 
     raw_item_group_ids = _extract_item_group_ids_from_campaign_payload(campaign.raw_json)
-    if not raw_item_group_ids:
+    normalized_item_group_ids = [
+        _normalize_identifier(value) or "" for value in (raw_item_group_ids or [])
+    ]
+    deduped_item_group_ids = list(dict.fromkeys(filter(None, normalized_item_group_ids)))
+
+    if not deduped_item_group_ids:
         return []
 
     store_id = str(campaign.store_id or "")
-    for item_group_id in raw_item_group_ids:
+    for item_group_id in deduped_item_group_ids:
         exists = (
             db.query(GmvCampaignProduct)
             .filter(
@@ -1356,7 +1361,7 @@ def get_item_group_ids_for_campaign(
         )
 
     db.flush()
-    return raw_item_group_ids
+    return deduped_item_group_ids
 
 
 def _lookup_store_id_from_links(

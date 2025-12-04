@@ -2705,28 +2705,14 @@ async def sync_gmvmax_metrics_provider(
             "task_id": async_res.id,
         },
     )
-    creative_async_res = celery_app.send_task(
-        "gmvmax.sync_creative_metrics_10min_for_campaign",
-        kwargs={
-            "workspace_id": workspace_id,
-            "provider": provider,
-            "auth_id": auth_id,
-            "advertiser_id": adv,
-            "campaign_id": campaign_id,
-            "store_id": context.store_id,
-            "start_date": payload.start_date.isoformat(),
-            "end_date": payload.end_date.isoformat(),
-        },
-        queue="gmvmax",
-    )
-
     logger.info(
-        "gmvmax.creative metrics report enqueued",
+        "gmvmax.creative metrics manual sync skipped for 10min table",
         extra={
             "workspace_id": workspace_id,
             "auth_id": auth_id,
             "campaign_id": campaign_id,
-            "task_id": creative_async_res.id,
+            "start_date": payload.start_date.isoformat(),
+            "end_date": payload.end_date.isoformat(),
         },
     )
     return _build_task_response(
