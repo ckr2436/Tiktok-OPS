@@ -27,6 +27,7 @@ from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action,
     decide_campaign_action,
+    fetch_and_cache_campaign_detail,
     get_or_create_strategy_config,
     sync_gmvmax_reports_for_campaign,
     sync_gmvmax_campaigns,
@@ -287,6 +288,70 @@ def task_gmvmax_sync_campaigns(
                 "schedule_id": schedule_id,
                 "idempotency_key": idempotency_key,
                 "run_id": run_id,
+            },
+        )
+        raise
+    finally:
+        _close_session(db)
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.fetch_campaign_detail",
+    autoretry_for=(Exception,),
+    retry_backoff=5,
+    retry_backoff_max=60,
+    retry_jitter=True,
+    max_retries=3,
+    queue="gmvmax",
+)
+def task_gmvmax_fetch_campaign_detail(
+    self,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    include_sessions: bool = True,
+    **extra: Any,
+) -> dict:
+    """Fetch campaign detail/session data via TikTok and persist snapshots asynchronously."""
+
+    db = _db_session()
+    try:
+        result = _run_with_client(
+            db,
+            auth_id,
+            lambda client: fetch_and_cache_campaign_detail(
+                db,
+                client,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+                campaign_id=str(campaign_id),
+                include_sessions=include_sessions,
+            ),
+        )
+        logger.info(
+            "gmvmax.fetch_campaign_detail done",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+                "task_id": self.request.id,
+            },
+        )
+        return result
+    except Exception:
+        logger.exception(
+            "gmvmax.fetch_campaign_detail failed",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign_id,
+                "task_id": self.request.id,
             },
         )
         raise
