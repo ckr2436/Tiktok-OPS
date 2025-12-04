@@ -386,6 +386,19 @@ def _load_campaign_row(
     return db.execute(stmt).scalars().first()
 
 
+def _ensure_campaign_not_deleted(row: GmvCampaign | None) -> None:
+    if row is None:
+        return
+    if getattr(row, "is_deleted", False):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CAMPAIGN_DELETED",
+                "message": "This campaign has been deleted on TikTok and can no longer be updated.",
+            },
+        )
+
+
 def _snapshot_campaign_state(
     campaign: GmvCampaign | None,
 ) -> Dict[str, Any]:
@@ -2300,6 +2313,9 @@ async def update_gmvmax_campaign_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
     """Update a GMV Max campaign (POST /campaign/gmv_max/update/) and refresh detail."""
+    existing_row = _load_campaign_row(context, campaign_id)
+    _ensure_campaign_not_deleted(existing_row)
+
     row = await update_gmvmax_campaign(
         context.db,
         workspace_id=workspace_id,
@@ -3050,6 +3066,7 @@ async def _apply_creative_heating_action(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Campaign not found",
         )
+    _ensure_campaign_not_deleted(campaign_row)
     before_state = _snapshot_campaign_state(campaign_row)
     heating_row = await upsert_creative_heating(
         context.db,
@@ -3113,6 +3130,7 @@ async def apply_gmvmax_campaign_action_provider(
     normalized_campaign_id = str(campaign_id)
     campaign_before = _load_campaign_row(context, normalized_campaign_id)
     before_state = _snapshot_campaign_state(campaign_before)
+    _ensure_campaign_not_deleted(campaign_before)
 
     raw_type = payload.get("action_type")
     if raw_type is None and "type" in payload:

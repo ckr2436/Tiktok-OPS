@@ -30,6 +30,7 @@ from app.data.models.gmv_restructured import (
     PromotionTypeEnum,
 )
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
+from app.data.repositories.tiktok_business import gmvmax as gmvmax_repo
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
@@ -61,6 +62,17 @@ from app.services.ttb_api import TTBApiError, TTBBusinessError
 
 logger = logging.getLogger("gmv.tenants.gmvmax")
 SNAPSHOT_TYPE_CAMPAIGN = "CAMPAIGN"
+
+
+def _ensure_campaign_not_deleted(campaign: GmvCampaign | None) -> None:
+    if campaign is None:
+        return
+    if getattr(campaign, "is_deleted", False):
+        raise TTBBusinessError(
+            "This campaign has been deleted on TikTok and can no longer be updated.",
+            code="CAMPAIGN_DELETED",
+            payload={"campaign_id": getattr(campaign, "campaign_id", None)},
+        )
 
 __all__ = [
     "upsert_campaign_from_api",
@@ -801,6 +813,21 @@ async def update_gmvmax_campaign(
         campaign_payload["campaign_id"] = body_dump["campaign_id"]
     if "item_group_ids" not in campaign_payload and body_dump.get("item_group_ids"):
         campaign_payload["item_group_ids"] = [str(item) for item in body_dump.get("item_group_ids", [])]
+
+    target_campaign_id = _normalize_identifier(body_dump.get("campaign_id"))
+    if target_campaign_id:
+        existing = (
+            db.execute(
+                select(GmvCampaign)
+                .where(GmvCampaign.workspace_id == workspace_id)
+                .where(GmvCampaign.auth_id == auth_id)
+                .where(GmvCampaign.campaign_id == target_campaign_id)
+                .where(GmvCampaign.advertiser_id == str(advertiser_id))
+            )
+            .scalars()
+            .first()
+        )
+        _ensure_campaign_not_deleted(existing)
 
     row = upsert_campaign_from_api(
         db,
@@ -1673,7 +1700,21 @@ async def sync_gmvmax_campaigns(
 
     synced = 0
     details_cache: dict[str, Mapping[str, Any] | None] = {}
-    snapshots: list[Mapping[str, Any]] = []
+    remote_by_scope: dict[tuple[str, PromotionTypeEnum | None], set[str]] = {}
+
+    promotion_filters = provided_filters.get("gmv_max_promotion_types") or []
+    normalized_promotion_filters: list[PromotionTypeEnum] = []
+    for promotion_value in promotion_filters:
+        normalized = _normalize_promotion_type(promotion_value)
+        normalized_promotion_filters.append(normalized)
+
+    for scoped_store in store_scope or []:
+        if normalized_promotion_filters:
+            for normalized_promotion in normalized_promotion_filters:
+                remote_by_scope.setdefault((str(scoped_store), normalized_promotion), set())
+        else:
+            remote_by_scope.setdefault((str(scoped_store), None), set())
+
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **provided_filters
     ):
@@ -1682,15 +1723,17 @@ async def sync_gmvmax_campaigns(
         campaign_identifier = _normalize_identifier(
             _extract_field(payload, "campaign_id", "id")
         )
+        if not campaign_identifier:
+            continue
+
         campaign_details: Mapping[str, Any] | None = None
-        if campaign_identifier:
-            if campaign_identifier not in details_cache:
-                details_cache[campaign_identifier] = await _fetch_campaign_details(
-                    ttb_client,
-                    advertiser_id=str(advertiser_id),
-                    campaign_id=campaign_identifier,
-                )
-            campaign_details = details_cache.get(campaign_identifier)
+        if campaign_identifier not in details_cache:
+            details_cache[campaign_identifier] = await _fetch_campaign_details(
+                ttb_client,
+                advertiser_id=str(advertiser_id),
+                campaign_id=campaign_identifier,
+            )
+        campaign_details = details_cache.get(campaign_identifier)
 
         resolved_store_id = _extract_field_from_sources(
             ("store_id", "shop_id"), campaign_details, payload
@@ -1704,57 +1747,96 @@ async def sync_gmvmax_campaigns(
         if not resolved_store_id and campaign_details:
             resolved_store_id = _extract_field_from_sources(
                 ("store_id", "shop_id"), campaign_details
-        )
-        campaign_row = upsert_campaign_from_api(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=advertiser_id,
-            payload=payload,
-            store_id_hint=resolved_store_id,
-            campaign_details=campaign_details,
-        )
-        snapshot_payload = campaign_details or payload
-        store_for_snapshot = str(getattr(campaign_row, "store_id", None) or resolved_store_id or "")
-        snapshots.append(
-            {
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-                "advertiser_id": str(advertiser_id),
-                "store_id": store_for_snapshot,
-                "campaign_id": str(getattr(campaign_row, "campaign_id", None) or campaign_identifier or ""),
-                "promotion_type": getattr(campaign_row, "promotion_type", None),
-                "snapshot_type": SNAPSHOT_TYPE_CAMPAIGN,
-                "payload_json": snapshot_payload,
-                "source": "GMVMAX_CAMPAIGN_SYNC",
-                "raw_request_id": (page_context or {}).get("request_id"),
-                "synced_at": synced_at,
-                "is_deleted": False,
-                "deleted_at": None,
-            }
-        )
-        synced += 1
-    db.flush()
+            )
 
-    _bulk_upsert_snapshots(db, snapshots)
-    _prune_outdated_snapshots(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=str(advertiser_id),
-        synced_at=synced_at,
-        store_scope=store_scope,
-        campaign_ids=campaign_scope,
-    )
-    removed = 0
-    if campaign_scope is None:
-        removed = _mark_missing_snapshot_campaigns_as_deleted(
+        promotion_type = _normalize_promotion_type(
+            _extract_field_from_sources(
+                ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
+                campaign_details,
+                payload,
+            )
+        )
+        store_for_snapshot = str(resolved_store_id or "")
+        scope_key = (store_for_snapshot, promotion_type)
+        remote_by_scope.setdefault(scope_key, set()).add(str(campaign_identifier))
+
+        snapshot_payload = campaign_details or payload
+        gmvmax_repo.create_campaign_snapshot(
             db,
             workspace_id=workspace_id,
             auth_id=auth_id,
             advertiser_id=str(advertiser_id),
-            store_scope=store_scope,
+            store_id=store_for_snapshot,
+            campaign_id=str(campaign_identifier),
+            promotion_type=promotion_type,
+            snapshot_type=SNAPSHOT_TYPE_CAMPAIGN,
+            payload_json=snapshot_payload,
+            source="GMVMAX_CAMPAIGN_LIST",
+            raw_request_id=(page_context or {}).get("request_id"),
             synced_at=synced_at,
+        )
+        synced += 1
+
+    db.flush()
+
+    if not remote_by_scope:
+        existing_scopes = (
+            db.query(GmvCampaign.store_id, GmvCampaign.promotion_type)
+            .filter(GmvCampaign.workspace_id == workspace_id)
+            .filter(GmvCampaign.auth_id == auth_id)
+            .filter(GmvCampaign.advertiser_id == str(advertiser_id))
+            .filter(GmvCampaign.is_deleted.is_(False))
+            .distinct()
+            .all()
+        )
+        for store_id, promotion in existing_scopes:
+            remote_by_scope.setdefault((store_id or "", promotion), set())
+
+    removed = 0
+    allow_delete = campaign_scope is None
+    for (scope_store, scope_promotion), remote_ids in remote_by_scope.items():
+        snapshots = gmvmax_repo.list_campaign_snapshots_for_scope(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            store_id=str(scope_store),
+            promotion_type=scope_promotion,
+            snapshot_type=SNAPSHOT_TYPE_CAMPAIGN,
+            synced_at=synced_at,
+        )
+        for snapshot in snapshots:
+            gmvmax_repo.upsert_campaign_from_snapshot(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+                store_id=snapshot.store_id,
+                payload_json=snapshot.payload_json,
+                campaign_id=snapshot.campaign_id,
+                promotion_type=snapshot.promotion_type,
+            )
+
+        if not allow_delete:
+            continue
+
+        local_ids = gmvmax_repo.list_campaign_ids_for_scope(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            store_id=str(scope_store),
+            promotion_type=scope_promotion,
+            include_deleted=False,
+        )
+        missing_ids = local_ids - remote_ids
+        removed += gmvmax_repo.mark_campaigns_deleted_for_scope(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            store_id=str(scope_store),
+            campaign_ids=missing_ids,
         )
 
     return {"synced": synced, "removed": removed}
@@ -2674,6 +2756,8 @@ async def apply_campaign_action(
     performed_by: str = "system",
     audit_hook: Callable[..., Any] | None = None,
 ) -> GmvActionLog:
+    _ensure_campaign_not_deleted(campaign)
+
     requested_action = str(action or "").strip().upper()
     normalized_action = _ACTION_NORMALIZATION.get(requested_action, requested_action)
     if normalized_action not in _ALLOWED_ACTIONS:
