@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -216,6 +216,21 @@ def _sync_campaign_product_assignments(
         campaign_pk = getattr(campaign, "id", None)
     if campaign_pk is None:
         return
+
+    normalized_products = {
+        _normalize_identifier(product_id)
+        for product_id in product_ids
+        if _normalize_identifier(product_id)
+    }
+
+    if normalized_products:
+        db.execute(
+            delete(GmvCampaignProduct)
+            .where(GmvCampaignProduct.workspace_id == campaign.workspace_id)
+            .where(GmvCampaignProduct.auth_id == campaign.auth_id)
+            .where(GmvCampaignProduct.store_id == (store_id or ""))
+            .where(GmvCampaignProduct.item_group_id.in_(normalized_products))
+        )
 
     existing_rows = (
         db.query(GmvCampaignProduct)
@@ -488,7 +503,16 @@ def list_campaign_ids_for_scope(
     if not include_deleted:
         query = query.filter(GmvCampaign.is_deleted.is_(False))
 
-    return {str(value) for value in query.distinct().scalars() if value is not None}
+    values = query.distinct().all()
+    results: set[str] = set()
+
+    for value in values:
+        if isinstance(value, tuple):
+            value = value[0]
+        if value is not None:
+            results.add(str(value))
+
+    return results
 
 
 def mark_campaigns_deleted_for_scope(
