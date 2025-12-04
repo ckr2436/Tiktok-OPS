@@ -1,9 +1,15 @@
 from datetime import date
 
+from datetime import date
+
 from sqlalchemy import func, select
 
+from app.data.models.gmv_restructured import (
+    GmvCampaign,
+    GmvCampaignMetricsDaily,
+    PromotionTypeEnum,
+)
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxMetricsDaily
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax_metrics import (
     GMVMaxMetricDTO,
@@ -18,7 +24,7 @@ def _next_id(db_session, model) -> int:
 
 def _setup_campaign(
     db_session, *, store_id: str = "store-1", campaign_key: str = "cmp-1"
-) -> TTBGmvMaxCampaign:
+) -> GmvCampaign:
     workspace = db_session.query(Workspace).first()
     if workspace is None:
         workspace = Workspace(id=_next_id(db_session, Workspace), name="Demo", company_code="dmo")
@@ -51,26 +57,35 @@ def _setup_campaign(
         db_session.add(account)
         db_session.flush()
 
-    campaign = TTBGmvMaxCampaign(
-        id=_next_id(db_session, TTBGmvMaxCampaign),
+    campaign = GmvCampaign(
+        id=_next_id(db_session, GmvCampaign),
         workspace_id=workspace.id,
         auth_id=account.id,
         advertiser_id="adv-1",
         campaign_id=campaign_key,
         store_id=store_id,
         name="Primary",
+        promotion_type=PromotionTypeEnum.PRODUCT,
     )
     db_session.add(campaign)
     db_session.flush()
     return campaign
 
 
-def _insert_metric(db_session, campaign: TTBGmvMaxCampaign, *, stat_date: date, cost_cents: int, orders: int) -> None:
-    metric = TTBGmvMaxMetricsDaily(
-        id=_next_id(db_session, TTBGmvMaxMetricsDaily),
-        campaign_id=campaign.id,
+def _insert_metric(
+    db_session,
+    campaign: GmvCampaign,
+    *,
+    stat_date: date,
+    cost_cents: int,
+    orders: int,
+) -> None:
+    metric = GmvCampaignMetricsDaily(
+        id=_next_id(db_session, GmvCampaignMetricsDaily),
+        campaign_id=campaign.campaign_id,
         store_id=campaign.store_id,
-        date=stat_date,
+        promotion_type=campaign.promotion_type,
+        stat_time_day=stat_date,
         cost_cents=cost_cents,
         net_cost_cents=cost_cents,
         orders=orders,
@@ -111,7 +126,9 @@ def test_query_metrics_filters_by_store(db_session):
     _setup_campaign(db_session, store_id="store-2", campaign_key="cmp-2")
 
     _insert_metric(db_session, campaign, stat_date=date(2024, 1, 1), cost_cents=1000, orders=2)
-    other_campaign = db_session.query(TTBGmvMaxCampaign).filter_by(campaign_id="cmp-2").first()
+    other_campaign = (
+        db_session.query(GmvCampaign).filter_by(campaign_id="cmp-2").first()
+    )
     assert other_campaign is not None
     _insert_metric(
         db_session,

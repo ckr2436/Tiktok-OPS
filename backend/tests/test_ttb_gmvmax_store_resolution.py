@@ -6,12 +6,13 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
+from app.data.models.gmv_restructured import (
+    GmvCampaign,
+    GmvCampaignSyncSnapshot,
+    PromotionTypeEnum,
+)
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
-from app.data.models.ttb_gmvmax import (
-    TTBGmvMaxCampaign,
-    TTBGmvMaxCampaignSyncSnapshot,
-)
 from app.data.models.workspaces import Workspace
 from app.services.ttb_gmvmax import sync_gmvmax_campaigns, upsert_campaign_from_api
 
@@ -87,14 +88,15 @@ def _create_campaign_stub(
     advertiser_id: str,
     campaign_id: str,
     store_id: str = "",
-) -> TTBGmvMaxCampaign:
-    campaign = TTBGmvMaxCampaign(
-        id=_next_id(db_session, TTBGmvMaxCampaign),
+) -> GmvCampaign:
+    campaign = GmvCampaign(
+        id=_next_id(db_session, GmvCampaign),
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
         campaign_id=campaign_id,
         store_id=store_id,
+        promotion_type=PromotionTypeEnum.PRODUCT,
     )
     db_session.add(campaign)
     db_session.flush()
@@ -110,14 +112,15 @@ def _create_snapshot(
     campaign_id: str,
     store_id: str,
     synced_at: datetime,
-) -> TTBGmvMaxCampaignSyncSnapshot:
-    snapshot = TTBGmvMaxCampaignSyncSnapshot(
-        id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+) -> GmvCampaignSyncSnapshot:
+    snapshot = GmvCampaignSyncSnapshot(
+        id=_next_id(db_session, GmvCampaignSyncSnapshot),
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=advertiser_id,
         campaign_id=campaign_id,
         store_id=store_id,
+        snapshot_type="CAMPAIGN",
         synced_at=synced_at,
     )
     db_session.add(snapshot)
@@ -272,7 +275,7 @@ def test_sync_campaigns_fetches_store_id_from_detail_api(db_session):
     )
 
     campaign = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id, campaign_id="cmp-1")
         .one()
     )
@@ -320,13 +323,13 @@ def test_sync_campaigns_removes_missing_rows(db_session):
 
     ids = {
         row.campaign_id
-        for row in db_session.query(TTBGmvMaxCampaign)
+        for row in db_session.query(GmvCampaign)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id)
         .all()
     }
     assert ids == {"cmp-keep", "cmp-stale"}
     stale_row = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -393,9 +396,9 @@ def test_sync_campaigns_marks_all_missing_when_response_empty(db_session):
     )
 
     campaigns = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id)
-        .order_by(TTBGmvMaxCampaign.campaign_id)
+        .order_by(GmvCampaign.campaign_id)
         .all()
     )
     assert {c.campaign_id for c in campaigns} == {"cmp-a", "cmp-b"}
@@ -405,7 +408,7 @@ def test_sync_campaigns_marks_all_missing_when_response_empty(db_session):
     assert result["removed"] == 2
 
     snapshot_count = (
-        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        db_session.query(GmvCampaignSyncSnapshot)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id, advertiser_id="adv-1")
         .count()
     )
@@ -502,7 +505,7 @@ def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
     )
 
     s1_shared = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -517,7 +520,7 @@ def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
     assert s1_shared.status == "DELETE"
 
     s2_shared = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -532,7 +535,7 @@ def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
     assert s2_shared.status is None
 
     s1_snapshot_count = (
-        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        db_session.query(GmvCampaignSyncSnapshot)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -543,7 +546,7 @@ def test_sync_campaigns_soft_delete_scoped_by_store(db_session):
         .count()
     )
     s2_snapshot_count = (
-        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        db_session.query(GmvCampaignSyncSnapshot)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -601,13 +604,13 @@ def test_sync_campaigns_does_not_remove_missing_rows_on_filtered_run(
 
     ids = {
         row.campaign_id
-        for row in db_session.query(TTBGmvMaxCampaign)
+        for row in db_session.query(GmvCampaign)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id)
         .all()
     }
     assert ids == {"cmp-keep", "cmp-stale"}
     stale_row = (
-        db_session.query(TTBGmvMaxCampaign)
+        db_session.query(GmvCampaign)
         .filter_by(
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -633,13 +636,14 @@ def test_sync_campaigns_replaces_previous_snapshots(db_session):
     )
 
     db_session.add(
-        TTBGmvMaxCampaignSyncSnapshot(
-            id=_next_id(db_session, TTBGmvMaxCampaignSyncSnapshot),
+        GmvCampaignSyncSnapshot(
+            id=_next_id(db_session, GmvCampaignSyncSnapshot),
             workspace_id=workspace_id,
             auth_id=auth_id,
             advertiser_id="adv-1",
             campaign_id="cmp-1",
             store_id="old-store",
+            snapshot_type="CAMPAIGN",
             synced_at=datetime(2023, 12, 31, 0, 0, 0),
         )
     )
@@ -667,7 +671,7 @@ def test_sync_campaigns_replaces_previous_snapshots(db_session):
     )
 
     snapshots = (
-        db_session.query(TTBGmvMaxCampaignSyncSnapshot)
+        db_session.query(GmvCampaignSyncSnapshot)
         .filter_by(workspace_id=workspace_id, auth_id=auth_id, advertiser_id="adv-1")
         .all()
     )

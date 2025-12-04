@@ -18,6 +18,7 @@ from app.data.models.gmv_restructured import (
     GmvCampaign,
     GmvCampaignCreative,
     GmvCampaignLivestream,
+    GmvCampaignSyncSnapshot,
     GmvCampaignMetricsDaily,
     GmvCampaignMetricsHourly,
     GmvCampaignProduct,
@@ -29,7 +30,6 @@ from app.data.models.gmv_restructured import (
     PromotionTypeEnum,
 )
 from app.data.models.ttb_entities import TTBAdvertiserStoreLink
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaignSyncSnapshot
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
@@ -60,6 +60,7 @@ from app.services.ttb_api import TTBApiError, TTBBusinessError
 
 
 logger = logging.getLogger("gmv.tenants.gmvmax")
+SNAPSHOT_TYPE_CAMPAIGN = "CAMPAIGN"
 
 __all__ = [
     "upsert_campaign_from_api",
@@ -827,15 +828,16 @@ def _mark_missing_snapshot_campaigns_as_deleted(
     """Soft-delete campaigns missing from the latest sync snapshot."""
 
     snapshot_stmt = (
-        select(TTBGmvMaxCampaignSyncSnapshot.campaign_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == advertiser_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.synced_at == synced_at)
+        select(GmvCampaignSyncSnapshot.campaign_id)
+        .where(GmvCampaignSyncSnapshot.workspace_id == workspace_id)
+        .where(GmvCampaignSyncSnapshot.auth_id == auth_id)
+        .where(GmvCampaignSyncSnapshot.advertiser_id == advertiser_id)
+        .where(GmvCampaignSyncSnapshot.snapshot_type == SNAPSHOT_TYPE_CAMPAIGN)
+        .where(GmvCampaignSyncSnapshot.synced_at == synced_at)
     )
     if store_scope:
         snapshot_stmt = snapshot_stmt.where(
-            TTBGmvMaxCampaignSyncSnapshot.store_id.in_(store_scope)
+            GmvCampaignSyncSnapshot.store_id.in_(store_scope)
         )
     snapshot_ids = {
         str(value)
@@ -908,7 +910,7 @@ def _bulk_upsert_snapshots(
     rows_to_insert = list(rows)
     if bind and bind.dialect.name == "sqlite":
         next_id = db.execute(
-            select(func.coalesce(func.max(TTBGmvMaxCampaignSyncSnapshot.id), 0))
+            select(func.coalesce(func.max(GmvCampaignSyncSnapshot.id), 0))
         ).scalar_one()
         rows_with_ids: list[Mapping[str, Any]] = []
         for row in rows_to_insert:
@@ -917,26 +919,35 @@ def _bulk_upsert_snapshots(
                 continue
             next_id = int(next_id or 0) + 1
             rows_with_ids.append({**row, "id": next_id})
-        stmt = sqlite_insert(TTBGmvMaxCampaignSyncSnapshot).values(rows_with_ids)
+        stmt = sqlite_insert(GmvCampaignSyncSnapshot).values(rows_with_ids)
         stmt = stmt.on_conflict_do_update(
             index_elements=[
-                TTBGmvMaxCampaignSyncSnapshot.workspace_id,
-                TTBGmvMaxCampaignSyncSnapshot.advertiser_id,
-                TTBGmvMaxCampaignSyncSnapshot.store_id,
-                TTBGmvMaxCampaignSyncSnapshot.campaign_id,
+                GmvCampaignSyncSnapshot.workspace_id,
+                GmvCampaignSyncSnapshot.auth_id,
+                GmvCampaignSyncSnapshot.advertiser_id,
+                GmvCampaignSyncSnapshot.store_id,
+                GmvCampaignSyncSnapshot.campaign_id,
+                GmvCampaignSyncSnapshot.snapshot_type,
+                GmvCampaignSyncSnapshot.synced_at,
             ],
             set_={
-                "auth_id": stmt.excluded.auth_id,
-                "synced_at": stmt.excluded.synced_at,
-                "raw_json": stmt.excluded.raw_json,
+                "promotion_type": stmt.excluded.promotion_type,
+                "payload_json": stmt.excluded.payload_json,
+                "source": stmt.excluded.source,
+                "raw_request_id": stmt.excluded.raw_request_id,
+                "is_deleted": stmt.excluded.is_deleted,
+                "deleted_at": stmt.excluded.deleted_at,
             },
         )
     else:
-        stmt = mysql_insert(TTBGmvMaxCampaignSyncSnapshot).values(rows_to_insert)
+        stmt = mysql_insert(GmvCampaignSyncSnapshot).values(rows_to_insert)
         stmt = stmt.on_duplicate_key_update(
-            auth_id=stmt.inserted.auth_id,
-            synced_at=stmt.inserted.synced_at,
-            raw_json=stmt.inserted.raw_json,
+            promotion_type=stmt.inserted.promotion_type,
+            payload_json=stmt.inserted.payload_json,
+            source=stmt.inserted.source,
+            raw_request_id=stmt.inserted.raw_request_id,
+            is_deleted=stmt.inserted.is_deleted,
+            deleted_at=stmt.inserted.deleted_at,
         )
     db.execute(stmt)
 
@@ -952,19 +963,20 @@ def _prune_outdated_snapshots(
     campaign_ids: Collection[str] | None,
 ) -> None:
     delete_stmt = (
-        delete(TTBGmvMaxCampaignSyncSnapshot)
-        .where(TTBGmvMaxCampaignSyncSnapshot.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.auth_id == auth_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.advertiser_id == advertiser_id)
-        .where(TTBGmvMaxCampaignSyncSnapshot.synced_at < synced_at)
+        delete(GmvCampaignSyncSnapshot)
+        .where(GmvCampaignSyncSnapshot.workspace_id == workspace_id)
+        .where(GmvCampaignSyncSnapshot.auth_id == auth_id)
+        .where(GmvCampaignSyncSnapshot.advertiser_id == advertiser_id)
+        .where(GmvCampaignSyncSnapshot.snapshot_type == SNAPSHOT_TYPE_CAMPAIGN)
+        .where(GmvCampaignSyncSnapshot.synced_at < synced_at)
     )
     if store_scope:
         delete_stmt = delete_stmt.where(
-            TTBGmvMaxCampaignSyncSnapshot.store_id.in_(store_scope)
+            GmvCampaignSyncSnapshot.store_id.in_(store_scope)
         )
     if campaign_ids:
         delete_stmt = delete_stmt.where(
-            TTBGmvMaxCampaignSyncSnapshot.campaign_id.in_(campaign_ids)
+            GmvCampaignSyncSnapshot.campaign_id.in_(campaign_ids)
         )
     db.execute(delete_stmt)
 
@@ -1650,9 +1662,18 @@ async def sync_gmvmax_campaigns(
     **filters: Any,
 ) -> dict:
     provided_filters = {k: v for k, v in filters.items() if v is not None}
+    store_scope = provided_filters.get("store_ids")
+    campaign_scope = provided_filters.get("campaign_ids")
+    if store_scope is not None:
+        store_scope = [str(item) for item in store_scope]
+    if campaign_scope is not None:
+        campaign_scope = [str(item) for item in campaign_scope]
+
+    synced_at = datetime.now(timezone.utc)
 
     synced = 0
     details_cache: dict[str, Mapping[str, Any] | None] = {}
+    snapshots: list[Mapping[str, Any]] = []
     async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
         advertiser_id, **provided_filters
     ):
@@ -1683,8 +1704,8 @@ async def sync_gmvmax_campaigns(
         if not resolved_store_id and campaign_details:
             resolved_store_id = _extract_field_from_sources(
                 ("store_id", "shop_id"), campaign_details
-            )
-        upsert_campaign_from_api(
+        )
+        campaign_row = upsert_campaign_from_api(
             db,
             workspace_id=workspace_id,
             auth_id=auth_id,
@@ -1693,10 +1714,50 @@ async def sync_gmvmax_campaigns(
             store_id_hint=resolved_store_id,
             campaign_details=campaign_details,
         )
+        snapshot_payload = campaign_details or payload
+        store_for_snapshot = str(getattr(campaign_row, "store_id", None) or resolved_store_id or "")
+        snapshots.append(
+            {
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": str(advertiser_id),
+                "store_id": store_for_snapshot,
+                "campaign_id": str(getattr(campaign_row, "campaign_id", None) or campaign_identifier or ""),
+                "promotion_type": getattr(campaign_row, "promotion_type", None),
+                "snapshot_type": SNAPSHOT_TYPE_CAMPAIGN,
+                "payload_json": snapshot_payload,
+                "source": "GMVMAX_CAMPAIGN_SYNC",
+                "raw_request_id": (page_context or {}).get("request_id"),
+                "synced_at": synced_at,
+                "is_deleted": False,
+                "deleted_at": None,
+            }
+        )
         synced += 1
     db.flush()
 
-    return {"synced": synced, "removed": 0}
+    _bulk_upsert_snapshots(db, snapshots)
+    _prune_outdated_snapshots(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        synced_at=synced_at,
+        store_scope=store_scope,
+        campaign_ids=campaign_scope,
+    )
+    removed = 0
+    if campaign_scope is None:
+        removed = _mark_missing_snapshot_campaigns_as_deleted(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            store_scope=store_scope,
+            synced_at=synced_at,
+        )
+
+    return {"synced": synced, "removed": removed}
 
 
 def upsert_campaign_from_api(

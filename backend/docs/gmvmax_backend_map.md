@@ -73,7 +73,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 | --- | --- | --- |
 | `TTBGmvMaxCampaign` (`ttb_gmvmax_campaigns`) | workspace/auth/advertiser/store IDs, campaign_id/name/status, roas_bid, budget, timestamps, raw_json, soft-delete flags | Cached GMV Max campaign metadata. |
 | `TTBGmvMaxCampaignProduct` (`ttb_gmvmax_campaign_products`) | campaign/store/item_group ids, operation_status | Mapping of campaigns to promoted products. |
-| `TTBGmvMaxCampaignSyncSnapshot` (`ttb_gmvmax_campaign_sync_snapshots`) | advertiser/store/campaign scope, raw_json, synced_at | Stores last synced payload for reconciliation. |
+| `GmvCampaignSyncSnapshot` (`gmv_campaign_sync_snapshots`) | advertiser/store/campaign scope, payload_json, synced_at | Stores last synced payload for reconciliation. |
 | `TTBGmvMaxMetricsHourly` (`ttb_gmvmax_metrics_hourly`) | campaign FK, store_id, interval_start/end, impressions/clicks/cost/orders/gross_revenue/roi/... | Hourly GMV Max metrics upserts. |
 | `TTBGmvMaxMetricsDaily` (`ttb_gmvmax_metrics_daily`) | campaign FK, store_id, date, same metric fields as hourly | Daily GMV Max metrics upserts. |
 | `TTBGmvMaxCreativeMetric` (`ttb_gmvmax_creative_metrics_daily`) | workspace/provider/auth IDs, campaign/creative ids, stat_time_day, metrics + raw snapshot | Creative-level daily metrics used for heating seed detection. |

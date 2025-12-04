@@ -26,18 +26,13 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import BigInteger as _BigInteger
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 
 from app.data.db import Base
 
 
-UBigInt = (
-    _BigInteger()
-    .with_variant(MySQL_BIGINT(unsigned=True), "mysql")
-    .with_variant(BigInteger, "sqlite")
-)
+UBigInt = Integer().with_variant(MySQL_BIGINT(unsigned=True), "mysql")
 
 
 class PromotionTypeEnum(str, Enum):
@@ -211,6 +206,74 @@ class GmvLivestream(Base):
     )
 
 
+class GmvCampaignSyncSnapshot(Base):
+    """Raw sync snapshots for GMV Max campaign pulls."""
+
+    __tablename__ = "gmv_campaign_sync_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "snapshot_type",
+            "synced_at",
+            name="uk_gmv_campaign_sync_snapshot",
+        ),
+        Index(
+            "idx_gmv_campaign_sync_snapshot_scope",
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+        ),
+        Index("idx_gmv_campaign_sync_snapshot_time", "synced_at"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    promotion_type: Mapped[PromotionTypeEnum | None] = mapped_column(
+        SqlEnum(PromotionTypeEnum), nullable=True
+    )
+    snapshot_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'CAMPAIGN'")
+    )
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    raw_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
+    deleted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class GmvCampaignProduct(Base):
     """Bridge between campaigns and products with promotion type awareness."""
 
@@ -319,6 +382,105 @@ class GmvCampaignLivestream(Base):
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+class GmvCreativeHeating(Base):
+    """State for creative heating cycles managed inside GMV Max."""
+
+    __tablename__ = "gmv_creative_heating"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "campaign_id",
+            "creative_id",
+            "promotion_type",
+            name="uk_gmv_creative_heating_scope",
+        ),
+        Index(
+            "idx_gmv_creative_heating_campaign",
+            "workspace_id",
+            "auth_id",
+            "campaign_id",
+        ),
+        Index(
+            "idx_gmv_creative_heating_creative",
+            "workspace_id",
+            "auth_id",
+            "creative_id",
+        ),
+        Index(
+            "idx_gmv_creative_heating_status",
+            "workspace_id",
+            "auth_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_group_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
+        SqlEnum(PromotionTypeEnum), nullable=False
+    )
+
+    creative_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    product_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    item_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    mode: Mapped[str | None] = mapped_column(String(32), default=None)
+    target_daily_budget: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    budget_delta: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+    max_duration_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+
+    evaluation_window_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("60")
+    )
+    min_clicks: Mapped[int | None] = mapped_column(Integer, default=None)
+    min_ctr: Mapped[float | None] = mapped_column(Numeric(10, 4), default=None)
+    min_gross_revenue: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    auto_stop_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("1")
+    )
+    is_heating_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0")
+    )
+
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'PENDING'"))
+    last_action_type: Mapped[str | None] = mapped_column(String(64), default=None)
+    last_action_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_status: Mapped[str | None] = mapped_column(String(64), default=None)
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    last_action_request: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    last_action_response: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
+    last_evaluation_result: Mapped[str | None] = mapped_column(String(64), default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")

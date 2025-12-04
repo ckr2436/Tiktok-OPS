@@ -9,8 +9,12 @@ import types
 import sqlalchemy as sa
 from sqlalchemy import event
 
+from app.data.models.gmv_restructured import (
+    GmvCampaign,
+    GmvCampaignMetricsHourly,
+    PromotionTypeEnum,
+)
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxMetricsHourly
 from app.data.models.workspaces import Workspace
 from app.services.ttb_gmvmax import sync_gmvmax_metrics_hourly
 
@@ -33,11 +37,13 @@ class StubReportClient:
         return types.SimpleNamespace(data=data)
 
 
-@event.listens_for(TTBGmvMaxMetricsHourly, "before_insert")
+@event.listens_for(GmvCampaignMetricsHourly, "before_insert")
 def _assign_metrics_id(mapper, connection, target) -> None:  # pragma: no cover - helper for SQLite
     if target.id is not None:
         return
-    result = connection.execute(sa.text("SELECT COALESCE(MAX(id), 0) + 1 FROM ttb_gmvmax_metrics_hourly"))
+    result = connection.execute(
+        sa.text("SELECT COALESCE(MAX(id), 0) + 1 FROM gmv_campaign_metrics_hourly")
+    )
     target.id = result.scalar_one()
 
 
@@ -68,7 +74,7 @@ def test_sync_metrics_hourly_is_idempotent(db_session):
     db_session.add(account)
     db_session.flush()
 
-    campaign = TTBGmvMaxCampaign(
+    campaign = GmvCampaign(
         id=1,
         workspace_id=workspace.id,
         auth_id=account.id,
@@ -78,6 +84,7 @@ def test_sync_metrics_hourly_is_idempotent(db_session):
         status="PAUSED",
         currency="USD",
         store_id="shop-9",
+        promotion_type=PromotionTypeEnum.PRODUCT,
     )
     db_session.add(campaign)
     db_session.flush()
@@ -125,8 +132,8 @@ def test_sync_metrics_hourly_is_idempotent(db_session):
     )
 
     rows = (
-        db_session.query(TTBGmvMaxMetricsHourly)
-        .filter(TTBGmvMaxMetricsHourly.campaign_id == campaign.id)
+        db_session.query(GmvCampaignMetricsHourly)
+        .filter(GmvCampaignMetricsHourly.campaign_id == campaign.campaign_id)
         .all()
     )
     assert len(rows) == 1

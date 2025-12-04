@@ -4,11 +4,12 @@ import asyncio
 from decimal import Decimal
 from typing import Any
 
-import sqlalchemy as sa
-from sqlalchemy import event
-
+from app.data.models.gmv_restructured import (
+    GmvActionLog,
+    GmvCampaign,
+    PromotionTypeEnum,
+)
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.data.models.workspaces import Workspace
 from app.services.ttb_gmvmax import apply_campaign_action
 
@@ -21,7 +22,7 @@ class StubTTBClient:
         self.calls.append((advertiser_id, body))
 
 
-def _setup_campaign(db_session) -> TTBGmvMaxCampaign:
+def _setup_campaign(db_session) -> GmvCampaign:
     workspace = Workspace(id=1, name="Test", company_code="0001")
     db_session.add(workspace)
     db_session.flush()
@@ -48,7 +49,7 @@ def _setup_campaign(db_session) -> TTBGmvMaxCampaign:
     db_session.add(account)
     db_session.flush()
 
-    campaign = TTBGmvMaxCampaign(
+    campaign = GmvCampaign(
         id=1,
         workspace_id=workspace.id,
         auth_id=account.id,
@@ -60,18 +61,11 @@ def _setup_campaign(db_session) -> TTBGmvMaxCampaign:
         daily_budget_cents=1000,
         roas_bid=Decimal("1.00"),
         currency="USD",
+        promotion_type=PromotionTypeEnum.PRODUCT,
     )
     db_session.add(campaign)
     db_session.flush()
     return campaign
-
-
-@event.listens_for(TTBGmvMaxActionLog, "before_insert")
-def _assign_action_log_id(mapper, connection, target) -> None:  # pragma: no cover - helper for SQLite
-    if target.id is not None:
-        return
-    result = connection.execute(sa.text("SELECT COALESCE(MAX(id), 0) + 1 FROM ttb_gmvmax_action_logs"))
-    target.id = result.scalar_one()
 
 
 def test_apply_campaign_action_updates_and_logs(db_session):
@@ -161,9 +155,9 @@ def test_apply_campaign_action_updates_and_logs(db_session):
     }
 
     logs = (
-        db_session.query(TTBGmvMaxActionLog)
-        .filter(TTBGmvMaxActionLog.campaign_id == campaign.id)
-        .order_by(TTBGmvMaxActionLog.id.asc())
+        db_session.query(GmvActionLog)
+        .filter(GmvActionLog.campaign_id == campaign.id)
+        .order_by(GmvActionLog.id.asc())
         .all()
     )
     assert len(logs) == 4
