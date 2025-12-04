@@ -24,6 +24,8 @@ from app.data.models.gmv_restructured import (
     GmvCampaignProduct,
     GmvCreativeMetricsDaily,
     GmvCreativeMetricsHourly,
+    GmvOverviewMetricsDaily,
+    GmvOverviewMetricsHourly,
     GmvProductMetricsDaily,
     GmvProductMetricsHourly,
     GmvStrategyConfig,
@@ -39,6 +41,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
     GMVMaxCreativeReportRequest,
+    GMVMaxDataset,
     GMVMaxSessionListRequest,
     GMVMaxExclusiveAuthorizationCreateRequest,
     GMVMaxExclusiveAuthorizationGetRequest,
@@ -49,6 +52,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxReportGetRequest,
     GMVMaxReportTimeRange,
     GMVMaxStoreListRequest,
+    build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
 )
 from app.services.gmvmax_spec import (
@@ -627,6 +631,8 @@ def _pick_dataset_for_level(
     *, campaign: GmvCampaign, level: GMVMaxReportLevel
 ) -> GMVMaxDataset:
     promotion_type = (_normalize_identifier(campaign.shopping_ads_type) or "PRODUCT").upper()
+    if level == GMVMaxReportLevel.OVERVIEW:
+        return GMVMaxDataset.OVERVIEW
     if level == GMVMaxReportLevel.CAMPAIGN:
         return (
             GMVMaxDataset.LIVE_CAMPAIGN
@@ -1618,14 +1624,21 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     cost_cents_value = _extract_field(row, "cost_cents")
     net_cost_cents_value = _extract_field(row, "net_cost_cents")
     gross_revenue_cents_value = _extract_field(row, "gross_revenue_cents")
+    all_shops_gross_revenue_cents_value = _extract_field(
+        row, "all_shops_gross_revenue_cents"
+    )
 
     return {
         "impressions": _to_int(
             _extract_field(row, "impressions", "show_cnt", "views", "product_impressions")
         ),
+        "product_impressions": _to_int(_extract_field(row, "product_impressions")),
         "clicks": _to_int(_extract_field(row, "clicks", "click", "click_cnt")),
         "product_clicks": _to_int(
             _extract_field(row, "product_clicks", "product_click", "product_click_cnt")
+        ),
+        "product_click_rate": _to_decimal(
+            _extract_field(row, "product_click_rate"), quantize=_DECIMAL_FOUR
         ),
         "cost_cents": _to_int(cost_cents_value)
         if cost_cents_value is not None
@@ -1634,12 +1647,19 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         if net_cost_cents_value is not None
         else _to_cents(_extract_field(row, "net_cost")),
         "orders": _to_int(_extract_field(row, "orders", "order_num", "conversions")),
+        "cost_per_order": _to_decimal(
+            _extract_field(row, "cost_per_order"), quantize=_DECIMAL_FOUR
+        ),
         "gross_revenue_cents": _to_int(gross_revenue_cents_value)
         if gross_revenue_cents_value is not None
         else _to_cents(_extract_field(row, "gross_revenue", "gmv", "revenue")),
         "roi": _to_decimal(_extract_field(row, "roi", "roas"), quantize=_DECIMAL_FOUR),
         "ad_click_rate": _to_decimal(
             _extract_field(row, "ad_click_rate", "ctr"), quantize=_DECIMAL_FOUR
+        ),
+        "ad_conversion_rate": _to_decimal(
+            _extract_field(row, "ad_conversion_rate", "conversion_rate", "cvr"),
+            quantize=_DECIMAL_FOUR,
         ),
         "conversion_rate": _to_decimal(
             _extract_field(row, "conversion_rate", "ad_conversion_rate", "cvr"),
@@ -1668,6 +1688,22 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "video_view_rate_100": _to_decimal(
             _extract_field(row, "video_view_rate_100", "ad_video_view_rate_p100"),
             quantize=_DECIMAL_FOUR,
+        ),
+        "cost_per_live_view": _to_decimal(
+            _extract_field(row, "cost_per_live_view"), quantize=_DECIMAL_FOUR
+        ),
+        "cost_per_10_second_live_view": _to_decimal(
+            _extract_field(row, "cost_per_10_second_live_view"), quantize=_DECIMAL_FOUR
+        ),
+        "all_shops_orders": _to_int(_extract_field(row, "all_shops_orders")),
+        "all_shops_gross_revenue_cents": _to_int(all_shops_gross_revenue_cents_value)
+        if all_shops_gross_revenue_cents_value is not None
+        else _to_cents(_extract_field(row, "all_shops_gross_revenue")),
+        "all_shops_roi": _to_decimal(
+            _extract_field(row, "all_shops_roi"), quantize=_DECIMAL_FOUR
+        ),
+        "all_shops_cost_per_order": _to_decimal(
+            _extract_field(row, "all_shops_cost_per_order"), quantize=_DECIMAL_FOUR
         ),
     }
 
@@ -2580,6 +2616,63 @@ def upsert_metrics_daily_row(
     return instance
 
 
+def _upsert_overview_daily(
+    db: Session, *, advertiser_id: str, row: Mapping[str, Any]
+) -> GmvOverviewMetricsDaily:
+    stat_date = _parse_date(_extract_field(row, "stat_time_day", "date", "stat_time"))
+    if stat_date is None:
+        raise ValueError("date missing")
+
+    stmt = (
+        select(GmvOverviewMetricsDaily)
+        .where(GmvOverviewMetricsDaily.advertiser_id == str(advertiser_id))
+        .where(GmvOverviewMetricsDaily.stat_time_day == stat_date)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvOverviewMetricsDaily(
+            advertiser_id=str(advertiser_id), stat_time_day=stat_date
+        )
+        db.add(instance)
+
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    db.flush()
+    return instance
+
+
+def _upsert_overview_hourly(
+    db: Session, *, advertiser_id: str, row: Mapping[str, Any]
+) -> GmvOverviewMetricsHourly:
+    stat_time_value = _extract_field(row, "stat_time_hour", "stat_time")
+    stat_time_hour = _parse_datetime(stat_time_value)
+    if stat_time_hour is None:
+        raise ValueError("hour missing")
+
+    stmt = (
+        select(GmvOverviewMetricsHourly)
+        .where(GmvOverviewMetricsHourly.advertiser_id == str(advertiser_id))
+        .where(GmvOverviewMetricsHourly.stat_time_hour == stat_time_hour)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvOverviewMetricsHourly(
+            advertiser_id=str(advertiser_id), stat_time_hour=stat_time_hour
+        )
+        db.add(instance)
+
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    db.flush()
+    return instance
+
+
 def _build_campaign_report_request(
     *,
     advertiser_id: str,
@@ -2668,6 +2761,70 @@ async def sync_gmvmax_metrics_daily(
                     "campaign_id": campaign.campaign_id,
                     "workspace_id": workspace_id,
                     "auth_id": auth_id,
+                },
+            )
+            continue
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_overview_metrics(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_ids: Sequence[str],
+    start_date: date | str,
+    end_date: date | str,
+    granularity: str = "DAILY",
+) -> dict:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+    if not store_ids:
+        return {"synced_rows": 0}
+
+    metrics = list(GMVMAX_BASE_METRICS)
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.OVERVIEW,
+        advertiser_id=str(advertiser_id),
+        store_ids=list(store_ids),
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=metrics,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+
+    granularity_normalized = str(granularity or "").strip().upper()
+    if granularity_normalized == "HOUR":
+        request.dimensions = ["advertiser_id", "stat_time_hour"]
+    else:
+        request.dimensions = ["advertiser_id", "stat_time_day"]
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, dict)]
+
+    synced_rows = 0
+    for row in rows:
+        try:
+            if granularity_normalized == "HOUR":
+                _upsert_overview_hourly(db, advertiser_id=advertiser_id, row=row)
+            else:
+                _upsert_overview_daily(db, advertiser_id=advertiser_id, row=row)
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip overview metrics row without timestamp",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "granularity": granularity_normalized,
                 },
             )
             continue
