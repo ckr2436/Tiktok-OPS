@@ -2442,13 +2442,18 @@ async def list_gmvmax_campaigns_provider(
     page_value = page or 1
     page_size_value = page_size or 20
 
+    store_filters = [str(item) for item in store_ids] if store_ids else None
+    if not store_filters and context.store_id:
+        store_filters = [str(context.store_id)]
+
     query = (
         context.db.query(GmvCampaign)
         .filter(GmvCampaign.workspace_id == int(workspace_id))
         .filter(GmvCampaign.advertiser_id == str(adv))
+        .filter(GmvCampaign.auth_id == int(auth_id))
     )
-    if store_ids:
-        query = query.filter(GmvCampaign.store_id.in_([str(item) for item in store_ids]))
+    if store_filters:
+        query = query.filter(GmvCampaign.store_id.in_(store_filters))
     if campaign_ids:
         query = query.filter(GmvCampaign.campaign_id.in_([str(item) for item in campaign_ids]))
     if campaign_name:
