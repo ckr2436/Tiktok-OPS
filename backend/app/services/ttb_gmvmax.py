@@ -1624,14 +1624,21 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     cost_cents_value = _extract_field(row, "cost_cents")
     net_cost_cents_value = _extract_field(row, "net_cost_cents")
     gross_revenue_cents_value = _extract_field(row, "gross_revenue_cents")
+    all_shops_gross_revenue_cents_value = _extract_field(
+        row, "all_shops_gross_revenue_cents"
+    )
 
     return {
         "impressions": _to_int(
             _extract_field(row, "impressions", "show_cnt", "views", "product_impressions")
         ),
+        "product_impressions": _to_int(_extract_field(row, "product_impressions")),
         "clicks": _to_int(_extract_field(row, "clicks", "click", "click_cnt")),
         "product_clicks": _to_int(
             _extract_field(row, "product_clicks", "product_click", "product_click_cnt")
+        ),
+        "product_click_rate": _to_decimal(
+            _extract_field(row, "product_click_rate"), quantize=_DECIMAL_FOUR
         ),
         "cost_cents": _to_int(cost_cents_value)
         if cost_cents_value is not None
@@ -1640,12 +1647,19 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         if net_cost_cents_value is not None
         else _to_cents(_extract_field(row, "net_cost")),
         "orders": _to_int(_extract_field(row, "orders", "order_num", "conversions")),
+        "cost_per_order": _to_decimal(
+            _extract_field(row, "cost_per_order"), quantize=_DECIMAL_FOUR
+        ),
         "gross_revenue_cents": _to_int(gross_revenue_cents_value)
         if gross_revenue_cents_value is not None
         else _to_cents(_extract_field(row, "gross_revenue", "gmv", "revenue")),
         "roi": _to_decimal(_extract_field(row, "roi", "roas"), quantize=_DECIMAL_FOUR),
         "ad_click_rate": _to_decimal(
             _extract_field(row, "ad_click_rate", "ctr"), quantize=_DECIMAL_FOUR
+        ),
+        "ad_conversion_rate": _to_decimal(
+            _extract_field(row, "ad_conversion_rate", "conversion_rate", "cvr"),
+            quantize=_DECIMAL_FOUR,
         ),
         "conversion_rate": _to_decimal(
             _extract_field(row, "conversion_rate", "ad_conversion_rate", "cvr"),
@@ -1674,6 +1688,22 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "video_view_rate_100": _to_decimal(
             _extract_field(row, "video_view_rate_100", "ad_video_view_rate_p100"),
             quantize=_DECIMAL_FOUR,
+        ),
+        "cost_per_live_view": _to_decimal(
+            _extract_field(row, "cost_per_live_view"), quantize=_DECIMAL_FOUR
+        ),
+        "cost_per_10_second_live_view": _to_decimal(
+            _extract_field(row, "cost_per_10_second_live_view"), quantize=_DECIMAL_FOUR
+        ),
+        "all_shops_orders": _to_int(_extract_field(row, "all_shops_orders")),
+        "all_shops_gross_revenue_cents": _to_int(all_shops_gross_revenue_cents_value)
+        if all_shops_gross_revenue_cents_value is not None
+        else _to_cents(_extract_field(row, "all_shops_gross_revenue")),
+        "all_shops_roi": _to_decimal(
+            _extract_field(row, "all_shops_roi"), quantize=_DECIMAL_FOUR
+        ),
+        "all_shops_cost_per_order": _to_decimal(
+            _extract_field(row, "all_shops_cost_per_order"), quantize=_DECIMAL_FOUR
         ),
     }
 
