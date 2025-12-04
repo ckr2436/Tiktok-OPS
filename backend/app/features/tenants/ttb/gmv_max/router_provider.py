@@ -137,6 +137,7 @@ from .schemas import (
     CreativeHeatingActionResponse,
     CreativeHeatingRecord,
     DEFAULT_PROMOTION_TYPES,
+    GMVMaxCampaignInfoData,
     GMVMaxPrecheckRequest,
     GMVMaxPrecheckResponse,
     MetricsRequest,
@@ -264,6 +265,35 @@ def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
     if row.deleted_at:
         payload["deleted_at"] = row.deleted_at
     return GMVMaxCampaign.model_validate(payload)
+
+
+def _campaign_snapshot_to_detail(
+    snapshot: GmvCampaignSyncSnapshot | None, fallback_row: GmvCampaign
+) -> GMVMaxCampaignInfoData:
+    """Build a detailed campaign schema from the latest snapshot or DB row.
+
+    The campaign detail response expects ``GMVMaxCampaignInfoData``. When a
+    campaign snapshot payload is available, prefer that (it comes directly from
+    TikTok's campaign info API). If the snapshot is missing or malformed, fall
+    back to converting the persisted campaign row into the expected schema to
+    keep the endpoint resilient.
+    """
+
+    if snapshot and snapshot.payload_json:
+        try:
+            return GMVMaxCampaignInfoData.model_validate(snapshot.payload_json)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax campaign snapshot parse failed",
+                exc_info=True,
+                extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
+            )
+
+    # Fallback: reuse the list-view schema and coerce it into the detail model
+    fallback_campaign = _campaign_row_to_schema(fallback_row)
+    return GMVMaxCampaignInfoData.model_validate(
+        fallback_campaign.model_dump(exclude_none=True)
+    )
 
 
 def _latest_snapshot(
@@ -2509,7 +2539,7 @@ async def get_gmvmax_campaign_provider(
             )
         )
 
-    campaign_info = _campaign_row_to_schema(row)
+    campaign_info = _campaign_snapshot_to_detail(info_snapshot, row)
 
     return CampaignDetailResponse(
         campaign=campaign_info,
