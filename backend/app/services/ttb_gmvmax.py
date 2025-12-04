@@ -1209,6 +1209,18 @@ def _sync_campaign_product_assignments(
     if not rows:
         return
 
+    item_group_ids = {row["item_group_id"] for row in rows}
+
+    # Clean out existing rows for the same products and store to avoid lock contention
+    # with the unique constraints on (workspace_id, auth_id, store_id, item_group_id).
+    db.execute(
+        delete(GmvCampaignProduct)
+        .where(GmvCampaignProduct.workspace_id == campaign.workspace_id)
+        .where(GmvCampaignProduct.auth_id == campaign.auth_id)
+        .where(GmvCampaignProduct.store_id == store_id)
+        .where(GmvCampaignProduct.item_group_id.in_(item_group_ids))
+    )
+
     bind = db.get_bind()
     if bind and bind.dialect.name == "sqlite":
         stmt = sqlite_insert(GmvCampaignProduct).values(rows)
@@ -1229,7 +1241,10 @@ def _sync_campaign_product_assignments(
     else:
         stmt = mysql_insert(GmvCampaignProduct).values(rows)
         stmt = stmt.on_duplicate_key_update(
+            campaign_pk=stmt.inserted.campaign_pk,
+            campaign_id=stmt.inserted.campaign_id,
             store_id=stmt.inserted.store_id,
+            promotion_type=stmt.inserted.promotion_type,
             operation_status=stmt.inserted.operation_status,
         )
     db.execute(stmt)
