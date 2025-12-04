@@ -34,9 +34,14 @@ def upgrade() -> None:
     inspector = inspect(conn)
     existing_tables = set(inspector.get_table_names())
 
+    # Disable foreign key checks to allow dropping tables with dependencies
+    op.execute("SET FOREIGN_KEY_CHECKS=0;")
+
     for table in LEGACY_TABLES:
         if table in existing_tables:
             op.drop_table(table)
+
+    op.execute("SET FOREIGN_KEY_CHECKS=1;")
 
 
 def downgrade() -> None:
