@@ -34,10 +34,12 @@ from app.data.repositories.tiktok_business import gmvmax as gmvmax_repo
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
+    GMVMaxCampaignInfoRequest,
     GMVMaxCampaignReportRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
     GMVMaxCreativeReportRequest,
+    GMVMaxSessionListRequest,
     GMVMaxExclusiveAuthorizationCreateRequest,
     GMVMaxExclusiveAuthorizationGetRequest,
     GMVMaxIdentityGetRequest,
@@ -58,10 +60,12 @@ from app.services.gmvmax_spec import (
     GMV_REPORT_CONFIG,
 )
 from app.services.ttb_api import TTBApiError, TTBBusinessError
+from app.services.ttb_binding_config import get_binding_config
 
 
 logger = logging.getLogger("gmv.tenants.gmvmax")
 SNAPSHOT_TYPE_CAMPAIGN = "CAMPAIGN"
+SNAPSHOT_TYPE_CAMPAIGN_SESSION = "CAMPAIGN_SESSION"
 
 
 def _ensure_campaign_not_deleted(campaign: GmvCampaign | None) -> None:
@@ -94,6 +98,7 @@ __all__ = [
     "update_gmvmax_campaign",
     "fetch_gmvmax_report_by_level",
     "get_item_group_ids_for_campaign",
+    "fetch_and_cache_campaign_detail",
 ]
 
 
@@ -216,6 +221,13 @@ def _normalize_identifier(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _get_bound_store_id(db: Session, *, workspace_id: int, auth_id: int) -> str | None:
+    """Return the configured store_id for the binding, if any."""
+
+    binding = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
+    return _normalize_identifier(binding.store_id) if binding else None
 
 
 def _require_single_identifier(
@@ -1711,6 +1723,11 @@ async def sync_gmvmax_campaigns(
     if campaign_scope is not None:
         campaign_scope = [str(item) for item in campaign_scope]
 
+    bound_store_id = _get_bound_store_id(db, workspace_id=workspace_id, auth_id=auth_id)
+    if bound_store_id:
+        store_scope = [bound_store_id]
+        provided_filters["store_ids"] = [bound_store_id]
+
     synced_at = datetime.now(timezone.utc)
 
     synced = 0
@@ -1758,11 +1775,39 @@ async def sync_gmvmax_campaigns(
                 advertiser_id=advertiser_id,
                 campaign_payload=payload,
                 page_context=page_context,
-            )
+        )
         if not resolved_store_id and campaign_details:
             resolved_store_id = _extract_field_from_sources(
                 ("store_id", "shop_id"), campaign_details
             )
+
+        normalized_store_id = _normalize_identifier(resolved_store_id)
+        if bound_store_id:
+            if normalized_store_id is None:
+                logger.info(
+                    "skipping campaign without store_id due to binding",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "campaign_id": campaign_identifier,
+                        "bound_store_id": bound_store_id,
+                    },
+                )
+                continue
+            if normalized_store_id != bound_store_id:
+                logger.info(
+                    "skipping campaign for unrelated store", 
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "campaign_id": campaign_identifier,
+                        "store_id": normalized_store_id,
+                        "bound_store_id": bound_store_id,
+                    },
+                )
+                continue
 
         promotion_type = _normalize_promotion_type(
             _extract_field_from_sources(
@@ -1771,7 +1816,7 @@ async def sync_gmvmax_campaigns(
                 payload,
             )
         )
-        store_for_snapshot = str(resolved_store_id or "")
+        store_for_snapshot = normalized_store_id or str(resolved_store_id or "")
         scope_key = (store_for_snapshot, promotion_type)
         remote_by_scope.setdefault(scope_key, set()).add(str(campaign_identifier))
 
@@ -1853,6 +1898,42 @@ async def sync_gmvmax_campaigns(
             store_id=str(scope_store),
             campaign_ids=missing_ids,
         )
+
+    if bound_store_id:
+        mismatched: dict[str, set[str]] = {}
+        mismatched_rows = (
+            db.query(GmvCampaign.store_id, GmvCampaign.campaign_id)
+            .filter(GmvCampaign.workspace_id == workspace_id)
+            .filter(GmvCampaign.auth_id == auth_id)
+            .filter(GmvCampaign.advertiser_id == str(advertiser_id))
+            .filter(GmvCampaign.store_id != str(bound_store_id))
+            .filter(GmvCampaign.is_deleted.is_(False))
+            .all()
+        )
+        for store_value, campaign_value in mismatched_rows:
+            normalized_store = _normalize_identifier(store_value) or ""
+            mismatched.setdefault(normalized_store, set()).add(str(campaign_value))
+
+        for store_value, campaign_ids in mismatched.items():
+            removed += gmvmax_repo.mark_campaigns_deleted_for_scope(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(advertiser_id),
+                store_id=str(store_value),
+                campaign_ids=campaign_ids,
+            )
+            logger.info(
+                "gmvmax cleanup removed campaigns for non-bound store",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "store_id": store_value,
+                    "campaign_ids": sorted(campaign_ids),
+                    "bound_store_id": bound_store_id,
+                },
+            )
 
     return {"synced": synced, "removed": removed}
 
@@ -2052,6 +2133,118 @@ def upsert_campaign_from_api(
 
     db.flush()
     return result
+
+
+async def fetch_and_cache_campaign_detail(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    include_sessions: bool = True,
+) -> dict[str, Any]:
+    bound_store_id = _get_bound_store_id(db, workspace_id=workspace_id, auth_id=auth_id)
+    info_request = GMVMaxCampaignInfoRequest(
+        advertiser_id=str(advertiser_id), campaign_id=str(campaign_id)
+    )
+    info_resp = await ttb_client.gmv_max_campaign_info(info_request)
+
+    normalized_store = _normalize_identifier(info_resp.data.store_id)
+    existing_row = (
+        db.execute(
+            select(GmvCampaign)
+            .where(GmvCampaign.workspace_id == workspace_id)
+            .where(GmvCampaign.auth_id == auth_id)
+            .where(GmvCampaign.campaign_id == str(campaign_id))
+        )
+        .scalars()
+        .first()
+    )
+    resolved_store = normalized_store or _normalize_identifier(getattr(existing_row, "store_id", None))
+    if bound_store_id and (resolved_store is None or resolved_store != bound_store_id):
+        raise TTBBusinessError(
+            "Campaign does not belong to the bound store",
+            code="GMVMAX_CAMPAIGN_STORE_MISMATCH",
+            payload={
+                "campaign_id": str(campaign_id),
+                "campaign_store_id": resolved_store,
+                "bound_store_id": bound_store_id,
+            },
+        )
+
+    local_row: GmvCampaign | None = upsert_campaign_from_api(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        payload=info_resp.data.model_dump(exclude_none=True),
+        store_id_hint=info_resp.data.store_id,
+        campaign_details={
+            "campaign_id": info_resp.data.campaign_id,
+            "store_id": info_resp.data.store_id,
+        },
+    )
+    db.flush()
+
+    session_payload: dict[str, Any] | None = None
+    sessions_request_id: str | None = None
+    if include_sessions:
+        session_resp = await ttb_client.gmv_max_session_list(
+            GMVMaxSessionListRequest(
+                advertiser_id=str(advertiser_id),
+                campaign_id=str(campaign_id),
+            )
+        )
+        session_payload = session_resp.data.model_dump(exclude_none=True)
+        sessions_request_id = session_resp.request_id
+
+    synced_at = datetime.now(timezone.utc)
+    store_id = info_resp.data.store_id or (local_row.store_id if local_row else "")
+    promotion_type = None
+    if isinstance(local_row, GmvCampaign):
+        promotion_type = local_row.promotion_type
+
+    gmvmax_repo.create_campaign_snapshot(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id or ""),
+        campaign_id=str(campaign_id),
+        promotion_type=promotion_type,
+        snapshot_type=SNAPSHOT_TYPE_CAMPAIGN,
+        payload_json=info_resp.data.model_dump(exclude_none=True),
+        source="GMVMAX_CAMPAIGN_INFO",
+        raw_request_id=info_resp.request_id,
+        synced_at=synced_at,
+    )
+
+    if session_payload is not None:
+        gmvmax_repo.create_campaign_snapshot(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id or ""),
+            campaign_id=str(campaign_id),
+            promotion_type=promotion_type,
+            snapshot_type=SNAPSHOT_TYPE_CAMPAIGN_SESSION,
+            payload_json=session_payload,
+            source="GMVMAX_SESSION_LIST",
+            raw_request_id=sessions_request_id,
+            synced_at=synced_at,
+        )
+
+    db.commit()
+
+    return {
+        "campaign_id": str(campaign_id),
+        "request_id": info_resp.request_id,
+        "sessions_request_id": sessions_request_id,
+        "synced_at": synced_at.isoformat(),
+    }
 
 
 def _upsert_product_metrics_hourly(

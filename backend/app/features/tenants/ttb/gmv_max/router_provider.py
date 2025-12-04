@@ -36,6 +36,7 @@ from app.data.models.gmv_restructured import (
     GmvCampaign,
     GmvCampaignMetricsDaily,
     GmvCampaignProduct,
+    GmvCampaignSyncSnapshot,
     GmvCreativeMetricsDaily,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
@@ -103,15 +104,17 @@ from app.services.gmvmax_spec import (
 )
 from .service import _ensure_provider, list_action_logs
 from app.services.ttb_gmvmax import (
+    SNAPSHOT_TYPE_CAMPAIGN,
+    SNAPSHOT_TYPE_CAMPAIGN_SESSION,
+    _extract_item_group_ids_from_payload,
+    _sanitize_id_list,
     build_gmvmax_anchor_params,
     create_gmvmax_campaign,
     ensure_gmvmax_store_authorized,
     log_campaign_action,
-    _sanitize_id_list,
     resolve_store_id_from_page_context,
     upsert_campaign_from_api,
     update_gmvmax_campaign,
-    _extract_item_group_ids_from_payload,
 )
 
 from .schemas import (
@@ -134,6 +137,7 @@ from .schemas import (
     CreativeHeatingActionResponse,
     CreativeHeatingRecord,
     DEFAULT_PROMOTION_TYPES,
+    GMVMaxCampaignInfoData,
     GMVMaxPrecheckRequest,
     GMVMaxPrecheckResponse,
     MetricsRequest,
@@ -261,6 +265,76 @@ def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
     if row.deleted_at:
         payload["deleted_at"] = row.deleted_at
     return GMVMaxCampaign.model_validate(payload)
+
+
+def _campaign_snapshot_to_detail(
+    snapshot: GmvCampaignSyncSnapshot | None, fallback_row: GmvCampaign
+) -> GMVMaxCampaignInfoData:
+    """Build a detailed campaign schema from the latest snapshot or DB row.
+
+    The campaign detail response expects ``GMVMaxCampaignInfoData``. When a
+    campaign snapshot payload is available, prefer that (it comes directly from
+    TikTok's campaign info API). If the snapshot is missing or malformed, fall
+    back to converting the persisted campaign row into the expected schema to
+    keep the endpoint resilient.
+    """
+
+    if snapshot and snapshot.payload_json:
+        try:
+            return GMVMaxCampaignInfoData.model_validate(snapshot.payload_json)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax campaign snapshot parse failed",
+                exc_info=True,
+                extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
+            )
+
+    # Fallback: reuse the list-view schema and coerce it into the detail model
+    fallback_campaign = _campaign_row_to_schema(fallback_row)
+    return GMVMaxCampaignInfoData.model_validate(
+        fallback_campaign.model_dump(exclude_none=True)
+    )
+
+
+def _latest_snapshot(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    snapshot_type: str,
+) -> GmvCampaignSyncSnapshot | None:
+    return (
+        db.query(GmvCampaignSyncSnapshot)
+        .filter(GmvCampaignSyncSnapshot.workspace_id == int(workspace_id))
+        .filter(GmvCampaignSyncSnapshot.auth_id == int(auth_id))
+        .filter(GmvCampaignSyncSnapshot.advertiser_id == str(advertiser_id))
+        .filter(GmvCampaignSyncSnapshot.campaign_id == str(campaign_id))
+        .filter(GmvCampaignSyncSnapshot.snapshot_type == snapshot_type)
+        .order_by(GmvCampaignSyncSnapshot.synced_at.desc())
+        .first()
+    )
+
+
+def _deserialize_sessions(snapshot: GmvCampaignSyncSnapshot | None) -> tuple[list[GMVMaxSession], PageInfo | None, str | None]:
+    if snapshot is None or not snapshot.payload_json:
+        return [], None, None
+    payload = snapshot.payload_json
+    sessions: list[GMVMaxSession] = []
+    page_info: PageInfo | None = None
+    try:
+        session_list = payload.get("list") or []
+        sessions = [GMVMaxSession.model_validate(item) for item in session_list]
+        if payload.get("page_info"):
+            page_info = PageInfo.model_validate(payload.get("page_info"))
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "gmvmax session snapshot parse failed",
+            exc_info=True,
+            extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
+        )
+    return sessions, page_info, snapshot.raw_request_id
 
 
 def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
@@ -2420,67 +2494,106 @@ async def get_gmvmax_campaign_provider(
     include_sessions: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
-    """Retrieve campaign detail and sessions via TikTok info/list endpoints."""
+    """Read cached campaign detail/sessions persisted by async sync/refresh tasks."""
+
+    if context.db is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="database unavailable")
 
     adv = advertiser_id or context.advertiser_id
-    info_request = asyncio.create_task(
-        _call_tiktok(
-            context.client.gmv_max_campaign_info,
-            GMVMaxCampaignInfoRequest(advertiser_id=adv, campaign_id=str(campaign_id)),
-        )
+    row = (
+        context.db.query(GmvCampaign)
+        .filter(GmvCampaign.workspace_id == int(workspace_id))
+        .filter(GmvCampaign.auth_id == int(auth_id))
+        .filter(GmvCampaign.advertiser_id == str(adv))
+        .filter(GmvCampaign.campaign_id == str(campaign_id))
+        .order_by(GmvCampaign.updated_at.desc())
+        .first()
     )
-    session_request: asyncio.Task[GMVMaxResponse[GMVMaxSessionListData]] | None = None
-    if include_sessions:
-        session_request = asyncio.create_task(
-            _call_tiktok(
-                context.client.gmv_max_session_list,
-                GMVMaxSessionListRequest(
-                    advertiser_id=adv,
-                    campaign_id=str(campaign_id),
-                ),
-            )
+    if row is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="campaign not found in cache; trigger refresh first",
         )
 
-    info_resp = await info_request
-    local_row: GmvCampaign | None = None
-    if context.db is not None:
-        local_row = upsert_campaign_from_api(
-            context.db,
-            workspace_id=context.workspace_id,
-            auth_id=context.auth_id,
-            advertiser_id=adv,
-            payload=info_resp.data.model_dump(exclude_none=True),
-            store_id_hint=info_resp.data.store_id,
-            campaign_details={
-                "campaign_id": info_resp.data.campaign_id,
-                "store_id": info_resp.data.store_id,
-            },
-        )
-        context.db.flush()
+    info_snapshot = _latest_snapshot(
+        context.db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(adv),
+        campaign_id=str(campaign_id),
+        snapshot_type=SNAPSHOT_TYPE_CAMPAIGN,
+    )
 
-    session_resp = await session_request if session_request else None
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
     sessions_request_id: str | None = None
-    if session_resp:
-        sessions = session_resp.data.list
-        sessions_page_info = session_resp.data.page_info
-        sessions_request_id = session_resp.request_id
-    campaign_info = info_resp.data
-    if local_row is not None:
-        campaign_info = campaign_info.model_copy(
-            update={
-                "is_deleted": bool(local_row.is_deleted),
-                "deleted_at": local_row.deleted_at,
-            }
+    if include_sessions:
+        sessions, sessions_page_info, sessions_request_id = _deserialize_sessions(
+            _latest_snapshot(
+                context.db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=str(adv),
+                campaign_id=str(campaign_id),
+                snapshot_type=SNAPSHOT_TYPE_CAMPAIGN_SESSION,
+            )
         )
+
+    campaign_info = _campaign_snapshot_to_detail(info_snapshot, row)
 
     return CampaignDetailResponse(
         campaign=campaign_info,
         sessions=sessions,
         sessions_page_info=sessions_page_info,
-        request_id=info_resp.request_id,
+        request_id=info_snapshot.raw_request_id if info_snapshot else None,
         sessions_request_id=sessions_request_id,
+    )
+
+
+@router.post(
+    "/{campaign_id}/refresh",
+    response_model=AsyncTaskResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+async def refresh_gmvmax_campaign_provider(
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: str = Path(...),
+    advertiser_id: Optional[str] = Query(None),
+    include_sessions: bool = Query(True),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> AsyncTaskResponse:
+    """Enqueue TikTok campaign detail/session refresh via Celery."""
+
+    adv = advertiser_id or context.advertiser_id
+    async_res = celery_app.send_task(
+        "gmvmax.fetch_campaign_detail",
+        kwargs={
+            "workspace_id": context.workspace_id,
+            "auth_id": context.auth_id,
+            "advertiser_id": str(adv),
+            "campaign_id": str(campaign_id),
+            "include_sessions": include_sessions,
+        },
+        queue="gmvmax",
+    )
+    logger.info(
+        "gmvmax.campaign_refresh enqueued",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "advertiser_id": adv,
+            "campaign_id": campaign_id,
+            "task_id": async_res.id,
+        },
+    )
+
+    return _build_task_response(
+        async_res,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
     )
 
 
