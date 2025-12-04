@@ -23,7 +23,6 @@ def _find_cached_instance(
             continue
         if (
             obj.workspace_id == workspace_id
-            and obj.provider == provider
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
@@ -34,7 +33,6 @@ def _find_cached_instance(
             continue
         if (
             obj.workspace_id == workspace_id
-            and obj.provider == provider
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
@@ -51,6 +49,8 @@ async def upsert_creative_heating(
     auth_id: int,
     campaign_id: str,
     creative_id: str,
+    advertiser_id: str,
+    promotion_type: str,
     mode: str | None = None,
     target_daily_budget: Any | None = None,
     budget_delta: Any | None = None,
@@ -66,14 +66,14 @@ async def upsert_creative_heating(
     min_gross_revenue: Any | None = None,
     auto_stop_enabled: bool | None = None,
 ) -> TTBGmvMaxCreativeHeating:
-    provider_key = str(provider)
     campaign_key = str(campaign_id)
     creative_key = str(creative_id)
+    advertiser_key = str(advertiser_id)
+    promotion_type_key = str(promotion_type)
 
     instance = _find_cached_instance(
         db,
         workspace_id=workspace_id,
-        provider=provider_key,
         auth_id=auth_id,
         campaign_id=campaign_key,
         creative_id=creative_key,
@@ -82,7 +82,6 @@ async def upsert_creative_heating(
         stmt: Select[TTBGmvMaxCreativeHeating] = (
             select(TTBGmvMaxCreativeHeating)
             .where(TTBGmvMaxCreativeHeating.workspace_id == workspace_id)
-            .where(TTBGmvMaxCreativeHeating.provider == provider_key)
             .where(TTBGmvMaxCreativeHeating.auth_id == auth_id)
             .where(TTBGmvMaxCreativeHeating.campaign_id == campaign_key)
             .where(TTBGmvMaxCreativeHeating.creative_id == creative_key)
@@ -91,16 +90,18 @@ async def upsert_creative_heating(
     if instance is None:
         instance = TTBGmvMaxCreativeHeating(
             workspace_id=workspace_id,
-            provider=provider_key,
             auth_id=auth_id,
             campaign_id=campaign_key,
             creative_id=creative_key,
+            advertiser_id=advertiser_key,
+            promotion_type=promotion_type_key,
         )
         db.add(instance)
     else:
-        instance.provider = provider_key
         instance.campaign_id = campaign_key
         instance.creative_id = creative_key
+        instance.advertiser_id = advertiser_key
+        instance.promotion_type = promotion_type_key
 
     instance.mode = mode
     instance.target_daily_budget = target_daily_budget
@@ -201,7 +202,6 @@ def _apply_required_filters(
 ) -> Select[TTBGmvMaxCreativeHeating]:
     return (
         query.where(TTBGmvMaxCreativeHeating.workspace_id == workspace_id)
-        .where(TTBGmvMaxCreativeHeating.provider == str(provider))
         .where(TTBGmvMaxCreativeHeating.auth_id == auth_id)
     )
 

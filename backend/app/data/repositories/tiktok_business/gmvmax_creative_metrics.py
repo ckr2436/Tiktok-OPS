@@ -70,7 +70,6 @@ def _find_cached_instance(
             continue
         if (
             obj.workspace_id == workspace_id
-            and obj.provider == provider
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
@@ -82,7 +81,6 @@ def _find_cached_instance(
             continue
         if (
             obj.workspace_id == workspace_id
-            and obj.provider == provider
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
@@ -106,7 +104,6 @@ async def upsert_creative_metrics(
     if not isinstance(metrics, dict):  # pragma: no cover - defensive
         raise ValueError("metrics must be a dict")
 
-    provider_key = str(provider)
     campaign_key = str(campaign_id)
     creative_key = str(creative_id)
 
@@ -115,7 +112,6 @@ async def upsert_creative_metrics(
     instance = _find_cached_instance(
         db,
         workspace_id=workspace_id,
-        provider=provider_key,
         auth_id=auth_id,
         campaign_id=campaign_key,
         creative_id=creative_key,
@@ -125,7 +121,6 @@ async def upsert_creative_metrics(
         stmt: Select[TTBGmvMaxCreativeMetric] = (
             select(TTBGmvMaxCreativeMetric)
             .where(TTBGmvMaxCreativeMetric.workspace_id == workspace_id)
-            .where(TTBGmvMaxCreativeMetric.provider == provider_key)
             .where(TTBGmvMaxCreativeMetric.auth_id == auth_id)
             .where(TTBGmvMaxCreativeMetric.campaign_id == campaign_key)
             .where(TTBGmvMaxCreativeMetric.creative_id == creative_key)
@@ -135,7 +130,6 @@ async def upsert_creative_metrics(
     if instance is None:
         instance = TTBGmvMaxCreativeMetric(
             workspace_id=workspace_id,
-            provider=provider_key,
             auth_id=auth_id,
             campaign_id=campaign_key,
             creative_id=creative_key,
@@ -143,7 +137,6 @@ async def upsert_creative_metrics(
         )
         db.add(instance)
     else:
-        instance.provider = provider_key
         instance.campaign_id = campaign_key
         instance.creative_id = creative_key
 
@@ -164,7 +157,6 @@ def _apply_required_filters(
 ) -> Select[TTBGmvMaxCreativeMetric]:
     return (
         query.where(TTBGmvMaxCreativeMetric.workspace_id == workspace_id)
-        .where(TTBGmvMaxCreativeMetric.provider == str(provider))
         .where(TTBGmvMaxCreativeMetric.auth_id == auth_id)
     )
 

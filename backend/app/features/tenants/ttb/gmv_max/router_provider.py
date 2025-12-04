@@ -3193,6 +3193,8 @@ async def _apply_creative_heating_action(
         auth_id=context.auth_id,
         campaign_id=str(campaign_id),
         creative_id=request.creative_id,
+        advertiser_id=str(campaign_row.advertiser_id),
+        promotion_type=str(campaign_row.promotion_type),
         mode=request.mode,
         target_daily_budget=request.target_daily_budget,
         budget_delta=request.budget_delta,
