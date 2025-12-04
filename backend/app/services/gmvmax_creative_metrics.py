@@ -122,60 +122,46 @@ async def sync_creative_metrics_10min_for_campaign(
 
         payload = _serialize_payload(metrics, dimensions)
         insert_stmt = insert(TTBGmvMaxCreativeMetrics10Min).values(
-            workspace_id=workspace_id,
-            provider=provider,
-            auth_id=auth_id,
-            advertiser_id=str(advertiser_id),
             campaign_id=str(campaign.campaign_id),
-            store_id=str(campaign.store_id or ""),
-            product_id=str(dimensions.get("product_id") or dimensions.get("item_group_id") or ""),
             creative_id=creative_id,
             stat_time_day=stat_time_day,
             snapshot_at=snapshot_at,
-            product_impressions=_to_int(metrics.get("product_impressions")),
-            product_clicks=_to_int(metrics.get("product_clicks")),
-            product_click_rate=_to_decimal(metrics.get("product_click_rate")),
-            ad_click_rate=_to_decimal(metrics.get("ad_click_rate")),
-            ad_conversion_rate=_to_decimal(metrics.get("ad_conversion_rate")),
-            ad_video_view_rate_p25=_to_decimal(metrics.get("ad_video_view_rate_p25")),
-            ad_video_view_rate_p50=_to_decimal(metrics.get("ad_video_view_rate_p50")),
-            ad_video_view_rate_p75=_to_decimal(metrics.get("ad_video_view_rate_p75")),
-            ad_video_view_rate_p100=_to_decimal(metrics.get("ad_video_view_rate_p100")),
-            ad_video_view_rate_2s=_to_decimal(metrics.get("ad_video_view_rate_2s")),
-            ad_video_view_rate_6s=_to_decimal(metrics.get("ad_video_view_rate_6s")),
             impressions=_to_int(metrics.get("impressions")),
             clicks=_to_int(metrics.get("clicks")),
+            product_clicks=_to_int(metrics.get("product_clicks")),
+            ad_click_rate=_to_decimal(metrics.get("ad_click_rate")),
+            conversion_rate=_to_decimal(metrics.get("ad_conversion_rate")),
+            video_view_rate_25=_to_decimal(metrics.get("ad_video_view_rate_p25")),
+            video_view_rate_50=_to_decimal(metrics.get("ad_video_view_rate_p50")),
+            video_view_rate_75=_to_decimal(metrics.get("ad_video_view_rate_p75")),
+            video_view_rate_100=_to_decimal(metrics.get("ad_video_view_rate_p100")),
+            video_view_rate_2s=_to_decimal(metrics.get("ad_video_view_rate_2s")),
+            video_view_rate_6s=_to_decimal(metrics.get("ad_video_view_rate_6s")),
             orders=_to_int(metrics.get("orders")),
             cost_cents=_to_cents(metrics.get("cost")),
             net_cost_cents=_to_cents(metrics.get("net_cost")),
-            cost_per_order_cents=_to_cents(metrics.get("cost_per_order")),
             gross_revenue_cents=_to_cents(metrics.get("gross_revenue")),
             roi=_to_decimal(metrics.get("roi")),
-            creative_delivery_status=metrics.get("creative_delivery_status"),
             raw_metrics=payload,
         )
 
         update_stmt = insert_stmt.on_duplicate_key_update(
-            product_impressions=insert_stmt.inserted.product_impressions,
-            product_clicks=insert_stmt.inserted.product_clicks,
-            product_click_rate=insert_stmt.inserted.product_click_rate,
-            ad_click_rate=insert_stmt.inserted.ad_click_rate,
-            ad_conversion_rate=insert_stmt.inserted.ad_conversion_rate,
-            ad_video_view_rate_p25=insert_stmt.inserted.ad_video_view_rate_p25,
-            ad_video_view_rate_p50=insert_stmt.inserted.ad_video_view_rate_p50,
-            ad_video_view_rate_p75=insert_stmt.inserted.ad_video_view_rate_p75,
-            ad_video_view_rate_p100=insert_stmt.inserted.ad_video_view_rate_p100,
-            ad_video_view_rate_2s=insert_stmt.inserted.ad_video_view_rate_2s,
-            ad_video_view_rate_6s=insert_stmt.inserted.ad_video_view_rate_6s,
             impressions=insert_stmt.inserted.impressions,
             clicks=insert_stmt.inserted.clicks,
+            product_clicks=insert_stmt.inserted.product_clicks,
+            ad_click_rate=insert_stmt.inserted.ad_click_rate,
+            conversion_rate=insert_stmt.inserted.conversion_rate,
+            video_view_rate_25=insert_stmt.inserted.video_view_rate_25,
+            video_view_rate_50=insert_stmt.inserted.video_view_rate_50,
+            video_view_rate_75=insert_stmt.inserted.video_view_rate_75,
+            video_view_rate_100=insert_stmt.inserted.video_view_rate_100,
+            video_view_rate_2s=insert_stmt.inserted.video_view_rate_2s,
+            video_view_rate_6s=insert_stmt.inserted.video_view_rate_6s,
             orders=insert_stmt.inserted.orders,
             cost_cents=insert_stmt.inserted.cost_cents,
             net_cost_cents=insert_stmt.inserted.net_cost_cents,
-            cost_per_order_cents=insert_stmt.inserted.cost_per_order_cents,
             gross_revenue_cents=insert_stmt.inserted.gross_revenue_cents,
             roi=insert_stmt.inserted.roi,
-            creative_delivery_status=insert_stmt.inserted.creative_delivery_status,
             raw_metrics=insert_stmt.inserted.raw_metrics,
             snapshot_at=insert_stmt.inserted.snapshot_at,
         )
@@ -205,22 +191,9 @@ def latest_creative_metrics_snapshots(
             TTBGmvMaxCreativeMetrics10Min.stat_time_day,
             func.max(TTBGmvMaxCreativeMetrics10Min.snapshot_at).label("latest_snapshot"),
         )
-        .where(TTBGmvMaxCreativeMetrics10Min.workspace_id == workspace_id)
-        .where(TTBGmvMaxCreativeMetrics10Min.provider == provider)
-        .where(TTBGmvMaxCreativeMetrics10Min.auth_id == auth_id)
         .where(TTBGmvMaxCreativeMetrics10Min.campaign_id.in_(campaign_ids))
         .where(TTBGmvMaxCreativeMetrics10Min.stat_time_day >= start_date)
         .where(TTBGmvMaxCreativeMetrics10Min.stat_time_day <= end_date)
-        .where(
-            True
-            if not store_ids
-            else TTBGmvMaxCreativeMetrics10Min.store_id.in_(store_ids)
-        )
-        .where(
-            True
-            if not product_ids
-            else TTBGmvMaxCreativeMetrics10Min.product_id.in_(product_ids)
-        )
         .group_by(
             TTBGmvMaxCreativeMetrics10Min.creative_id,
             TTBGmvMaxCreativeMetrics10Min.stat_time_day,

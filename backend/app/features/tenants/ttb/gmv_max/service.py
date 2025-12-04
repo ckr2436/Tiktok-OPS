@@ -300,14 +300,14 @@ def _query_metrics_hourly(
     offset: int,
 ) -> Sequence[TTBGmvMaxMetricsHourly]:
     query = select(TTBGmvMaxMetricsHourly).where(
-        TTBGmvMaxMetricsHourly.campaign_id == campaign.id
+        TTBGmvMaxMetricsHourly.campaign_id == str(campaign.campaign_id)
     )
     if start:
-        query = query.where(TTBGmvMaxMetricsHourly.interval_start >= start)
+        query = query.where(TTBGmvMaxMetricsHourly.stat_time_hour >= start)
     if end:
-        query = query.where(TTBGmvMaxMetricsHourly.interval_start < end)
+        query = query.where(TTBGmvMaxMetricsHourly.stat_time_hour < end)
     query = (
-        query.order_by(TTBGmvMaxMetricsHourly.interval_start.asc())
+        query.order_by(TTBGmvMaxMetricsHourly.stat_time_hour.asc())
         .limit(limit)
         .offset(offset)
     )
@@ -324,13 +324,17 @@ def _query_metrics_daily(
     offset: int,
 ) -> Sequence[TTBGmvMaxMetricsDaily]:
     query = select(TTBGmvMaxMetricsDaily).where(
-        TTBGmvMaxMetricsDaily.campaign_id == campaign.id
+        TTBGmvMaxMetricsDaily.campaign_id == str(campaign.campaign_id)
     )
     if start:
-        query = query.where(TTBGmvMaxMetricsDaily.date >= start)
+        query = query.where(TTBGmvMaxMetricsDaily.stat_time_day >= start)
     if end:
-        query = query.where(TTBGmvMaxMetricsDaily.date < end)
-    query = query.order_by(TTBGmvMaxMetricsDaily.date.asc()).limit(limit).offset(offset)
+        query = query.where(TTBGmvMaxMetricsDaily.stat_time_day < end)
+    query = (
+        query.order_by(TTBGmvMaxMetricsDaily.stat_time_day.asc())
+        .limit(limit)
+        .offset(offset)
+    )
     return db.execute(query).scalars().all()
 
 
