@@ -10,6 +10,7 @@ from app.data.models.gmv_restructured import (
     GmvCreativeHeating,
     GmvCreativeMetrics10Min,
     GmvCreativeMetricsDaily,
+    GmvMonitoringStrategy,
     GmvStrategyConfig,
 )
 
@@ -25,6 +26,7 @@ TTBGmvMaxCreativeMetrics10Min = GmvCreativeMetrics10Min
 TTBGmvMaxCreativeHeating = GmvCreativeHeating
 TTBGmvMaxActionLog = GmvActionLog
 TTBGmvMaxStrategyConfig = GmvStrategyConfig
+TTBGmvMaxMonitoringStrategy = GmvMonitoringStrategy
 
 # Provide backwards-compatible attribute aliases for renamed columns.
 TTBGmvMaxMetricsHourly.interval_start = TTBGmvMaxMetricsHourly.stat_time_hour
@@ -41,4 +43,5 @@ __all__ = [
     "TTBGmvMaxCreativeHeating",
     "TTBGmvMaxActionLog",
     "TTBGmvMaxStrategyConfig",
+    "TTBGmvMaxMonitoringStrategy",
 ]

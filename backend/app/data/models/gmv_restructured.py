@@ -594,6 +594,46 @@ class GmvStrategyConfig(Base):
     )
 
 
+class GmvMonitoringStrategy(Base):
+    """Platform-level monitoring strategy controlling sync cadence."""
+
+    __tablename__ = "gmvmax_monitoring_strategies"
+    __table_args__ = (
+        Index("idx_workspace_level", "workspace_id", "level", "enabled"),
+        Index("idx_auth_store", "auth_id", "store_id"),
+        Index("idx_enabled_interval", "enabled", "interval_minutes"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+
+    workspace_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    auth_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    promotion_type: Mapped[PromotionTypeEnum | None] = mapped_column(
+        SqlEnum(PromotionTypeEnum), nullable=True
+    )
+    level: Mapped[str] = mapped_column(String(32), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_campaigns_per_run: Mapped[int | None] = mapped_column(Integer, default=None)
+
+    last_run_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    last_success_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    last_error_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class BaseMetricMixin:
     """Common metric columns reused across tables."""
 

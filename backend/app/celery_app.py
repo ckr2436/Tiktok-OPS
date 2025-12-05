@@ -76,8 +76,9 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
                 names = [default_q]
 
     # 统一 direct 交换器；并强制把 gmvmax 队列加上（防止忘配 .env）
-    if "gmvmax" not in names:
-        names.append("gmvmax")
+    for required in ("gmvmax", "gmvmax_sync"):
+        if required not in names:
+            names.append(required)
 
     exch = Exchange("gmv.celery", type="direct", durable=True)
     qs = [Queue(n, exchange=exch, routing_key=n, durable=True) for n in names]
@@ -114,6 +115,12 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "gmvmax.*": {"queue": "gmvmax"},
 }
+celery_app.conf.task_routes.update(
+    {
+        "gmvmax.sync.run_scheduler": {"queue": "gmvmax_sync"},
+        "gmvmax.sync.run_for_strategy": {"queue": "gmvmax_sync"},
+    }
+)
 
 # 默认注册 creative heating 巡检任务（可通过环境变量覆盖）
 beat_schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
@@ -122,6 +129,20 @@ beat_schedule.setdefault(
     {
         "task": "gmvmax.creative_heating_cycle",
         "schedule": int(getattr(settings, "GMVMAX_HEATING_CYCLE_INTERVAL", 15 * 60)),
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_sync_scheduler",
+    {
+        "task": "gmvmax.sync.run_scheduler",
+        "schedule": int(
+            getattr(
+                settings,
+                "GMVMAX_SCHEDULER_INTERVAL_SECONDS",
+                os.getenv("GMVMAX_SCHEDULER_INTERVAL_SECONDS", "60"),
+            )
+        ),
+        "options": {"queue": "gmvmax_sync"},
     },
 )
 celery_app.conf.beat_schedule = beat_schedule
@@ -173,6 +194,7 @@ import app.tasks.oauth_tasks  # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401
 import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
 import app.tasks.ttb_gmvmax_tasks  # noqa: F401  # ← 新增：注册 gmvmax 任务
+import app.gmvmax.tasks_sync  # noqa: F401  # 注册策略化 GMV Max 同步任务
 
 # Whisper 字幕任务依赖第三方库（yt_dlp），在某些环境下可能未安装。
 # 为了避免整个应用的模块导入失败，这里容错处理缺失依赖，
