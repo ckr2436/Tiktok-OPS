@@ -74,6 +74,16 @@ def _to_cents(value: Any) -> int | None:
     return int(quantized)
 
 
+def _to_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        quantized = Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return None
+    return int(quantized)
+
+
 def _to_decimal(value: Any, *, quantize: Decimal | None = None) -> Decimal | None:
     if value is None:
         return None
@@ -141,7 +151,11 @@ def map_gmvmax_campaign_info_to_model(
     instance.bid_type = payload.get("deep_bid_type") or payload.get("bid_type")
     instance.roas_bid = _to_decimal(payload.get("roas_bid"), quantize=Decimal("0.0001"))
 
-    budget_cents = _to_cents(payload.get("budget"))
+    budget_cents = _to_int(payload.get("daily_budget_cents"))
+    if budget_cents is None:
+        budget_cents = _to_cents(payload.get("daily_budget"))
+    if budget_cents is None:
+        budget_cents = _to_cents(payload.get("budget"))
     if budget_cents is not None:
         instance.daily_budget_cents = budget_cents
     currency_value = payload.get("currency") or payload.get("budget_currency") or currency_fallback
