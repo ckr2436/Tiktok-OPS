@@ -18,9 +18,9 @@ logger = logging.getLogger("gmv.domain.gmvmax.strategy")
 class MonitoringStrategy:
     id: int
     workspace_id: int
-    auth_id: int
-    advertiser_id: str
-    store_id: str
+    auth_id: int | None
+    advertiser_id: str | None
+    store_id: str | None
     level: str
     interval_minutes: int
     enabled: bool
@@ -38,9 +38,9 @@ class GmvMaxMonitoringStrategyRepository:
         return MonitoringStrategy(
             id=int(row.id),
             workspace_id=int(row.workspace_id),
-            auth_id=int(row.auth_id),
-            advertiser_id=str(row.advertiser_id),
-            store_id=str(row.store_id),
+            auth_id=int(row.auth_id) if row.auth_id is not None else None,
+            advertiser_id=str(row.advertiser_id) if row.advertiser_id is not None else None,
+            store_id=str(row.store_id) if row.store_id is not None else None,
             level=str(row.level),
             interval_minutes=int(row.interval_minutes),
             enabled=bool(row.enabled),

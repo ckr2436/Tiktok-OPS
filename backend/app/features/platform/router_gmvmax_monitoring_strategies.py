@@ -36,9 +36,9 @@ class MonitoringStrategyLevel(str, Enum):
 
 class MonitoringStrategyBase(BaseModel):
     workspace_id: int
-    auth_id: int
-    advertiser_id: str
-    store_id: str
+    auth_id: int | None = None
+    advertiser_id: str | None = None
+    store_id: str | None = None
     promotion_type: PromotionTypeEnum | None = None
     level: MonitoringStrategyLevel
     interval_minutes: int = Field(gt=0)
