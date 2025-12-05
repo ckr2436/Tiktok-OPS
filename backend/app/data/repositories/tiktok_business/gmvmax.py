@@ -16,6 +16,7 @@ from app.data.models.gmv_restructured import (
     GmvCampaignSyncSnapshot,
     PromotionTypeEnum,
 )
+from app.gmvmax.services.campaign_mapper import map_gmvmax_campaign_info_to_model
 
 
 def _normalize_identifier(value: Any) -> str | None:
@@ -391,81 +392,48 @@ def upsert_campaign_from_snapshot(
         ),
     )
 
-    instance = existing or GmvCampaign(
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=str(advertiser_id),
-        campaign_id=str(campaign_id),
-        promotion_type=resolved_promotion_type,
-    )
-    if existing is None:
-        db.add(instance)
-
-    instance.auth_id = auth_id
-    instance.advertiser_id = str(advertiser_id)
-    instance.promotion_type = resolved_promotion_type
-    if allow_revive and instance.is_deleted:
-        instance.is_deleted = False
-        instance.deleted_at = None
-
-    name_value = _extract_field_from_sources(("campaign_name", "name"), payload_json or {})
-    instance.name = name_value
-
+    status_value = _extract_field_from_sources(("status", "campaign_status"), payload_json or {})
+    normalized_status = _normalize_status_value(status_value)
     normalized_store = _normalize_identifier(store_id)
     if not normalized_store:
         normalized_store = _normalize_identifier(
             _extract_field_from_sources(("store_id", "shop_id"), payload_json or {})
         )
-    instance.store_id = normalized_store or ""
 
-    status_value = _extract_field_from_sources(("status", "campaign_status"), payload_json or {})
-    instance.status = _normalize_status_value(status_value)
-    instance.operation_status = _extract_field(payload_json, "operation_status")
+    currency_value = _extract_field_from_sources(("currency", "budget_currency"), payload_json or {})
+    was_deleted = existing.is_deleted if existing else False
+    previous_deleted_at = existing.deleted_at if existing else None
+
+    instance = map_gmvmax_campaign_info_to_model(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=str(advertiser_id),
+        info=dict(payload_json or {}),
+        campaign_id=str(campaign_id),
+        status_value=normalized_status,
+        store_id_hint=normalized_store or "",
+        currency_fallback=str(currency_value) if currency_value is not None else None,
+        promotion_type_override=resolved_promotion_type,
+        synced_at=datetime.now(timezone.utc),
+        existing=existing,
+    )
+
+    if existing is None:
+        db.add(instance)
+
     instance.secondary_status = _extract_field(payload_json, "secondary_status")
+    if not allow_revive and was_deleted:
+        instance.is_deleted = True
+        instance.deleted_at = previous_deleted_at
+    elif instance.is_deleted:
+        instance.deleted_at = None
 
-    instance.shopping_ads_type = _extract_field_from_sources(("shopping_ads_type",), payload_json or {})
-    instance.optimization_goal = _extract_field_from_sources(("optimization_goal",), payload_json or {})
-    instance.bid_type = _extract_field_from_sources(("bid_type",), payload_json or {})
     instance.target_roi_budget = _to_decimal(
         _extract_field_from_sources(("target_roi_budget",), payload_json or {})
     )
     instance.max_delivery_budget = _to_decimal(
         _extract_field_from_sources(("max_delivery_budget",), payload_json or {})
     )
-
-    roas_value = _extract_field_from_sources(("roas_bid", "roi_target"), payload_json or {})
-    instance.roas_bid = _to_decimal(roas_value)
-
-    budget_cents_value = _extract_field_from_sources(("daily_budget_cents",), payload_json or {})
-    if budget_cents_value is not None:
-        instance.daily_budget_cents = _to_int(budget_cents_value)
-    else:
-        budget_value = _extract_field_from_sources(("daily_budget", "budget"), payload_json or {})
-        instance.daily_budget_cents = _to_cents(budget_value)
-
-    currency_value = _extract_field_from_sources(("currency", "budget_currency"), payload_json or {})
-    instance.currency = str(currency_value) if currency_value is not None else None
-
-    schedule_type = _extract_field_from_sources(("schedule_type",), payload_json or {})
-    instance.schedule_type = schedule_type
-    instance.schedule_start_time = _parse_datetime(
-        _extract_field_from_sources(("schedule_start_time", "start_time"), payload_json or {})
-    )
-    instance.schedule_end_time = _parse_datetime(
-        _extract_field_from_sources(("schedule_end_time", "end_time"), payload_json or {})
-    )
-
-    created_time = _extract_field_from_sources(
-        ("create_time", "created_time", "ext_created_time"), payload_json or {}
-    )
-    updated_time = _extract_field_from_sources(
-        ("update_time", "updated_time", "ext_updated_time"), payload_json or {}
-    )
-    instance.ext_created_time = _parse_datetime(created_time)
-    instance.ext_updated_time = _parse_datetime(updated_time)
-
-    if isinstance(payload_json, Mapping):
-        instance.raw_json = dict(payload_json)
 
     product_ids = _extract_item_group_ids_from_payload(payload_json)
     _sync_campaign_product_assignments(

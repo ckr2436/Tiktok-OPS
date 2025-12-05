@@ -57,7 +57,11 @@ class CreativeDeliveryStatusEnum(str, Enum):
 
 
 class GmvCampaign(Base):
-    """Static metadata for a GMV Max campaign (product or LIVE)."""
+    """Static metadata for a GMV Max campaign (product or LIVE).
+
+    Field comments document the mapping against TikTok GMV Max official campaign
+    info payloads so the ORM mirrors the production schema and API semantics.
+    """
 
     __tablename__ = "gmv_campaigns"
     __table_args__ = (
@@ -68,6 +72,19 @@ class GmvCampaign(Base):
             name="uk_gmv_campaign_scope",
         ),
         Index("idx_gmv_campaign_advertiser", "advertiser_id"),
+        Index(
+            "idx_gmv_campaign_workspace_status",
+            "workspace_id",
+            "promotion_type",
+            "is_deleted",
+            "status",
+        ),
+        Index(
+            "idx_gmv_campaign_workspace_updated",
+            "workspace_id",
+            "promotion_type",
+            "ext_updated_time",
+        ),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -84,33 +101,99 @@ class GmvCampaign(Base):
 
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
-        SqlEnum(PromotionTypeEnum), nullable=False
+    store_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="",
+        comment="TikTok store_id resolved from campaign info or binding",
     )
-    name: Mapped[str | None] = mapped_column(String(255), default=None)
-    status: Mapped[str | None] = mapped_column(String(64), default=None)
-    operation_status: Mapped[str | None] = mapped_column(String(128), default=None)
+    promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
+        SqlEnum(PromotionTypeEnum),
+        nullable=False,
+        comment="GMV Max promotion type mapped from official shopping_ads_type",
+    )
+    name: Mapped[str | None] = mapped_column(
+        String(255),
+        default=None,
+        comment="Campaign name from data.campaign_name",
+    )
+    status: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Primary status from list endpoints; stored verbatim for active filters",
+    )
+    operation_status: Mapped[str | None] = mapped_column(
+        String(128),
+        default=None,
+        comment="Operation status from data.operation_status (ENABLE/DISABLE)",
+    )
     secondary_status: Mapped[str | None] = mapped_column(String(128), default=None)
-    tt_account_name: Mapped[str | None] = mapped_column(String(255), default=None)
-    tt_account_profile_image_url: Mapped[str | None] = mapped_column(Text, default=None)
-    identity_id: Mapped[str | None] = mapped_column(String(64), default=None)
-    schedule_type: Mapped[str | None] = mapped_column(String(64), default=None)
-    schedule_start_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
-    schedule_end_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
-    shopping_ads_type: Mapped[str | None] = mapped_column(String(64), default=None)
-    optimization_goal: Mapped[str | None] = mapped_column(String(64), default=None)
-    bid_type: Mapped[str | None] = mapped_column(String(64), default=None)
-    roas_bid: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
-    target_roi_budget: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
-    max_delivery_budget: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    daily_budget_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+    schedule_type: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Schedule type from data.schedule_type",
+    )
+    schedule_start_time: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        comment="UTC schedule start parsed from data.schedule_start_time",
+    )
+    schedule_end_time: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        comment="UTC schedule end parsed from data.schedule_end_time",
+    )
+    shopping_ads_type: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Legacy shopping_ads_type column; prefer promotion_type",
+    )
+    optimization_goal: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Optimization goal mapped from data.optimization_goal",
+    )
+    bid_type: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Deep bid type mapped from data.deep_bid_type",
+    )
+    roas_bid: Mapped[float | None] = mapped_column(
+        Numeric(18, 4),
+        default=None,
+        comment="ROAS bid mapped from data.roas_bid",
+    )
+    target_roi_budget: Mapped[float | None] = mapped_column(
+        Numeric(18, 4),
+        default=None,
+        comment="Internal field; not mapped from current GMV Max responses",
+    )
+    max_delivery_budget: Mapped[int | None] = mapped_column(
+        BigInteger,
+        default=None,
+        comment="Internal field; not mapped from current GMV Max responses",
+    )
+    daily_budget_cents: Mapped[int | None] = mapped_column(
+        BigInteger,
+        default=None,
+        comment="Budget from data.budget converted to cents",
+    )
+    currency: Mapped[str | None] = mapped_column(
+        String(8),
+        default=None,
+        comment="Budget currency from API or account",
+    )
 
-    ext_created_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
-    ext_updated_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    ext_created_time: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), comment="Remote creation time or first sync time"
+    )
+    ext_updated_time: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), comment="Remote update time or last sync time"
+    )
 
-    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        default=None,
+        comment="Full campaign payload stored for long-tail fields",
+    )
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
     deleted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
