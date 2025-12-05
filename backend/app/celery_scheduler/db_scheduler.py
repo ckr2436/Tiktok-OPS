@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import random
 import time
@@ -181,11 +182,28 @@ class DBScheduler(Scheduler):
         # 自己的刷新时间戳（使用单调时钟）
         self._last_db_refresh: float = 0.0
         # 兼容 app.conf.beat_schedule 的静态计划（DB 以外的固定节拍）
-        self._static_entries: dict[str, ScheduleEntry] = self._load_static_entries()
+        self._static_entries: dict[str, ScheduleEntry] = {}
+        self._static_fingerprint: str | None = None
+        self._reload_static_entries(force=True)
 
-    def _load_static_entries(self) -> dict[str, ScheduleEntry]:
-        entries: dict[str, ScheduleEntry] = {}
+    def _beat_schedule_fingerprint(self, schedule_conf: dict) -> str:
+        try:
+            dumped = json.dumps(schedule_conf, sort_keys=True, default=str)
+        except TypeError:
+            dumped = repr(schedule_conf)
+        return hashlib.sha256(dumped.encode("utf-8")).hexdigest()
+
+    def _reload_static_entries(self, *, force: bool = False) -> None:
         schedule_conf = getattr(self.app.conf, "beat_schedule", {}) or {}
+        fingerprint = self._beat_schedule_fingerprint(schedule_conf)
+        if not force and fingerprint == self._static_fingerprint:
+            return
+
+        self._static_entries = self._load_static_entries(schedule_conf)
+        self._static_fingerprint = fingerprint
+
+    def _load_static_entries(self, schedule_conf: dict) -> dict[str, ScheduleEntry]:
+        entries: dict[str, ScheduleEntry] = {}
 
         for name, payload in schedule_conf.items():
             try:
@@ -233,6 +251,8 @@ class DBScheduler(Scheduler):
 
         返回值为下一次静态计划的等待秒数；若无静态计划则返回 None。
         """
+
+        self._reload_static_entries()
 
         if not self._static_entries:
             return None
