@@ -24,9 +24,9 @@ def upgrade():
         sa.Column("id", ID_TYPE, primary_key=True, autoincrement=True),
         # Align with ORM UBigInt definitions (BIGINT UNSIGNED)
         sa.Column("workspace_id", ID_TYPE, nullable=False),
-        sa.Column("auth_id", ID_TYPE, nullable=False),
-        sa.Column("advertiser_id", sa.String(length=64), nullable=False),
-        sa.Column("store_id", sa.String(length=64), nullable=False),
+        sa.Column("auth_id", ID_TYPE, nullable=True),
+        sa.Column("advertiser_id", sa.String(length=64), nullable=True),
+        sa.Column("store_id", sa.String(length=64), nullable=True),
         sa.Column(
             "promotion_type",
             sa.Enum("PRODUCT", "LIVE", name="promotiontypeenum"),

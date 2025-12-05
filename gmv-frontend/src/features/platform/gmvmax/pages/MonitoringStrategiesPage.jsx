@@ -72,9 +72,9 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
         }
       : {
           workspace_id: Number(workspaceId),
-          auth_id: Number(authId),
-          advertiser_id: String(advertiserId || ''),
-          store_id: String(storeId || ''),
+          auth_id: authId === '' ? null : Number(authId),
+          advertiser_id: advertiserId || null,
+          store_id: storeId || null,
           promotion_type: promotionType || null,
           level,
           interval_minutes: interval,
@@ -83,8 +83,8 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
         }
 
     if (mode !== 'edit') {
-      if (!payload.workspace_id || !payload.auth_id || !payload.advertiser_id || !payload.store_id) {
-        setError('workspace_id、auth_id、advertiser_id、store_id 不能为空')
+      if (!payload.workspace_id) {
+        setError('workspace_id 不能为空')
         return
       }
     }
@@ -112,32 +112,32 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
             placeholder="必填"
           />
         </FormField>
-        <FormField label="auth_id" required error={error && !authId && mode !== 'edit'}>
+        <FormField label="auth_id">
           <input
             className="input"
             type="number"
             value={authId}
             onChange={(e) => setAuthId(e.target.value)}
             disabled={disabledBase}
-            placeholder="必填"
+            placeholder="可空（为空表示该 workspace 下所有授权）"
           />
         </FormField>
-        <FormField label="advertiser_id" required error={error && !advertiserId && mode !== 'edit'}>
+        <FormField label="advertiser_id">
           <input
             className="input"
             value={advertiserId}
             onChange={(e) => setAdvertiserId(e.target.value)}
             disabled={disabledBase}
-            placeholder="必填"
+            placeholder="可空（为空表示所有广告主）"
           />
         </FormField>
-        <FormField label="store_id" required error={error && !storeId && mode !== 'edit'}>
+        <FormField label="store_id">
           <input
             className="input"
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
             disabled={disabledBase}
-            placeholder="必填"
+            placeholder="可空（为空表示所有店铺）"
           />
         </FormField>
 

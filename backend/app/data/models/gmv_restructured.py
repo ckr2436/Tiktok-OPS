@@ -607,9 +607,9 @@ class GmvMonitoringStrategy(Base):
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
 
     workspace_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
-    auth_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
-    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    auth_id: Mapped[int | None] = mapped_column(UBigInt, nullable=True)
+    advertiser_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    store_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     promotion_type: Mapped[PromotionTypeEnum | None] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=True
     )

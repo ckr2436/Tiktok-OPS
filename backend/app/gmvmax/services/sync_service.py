@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from typing import Dict, List
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -75,8 +76,6 @@ class GmvMaxSyncService:
         stmt = (
             select(TTBGmvMaxCampaign)
             .where(TTBGmvMaxCampaign.workspace_id == strategy.workspace_id)
-            .where(TTBGmvMaxCampaign.auth_id == strategy.auth_id)
-            .where(TTBGmvMaxCampaign.store_id == strategy.store_id)
             .where(TTBGmvMaxCampaign.is_deleted.is_(False))
             .where(promotion_filter)
             .where(TTBGmvMaxCampaign.status.in_(_ACTIVE_STATUSES))
@@ -88,6 +87,12 @@ class GmvMaxSyncService:
             )
             .order_by(TTBGmvMaxCampaign.ext_updated_time.desc())
         )
+
+        # 可选过滤：按 auth_id / store_id 进一步缩小范围
+        if strategy.auth_id is not None:
+            stmt = stmt.where(TTBGmvMaxCampaign.auth_id == strategy.auth_id)
+        if strategy.store_id:
+            stmt = stmt.where(TTBGmvMaxCampaign.store_id == strategy.store_id)
 
         if strategy.max_campaigns_per_run:
             stmt = stmt.limit(int(strategy.max_campaigns_per_run))
@@ -106,29 +111,54 @@ class GmvMaxSyncService:
                 return
 
             async def _run() -> int:
-                client = build_ttb_gmvmax_client(session, auth_id=strategy.auth_id)
-                try:
-                    written = 0
-                    for campaign in campaigns:
-                        provider = getattr(campaign, "provider", "tiktok-business")
-                        result = await sync_creative_metrics_10min_for_campaign(
-                            session,
-                            client,
-                            workspace_id=strategy.workspace_id,
-                            provider=provider,
-                            auth_id=strategy.auth_id,
-                            advertiser_id=strategy.advertiser_id,
-                            campaign=campaign,
-                            start_date=today,
-                            end_date=today,
+                written = 0
+
+                # 按 auth_id 分组，保证每个授权只建一个 client
+                grouped: Dict[int, List[TTBGmvMaxCampaign]] = {}
+                for campaign in campaigns:
+                    auth_id = getattr(campaign, "auth_id", None)
+                    if auth_id is None:
+                        logger.warning(
+                            "gmvmax campaign without auth_id skipped in creative 10min sync",
+                            extra={"campaign_id": getattr(campaign, "id", None)},
                         )
-                        written += int(result.get("rows", 0) or 0)
-                    return written
-                finally:
+                        continue
+                    grouped.setdefault(int(auth_id), []).append(campaign)
+
+                for auth_id, auth_campaigns in grouped.items():
+                    client = build_ttb_gmvmax_client(session, auth_id=auth_id)
                     try:
-                        await client.aclose()
-                    except Exception:  # noqa: BLE001
-                        logger.warning("gmvmax client close failed", exc_info=True)
+                        for campaign in auth_campaigns:
+                            provider = getattr(campaign, "provider", "tiktok-business")
+                            advertiser_id = strategy.advertiser_id or getattr(
+                                campaign, "advertiser_id", None
+                            )
+                            if not advertiser_id:
+                                logger.warning(
+                                    "gmvmax creative 10min sync skipped: missing advertiser_id",
+                                    extra={"campaign_id": getattr(campaign, "id", None)},
+                                )
+                                continue
+
+                            result = await sync_creative_metrics_10min_for_campaign(
+                                session,
+                                client,
+                                workspace_id=strategy.workspace_id,
+                                provider=provider,
+                                auth_id=auth_id,
+                                advertiser_id=str(advertiser_id),
+                                campaign=campaign,
+                                start_date=today,
+                                end_date=today,
+                            )
+                            written += int(result.get("rows", 0) or 0)
+                    finally:
+                        try:
+                            await client.aclose()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("gmvmax client close failed", exc_info=True)
+
+                return written
 
             rows_written = asyncio.run(_run())
             session.commit()
