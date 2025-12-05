@@ -2055,7 +2055,7 @@ def upsert_campaign_from_api(
 
     merged_payload: dict[str, Any] = dict(payload)
     if isinstance(campaign_details, Mapping) and campaign_details:
-        merged_payload.update(dict(campaign_details))
+        merged_payload["_campaign_info"] = dict(campaign_details)
 
     result = map_gmvmax_campaign_info_to_model(
         workspace_id=workspace_id,
@@ -2073,8 +2073,8 @@ def upsert_campaign_from_api(
     if existing is None:
         db.add(result)
 
-    result.secondary_status = _extract_field_from_sources(
-        ("secondary_status",), payload, campaign_details
+    result.secondary_status = _normalize_status_value(
+        _extract_field_from_sources(("secondary_status",), payload, campaign_details)
     )
 
     operation_status_value = _extract_field_from_sources(

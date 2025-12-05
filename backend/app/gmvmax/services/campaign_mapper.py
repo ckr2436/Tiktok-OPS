@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Any
+from typing import Any, Mapping
 
 from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
 
@@ -118,7 +118,11 @@ def map_gmvmax_campaign_info_to_model(
     when the API omits them.
     """
 
-    payload = dict(info or {})
+    raw_payload = dict(info or {})
+    detail_payload = raw_payload.get("_campaign_info") if isinstance(raw_payload.get("_campaign_info"), Mapping) else None
+    payload = dict(raw_payload)
+    if isinstance(detail_payload, Mapping):
+        payload.update(dict(detail_payload))
     resolved_synced = _as_naive_utc(synced_at) or datetime.now(timezone.utc).replace(tzinfo=None)
     campaign_identifier = campaign_id or payload.get("campaign_id") or payload.get("id")
     if not campaign_identifier:
@@ -177,7 +181,7 @@ def map_gmvmax_campaign_info_to_model(
     instance.ext_created_time = created_time or instance.ext_created_time or resolved_synced
     instance.ext_updated_time = updated_time or resolved_synced
 
-    instance.raw_json = payload
+    instance.raw_json = raw_payload
     instance.is_deleted = False
     instance.deleted_at = None
 
