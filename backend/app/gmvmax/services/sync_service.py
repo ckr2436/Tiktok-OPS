@@ -94,8 +94,19 @@ class GmvMaxSyncService:
         if strategy.store_id:
             stmt = stmt.where(TTBGmvMaxCampaign.store_id == strategy.store_id)
 
+        limit_value = 30
         if strategy.max_campaigns_per_run:
-            stmt = stmt.limit(int(strategy.max_campaigns_per_run))
+            try:
+                candidate = int(strategy.max_campaigns_per_run)
+                if candidate > 0:
+                    limit_value = candidate
+            except (TypeError, ValueError):
+                logger.warning(
+                    "gmvmax monitoring strategy has invalid max_campaigns_per_run",
+                    extra={"strategy_id": strategy.id, "max_campaigns_per_run": strategy.max_campaigns_per_run},
+                )
+
+        stmt = stmt.limit(limit_value)
 
         return list(session.execute(stmt).scalars().all())
 

@@ -55,6 +55,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
 )
+from app.gmvmax.services.campaign_mapper import map_gmvmax_campaign_info_to_model
 from app.services.gmvmax_spec import (
     GMVMAX_BASE_METRICS,
     GMVMAX_SUPPORTED_METRICS,
@@ -2007,153 +2008,74 @@ def upsert_campaign_from_api(
         .scalars()
         .first()
     )
+
     promotion_type_raw = _extract_field_from_sources(
         ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
         payload,
         campaign_details,
     )
-    promotion_type_value = (_normalize_identifier(promotion_type_raw) or "PRODUCT").upper()
-    promotion_type = (
-        PromotionTypeEnum.LIVE if promotion_type_value.startswith("LIVE") else PromotionTypeEnum.PRODUCT
+    promotion_type = _normalize_promotion_type(promotion_type_raw)
+
+    normalized_status = _normalize_status_value(
+        _extract_field_from_sources(("status", "campaign_status"), payload, campaign_details)
     )
 
-    result = existing or GmvCampaign(
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=normalized_advertiser,
-        campaign_id=campaign_id,
-        promotion_type=promotion_type,
-    )
-    if existing is None:
-        db.add(result)
-
-    result.auth_id = auth_id
-    result.advertiser_id = normalized_advertiser
-    result.promotion_type = promotion_type
-    if result.is_deleted:
-        result.is_deleted = False
-        result.deleted_at = None
-    name_value = _extract_field_from_sources(
-        ("campaign_name", "name"), payload, campaign_details
-    )
-    result.name = name_value
-
-    store_identifier: str | None = None
-    store_identifier_source: str | None = None
-
-    def _try_set_store(candidate: Any, source: str) -> bool:
-        nonlocal store_identifier, store_identifier_source
-        normalized = _normalize_identifier(candidate)
-        if not normalized:
-            return False
-        # Once a store identifier has been chosen, we should not let lower-priority
-        # sources (e.g. cascade hints) override it. This keeps the authoritative
-        # value resolved from the campaign info locked in place.
-        if store_identifier is not None:
-            return False
-        store_identifier = normalized
-        store_identifier_source = source
-        return True
-
-    if not _try_set_store(
+    store_candidates = [
         _extract_field_from_sources(("store_id", "shop_id"), campaign_details),
-        "campaign_details",
-    ):
-        if not _try_set_store(
-            _extract_field_from_sources(("store_id", "shop_id"), payload),
-            "payload",
-        ):
-            if not _try_set_store(store_id_hint, "hint"):
-                _try_set_store(
-                    _lookup_store_id_from_links(
-                        db,
-                        workspace_id=workspace_id,
-                        auth_id=auth_id,
-                        advertiser_id=advertiser_id,
-                        campaign_payload=payload,
-                    ),
-                    "store_link",
-                )
-
-    existing_store_id = _normalize_identifier(result.store_id)
-    if store_identifier_source == "campaign_details" and store_identifier is not None:
-        result.store_id = store_identifier
-    else:
-        if existing_store_id and store_identifier and store_identifier != existing_store_id:
-            logger.warning(
-                "ignoring non-authoritative store_id override",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "campaign_id": campaign_id,
-                    "existing_store_id": existing_store_id,
-                    "incoming_store_id": store_identifier,
-                    "store_source": store_identifier_source,
-                },
-            )
-        if existing_store_id:
-            store_identifier = existing_store_id
-        if store_identifier is None:
-            store_identifier = ""
-            logger.warning(
-                "gmvmax campaign missing store_id; defaulting to empty string",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "campaign_id": campaign_id,
-                },
-            )
-        result.store_id = str(store_identifier)
-
-    status_value = _extract_field_from_sources(
-        ("status", "campaign_status"), payload, campaign_details
-    )
-    result.status = _normalize_status_value(status_value)
-    result.is_deleted = False
-    result.deleted_at = None
-    result.shopping_ads_type = _extract_field_from_sources(
-        ("shopping_ads_type",), payload, campaign_details
-    )
-    result.optimization_goal = _extract_field_from_sources(
-        ("optimization_goal",), payload, campaign_details
-    )
-
-    roas_value = _extract_field_from_sources(
-        ("roas_bid", "roi_target"), payload, campaign_details
-    )
-    result.roas_bid = _to_decimal(roas_value, quantize=_DECIMAL_FOUR)
-
-    budget_cents_value = _extract_field_from_sources(
-        ("daily_budget_cents",), payload, campaign_details
-    )
-    if budget_cents_value is not None:
-        result.daily_budget_cents = _to_int(budget_cents_value)
-    else:
-        budget_value = _extract_field_from_sources(
-            ("daily_budget", "budget"), payload, campaign_details
+        _extract_field_from_sources(("store_id", "shop_id"), payload),
+        store_id_hint,
+        _lookup_store_id_from_links(
+            db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            campaign_payload=payload,
+        ),
+    ]
+    store_identifier: str | None = None
+    for candidate in store_candidates:
+        normalized = _normalize_identifier(candidate)
+        if normalized:
+            store_identifier = normalized
+            break
+    if store_identifier is None:
+        store_identifier = ""
+        logger.warning(
+            "gmvmax campaign missing store_id; defaulting to empty string",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "campaign_id": campaign_id,
+            },
         )
-        result.daily_budget_cents = _to_cents(budget_value)
 
     currency_value = _extract_field_from_sources(
         ("currency", "budget_currency"), payload, campaign_details
     )
-    result.currency = str(currency_value) if currency_value is not None else None
 
-    created_time = _extract_field_from_sources(
-        ("create_time", "created_time", "ext_created_time"), payload, campaign_details
-    )
-    updated_time = _extract_field_from_sources(
-        ("update_time", "updated_time", "ext_updated_time"), payload, campaign_details
-    )
-    result.ext_created_time = _parse_datetime(created_time)
-    result.ext_updated_time = _parse_datetime(updated_time)
-
+    merged_payload: dict[str, Any] = dict(payload)
     if isinstance(campaign_details, Mapping) and campaign_details:
-        combined_payload = dict(payload)
-        combined_payload["_campaign_info"] = campaign_details
-        result.raw_json = combined_payload
-    else:
-        result.raw_json = payload
+        merged_payload.update(dict(campaign_details))
+
+    result = map_gmvmax_campaign_info_to_model(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=normalized_advertiser,
+        info=merged_payload,
+        campaign_id=campaign_id,
+        status_value=normalized_status,
+        store_id_hint=store_identifier,
+        currency_fallback=str(currency_value) if currency_value is not None else None,
+        promotion_type_override=promotion_type,
+        synced_at=datetime.now(timezone.utc),
+        existing=existing,
+    )
+    if existing is None:
+        db.add(result)
+
+    result.secondary_status = _extract_field_from_sources(
+        ("secondary_status",), payload, campaign_details
+    )
 
     operation_status_value = _extract_field_from_sources(
         ("operation_status",), payload, campaign_details

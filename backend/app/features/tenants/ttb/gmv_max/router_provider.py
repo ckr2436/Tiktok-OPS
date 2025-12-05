@@ -597,8 +597,6 @@ def _build_creative_metrics_response(
         metrics = {
             "title": metrics_data.get("title"),
             "item_id": metrics_data.get("item_id") or getattr(row, "item_id", None) or creative_id,
-            "tt_account_name": metrics_data.get("tt_account_name"),
-            "tt_account_profile_image_url": metrics_data.get("tt_account_profile_image_url"),
             "tt_account_authorization_type": metrics_data.get("tt_account_authorization_type"),
             "shop_content_type": metrics_data.get("shop_content_type"),
             "creative_delivery_status": metrics_data.get("creative_delivery_status")
