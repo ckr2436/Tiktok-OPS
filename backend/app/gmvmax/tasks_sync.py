@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,15 +12,19 @@ from app.gmvmax.services.sync_service import GmvMaxSyncService
 logger = logging.getLogger("gmv.tasks.gmvmax.strategy")
 
 
+_MAX_STRATEGIES_PER_TICK = int(os.getenv("GMVMAX_SCHEDULER_MAX_STRATEGIES", "100"))
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-@celery_app.task(name="gmvmax.sync.run_scheduler")
+@celery_app.task(name="gmvmax.sync.run_scheduler", ignore_result=True)
 def run_gmvmax_sync_scheduler() -> dict[str, Any]:
     now = _now_utc()
     repo = GmvMaxMonitoringStrategyRepository()
-    strategies = repo.get_due_strategies(now)
+    limit = _MAX_STRATEGIES_PER_TICK if _MAX_STRATEGIES_PER_TICK > 0 else None
+    strategies = repo.get_due_strategies(now, limit=limit)
 
     dispatched = 0
     for strategy in strategies:
