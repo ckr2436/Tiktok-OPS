@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import random
 import time
@@ -11,7 +12,7 @@ from croniter import croniter
 from zoneinfo import ZoneInfo
 
 from celery.beat import Scheduler, ScheduleEntry
-from celery.schedules import schedule as CelerySchedule
+from celery.schedules import schedule as CelerySchedule, maybe_schedule
 from celery import uuid as celery_uuid
 
 from sqlalchemy import select, update, and_
@@ -180,6 +181,46 @@ class DBScheduler(Scheduler):
         super().__init__(*args, **kwargs)
         # 自己的刷新时间戳（使用单调时钟）
         self._last_db_refresh: float = 0.0
+        # 兼容 app.conf.beat_schedule 的静态计划（DB 以外的固定节拍）
+        self._static_entries: dict[str, ScheduleEntry] = {}
+        self._static_fingerprint: str | None = None
+        self._reload_static_entries(force=True)
+
+    def _beat_schedule_fingerprint(self, schedule_conf: dict) -> str:
+        try:
+            dumped = json.dumps(schedule_conf, sort_keys=True, default=str)
+        except TypeError:
+            dumped = repr(schedule_conf)
+        return hashlib.sha256(dumped.encode("utf-8")).hexdigest()
+
+    def _reload_static_entries(self, *, force: bool = False) -> None:
+        schedule_conf = getattr(self.app.conf, "beat_schedule", {}) or {}
+        fingerprint = self._beat_schedule_fingerprint(schedule_conf)
+        if not force and fingerprint == self._static_fingerprint:
+            return
+
+        self._static_entries = self._load_static_entries(schedule_conf)
+        self._static_fingerprint = fingerprint
+
+    def _load_static_entries(self, schedule_conf: dict) -> dict[str, ScheduleEntry]:
+        entries: dict[str, ScheduleEntry] = {}
+
+        for name, payload in schedule_conf.items():
+            try:
+                entries[name] = self.Entry(
+                    name,
+                    task=payload["task"],
+                    schedule=maybe_schedule(payload["schedule"]),
+                    args=payload.get("args", ()),
+                    kwargs=payload.get("kwargs", {}),
+                    options=payload.get("options", {}),
+                    last_run_at=payload.get("last_run_at"),
+                    total_run_count=payload.get("total_run_count", 0),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to load static beat entry", extra={"name": name})
+
+        return entries
 
     @property
     def schedule(self) -> dict[str, DBScheduleEntry]:
@@ -197,8 +238,39 @@ class DBScheduler(Scheduler):
             finally:
                 self._last_db_refresh = now_mono
 
+        static_wait = self._tick_static()
+
         # 返回下次 tick 的最大等待秒数
-        return min(DB_REFRESH_SECS, 5)
+        base_wait = min(DB_REFRESH_SECS, 5)
+        if static_wait is None:
+            return base_wait
+        return min(base_wait, static_wait)
+
+    def _tick_static(self) -> float | None:
+        """调度 app.conf.beat_schedule 中配置的固定任务。
+
+        返回值为下一次静态计划的等待秒数；若无静态计划则返回 None。
+        """
+
+        self._reload_static_entries()
+
+        if not self._static_entries:
+            return None
+
+        next_due: list[float] = []
+        for name, entry in list(self._static_entries.items()):
+            is_due, next_call_in = entry.is_due()
+            if is_due:
+                try:
+                    self.apply_entry(entry, producer=self.producer)
+                except Exception:  # noqa: BLE001
+                    logger.exception("static beat task failed", extra={"name": name, "task": entry.task})
+                self._static_entries[name] = entry.next()
+
+            if isinstance(next_call_in, (int, float)):
+                next_due.append(float(next_call_in))
+
+        return min(next_due) if next_due else None
 
     # ---- 核心逻辑：扫描可触发计划并入队 ----
     def _sync_and_fire(self, now_utc: datetime) -> None:
