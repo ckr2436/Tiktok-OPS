@@ -92,7 +92,7 @@ def _to_out(row: GmvMonitoringStrategy) -> MonitoringStrategyOut:
     return MonitoringStrategyOut(
         id=int(row.id),
         workspace_id=int(row.workspace_id),
-        auth_id=int(row.auth_id),
+        auth_id=int(row.auth_id) if row.auth_id is not None else None,
         advertiser_id=row.advertiser_id,
         store_id=row.store_id,
         promotion_type=row.promotion_type,
