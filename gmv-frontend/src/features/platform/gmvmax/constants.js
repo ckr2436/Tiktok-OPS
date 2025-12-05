@@ -1,0 +1,16 @@
+// src/features/platform/gmvmax/constants.js
+
+export const MONITORING_STRATEGY_LEVELS = [
+  'OVERVIEW_DAILY',
+  'CAMPAIGN_DAILY',
+  'CAMPAIGN_HOURLY',
+  'PRODUCT_DAILY',
+  'PRODUCT_HOURLY',
+  'CREATIVE_10MIN',
+  'LIVESTREAM_DAILY',
+  'LIVESTREAM_HOURLY',
+  'DURATION_DAILY',
+  'DURATION_HOURLY',
+]
+
+export const PROMOTION_TYPES = ['PRODUCT', 'LIVE']

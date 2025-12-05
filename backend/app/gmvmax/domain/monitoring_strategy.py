@@ -53,15 +53,38 @@ class GmvMaxMonitoringStrategyRepository:
     def _session(self) -> Session:
         return self._session_factory()
 
-    def get_due_strategies(self, now: datetime) -> List[MonitoringStrategy]:
-        """Return enabled strategies that are ready to run."""
+    def get_due_strategies(
+        self,
+        now: datetime,
+        limit: int | None = None,
+    ) -> List[MonitoringStrategy]:
+        """Return enabled strategies that are ready to run.
+
+        A strategy is considered due when either it has never run, or the time
+        since ``last_run_at`` is at least ``interval_minutes``.
+
+        Results are ordered so that never-run strategies are processed first,
+        then the oldest ones.  An optional ``limit`` can be used to cap the
+        number of strategies returned per scheduler tick.
+        """
 
         with self._session() as session:
-            stmt = select(GmvMonitoringStrategy).where(GmvMonitoringStrategy.enabled.is_(True))
+            stmt = (
+                select(GmvMonitoringStrategy)
+                .where(GmvMonitoringStrategy.enabled.is_(True))
+                .order_by(
+                    GmvMonitoringStrategy.last_run_at.is_(None).desc(),
+                    GmvMonitoringStrategy.last_run_at.asc(),
+                )
+            )
             rows = session.execute(stmt).scalars().all()
 
             due: list[MonitoringStrategy] = []
             for row in rows:
+                # 全局节流：每轮最多返回 limit 条策略
+                if limit is not None and limit > 0 and len(due) >= limit:
+                    break
+
                 if not row.last_run_at:
                     due.append(self._row_to_strategy(row))
                     continue
