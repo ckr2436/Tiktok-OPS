@@ -123,6 +123,39 @@ def _validate_interval(interval: int | None) -> None:
         raise APIError("INVALID_INTERVAL", "interval_minutes must be > 0", 422)
 
 
+def _build_scope_filters(
+    *,
+    workspace_id: int,
+    promotion_type: PromotionTypeEnum | None,
+    level: str,
+    auth_id: int | None,
+    advertiser_id: str | None,
+    store_id: str | None,
+) -> list[Any]:
+    filters: list[Any] = [
+        GmvMonitoringStrategy.workspace_id == workspace_id,
+        GmvMonitoringStrategy.promotion_type == promotion_type,
+        GmvMonitoringStrategy.level == level,
+    ]
+
+    if auth_id is None:
+        filters.append(GmvMonitoringStrategy.auth_id.is_(None))
+    else:
+        filters.append(GmvMonitoringStrategy.auth_id == auth_id)
+
+    if advertiser_id is None:
+        filters.append(GmvMonitoringStrategy.advertiser_id.is_(None))
+    else:
+        filters.append(GmvMonitoringStrategy.advertiser_id == advertiser_id)
+
+    if store_id is None:
+        filters.append(GmvMonitoringStrategy.store_id.is_(None))
+    else:
+        filters.append(GmvMonitoringStrategy.store_id == store_id)
+
+    return filters
+
+
 @router.get("", response_model=MonitoringStrategyPage)
 def list_monitoring_strategies(
     workspace_id: int | None = Query(default=None),
@@ -177,6 +210,23 @@ def create_monitoring_strategy(
     data = payload.dict()
     _validate_interval(data.get("interval_minutes"))
 
+    filters = _build_scope_filters(
+        workspace_id=int(payload.workspace_id),
+        promotion_type=payload.promotion_type,
+        level=payload.level.value,
+        auth_id=payload.auth_id,
+        advertiser_id=payload.advertiser_id,
+        store_id=payload.store_id,
+    )
+
+    existing = db.scalar(select(GmvMonitoringStrategy).where(and_(*filters)).limit(1))
+    if existing:
+        raise APIError(
+            "DUPLICATE_STRATEGY",
+            "Monitoring strategy already exists with the same scope.",
+            status.HTTP_409_CONFLICT,
+        )
+
     row = GmvMonitoringStrategy(**data)
     db.add(row)
     db.commit()
@@ -209,6 +259,27 @@ def update_monitoring_strategy(
 
     updates = payload.dict(exclude_unset=True)
     _validate_interval(updates.get("interval_minutes"))
+
+    new_promotion_type = payload.promotion_type or row.promotion_type
+    new_level = payload.level.value if payload.level is not None else row.level
+
+    filters = _build_scope_filters(
+        workspace_id=int(row.workspace_id),
+        promotion_type=new_promotion_type,
+        level=new_level,
+        auth_id=row.auth_id,
+        advertiser_id=row.advertiser_id,
+        store_id=row.store_id,
+    )
+
+    filters.append(GmvMonitoringStrategy.id != row.id)
+    existing = db.scalar(select(GmvMonitoringStrategy).where(and_(*filters)).limit(1))
+    if existing:
+        raise APIError(
+            "DUPLICATE_STRATEGY",
+            "Monitoring strategy already exists with the same scope.",
+            status.HTTP_409_CONFLICT,
+        )
 
     for key, value in updates.items():
         setattr(row, key, value)

@@ -93,7 +93,17 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
       setPending(true)
       await onSubmit(payload)
     } catch (err) {
-      setError(err?.message || '保存失败')
+      const resp = err?.response
+      const detail = resp?.data?.detail || resp?.data?.message
+      const code = resp?.data?.code
+
+      if (resp?.status === 409 && code === 'DUPLICATE_STRATEGY') {
+        setError('相同 workspace / 维度 的策略已存在，请不要重复创建。')
+      } else if (detail) {
+        setError(detail)
+      } else {
+        setError(err?.message || '保存失败')
+      }
     } finally {
       setPending(false)
     }
