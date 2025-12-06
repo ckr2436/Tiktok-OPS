@@ -37,7 +37,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 |  | `sync_metrics`, `query_metrics` | Orchestrate hourly/daily metric sync and querying of stored metrics for a campaign. |
 |  | `apply_campaign_action`, `list_action_logs` | Apply TikTok campaign actions and persist action logs; fetch paginated action logs. |
 |  | `get_strategy`, `update_strategy`, `preview_strategy` | Manage local strategy config and compute previews based on recent metrics. |
-| `backend/app/services/ttb_gmvmax.py` | `sync_gmvmax_campaigns`, `upsert_campaign_from_api` | Transform TikTok campaign payloads into DB rows and snapshots; merge duplicates. |
+| `backend/app/services/ttb_gmvmax.py` | `sync_gmvmax_campaigns`, `upsert_campaign_from_api` | Transform TikTok campaign payloads into DB rows; merge duplicates. |
 |  | `sync_gmvmax_metrics_hourly/daily` | Pull GMV Max report data and upsert hourly/daily metrics tables. |
 |  | `create_gmvmax_campaign`, `update_gmvmax_campaign` | Wrap client create/update calls and persist campaign metadata. |
 |  | `log_campaign_action`, `apply_campaign_action` | Persist action logs and proxy TikTok campaign actions/status changes. |
@@ -71,9 +71,8 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 | Model (table) | Main fields | Purpose |
 | --- | --- | --- |
-| `TTBGmvMaxCampaign` (`ttb_gmvmax_campaigns`) | workspace/auth/advertiser/store IDs, campaign_id/name/status, roas_bid, budget, timestamps, raw_json, soft-delete flags | Cached GMV Max campaign metadata. |
+| `TTBGmvMaxCampaign` (`gmv_campaigns`) | workspace/auth/advertiser/store IDs, campaign_id/name, official `primary_status`/`secondary_status`/`operation_status`, internal `status` (ACTIVE/INACTIVE/DELETED), roas_bid, budget, timestamps, `raw_json`, `is_deleted`/`deleted_at` | Cached GMV Max campaign metadata. |
 | `TTBGmvMaxCampaignProduct` (`ttb_gmvmax_campaign_products`) | campaign/store/item_group ids, operation_status | Mapping of campaigns to promoted products. |
-| `GmvCampaignSyncSnapshot` (`gmv_campaign_sync_snapshots`) | advertiser/store/campaign scope, payload_json, synced_at | Stores last synced payload for reconciliation. |
 | `TTBGmvMaxMetricsHourly` (`ttb_gmvmax_metrics_hourly`) | campaign FK, store_id, interval_start/end, impressions/clicks/cost/orders/gross_revenue/roi/... | Hourly GMV Max metrics upserts. |
 | `TTBGmvMaxMetricsDaily` (`ttb_gmvmax_metrics_daily`) | campaign FK, store_id, date, same metric fields as hourly | Daily GMV Max metrics upserts. |
 | `TTBGmvMaxCreativeMetric` (`ttb_gmvmax_creative_metrics_daily`) | workspace/provider/auth IDs, campaign/creative ids, stat_time_day, metrics + raw snapshot | Creative-level daily metrics used for heating seed detection. |
@@ -99,7 +98,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 | TikTok API | Client method | Service function(s) | FastAPI endpoint(s) | Celery tasks | DB tables touched |
 | --- | --- | --- | --- | --- | --- |
-| `GET /gmv_max/campaign/get/` | `gmv_max_campaign_get` | `sync_gmvmax_campaigns`, `list_campaigns` (via repositories) | `POST /gmvmax/sync`, `POST /tenants/{workspace_id}/gmvmax/sync` (async sync); implicit during sync/auto-bind flows | `gmvmax.sync_campaigns`, `ttb.sync_gmvmax` | `TTBGmvMaxCampaign`, `TTBGmvMaxCampaignProduct`, `TTBGmvMaxCampaignSyncSnapshot` |
+| `GET /gmv_max/campaign/get/` | `gmv_max_campaign_get` | `sync_gmvmax_campaigns`, `list_campaigns` (via repositories) | `POST /gmvmax/sync`, `POST /tenants/{workspace_id}/gmvmax/sync` (async sync); implicit during sync/auto-bind flows | `gmvmax.sync_campaigns`, `ttb.sync_gmvmax` | `TTBGmvMaxCampaign`, `TTBGmvMaxCampaignProduct` |
 | `GET /campaign/gmv_max/info/` | `gmv_max_campaign_info` | `get_campaign`, `create_gmvmax_campaign`, `update_gmvmax_campaign` (refresh) | `GET /gmvmax/{campaign_id}`; post-create/update responses | sync tasks and router refresh | `TTBGmvMaxCampaign`, `TTBGmvMaxCampaignProduct` |
 | `POST /campaign/gmv_max/create/` | `gmv_max_campaign_create` | `create_gmvmax_campaign` | `POST /gmvmax` | direct from router | `TTBGmvMaxCampaign`, `TTBGmvMaxCampaignProduct` |
 | `POST /campaign/gmv_max/update/` | `gmv_max_campaign_update` | `update_gmvmax_campaign` | `PUT /gmvmax/{campaign_id}`, `PUT /gmvmax/{campaign_id}/strategy` (campaign section) | router direct | `TTBGmvMaxCampaign`, `TTBGmvMaxCampaignProduct` |
@@ -132,7 +131,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 3. **Campaign management & creative heating**
    - **Create/update**: `POST /gmvmax` or `PUT /gmvmax/{campaign_id}` → service `create_gmvmax_campaign`/`update_gmvmax_campaign` → client `gmv_max_campaign_create/update` → TikTok API; router refreshes detail via `gmv_max_campaign_info` and returns `CampaignDetailResponse`.
-   - **Status/actions**: `POST /gmvmax/{campaign_id}/actions` with action type → router builds `CampaignStatusUpdateRequest` or `GMVMaxCampaignUpdateRequest` → client `campaign_status_update`/`gmv_max_campaign_update` → updates `TTBGmvMaxActionLog` + snapshot refresh.
+   - **Status/actions**: `POST /gmvmax/{campaign_id}/actions` with action type → router builds `CampaignStatusUpdateRequest` or `GMVMaxCampaignUpdateRequest` → client `campaign_status_update`/`gmv_max_campaign_update` → updates `TTBGmvMaxActionLog` and campaign row.
    - **Creative heating**: same action endpoint with `BOOST_CREATIVE` or periodic `gmvmax.creative_heating_cycle` → service `apply_boost_creative_action` or `run_creative_heating_cycle` → client `gmv_max_campaign_action_apply` and `gmv_max_report_get` for metrics → persists `TTBGmvMaxCreativeHeating` + action logs and evaluation results.
 
 ## 5. How to debug GMV Max
