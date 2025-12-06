@@ -103,7 +103,6 @@ from app.services.gmvmax_spec import (
 )
 from .service import _ensure_provider, list_action_logs
 from app.services.ttb_gmvmax import (
-    SNAPSHOT_TYPE_CAMPAIGN,
     _extract_item_group_ids_from_payload,
     _sanitize_id_list,
     build_gmvmax_anchor_params,
@@ -265,53 +264,12 @@ def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
     return GMVMaxCampaign.model_validate(payload)
 
 
-def _campaign_snapshot_to_detail(
-    snapshot: GmvCampaignSyncSnapshot | None, fallback_row: GmvCampaign
-) -> GMVMaxCampaignInfoData:
-    """Build a detailed campaign schema from the latest snapshot or DB row.
+def _campaign_row_to_detail(row: GmvCampaign) -> GMVMaxCampaignInfoData:
+    """Build a detailed campaign schema directly from the persisted row."""
 
-    The campaign detail response expects ``GMVMaxCampaignInfoData``. When a
-    campaign snapshot payload is available, prefer that (it comes directly from
-    TikTok's campaign info API). If the snapshot is missing or malformed, fall
-    back to converting the persisted campaign row into the expected schema to
-    keep the endpoint resilient.
-    """
-
-    if snapshot and snapshot.payload_json:
-        try:
-            return GMVMaxCampaignInfoData.model_validate(snapshot.payload_json)
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "gmvmax campaign snapshot parse failed",
-                exc_info=True,
-                extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
-            )
-
-    # Fallback: reuse the list-view schema and coerce it into the detail model
-    fallback_campaign = _campaign_row_to_schema(fallback_row)
+    fallback_campaign = _campaign_row_to_schema(row)
     return GMVMaxCampaignInfoData.model_validate(
         fallback_campaign.model_dump(exclude_none=True)
-    )
-
-
-def _latest_snapshot(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign_id: str,
-    snapshot_type: str,
-) -> GmvCampaignSyncSnapshot | None:
-    return (
-        db.query(GmvCampaignSyncSnapshot)
-        .filter(GmvCampaignSyncSnapshot.workspace_id == int(workspace_id))
-        .filter(GmvCampaignSyncSnapshot.auth_id == int(auth_id))
-        .filter(GmvCampaignSyncSnapshot.advertiser_id == str(advertiser_id))
-        .filter(GmvCampaignSyncSnapshot.campaign_id == str(campaign_id))
-        .filter(GmvCampaignSyncSnapshot.snapshot_type == snapshot_type)
-        .order_by(GmvCampaignSyncSnapshot.synced_at.desc())
-        .first()
     )
 
 def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
@@ -2524,7 +2482,7 @@ async def get_gmvmax_campaign_provider(
                 },
             )
 
-    campaign_info = _campaign_snapshot_to_detail(info_snapshot, row)
+    campaign_info = _campaign_row_to_detail(row)
 
     return CampaignDetailResponse(
         campaign=campaign_info,
