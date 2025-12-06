@@ -1611,20 +1611,26 @@ async def sync_gmvmax_campaigns(
     synced = 0
     details_cache: dict[str, Mapping[str, Any] | None] = {}
 
-    async def _sync_round(primary_status: str) -> None:
+    async def _sync_round(primary_status: str | None) -> None:
         nonlocal synced
         page = 1
         while True:
+            # NOTE:
+            # TikTok 不接受 STATUS_NOT_DELETE 作为 primary_status 的枚举值。
+            # 想要“未删除”（STATUS_NOT_DELETE）的行为，必须完全省略 primary_status 字段。
+            filtering_kwargs: dict[str, Any] = {
+                "gmv_max_promotion_types": base_filters.get(
+                    "gmv_max_promotion_types", ["PRODUCT_GMV_MAX"]
+                ),
+                "store_ids": base_filters.get("store_ids"),
+                "campaign_ids": base_filters.get("campaign_ids"),
+            }
+            if primary_status is not None:
+                filtering_kwargs["primary_status"] = primary_status
+
             request = GMVMaxCampaignGetRequest(
                 advertiser_id=str(advertiser_id),
-                filtering=GMVMaxCampaignFiltering(
-                    gmv_max_promotion_types=base_filters.get(
-                        "gmv_max_promotion_types", ["PRODUCT_GMV_MAX"]
-                    ),
-                    store_ids=base_filters.get("store_ids"),
-                    campaign_ids=base_filters.get("campaign_ids"),
-                    primary_status=primary_status,
-                ),
+                filtering=GMVMaxCampaignFiltering(**filtering_kwargs),
                 page_size=50,
                 page=page,
             )
@@ -1736,8 +1742,9 @@ async def sync_gmvmax_campaigns(
                 break
             page += 1
 
-    # 一轮拉取 STATUS_NOT_DELETE（包含 ENABLE + DISABLE 等非删除），一轮拉取 STATUS_DELETE
-    await _sync_round("STATUS_NOT_DELETE")
+    # 第一轮：不传 primary_status（等价于 STATUS_NOT_DELETE，只返回未删除系列）
+    # 第二轮：显式 STATUS_DELETE，用于同步已删除系列
+    await _sync_round(None)
     await _sync_round("STATUS_DELETE")
 
     db.flush()
