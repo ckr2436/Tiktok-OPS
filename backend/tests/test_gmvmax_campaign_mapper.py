@@ -52,7 +52,7 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
     assert campaign.ext_created_time == synced_at
     assert campaign.ext_updated_time == datetime(2024, 3, 2, 0, 0, 0)
     assert campaign.raw_json.get("promotion_days") is None
-    assert campaign.primary_status == "STATUS_NOT_DELETE"
+    assert not hasattr(campaign, "primary_status")
     assert campaign.secondary_status == "CAMPAIGN_STATUS_ENABLE"
     assert campaign.status == "ACTIVE"
     assert campaign.is_deleted is False
@@ -65,7 +65,7 @@ def test_map_gmvmax_campaign_deleted_state(db_session):
         "campaign_id": "del-1",
         "campaign_name": "Deleted GMV Max",
         "shopping_ads_type": "PRODUCT",
-        "secondary_status": "CAMPAIGN_STATUS_DELETE",
+        "secondary_status": None,
         "operation_status": "DISABLE",
     }
 
@@ -80,8 +80,8 @@ def test_map_gmvmax_campaign_deleted_state(db_session):
     db_session.add(campaign)
     db_session.commit()
 
-    assert campaign.primary_status == "STATUS_DELETE"
-    assert campaign.secondary_status == "CAMPAIGN_STATUS_DELETE"
+    assert not hasattr(campaign, "primary_status")
+    assert campaign.secondary_status is None
     assert campaign.status == "DELETED"
     assert campaign.is_deleted is True
     assert campaign.deleted_at == deleted_synced_at

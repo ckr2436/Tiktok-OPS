@@ -157,11 +157,9 @@ def map_gmvmax_campaign_info_to_model(
     )
     normalized_operation_status = _normalize_status(payload.get("operation_status"))
 
-    # 先合并出“有效”的远端状态，再写回字段，避免没有状态字段的详情请求把本地状态抹掉
-    effective_primary_status = normalized_primary_status or instance.primary_status
+    # 先合并出“有效”的 secondary_status，避免没有状态字段的详情请求把本地状态抹掉
     effective_secondary_status = normalized_secondary_status or instance.secondary_status
 
-    instance.primary_status = effective_primary_status
     instance.secondary_status = effective_secondary_status
     instance.operation_status = normalized_operation_status or instance.operation_status
     instance.optimization_goal = payload.get("optimization_goal")
@@ -196,9 +194,9 @@ def map_gmvmax_campaign_info_to_model(
 
     instance.raw_json = raw_payload
 
-    # 删除判断优先看合并后的 primary/secondary，兼容列表 + 详情多次写入
+    # 删除判断：primary_status_hint 仅作为临时 hint，不落库
     is_remote_deleted = bool(
-        (effective_primary_status == "STATUS_DELETE")
+        (normalized_primary_status == "STATUS_DELETE")
         or (effective_secondary_status == "CAMPAIGN_STATUS_DELETE")
     )
 

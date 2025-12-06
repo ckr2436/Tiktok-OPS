@@ -2,10 +2,4 @@ Generic single-database configuration.
 
 0052_drop_gmv_campaign_sync_snapshots removes the unused ``gmv_campaign_sync_snapshots`` table now that campaign lifecycle is sourced directly from ``gmv_campaigns``.
 
-GMV Max status normalization:
-
-- Add column: ``ALTER TABLE gmv_campaigns ADD COLUMN primary_status varchar(64) NULL AFTER status;``
-- Normalize existing rows (example):
-  - Mark deleted: ``UPDATE gmv_campaigns SET primary_status='STATUS_DELETE', status='DELETED', is_deleted=1, deleted_at=COALESCE(deleted_at, updated_at, NOW()) WHERE secondary_status='CAMPAIGN_STATUS_DELETE';``
-  - Active: ``UPDATE gmv_campaigns SET primary_status=COALESCE(primary_status,'STATUS_NOT_DELETE'), status='ACTIVE', is_deleted=0, deleted_at=NULL WHERE secondary_status='CAMPAIGN_STATUS_ENABLE' AND (primary_status IS NULL OR primary_status!='STATUS_DELETE');``
-  - Inactive remainder: ``UPDATE gmv_campaigns SET primary_status=COALESCE(primary_status,'STATUS_NOT_DELETE'), status='INACTIVE', is_deleted=0, deleted_at=NULL WHERE secondary_status IS NOT NULL AND secondary_status NOT IN ('CAMPAIGN_STATUS_DELETE','CAMPAIGN_STATUS_ENABLE');``
+0053_drop_gmv_campaign_primary_status removes the obsolete ``primary_status`` column from ``gmv_campaigns``. TikTok ``primary_status`` remains a request-side filter/hint for sync but is no longer persisted; lifecycle continues to rely on ``status``/``secondary_status`` plus derived ``is_deleted``/``deleted_at``.
