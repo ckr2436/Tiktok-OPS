@@ -36,7 +36,6 @@ from app.data.models.gmv_restructured import (
     GmvCampaign,
     GmvCampaignMetricsDaily,
     GmvCampaignProduct,
-    GmvCampaignSyncSnapshot,
     GmvCreativeMetricsDaily,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
@@ -2496,15 +2495,6 @@ async def get_gmvmax_campaign_provider(
             detail="campaign not found in cache; trigger refresh first",
     )
 
-    info_snapshot = _latest_snapshot(
-        context.db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=str(adv),
-        campaign_id=str(campaign_id),
-        snapshot_type=SNAPSHOT_TYPE_CAMPAIGN,
-    )
-
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
     sessions_request_id: str | None = None
@@ -2538,9 +2528,9 @@ async def get_gmvmax_campaign_provider(
 
     return CampaignDetailResponse(
         campaign=campaign_info,
-        sessions=sessions,
+        sessions=sessions if include_sessions else [],
         sessions_page_info=sessions_page_info,
-        request_id=info_snapshot.raw_request_id if info_snapshot else None,
+        request_id=None,
         sessions_request_id=sessions_request_id,
     )
 

@@ -3,11 +3,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.gmv_restructured import (
-    GmvCampaign,
-    GmvCampaignSyncSnapshot,
-    PromotionTypeEnum,
-)
+from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax import list_gmvmax_campaigns
 
@@ -85,31 +81,6 @@ def _create_campaign(
     db_session.add(campaign)
     db_session.flush()
     return campaign
-
-
-def _create_snapshot(
-    db_session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign_id: str,
-    store_id: str,
-    synced_at: datetime,
-):
-    snapshot = GmvCampaignSyncSnapshot(
-        id=_next_id(db_session, GmvCampaignSyncSnapshot),
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=advertiser_id,
-        campaign_id=campaign_id,
-        store_id=store_id,
-        snapshot_type="CAMPAIGN",
-        synced_at=synced_at,
-    )
-    db_session.add(snapshot)
-    db_session.flush()
-    return snapshot
 
 
 def test_list_campaigns_filters_by_store(db_session):
