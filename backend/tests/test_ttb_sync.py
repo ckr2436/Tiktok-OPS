@@ -198,6 +198,43 @@ def _seed_data(db_session) -> None:
     )
     db_session.merge(task)
 
+
+def _create_workspace_and_auth(db_session):
+    if not getattr(settings, "CRYPTO_MASTER_KEY_B64", ""):
+        settings.CRYPTO_MASTER_KEY_B64 = base64.urlsafe_b64encode(b"0" * 32).decode()
+
+    workspace = Workspace(id=1, name="Acme", company_code="1001")
+    db_session.add(workspace)
+    db_session.flush()
+
+    provider = OAuthProviderApp(
+        id=1,
+        provider="tiktok_business",
+        name="Default",
+        client_id="client",
+        client_secret_cipher=encrypt_text_to_blob("secret", key_version=1, aad_text="secret"),
+        client_secret_key_version=1,
+        redirect_uri="https://example.com/callback",
+        is_enabled=True,
+    )
+    db_session.add(provider)
+    db_session.flush()
+
+    account = OAuthAccountTTB(
+        id=1,
+        workspace_id=int(workspace.id),
+        provider_app_id=int(provider.id),
+        alias="binding",
+        access_token_cipher=encrypt_text_to_blob("token", key_version=1, aad_text="token"),
+        key_version=1,
+        token_fingerprint=b"1" * 32,
+        status="active",
+    )
+    db_session.add(account)
+    db_session.flush()
+
+    return workspace, account
+
     db_session.commit()
 
 
@@ -907,3 +944,99 @@ def test_apply_advertiser_info_skips_display_timezone_when_unsupported():
     assert changed is True
     assert row.name == "Example"
     assert row.display_timezone is None
+
+
+def test_upsert_inserts_with_last_seen(db_session):
+    workspace, account = _create_workspace_and_auth(db_session)
+
+    values = dict(
+        workspace_id=int(workspace.id),
+        auth_id=int(account.id),
+        bc_id="BC-1",
+        advertiser_id="ADV-1",
+        relation_type="OWNER",
+    )
+
+    ttb_sync._upsert(
+        db_session,
+        TTBBCAdvertiserLink,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "bc_id", "advertiser_id"),
+        update_columns=("relation_type", "source", "raw_json"),
+    )
+
+    row = db_session.query(TTBBCAdvertiserLink).one()
+    assert row.relation_type == "OWNER"
+    assert row.last_seen_at is not None
+
+
+def test_upsert_updates_existing_row(db_session):
+    workspace, account = _create_workspace_and_auth(db_session)
+
+    values = dict(
+        workspace_id=int(workspace.id),
+        auth_id=int(account.id),
+        bc_id="BC-1",
+        advertiser_id="ADV-1",
+        relation_type="OWNER",
+    )
+
+    ttb_sync._upsert(
+        db_session,
+        TTBBCAdvertiserLink,
+        values=values,
+        conflict_columns=("workspace_id", "auth_id", "bc_id", "advertiser_id"),
+        update_columns=("relation_type", "source", "raw_json"),
+    )
+
+    initial = db_session.query(TTBBCAdvertiserLink).one()
+    first_seen_at = initial.last_seen_at
+
+    updated_values = dict(values)
+    updated_values["relation_type"] = "PARTNER"
+    updated_values["source"] = "sync"
+
+    ttb_sync._upsert(
+        db_session,
+        TTBBCAdvertiserLink,
+        values=updated_values,
+        conflict_columns=("workspace_id", "auth_id", "bc_id", "advertiser_id"),
+        update_columns=("relation_type", "source", "raw_json"),
+    )
+
+    db_session.expire_all()
+    row = db_session.query(TTBBCAdvertiserLink).one()
+    assert row.relation_type == "PARTNER"
+    assert row.source == "sync"
+    assert row.last_seen_at >= first_seen_at
+
+
+def test_upsert_handles_integrity_conflict(db_session):
+    workspace, account = _create_workspace_and_auth(db_session)
+
+    values = dict(
+        workspace_id=int(workspace.id),
+        auth_id=int(account.id),
+        bc_id="BC-1",
+        advertiser_id="ADV-1",
+        relation_type="OWNER",
+    )
+
+    db_session.execute(TTBBCAdvertiserLink.__table__.insert().values(**values))
+    db_session.flush()
+
+    conflicting_values = dict(values)
+    conflicting_values["relation_type"] = "PARTNER"
+
+    ttb_sync._upsert(
+        db_session,
+        TTBBCAdvertiserLink,
+        values=conflicting_values,
+        conflict_columns=("workspace_id", "auth_id", "bc_id", "advertiser_id"),
+        update_columns=("relation_type", "source", "raw_json"),
+    )
+
+    db_session.expire_all()
+    rows = db_session.query(TTBBCAdvertiserLink).all()
+    assert len(rows) == 1
+    assert rows[0].relation_type == "PARTNER"

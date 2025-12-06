@@ -1027,7 +1027,11 @@ def _sync_campaign_product_assignments(
     promotion_type: PromotionTypeEnum,
 ) -> None:
     normalized_status = _normalize_status_value(operation_status)
-    store_id = _normalize_identifier(store_id_hint)
+    store_id = (
+        _normalize_identifier(store_id_hint)
+        or _normalize_identifier(getattr(campaign, "store_id", None))
+        or ""
+    )
 
     campaign_pk = getattr(campaign, "id", None)
     if campaign_pk is None:
@@ -1036,66 +1040,56 @@ def _sync_campaign_product_assignments(
     if campaign_pk is None:
         raise ValueError("campaign.id must be available before syncing products")
 
-    rows: list[dict[str, Any]] = []
+    incoming_ids: set[str] = set()
     for product_id in product_ids:
         normalized = _normalize_identifier(product_id)
-        if not normalized:
-            continue
-        rows.append(
-            {
-                "workspace_id": campaign.workspace_id,
-                "auth_id": campaign.auth_id,
-                "campaign_pk": campaign_pk,
-                "campaign_id": campaign.campaign_id,
-                "item_group_id": normalized,
-                "promotion_type": promotion_type,
-                "store_id": store_id,
-                "operation_status": normalized_status,
-            }
-        )
+        if normalized:
+            incoming_ids.add(normalized)
 
-    if not rows:
+    if not incoming_ids:
         return
 
-    item_group_ids = {row["item_group_id"] for row in rows}
-
-    # Clean out existing rows for the same products and store to avoid lock contention
-    # with the unique constraints on (workspace_id, auth_id, store_id, item_group_id).
-    db.execute(
-        delete(GmvCampaignProduct)
-        .where(GmvCampaignProduct.workspace_id == campaign.workspace_id)
-        .where(GmvCampaignProduct.auth_id == campaign.auth_id)
-        .where(GmvCampaignProduct.store_id == store_id)
-        .where(GmvCampaignProduct.item_group_id.in_(item_group_ids))
+    existing_products = (
+        db.execute(
+            select(GmvCampaignProduct)
+            .where(GmvCampaignProduct.workspace_id == campaign.workspace_id)
+            .where(GmvCampaignProduct.auth_id == campaign.auth_id)
+            .where(GmvCampaignProduct.store_id == store_id)
+            .where(GmvCampaignProduct.item_group_id.in_(incoming_ids))
+        )
+        .scalars()
+        .all()
     )
 
-    bind = db.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        stmt = sqlite_insert(GmvCampaignProduct).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[
-                GmvCampaignProduct.workspace_id,
-                GmvCampaignProduct.auth_id,
-                GmvCampaignProduct.campaign_id,
-                GmvCampaignProduct.store_id,
-                GmvCampaignProduct.item_group_id,
-            ],
-            set_={
-                "store_id": stmt.excluded.store_id,
-                "operation_status": stmt.excluded.operation_status,
-                "promotion_type": stmt.excluded.promotion_type,
-            },
+    existing_by_item_group_id = {item.item_group_id: item for item in existing_products}
+
+    to_update = incoming_ids & set(existing_by_item_group_id)
+    to_insert = incoming_ids - set(existing_by_item_group_id)
+
+    for item_group_id in to_update:
+        record = existing_by_item_group_id[item_group_id]
+        record.campaign_pk = campaign_pk
+        record.campaign_id = campaign.campaign_id
+        record.store_id = store_id
+        record.promotion_type = promotion_type
+        record.operation_status = normalized_status
+
+    if to_insert:
+        db.add_all(
+            [
+                GmvCampaignProduct(
+                    workspace_id=campaign.workspace_id,
+                    auth_id=campaign.auth_id,
+                    campaign_pk=campaign_pk,
+                    campaign_id=campaign.campaign_id,
+                    item_group_id=item_group_id,
+                    promotion_type=promotion_type,
+                    store_id=store_id,
+                    operation_status=normalized_status,
+                )
+                for item_group_id in to_insert
+            ]
         )
-    else:
-        stmt = mysql_insert(GmvCampaignProduct).values(rows)
-        stmt = stmt.on_duplicate_key_update(
-            campaign_pk=stmt.inserted.campaign_pk,
-            campaign_id=stmt.inserted.campaign_id,
-            store_id=stmt.inserted.store_id,
-            promotion_type=stmt.inserted.promotion_type,
-            operation_status=stmt.inserted.operation_status,
-        )
-    db.execute(stmt)
 
 
 def _list_campaign_product_ids(
