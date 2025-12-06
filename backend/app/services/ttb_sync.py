@@ -8,9 +8,8 @@ import contextlib
 
 logger = logging.getLogger("gmv.ttb.sync")
 
-from sqlalchemy import text, and_, or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from app.data.models.ttb_entities import (
     TTBSyncCursor,
@@ -200,13 +199,6 @@ def _get_or_create_cursor(
 # --------------------------- UPSERT helpers ---------------------------
 
 
-def _dialect(db: Session) -> str:
-    bind = getattr(db, "bind", None)
-    if not bind or not getattr(bind, "dialect", None):
-        return ""
-    return bind.dialect.name
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -220,29 +212,16 @@ def _upsert(
     update_columns: tuple[str, ...],
 ) -> None:
     table = model.__table__
-    dialect = _dialect(db)
-
-    if dialect == "sqlite":
-        filters = [getattr(table.c, col) == values[col] for col in conflict_columns]
-        update_payload = {col: values[col] for col in update_columns if col in values}
-        if "last_seen_at" in table.c:
-            update_payload["last_seen_at"] = _now()
-        result = db.execute(table.update().where(and_(*filters)).values(**update_payload))
-        if result.rowcount == 0:
-            insert_values = dict(values)
-            if "last_seen_at" in table.c and "last_seen_at" not in insert_values:
-                insert_values["last_seen_at"] = _now()
-            db.execute(table.insert().values(**insert_values))
-        return
-
-    stmt = mysql_insert(table).values(values)
-    update_payload = {
-        col: getattr(stmt.inserted, col) for col in update_columns if col != "last_seen_at"
-    }
+    filters = [getattr(table.c, col) == values[col] for col in conflict_columns]
+    update_payload = {col: values[col] for col in update_columns if col in values}
     if "last_seen_at" in table.c:
-        update_payload["last_seen_at"] = text("CURRENT_TIMESTAMP(6)")
-    stmt = stmt.on_duplicate_key_update(**update_payload)
-    db.execute(stmt)
+        update_payload["last_seen_at"] = _now()
+    result = db.execute(table.update().where(and_(*filters)).values(**update_payload))
+    if result.rowcount == 0:
+        insert_values = dict(values)
+        if "last_seen_at" in table.c and "last_seen_at" not in insert_values:
+            insert_values["last_seen_at"] = _now()
+        db.execute(table.insert().values(**insert_values))
 
 
 def _touch_bc_advertiser_link(
