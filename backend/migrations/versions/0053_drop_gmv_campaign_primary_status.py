@@ -15,17 +15,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("gmv_campaigns") as batch_op:
-        batch_op.drop_column("primary_status")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col.get("name") for col in inspector.get_columns("gmv_campaigns")}
+
+    if "primary_status" in columns:
+        with op.batch_alter_table("gmv_campaigns") as batch_op:
+            batch_op.drop_column("primary_status")
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("gmv_campaigns") as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "primary_status",
-                sa.String(length=64),
-                nullable=True,
-                comment="Official primary_status filter value from campaign/get",
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col.get("name") for col in inspector.get_columns("gmv_campaigns")}
+
+    if "primary_status" not in columns:
+        with op.batch_alter_table("gmv_campaigns") as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "primary_status",
+                    sa.String(length=64),
+                    nullable=True,
+                    comment="Official primary_status filter value from campaign/get",
+                )
             )
-        )
