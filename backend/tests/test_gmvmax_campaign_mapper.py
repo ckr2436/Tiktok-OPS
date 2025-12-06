@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
@@ -34,7 +34,6 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
         advertiser_id="adv",
         info=info,
         synced_at=synced_at,
-        primary_status_hint="STATUS_NOT_DELETE",
     )
     db_session.add(campaign)
     db_session.commit()
@@ -55,6 +54,7 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
     assert not hasattr(campaign, "primary_status")
     assert campaign.secondary_status == "CAMPAIGN_STATUS_ENABLE"
     assert campaign.status == "ACTIVE"
+    assert campaign.lifecycle_status == "ACTIVE"
     assert campaign.is_deleted is False
     assert campaign.deleted_at is None
 
@@ -65,7 +65,7 @@ def test_map_gmvmax_campaign_deleted_state(db_session):
         "campaign_id": "del-1",
         "campaign_name": "Deleted GMV Max",
         "shopping_ads_type": "PRODUCT",
-        "secondary_status": None,
+        "secondary_status": "CAMPAIGN_STATUS_DELETE",
         "operation_status": "DISABLE",
     }
 
@@ -75,16 +75,17 @@ def test_map_gmvmax_campaign_deleted_state(db_session):
         advertiser_id="adv",
         info=deleted_payload,
         synced_at=deleted_synced_at,
-        primary_status_hint="STATUS_DELETE",
     )
     db_session.add(campaign)
     db_session.commit()
 
     assert not hasattr(campaign, "primary_status")
-    assert campaign.secondary_status is None
+    assert campaign.secondary_status == "CAMPAIGN_STATUS_DELETE"
     assert campaign.status == "DELETED"
+    assert campaign.lifecycle_status == "DELETED"
     assert campaign.is_deleted is True
-    assert campaign.deleted_at == deleted_synced_at
+    assert campaign.deleted_at is not None
+    assert campaign.deleted_at.tzinfo == timezone.utc
 
     later_sync = map_gmvmax_campaign_info_to_model(
         workspace_id=1,
@@ -93,9 +94,8 @@ def test_map_gmvmax_campaign_deleted_state(db_session):
         info=deleted_payload,
         synced_at=datetime(2024, 4, 2, 0, 0, 0),
         existing=campaign,
-        primary_status_hint="STATUS_DELETE",
     )
-    assert later_sync.deleted_at == deleted_synced_at
+    assert later_sync.deleted_at == campaign.deleted_at
 
 
 def test_select_active_campaigns_filters_and_limits(db_session):

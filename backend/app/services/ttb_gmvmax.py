@@ -33,6 +33,8 @@ from app.data.repositories.tiktok_business import gmvmax as gmvmax_repo
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
+    GMVMaxCampaignFiltering,
+    GMVMaxCampaignGetRequest,
     GMVMaxCampaignInfoRequest,
     GMVMaxCampaignReportRequest,
     GMVMaxCampaignUpdateBody,
@@ -1277,7 +1279,11 @@ def _normalize_status_value(value: Any) -> str | None:
         text = str(value).strip().upper()
     except Exception:  # pragma: no cover - defensive
         return None
-    return text or None
+    if not text:
+        return None
+    if text in {"ENABLE", "DISABLE"}:
+        return text
+    return None
 
 
 def _normalize_date(value: date | str) -> str:
@@ -1605,99 +1611,119 @@ async def sync_gmvmax_campaigns(
     synced = 0
     details_cache: dict[str, Mapping[str, Any] | None] = {}
 
-    async def _sync_round(primary_status: str | None, hint: str | None) -> None:
+    async def _sync_round(primary_status: str) -> None:
         nonlocal synced
-        round_filters = dict(base_filters)
-        if primary_status:
-            round_filters["primary_status"] = primary_status
-
-        async for payload, page_context in ttb_client.iter_gmvmax_campaigns(
-            advertiser_id, **round_filters
-        ):
-            if not isinstance(payload, dict):
-                continue
-            campaign_identifier = _normalize_identifier(
-                _extract_field(payload, "campaign_id", "id")
-            )
-            if not campaign_identifier:
-                continue
-
-            campaign_details: Mapping[str, Any] | None = None
-            if campaign_identifier not in details_cache:
-                details_cache[campaign_identifier] = await _fetch_campaign_details(
-                    ttb_client,
-                    advertiser_id=str(advertiser_id),
-                    campaign_id=campaign_identifier,
-                )
-            campaign_details = details_cache.get(campaign_identifier)
-
-            resolved_store_id = _extract_field_from_sources(
-                ("store_id", "shop_id"), campaign_details, payload
-            )
-            if not resolved_store_id:
-                resolved_store_id = _resolve_store_id(
-                    advertiser_id=advertiser_id,
-                    campaign_payload=payload,
-                    page_context=page_context,
-                )
-            if not resolved_store_id and campaign_details:
-                resolved_store_id = _extract_field_from_sources(
-                    ("store_id", "shop_id"), campaign_details
-                )
-
-            normalized_store_id = _normalize_identifier(resolved_store_id)
-            if bound_store_id:
-                if normalized_store_id is None:
-                    logger.info(
-                        "skipping campaign without store_id due to binding",
-                        extra={
-                            "workspace_id": workspace_id,
-                            "auth_id": auth_id,
-                            "advertiser_id": advertiser_id,
-                            "campaign_id": campaign_identifier,
-                            "bound_store_id": bound_store_id,
-                        },
-                    )
-                    continue
-                if normalized_store_id != bound_store_id:
-                    logger.info(
-                        "skipping campaign for unrelated store",
-                        extra={
-                            "workspace_id": workspace_id,
-                            "auth_id": auth_id,
-                            "advertiser_id": advertiser_id,
-                            "campaign_id": campaign_identifier,
-                            "store_id": normalized_store_id,
-                            "bound_store_id": bound_store_id,
-                        },
-                    )
-                    continue
-
-            promotion_type = _normalize_promotion_type(
-                _extract_field_from_sources(
-                    ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
-                    campaign_details,
-                    payload,
-                )
-            )
-            store_for_round = normalized_store_id or str(resolved_store_id or "")
-
-            upsert_campaign_from_api(
-                db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
+        page = 1
+        while True:
+            request = GMVMaxCampaignGetRequest(
                 advertiser_id=str(advertiser_id),
-                payload=payload,
-                store_id_hint=store_for_round,
-                campaign_details=campaign_details,
-                promotion_type=promotion_type,
-                primary_status_hint=hint,
+                filtering=GMVMaxCampaignFiltering(
+                    gmv_max_promotion_types=base_filters.get(
+                        "gmv_max_promotion_types", ["PRODUCT_GMV_MAX"]
+                    ),
+                    store_ids=base_filters.get("store_ids"),
+                    campaign_ids=base_filters.get("campaign_ids"),
+                    primary_status=primary_status,
+                ),
+                page_size=50,
+                page=page,
             )
-            synced += 1
+            response = await ttb_client.gmv_max_campaign_get(request)
+            data = response.data
+
+            for item in data.list or []:
+                payload: Mapping[str, Any] | dict[str, Any]
+                if isinstance(item, Mapping):
+                    payload = item
+                else:
+                    try:
+                        payload = item.model_dump()
+                    except AttributeError:
+                        payload = dict(item)
+
+                if not isinstance(payload, Mapping):
+                    continue
+
+                campaign_identifier = _normalize_identifier(
+                    _extract_field(payload, "campaign_id", "id")
+                )
+                if not campaign_identifier:
+                    continue
+
+                campaign_details: Mapping[str, Any] | None = None
+                if campaign_identifier not in details_cache:
+                    details_cache[campaign_identifier] = await _fetch_campaign_details(
+                        ttb_client,
+                        advertiser_id=str(advertiser_id),
+                        campaign_id=campaign_identifier,
+                    )
+                campaign_details = details_cache.get(campaign_identifier)
+
+                resolved_store_id = _extract_field_from_sources(
+                    ("store_id", "shop_id"), campaign_details, payload
+                )
+                if not resolved_store_id and campaign_details:
+                    resolved_store_id = _extract_field_from_sources(
+                        ("store_id", "shop_id"), campaign_details
+                    )
+
+                normalized_store_id = _normalize_identifier(resolved_store_id)
+                if bound_store_id:
+                    if normalized_store_id is None:
+                        logger.info(
+                            "skipping campaign without store_id due to binding",
+                            extra={
+                                "workspace_id": workspace_id,
+                                "auth_id": auth_id,
+                                "advertiser_id": advertiser_id,
+                                "campaign_id": campaign_identifier,
+                                "bound_store_id": bound_store_id,
+                            },
+                        )
+                        continue
+                    if normalized_store_id != bound_store_id:
+                        logger.info(
+                            "skipping campaign for unrelated store",
+                            extra={
+                                "workspace_id": workspace_id,
+                                "auth_id": auth_id,
+                                "advertiser_id": advertiser_id,
+                                "campaign_id": campaign_identifier,
+                                "store_id": normalized_store_id,
+                                "bound_store_id": bound_store_id,
+                            },
+                        )
+                        continue
+
+                promotion_type = _normalize_promotion_type(
+                    _extract_field_from_sources(
+                        ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
+                        campaign_details,
+                        payload,
+                    )
+                )
+                store_for_round = normalized_store_id or str(resolved_store_id or "")
+
+                upsert_campaign_from_api(
+                    db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=str(advertiser_id),
+                    payload=payload,
+                    store_id_hint=store_for_round,
+                    campaign_details=campaign_details,
+                    promotion_type=promotion_type,
+                )
+                synced += 1
+
+            page_info = data.page_info
+            if not page_info or not page_info.total_page or page >= page_info.total_page:
+                break
+            page += 1
 
     # 一轮拉取 STATUS_NOT_DELETE（包含 ENABLE + DISABLE 等非删除），一轮拉取 STATUS_DELETE
-    await _sync_round("STATUS_NOT_DELETE", "STATUS_NOT_DELETE")
-    await _sync_round("STATUS_DELETE", "STATUS_DELETE")
+    await _sync_round("STATUS_NOT_DELETE")
+    await _sync_round("STATUS_DELETE")
 
     db.flush()
 
@@ -1714,7 +1740,6 @@ def upsert_campaign_from_api(
     store_id_hint: str | None = None,
     campaign_details: Mapping[str, Any] | None = None,
     promotion_type: PromotionTypeEnum | None = None,
-    primary_status_hint: str | None = None,
 ) -> GmvCampaign:
     if not isinstance(payload, dict):
         raise ValueError("payload must be dict")
@@ -1795,7 +1820,6 @@ def upsert_campaign_from_api(
         promotion_type_override=promotion_type_value,
         synced_at=datetime.now(timezone.utc),
         existing=existing,
-        primary_status_hint=primary_status_hint,
     )
     if existing is None:
         db.add(result)

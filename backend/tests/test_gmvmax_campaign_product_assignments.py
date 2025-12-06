@@ -146,7 +146,7 @@ def test_sync_campaign_product_assignments_updates_existing_rows(db_session):
         campaign=campaign,
         product_ids=["prod-1"],
         store_id_hint=None,
-        operation_status="DELETE",
+        operation_status="DISABLE",
         promotion_type=PromotionTypeEnum.PRODUCT,
     )
     db_session.flush()
@@ -159,7 +159,7 @@ def test_sync_campaign_product_assignments_updates_existing_rows(db_session):
 
     assert len(rows) == 2
     statuses = {row.item_group_id: row.operation_status for row in rows}
-    assert statuses["prod-1"] == "DELETE"
+    assert statuses["prod-1"] == "DISABLE"
     assert statuses["prod-2"] == "ENABLE"
 
 

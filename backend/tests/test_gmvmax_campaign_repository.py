@@ -1,11 +1,13 @@
 from datetime import datetime
 
 from sqlalchemy import func, select
+from datetime import datetime, timezone
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax import list_gmvmax_campaigns
+from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 
 
 def _next_id(db_session, model) -> int:
@@ -62,6 +64,16 @@ def _create_campaign(
     is_deleted: bool = False,
     deleted_at: datetime | None = None,
 ) -> GmvCampaign:
+    lifecycle_status, derived_deleted = _derive_campaign_lifecycle(
+        operation_status, secondary_status
+    )
+    effective_status = status or lifecycle_status
+    effective_deleted_at = deleted_at
+    effective_is_deleted = is_deleted or derived_deleted
+
+    if effective_is_deleted and effective_deleted_at is None:
+        effective_deleted_at = datetime.now(timezone.utc)
+
     campaign = GmvCampaign(
         id=_next_id(db_session, GmvCampaign),
         workspace_id=workspace_id,
@@ -70,13 +82,14 @@ def _create_campaign(
         campaign_id=campaign_id,
         store_id=store_id,
         name=name,
-        status=status,
+        status=effective_status,
         operation_status=operation_status,
         secondary_status=secondary_status,
+        lifecycle_status=lifecycle_status,
         ext_created_time=created_at,
         promotion_type=PromotionTypeEnum.PRODUCT,
-        is_deleted=is_deleted,
-        deleted_at=deleted_at,
+        is_deleted=effective_is_deleted,
+        deleted_at=effective_deleted_at,
     )
     db_session.add(campaign)
     db_session.flush()
@@ -228,7 +241,7 @@ def test_list_campaigns_filters_deleted_flag(db_session):
         campaign_id="cmp-active",
         store_id="store-1",
         name="Active",
-        status="ENABLE",
+        status="ACTIVE",
     )
     _create_campaign(
         db_session,
@@ -238,8 +251,7 @@ def test_list_campaigns_filters_deleted_flag(db_session):
         campaign_id="cmp-deleted",
         store_id="store-1",
         name="Deleted",
-        status="DELETE",
-        operation_status="DELETE",
+        operation_status="DISABLE",
         secondary_status="CAMPAIGN_STATUS_DELETE",
         is_deleted=True,
         deleted_at=datetime(2024, 1, 1),
