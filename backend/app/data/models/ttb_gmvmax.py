@@ -4,7 +4,6 @@ from app.data.models.gmv_restructured import (
     GmvActionLog,
     GmvCampaign,
     GmvCampaignProduct,
-    GmvCampaignSyncSnapshot,
     GmvCampaignMetricsDaily,
     GmvCampaignMetricsHourly,
     GmvCreativeHeating,
@@ -18,7 +17,6 @@ from app.data.models.gmv_restructured import (
 # ``app.data.models.ttb_gmvmax`` while operating on the new ``gmv_*`` tables.
 TTBGmvMaxCampaign = GmvCampaign
 TTBGmvMaxCampaignProduct = GmvCampaignProduct
-TTBGmvMaxCampaignSyncSnapshot = GmvCampaignSyncSnapshot
 TTBGmvMaxMetricsHourly = GmvCampaignMetricsHourly
 TTBGmvMaxMetricsDaily = GmvCampaignMetricsDaily
 TTBGmvMaxCreativeMetric = GmvCreativeMetricsDaily
@@ -35,7 +33,6 @@ TTBGmvMaxMetricsDaily.date = TTBGmvMaxMetricsDaily.stat_time_day
 __all__ = [
     "TTBGmvMaxCampaign",
     "TTBGmvMaxCampaignProduct",
-    "TTBGmvMaxCampaignSyncSnapshot",
     "TTBGmvMaxMetricsHourly",
     "TTBGmvMaxMetricsDaily",
     "TTBGmvMaxCreativeMetric",

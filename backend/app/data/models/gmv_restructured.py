@@ -120,7 +120,12 @@ class GmvCampaign(Base):
     status: Mapped[str | None] = mapped_column(
         String(64),
         default=None,
-        comment="Primary status from list endpoints; stored verbatim for active filters",
+        comment="Internal lifecycle status (ACTIVE/INACTIVE/DELETED)",
+    )
+    primary_status: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        comment="Official primary_status filter value from campaign/get",
     )
     operation_status: Mapped[str | None] = mapped_column(
         String(128),
@@ -281,74 +286,6 @@ class GmvLivestream(Base):
     live_launched_time: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
     live_duration_seconds: Mapped[int | None] = mapped_column(Integer, default=None)
 
-    created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP(6)"),
-        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
-    )
-
-
-class GmvCampaignSyncSnapshot(Base):
-    """Raw sync snapshots for GMV Max campaign pulls."""
-
-    __tablename__ = "gmv_campaign_sync_snapshots"
-    __table_args__ = (
-        UniqueConstraint(
-            "workspace_id",
-            "auth_id",
-            "advertiser_id",
-            "store_id",
-            "campaign_id",
-            "snapshot_type",
-            "synced_at",
-            name="uk_gmv_campaign_sync_snapshot",
-        ),
-        Index(
-            "idx_gmv_campaign_sync_snapshot_scope",
-            "workspace_id",
-            "auth_id",
-            "advertiser_id",
-            "store_id",
-            "campaign_id",
-        ),
-        Index("idx_gmv_campaign_sync_snapshot_time", "synced_at"),
-    )
-
-    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
-    workspace_id: Mapped[int] = mapped_column(
-        UBigInt,
-        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
-        nullable=False,
-    )
-    auth_id: Mapped[int] = mapped_column(
-        UBigInt,
-        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
-        nullable=False,
-    )
-
-    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    promotion_type: Mapped[PromotionTypeEnum | None] = mapped_column(
-        SqlEnum(PromotionTypeEnum), nullable=True
-    )
-    snapshot_type: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default=text("'CAMPAIGN'")
-    )
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    raw_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    synced_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP(6)"),
-    )
-    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
-    deleted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )

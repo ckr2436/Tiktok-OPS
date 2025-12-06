@@ -14,6 +14,7 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
         "campaign_name": "Test GMV Max",
         "shopping_ads_type": "PRODUCT",
         "operation_status": "DISABLE",
+        "secondary_status": "campaign_status_enable",
         "optimization_goal": "GMV",
         "deep_bid_type": "COST",
         "roas_bid": "1.23456",
@@ -33,6 +34,7 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
         advertiser_id="adv",
         info=info,
         synced_at=synced_at,
+        primary_status_hint="STATUS_NOT_DELETE",
     )
     db_session.add(campaign)
     db_session.commit()
@@ -50,6 +52,50 @@ def test_map_gmvmax_campaign_info_to_model(db_session):
     assert campaign.ext_created_time == synced_at
     assert campaign.ext_updated_time == datetime(2024, 3, 2, 0, 0, 0)
     assert campaign.raw_json.get("promotion_days") is None
+    assert campaign.primary_status == "STATUS_NOT_DELETE"
+    assert campaign.secondary_status == "CAMPAIGN_STATUS_ENABLE"
+    assert campaign.status == "ACTIVE"
+    assert campaign.is_deleted is False
+    assert campaign.deleted_at is None
+
+
+def test_map_gmvmax_campaign_deleted_state(db_session):
+    deleted_synced_at = datetime(2024, 4, 1, 0, 0, 0)
+    deleted_payload = {
+        "campaign_id": "del-1",
+        "campaign_name": "Deleted GMV Max",
+        "shopping_ads_type": "PRODUCT",
+        "secondary_status": "CAMPAIGN_STATUS_DELETE",
+        "operation_status": "DISABLE",
+    }
+
+    campaign = map_gmvmax_campaign_info_to_model(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        info=deleted_payload,
+        synced_at=deleted_synced_at,
+        primary_status_hint="STATUS_DELETE",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+
+    assert campaign.primary_status == "STATUS_DELETE"
+    assert campaign.secondary_status == "CAMPAIGN_STATUS_DELETE"
+    assert campaign.status == "DELETED"
+    assert campaign.is_deleted is True
+    assert campaign.deleted_at == deleted_synced_at
+
+    later_sync = map_gmvmax_campaign_info_to_model(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        info=deleted_payload,
+        synced_at=datetime(2024, 4, 2, 0, 0, 0),
+        existing=campaign,
+        primary_status_hint="STATUS_DELETE",
+    )
+    assert later_sync.deleted_at == deleted_synced_at
 
 
 def test_select_active_campaigns_filters_and_limits(db_session):
@@ -64,7 +110,7 @@ def test_select_active_campaigns_filters_and_limits(db_session):
                 advertiser_id="adv",
                 campaign_id=str(i),
                 promotion_type=PromotionTypeEnum.PRODUCT,
-                status="ENABLE",
+                status="ACTIVE",
                 operation_status="ENABLE",
                 ext_updated_time=base_time + timedelta(minutes=i),
                 is_deleted=False,
@@ -79,7 +125,7 @@ def test_select_active_campaigns_filters_and_limits(db_session):
             advertiser_id="adv",
             campaign_id="inactive",
             promotion_type=PromotionTypeEnum.PRODUCT,
-            status="PAUSED",
+            status="INACTIVE",
             operation_status="ENABLE",
             ext_updated_time=base_time + timedelta(hours=1),
             is_deleted=False,
@@ -93,10 +139,10 @@ def test_select_active_campaigns_filters_and_limits(db_session):
             advertiser_id="adv",
             campaign_id="deleted",
             promotion_type=PromotionTypeEnum.PRODUCT,
-            status="ENABLE",
-            operation_status="DELETE",
+            status="DELETED",
+            operation_status="DISABLE",
             ext_updated_time=base_time + timedelta(hours=2),
-            is_deleted=False,
+            is_deleted=True,
             store_id="store",
         )
     )
@@ -120,5 +166,5 @@ def test_select_active_campaigns_filters_and_limits(db_session):
     # Ordered by ext_updated_time desc, so the highest numeric campaign_id is first
     assert campaigns[0].campaign_id == "34"
     assert campaigns[-1].campaign_id == "5"
-    assert all(c.operation_status != "DELETE" for c in campaigns)
-    assert all(c.status in {"ENABLE", "ENABLED", "ACTIVE", "DELIVERING", "RUNNING"} for c in campaigns)
+    assert all(c.operation_status in {None, "ENABLE"} for c in campaigns)
+    assert all(c.status == "ACTIVE" for c in campaigns)

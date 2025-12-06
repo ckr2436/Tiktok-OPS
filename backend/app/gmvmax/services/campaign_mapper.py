@@ -109,6 +109,7 @@ def map_gmvmax_campaign_info_to_model(
     promotion_type_override: PromotionTypeEnum | None = None,
     synced_at: datetime | None = None,
     existing: GmvCampaign | None = None,
+    primary_status_hint: str | None = None,
 ) -> GmvCampaign:
     """Map TikTok GMV Max campaign info payloads into a ``GmvCampaign``.
 
@@ -149,8 +150,20 @@ def map_gmvmax_campaign_info_to_model(
     instance.shopping_ads_type = promotion_raw if promotion_raw is not None else instance.shopping_ads_type
 
     instance.name = payload.get("campaign_name") or payload.get("name")
-    instance.status = _normalize_status(status_value or payload.get("status") or payload.get("campaign_status"))
-    instance.operation_status = payload.get("operation_status")
+
+    normalized_primary_status = _normalize_status(primary_status_hint)
+    normalized_secondary_status = _normalize_status(
+        payload.get("secondary_status") or payload.get("campaign_status")
+    )
+    normalized_operation_status = _normalize_status(payload.get("operation_status"))
+
+    # 先合并出“有效”的远端状态，再写回字段，避免没有状态字段的详情请求把本地状态抹掉
+    effective_primary_status = normalized_primary_status or instance.primary_status
+    effective_secondary_status = normalized_secondary_status or instance.secondary_status
+
+    instance.primary_status = effective_primary_status
+    instance.secondary_status = effective_secondary_status
+    instance.operation_status = normalized_operation_status or instance.operation_status
     instance.optimization_goal = payload.get("optimization_goal")
     instance.bid_type = payload.get("deep_bid_type") or payload.get("bid_type")
     instance.roas_bid = _to_decimal(payload.get("roas_bid"), quantize=Decimal("0.0001"))
@@ -182,8 +195,27 @@ def map_gmvmax_campaign_info_to_model(
     instance.ext_updated_time = updated_time or resolved_synced
 
     instance.raw_json = raw_payload
-    instance.is_deleted = False
-    instance.deleted_at = None
+
+    # 删除判断优先看合并后的 primary/secondary，兼容列表 + 详情多次写入
+    is_remote_deleted = bool(
+        (effective_primary_status == "STATUS_DELETE")
+        or (effective_secondary_status == "CAMPAIGN_STATUS_DELETE")
+    )
+
+    if is_remote_deleted:
+        instance.status = "DELETED"
+        instance.is_deleted = True
+        if not instance.deleted_at:
+            instance.deleted_at = resolved_synced
+    else:
+        instance.is_deleted = False
+        instance.deleted_at = None
+        # 只有在知道 secondary_status 的情况下才重算 ACTIVE/INACTIVE，
+        # 否则保留已有 status（例如详情刷新场景）
+        if effective_secondary_status == "CAMPAIGN_STATUS_ENABLE":
+            instance.status = "ACTIVE"
+        elif instance.status is None:
+            instance.status = "INACTIVE"
 
     return instance
 

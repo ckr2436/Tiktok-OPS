@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.data.db import SessionLocal
@@ -18,13 +18,7 @@ from app.services.ttb_client_factory import build_ttb_gmvmax_client
 logger = logging.getLogger("gmv.services.gmvmax.sync")
 
 
-_ACTIVE_STATUSES = {
-    "ENABLE",
-    "ENABLED",
-    "ACTIVE",
-    "DELIVERING",
-    "RUNNING",
-}
+_ACTIVE_STATUSES = {"ACTIVE"}
 
 
 class GmvMaxSyncService:
@@ -77,14 +71,8 @@ class GmvMaxSyncService:
             select(TTBGmvMaxCampaign)
             .where(TTBGmvMaxCampaign.workspace_id == strategy.workspace_id)
             .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-            .where(promotion_filter)
             .where(TTBGmvMaxCampaign.status.in_(_ACTIVE_STATUSES))
-            .where(
-                or_(
-                    TTBGmvMaxCampaign.operation_status.is_(None),
-                    TTBGmvMaxCampaign.operation_status.notin_(("DELETE", "STATUS_DISABLE")),
-                )
-            )
+            .where(promotion_filter)
             .order_by(TTBGmvMaxCampaign.ext_updated_time.desc())
         )
 
@@ -117,7 +105,10 @@ class GmvMaxSyncService:
             if not campaigns:
                 logger.info(
                     "gmvmax creative 10min sync skipped: no active campaigns",
-                    extra={"strategy_id": strategy.id},
+                    extra={
+                        "strategy_id": strategy.id,
+                        "workspace_id": strategy.workspace_id,
+                    },
                 )
                 return
 
@@ -178,6 +169,10 @@ class GmvMaxSyncService:
                 extra={
                     "strategy_id": strategy.id,
                     "campaigns": len(campaigns),
+                    "workspace_id": strategy.workspace_id,
+                    "campaign_ids": [
+                        getattr(campaign, "campaign_id", None) for campaign in campaigns[:5]
+                    ],
                     "rows_written": rows_written,
                     "date": today.isoformat(),
                 },
