@@ -1,6 +1,6 @@
 Generic single-database configuration.
 
-Pending operational action: drop legacy snapshot table ``gmv_campaign_sync_snapshots`` from production databases once code rollout is complete.
+0052_drop_gmv_campaign_sync_snapshots removes the unused ``gmv_campaign_sync_snapshots`` table now that campaign lifecycle is sourced directly from ``gmv_campaigns``.
 
 GMV Max status normalization:
 

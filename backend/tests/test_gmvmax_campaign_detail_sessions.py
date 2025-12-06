@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timezone
 from typing import Any, List
 
 import pytest
@@ -10,11 +9,7 @@ from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.gmv_max import router_provider
 from app.features.tenants.ttb.router import router as ttb_router
-from app.data.models.gmv_restructured import (
-    GmvCampaign,
-    GmvCampaignSyncSnapshot,
-    PromotionTypeEnum,
-)
+from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.workspaces import Workspace
 from app.providers.tiktok_business.gmvmax_client import (
@@ -94,26 +89,7 @@ def campaign_detail_client(db_session):
         name="Primary",
         promotion_type=PromotionTypeEnum.PRODUCT,
     )
-    snapshot = GmvCampaignSyncSnapshot(
-        id=1,
-        workspace_id=workspace.id,
-        auth_id=account.id,
-        advertiser_id="adv-1",
-        store_id="store-1",
-        campaign_id=campaign.campaign_id,
-        promotion_type=PromotionTypeEnum.PRODUCT,
-        snapshot_type=router_provider.SNAPSHOT_TYPE_CAMPAIGN,
-        payload_json={
-            "campaign_id": campaign.campaign_id,
-            "advertiser_id": campaign.advertiser_id,
-            "store_id": campaign.store_id,
-            "operation_status": "ENABLE",
-        },
-        source="campaign-info",
-        raw_request_id="campaign-info",
-        synced_at=datetime.now(timezone.utc),
-    )
-    db_session.add_all([workspace, provider_app, account, campaign, snapshot])
+    db_session.add_all([workspace, provider_app, account, campaign])
     db_session.flush()
 
     stub_client = StubSessionClient()
