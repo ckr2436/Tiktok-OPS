@@ -39,7 +39,6 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignUpdateRequest,
     GMVMaxCreativeReportRequest,
     GMVMaxDataset,
-    GMVMaxSessionListRequest,
     GMVMaxExclusiveAuthorizationCreateRequest,
     GMVMaxExclusiveAuthorizationGetRequest,
     GMVMaxIdentityGetRequest,
@@ -1838,6 +1837,7 @@ async def fetch_and_cache_campaign_detail(
     campaign_id: str,
     include_sessions: bool = True,
 ) -> dict[str, Any]:
+    _ = include_sessions
     bound_store_id = _get_bound_store_id(db, workspace_id=workspace_id, auth_id=auth_id)
     info_request = GMVMaxCampaignInfoRequest(
         advertiser_id=str(advertiser_id), campaign_id=str(campaign_id)
@@ -1881,18 +1881,7 @@ async def fetch_and_cache_campaign_detail(
     )
     db.flush()
 
-    session_payload: dict[str, Any] | None = None
-    sessions_request_id: str | None = None
-    if include_sessions:
-        session_resp = await ttb_client.gmv_max_session_list(
-            GMVMaxSessionListRequest(
-                advertiser_id=str(advertiser_id),
-                campaign_id=str(campaign_id),
-            )
-        )
-        session_payload = session_resp.data.model_dump(exclude_none=True)
-        sessions_request_id = session_resp.request_id
-
+    synced_at = datetime.now(timezone.utc)
     store_id = info_resp.data.store_id or (local_row.store_id if local_row else "")
 
     upsert_campaign_from_api(
@@ -1910,8 +1899,8 @@ async def fetch_and_cache_campaign_detail(
     return {
         "campaign_id": str(campaign_id),
         "request_id": info_resp.request_id,
-        "sessions_request_id": sessions_request_id,
-        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "sessions_request_id": None,
+        "synced_at": synced_at.isoformat(),
     }
 
 

@@ -104,7 +104,6 @@ from app.services.gmvmax_spec import (
 from .service import _ensure_provider, list_action_logs
 from app.services.ttb_gmvmax import (
     SNAPSHOT_TYPE_CAMPAIGN,
-    SNAPSHOT_TYPE_CAMPAIGN_SESSION,
     _extract_item_group_ids_from_payload,
     _sanitize_id_list,
     build_gmvmax_anchor_params,
@@ -265,6 +264,55 @@ def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
         payload["deleted_at"] = row.deleted_at
     return GMVMaxCampaign.model_validate(payload)
 
+
+def _campaign_snapshot_to_detail(
+    snapshot: GmvCampaignSyncSnapshot | None, fallback_row: GmvCampaign
+) -> GMVMaxCampaignInfoData:
+    """Build a detailed campaign schema from the latest snapshot or DB row.
+
+    The campaign detail response expects ``GMVMaxCampaignInfoData``. When a
+    campaign snapshot payload is available, prefer that (it comes directly from
+    TikTok's campaign info API). If the snapshot is missing or malformed, fall
+    back to converting the persisted campaign row into the expected schema to
+    keep the endpoint resilient.
+    """
+
+    if snapshot and snapshot.payload_json:
+        try:
+            return GMVMaxCampaignInfoData.model_validate(snapshot.payload_json)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax campaign snapshot parse failed",
+                exc_info=True,
+                extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
+            )
+
+    # Fallback: reuse the list-view schema and coerce it into the detail model
+    fallback_campaign = _campaign_row_to_schema(fallback_row)
+    return GMVMaxCampaignInfoData.model_validate(
+        fallback_campaign.model_dump(exclude_none=True)
+    )
+
+
+def _latest_snapshot(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign_id: str,
+    snapshot_type: str,
+) -> GmvCampaignSyncSnapshot | None:
+    return (
+        db.query(GmvCampaignSyncSnapshot)
+        .filter(GmvCampaignSyncSnapshot.workspace_id == int(workspace_id))
+        .filter(GmvCampaignSyncSnapshot.auth_id == int(auth_id))
+        .filter(GmvCampaignSyncSnapshot.advertiser_id == str(advertiser_id))
+        .filter(GmvCampaignSyncSnapshot.campaign_id == str(campaign_id))
+        .filter(GmvCampaignSyncSnapshot.snapshot_type == snapshot_type)
+        .order_by(GmvCampaignSyncSnapshot.synced_at.desc())
+        .first()
+    )
 
 def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
     base_query = (
@@ -2426,7 +2474,7 @@ async def get_gmvmax_campaign_provider(
     include_sessions: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
-    """Read cached campaign detail/sessions persisted by async sync/refresh tasks."""
+    """Return campaign detail from cache and fetch sessions on demand when requested."""
 
     if context.db is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="database unavailable")
@@ -2445,14 +2493,38 @@ async def get_gmvmax_campaign_provider(
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             detail="campaign not found in cache; trigger refresh first",
-        )
+    )
 
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
     sessions_request_id: str | None = None
-    campaign_info = GMVMaxCampaignInfoData.model_validate(
-        _campaign_row_to_schema(row).model_dump(exclude_none=True)
-    )
+    if include_sessions:
+        try:
+            session_resp = await context.client.gmv_max_session_list(
+                GMVMaxSessionListRequest(
+                    advertiser_id=str(adv),
+                    campaign_id=str(campaign_id),
+                )
+            )
+            data = getattr(session_resp, "data", None)
+            raw_sessions = getattr(data, "list", None) or []
+            sessions = [GMVMaxSession.model_validate(item) for item in raw_sessions]
+            if getattr(data, "page_info", None):
+                sessions_page_info = PageInfo.model_validate(data.page_info)
+            sessions_request_id = getattr(session_resp, "request_id", None)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax session list fetch failed",
+                exc_info=True,
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "campaign_id": str(campaign_id),
+                    "advertiser_id": str(adv),
+                },
+            )
+
+    campaign_info = _campaign_snapshot_to_detail(info_snapshot, row)
 
     return CampaignDetailResponse(
         campaign=campaign_info,
