@@ -122,11 +122,6 @@ class GmvCampaign(Base):
         default=None,
         comment="Internal lifecycle status (ACTIVE/INACTIVE/DELETED)",
     )
-    primary_status: Mapped[str | None] = mapped_column(
-        String(64),
-        default=None,
-        comment="Official primary_status filter value from campaign/get",
-    )
     operation_status: Mapped[str | None] = mapped_column(
         String(128),
         default=None,
