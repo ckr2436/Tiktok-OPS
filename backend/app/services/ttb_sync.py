@@ -9,6 +9,7 @@ import contextlib
 logger = logging.getLogger("gmv.ttb.sync")
 
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.data.models.ttb_entities import (
@@ -211,17 +212,31 @@ def _upsert(
     conflict_columns: tuple[str, ...],
     update_columns: tuple[str, ...],
 ) -> None:
+    """
+    Best-effort upsert without dialect-specific ON CONFLICT/ON DUPLICATE KEY.
+
+    It prefers an UPDATE; if no rows are affected it attempts INSERT, and on
+    a concurrent unique-key insert falling back to UPDATE to avoid raising
+    IntegrityError in shared-key races.
+    """
     table = model.__table__
     filters = [getattr(table.c, col) == values[col] for col in conflict_columns]
     update_payload = {col: values[col] for col in update_columns if col in values}
     if "last_seen_at" in table.c:
         update_payload["last_seen_at"] = _now()
+
     result = db.execute(table.update().where(and_(*filters)).values(**update_payload))
-    if result.rowcount == 0:
-        insert_values = dict(values)
-        if "last_seen_at" in table.c and "last_seen_at" not in insert_values:
-            insert_values["last_seen_at"] = _now()
+    if result.rowcount:
+        return
+
+    insert_values = dict(values)
+    if "last_seen_at" in table.c and "last_seen_at" not in insert_values:
+        insert_values["last_seen_at"] = _now()
+
+    try:
         db.execute(table.insert().values(**insert_values))
+    except IntegrityError:
+        db.execute(table.update().where(and_(*filters)).values(**update_payload))
 
 
 def _touch_bc_advertiser_link(
