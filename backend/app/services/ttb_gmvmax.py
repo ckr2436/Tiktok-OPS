@@ -1164,35 +1164,78 @@ def get_item_group_ids_for_campaign(
         return []
 
     store_id = str(campaign.store_id or "")
+    promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
+    normalized_status = _normalize_status_value(campaign.operation_status)
+    operation_status = normalized_status or "ENABLE"
     for item_group_id in deduped_item_group_ids:
-        exists = (
+        existing = (
             db.query(GmvCampaignProduct)
-            .filter(
-                GmvCampaignProduct.workspace_id == campaign.workspace_id,
-                GmvCampaignProduct.auth_id == campaign.auth_id,
-                GmvCampaignProduct.campaign_id == campaign.campaign_id,
-                GmvCampaignProduct.store_id == store_id,
-                GmvCampaignProduct.item_group_id == item_group_id,
-            )
-            .first()
-        )
-        if exists:
-            continue
-        promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
-        db.add(
-            GmvCampaignProduct(
+            .filter_by(
                 workspace_id=campaign.workspace_id,
                 auth_id=campaign.auth_id,
-                campaign_pk=campaign.id,
-                campaign_id=campaign.campaign_id,
                 store_id=store_id,
                 item_group_id=item_group_id,
-                promotion_type=promotion_type,
-                operation_status="ENABLE",
             )
+            .one_or_none()
         )
 
-    db.flush()
+        new_values = dict(
+            campaign_pk=campaign.id,
+            campaign_id=campaign.campaign_id,
+            promotion_type=promotion_type,
+            operation_status=operation_status,
+        )
+
+        if existing is None:
+            db.add(
+                GmvCampaignProduct(
+                    workspace_id=campaign.workspace_id,
+                    auth_id=campaign.auth_id,
+                    store_id=store_id,
+                    item_group_id=item_group_id,
+                    **new_values,
+                )
+            )
+            continue
+
+        if (
+            existing.campaign_pk == new_values["campaign_pk"]
+            and existing.campaign_id == new_values["campaign_id"]
+            and existing.promotion_type == new_values["promotion_type"]
+            and existing.operation_status == new_values["operation_status"]
+        ):
+            continue
+
+        if existing.campaign_pk != new_values["campaign_pk"]:
+            existing.campaign_pk = new_values["campaign_pk"]
+        if existing.campaign_id != new_values["campaign_id"]:
+            existing.campaign_id = new_values["campaign_id"]
+        if existing.promotion_type != new_values["promotion_type"]:
+            existing.promotion_type = new_values["promotion_type"]
+        if existing.operation_status != new_values["operation_status"]:
+            existing.operation_status = new_values["operation_status"]
+
+    # Flush pending inserts/updates. In rare cases multiple workers may try to
+    # insert the same (workspace_id, auth_id, store_id, item_group_id) mapping
+    # concurrently, which would raise a duplicate-key IntegrityError on
+    # gmv_campaign_products.uk_gmv_store_product_unique. Treat that as benign
+    # by re-reading existing mappings from the database.
+    from sqlalchemy.exc import IntegrityError  # local import to avoid touching global imports
+
+    try:
+        # Use a nested transaction so that a duplicate-key failure here does
+        # not force the outer transaction into a failed state.
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError as exc:  # pragma: no cover - defensive concurrency guard
+        message = str(getattr(exc, "orig", exc))
+        if "gmv_campaign_products.uk_gmv_store_product_unique" not in message:
+            # Not the duplicate-key we expect; bubble it up.
+            raise
+        # Another transaction inserted the rows first; reuse the mappings
+        # already present in the database.
+        return _list_campaign_product_ids(db, campaign=campaign)
+
     return deduped_item_group_ids
 
 
