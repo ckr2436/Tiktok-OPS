@@ -1631,6 +1631,15 @@ async def sync_gmvmax_campaigns(
             response = await ttb_client.gmv_max_campaign_get(request)
             data = response.data
 
+            page_context: Mapping[str, Any] | None = None
+            try:  # pragma: no cover - defensive fallback for unexpected payloads
+                if hasattr(data, "model_dump"):
+                    page_context = data.model_dump(exclude_none=True)
+            except Exception:
+                page_context = None
+            if not isinstance(page_context, Mapping) and isinstance(data, Mapping):
+                page_context = data
+
             for item in data.list or []:
                 payload: Mapping[str, Any] | dict[str, Any]
                 if isinstance(item, Mapping):
@@ -1662,6 +1671,12 @@ async def sync_gmvmax_campaigns(
                 resolved_store_id = _extract_field_from_sources(
                     ("store_id", "shop_id"), campaign_details, payload
                 )
+                if not resolved_store_id:
+                    resolved_store_id = _resolve_store_id(
+                        advertiser_id=str(advertiser_id),
+                        campaign_payload=payload,
+                        page_context=page_context or {},
+                    )
                 if not resolved_store_id and campaign_details:
                     resolved_store_id = _extract_field_from_sources(
                         ("store_id", "shop_id"), campaign_details

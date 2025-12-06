@@ -107,3 +107,82 @@ def test_sync_gmvmax_campaigns_filters_by_primary_status_only(db_session):
     assert by_id["camp-C"].is_deleted is True
 
     assert all(row.lifecycle_status != "DELETED" for row in campaigns if row.secondary_status != "CAMPAIGN_STATUS_DELETE")
+
+
+def test_bound_store_resolves_from_page_context(db_session, monkeypatch):
+    monkeypatch.setattr("app.services.ttb_gmvmax._get_bound_store_id", lambda *_, **__: "store-1")
+
+    page = GMVMaxCampaignListData(
+        list=[GMVMaxCampaign(campaign_id="camp-page-context")],
+        page_info=PageInfo(page=1, total_page=1),
+        links={"advertiser_to_stores": {"adv": ["store-1"]}},
+        stores=[{"store_id": "store-1"}],
+    )
+
+    client = _DummyCampaignClient({"STATUS_NOT_DELETE": [page], "STATUS_DELETE": []})
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="adv",
+        )
+    )
+    db_session.commit()
+
+    campaigns = db_session.query(GmvCampaign).all()
+    assert len(campaigns) == 1
+    assert campaigns[0].campaign_id == "camp-page-context"
+    assert campaigns[0].store_id == "store-1"
+
+
+def test_bound_store_missing_everywhere_skips_campaign(db_session, monkeypatch):
+    monkeypatch.setattr("app.services.ttb_gmvmax._get_bound_store_id", lambda *_, **__: "store-1")
+
+    page = GMVMaxCampaignListData(
+        list=[GMVMaxCampaign(campaign_id="camp-no-store")],
+        page_info=PageInfo(page=1, total_page=1),
+    )
+
+    client = _DummyCampaignClient({"STATUS_NOT_DELETE": [page], "STATUS_DELETE": []})
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="adv",
+        )
+    )
+    db_session.commit()
+
+    assert db_session.query(GmvCampaign).count() == 0
+
+
+def test_bound_store_resolves_mismatch_and_skips(db_session, monkeypatch):
+    monkeypatch.setattr("app.services.ttb_gmvmax._get_bound_store_id", lambda *_, **__: "store-1")
+
+    page = GMVMaxCampaignListData(
+        list=[GMVMaxCampaign(campaign_id="camp-other-store")],
+        page_info=PageInfo(page=1, total_page=1),
+        links={"advertiser_to_stores": {"adv": ["store-2"]}},
+        stores=[{"store_id": "store-2"}],
+    )
+
+    client = _DummyCampaignClient({"STATUS_NOT_DELETE": [page], "STATUS_DELETE": []})
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            client,
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="adv",
+        )
+    )
+    db_session.commit()
+
+    assert db_session.query(GmvCampaign).count() == 0
