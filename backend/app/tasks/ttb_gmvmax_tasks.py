@@ -316,7 +316,11 @@ def task_gmvmax_fetch_campaign_detail(
     include_sessions: bool = True,
     **extra: Any,
 ) -> dict:
-    """Fetch campaign detail/session data via TikTok and persist snapshots asynchronously."""
+    """Fetch campaign detail via TikTok and refresh cached campaign rows asynchronously.
+
+    Session data is fetched on-demand by the detail route and is no longer cached by
+    this task.
+    """
 
     db = _db_session()
     try:

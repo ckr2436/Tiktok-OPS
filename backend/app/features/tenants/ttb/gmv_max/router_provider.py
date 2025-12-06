@@ -105,7 +105,6 @@ from app.services.gmvmax_spec import (
 from .service import _ensure_provider, list_action_logs
 from app.services.ttb_gmvmax import (
     SNAPSHOT_TYPE_CAMPAIGN,
-    SNAPSHOT_TYPE_CAMPAIGN_SESSION,
     _extract_item_group_ids_from_payload,
     _sanitize_id_list,
     build_gmvmax_anchor_params,
@@ -315,27 +314,6 @@ def _latest_snapshot(
         .order_by(GmvCampaignSyncSnapshot.synced_at.desc())
         .first()
     )
-
-
-def _deserialize_sessions(snapshot: GmvCampaignSyncSnapshot | None) -> tuple[list[GMVMaxSession], PageInfo | None, str | None]:
-    if snapshot is None or not snapshot.payload_json:
-        return [], None, None
-    payload = snapshot.payload_json
-    sessions: list[GMVMaxSession] = []
-    page_info: PageInfo | None = None
-    try:
-        session_list = payload.get("list") or []
-        sessions = [GMVMaxSession.model_validate(item) for item in session_list]
-        if payload.get("page_info"):
-            page_info = PageInfo.model_validate(payload.get("page_info"))
-    except Exception:  # noqa: BLE001
-        logger.warning(
-            "gmvmax session snapshot parse failed",
-            exc_info=True,
-            extra={"snapshot_id": snapshot.id, "campaign_id": snapshot.campaign_id},
-        )
-    return sessions, page_info, snapshot.raw_request_id
-
 
 def _count_products(db: Session, *, workspace_id: int, auth_id: int, store_id: str) -> tuple[int, int]:
     base_query = (
@@ -2497,7 +2475,7 @@ async def get_gmvmax_campaign_provider(
     include_sessions: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
-    """Read cached campaign detail/sessions persisted by async sync/refresh tasks."""
+    """Return campaign detail from cache and fetch sessions on demand when requested."""
 
     if context.db is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="database unavailable")
@@ -2516,7 +2494,7 @@ async def get_gmvmax_campaign_provider(
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             detail="campaign not found in cache; trigger refresh first",
-        )
+    )
 
     info_snapshot = _latest_snapshot(
         context.db,
@@ -2531,16 +2509,30 @@ async def get_gmvmax_campaign_provider(
     sessions_page_info = None
     sessions_request_id: str | None = None
     if include_sessions:
-        sessions, sessions_page_info, sessions_request_id = _deserialize_sessions(
-            _latest_snapshot(
-                context.db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=str(adv),
-                campaign_id=str(campaign_id),
-                snapshot_type=SNAPSHOT_TYPE_CAMPAIGN_SESSION,
+        try:
+            session_resp = await context.client.gmv_max_session_list(
+                GMVMaxSessionListRequest(
+                    advertiser_id=str(adv),
+                    campaign_id=str(campaign_id),
+                )
             )
-        )
+            data = getattr(session_resp, "data", None)
+            raw_sessions = getattr(data, "list", None) or []
+            sessions = [GMVMaxSession.model_validate(item) for item in raw_sessions]
+            if getattr(data, "page_info", None):
+                sessions_page_info = PageInfo.model_validate(data.page_info)
+            sessions_request_id = getattr(session_resp, "request_id", None)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "gmvmax session list fetch failed",
+                exc_info=True,
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "campaign_id": str(campaign_id),
+                    "advertiser_id": str(adv),
+                },
+            )
 
     campaign_info = _campaign_snapshot_to_detail(info_snapshot, row)
 
