@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.mysql import insert
@@ -55,13 +55,6 @@ def _floor_snapshot(now: datetime | None = None) -> datetime:
     current = now or datetime.utcnow()
     floored_minute = (current.minute // 10) * 10
     return current.replace(minute=floored_minute, second=0, microsecond=0)
-
-
-def _serialize_payload(metrics: Mapping[str, Any], dimensions: Mapping[str, Any]) -> dict[str, Any]:
-    payload = {"metrics": dict(metrics), "dimensions": dict(dimensions)}
-    return payload
-
-
 async def sync_creative_metrics_10min_for_campaign(
     session: Session,
     client: TikTokBusinessGMVMaxClient,
@@ -120,7 +113,6 @@ async def sync_creative_metrics_10min_for_campaign(
             logger.warning("gmvmax creative metrics missing stat_time_day", extra={"dimensions": dimensions})
             continue
 
-        payload = _serialize_payload(metrics, dimensions)
         insert_stmt = insert(TTBGmvMaxCreativeMetrics10Min).values(
             campaign_id=str(campaign.campaign_id),
             creative_id=creative_id,
@@ -142,7 +134,6 @@ async def sync_creative_metrics_10min_for_campaign(
             net_cost_cents=_to_cents(metrics.get("net_cost")),
             gross_revenue_cents=_to_cents(metrics.get("gross_revenue")),
             roi=_to_decimal(metrics.get("roi")),
-            raw_metrics=payload,
         )
 
         update_stmt = insert_stmt.on_duplicate_key_update(
@@ -162,7 +153,6 @@ async def sync_creative_metrics_10min_for_campaign(
             net_cost_cents=insert_stmt.inserted.net_cost_cents,
             gross_revenue_cents=insert_stmt.inserted.gross_revenue_cents,
             roi=insert_stmt.inserted.roi,
-            raw_metrics=insert_stmt.inserted.raw_metrics,
             snapshot_at=insert_stmt.inserted.snapshot_at,
         )
 
