@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.data.models.gmv_restructured import (
@@ -342,30 +342,11 @@ def mark_campaigns_deleted_for_scope(
     return int(result.rowcount or 0)
 
 
-_BLOCKED_SECONDARY_STATUSES = {
-    "CAMPAIGN_STATUS_DELETE",
-}
-
-
 def _order_desc_nulls_last(col):
     return [
         case((col.is_(None), 1), else_=0).asc(),
         col.desc(),
     ]
-
-
-def _allowed_operation_status_clause():
-    return or_(
-        GmvCampaign.operation_status.is_(None),
-        GmvCampaign.operation_status.in_(("ENABLE", "DISABLE")),
-    )
-
-
-def _exclude_blocked_secondary_statuses():
-    return or_(
-        GmvCampaign.secondary_status.is_(None),
-        GmvCampaign.secondary_status.notin_(tuple(_BLOCKED_SECONDARY_STATUSES)),
-    )
 
 
 def list_gmvmax_campaigns(
@@ -389,11 +370,10 @@ def list_gmvmax_campaigns(
 
     if not include_deleted:
         query = query.filter(GmvCampaign.is_deleted.is_(False))
-        query = query.filter(_exclude_blocked_secondary_statuses())
-        query = query.filter(_allowed_operation_status_clause())
+        query = query.filter(GmvCampaign.lifecycle_status != "DELETED")
 
     if status_filter:
-        query = query.filter(GmvCampaign.status == status_filter)
+        query = query.filter(GmvCampaign.lifecycle_status == status_filter)
     if search:
         pattern = f"%{search}%"
         query = query.filter(GmvCampaign.name.ilike(pattern))

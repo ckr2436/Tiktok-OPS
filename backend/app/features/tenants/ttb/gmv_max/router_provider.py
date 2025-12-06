@@ -44,6 +44,7 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
     upsert_creative_heating,
 )
 from app.data.repositories.tiktok_business.gmvmax_metrics import GMVMaxMetricDTO
+from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 from app.providers.tiktok_business.gmvmax_client import (
     CampaignStatusUpdateRequest,
     GMVMaxBidRecommendRequest,
@@ -798,13 +799,10 @@ def _normalize_status(value: Optional[str]) -> str:
 
 
 def _should_include_campaign(entry: GMVMaxCampaign) -> bool:
-    operation_status = _normalize_status(entry.operation_status)
-    if operation_status == "DELETE":
-        return False
-    secondary_status = _normalize_status(entry.secondary_status)
-    if secondary_status == "CAMPAIGN_STATUS_DELETE":
-        return False
-    return True
+    lifecycle_status, is_deleted = _derive_campaign_lifecycle(
+        _normalize_status(entry.operation_status), _normalize_status(entry.secondary_status)
+    )
+    return lifecycle_status != "DELETED" and not is_deleted
 
 
 def _filter_campaign_entries(entries: Optional[Sequence[GMVMaxCampaign | Dict[str, Any]]]) -> List[GMVMaxCampaign]:
@@ -1255,7 +1253,8 @@ async def _ensure_campaign_products_available(
         .where(GmvCampaignProduct.auth_id == int(context.auth_id))
         .where(GmvCampaignProduct.store_id == str(store_id))
         .where(GmvCampaignProduct.item_group_id.in_(product_ids))
-        .where(func.lower(GmvCampaign.operation_status) == "enable")
+        .where(GmvCampaign.is_deleted.is_(False))
+        .where(GmvCampaign.lifecycle_status == "ACTIVE")
     )
     if getattr(campaign, "id", None) is not None:
         conflict_stmt = conflict_stmt.where(
@@ -2394,17 +2393,8 @@ async def list_gmvmax_campaigns_provider(
     if primary_status:
         query = query.filter(GmvCampaign.status == str(primary_status))
     if not include_deleted:
-        query = query.filter(GmvCampaign.is_deleted.is_(False)).filter(
-            or_(
-                GmvCampaign.operation_status.is_(None),
-                GmvCampaign.operation_status != "DELETE",
-            )
-        ).filter(
-            or_(
-                GmvCampaign.secondary_status.is_(None),
-                GmvCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
-            )
-        )
+        query = query.filter(GmvCampaign.is_deleted.is_(False))
+        query = query.filter(GmvCampaign.lifecycle_status != "DELETED")
 
     total = query.count()
     rows = (
