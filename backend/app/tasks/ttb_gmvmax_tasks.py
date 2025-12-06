@@ -22,6 +22,7 @@ from app.services.gmvmax_creative_metrics import (
     latest_creative_metrics_snapshots,
     sync_creative_metrics_10min_for_campaign,
 )
+from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 from app.services.ttb_api import TTBBusinessError
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
@@ -126,24 +127,79 @@ def _iter_active_campaigns(
         .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
         .where(TTBGmvMaxCampaign.auth_id == auth_id)
         .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-        .where(
-            or_(
-                TTBGmvMaxCampaign.operation_status.is_(None),
-                TTBGmvMaxCampaign.operation_status.notin_(
-                    ("DELETE", "STATUS_DISABLE")
-                ),
-            )
-        )
-    )
-    query = query.where(
-        or_(
-            TTBGmvMaxCampaign.secondary_status.is_(None),
-            TTBGmvMaxCampaign.secondary_status != "CAMPAIGN_STATUS_DELETE",
-        )
+        .where(TTBGmvMaxCampaign.lifecycle_status == "ACTIVE")
     )
     if advertiser_id is not None:
         query = query.where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
     return list(db.execute(query).scalars().all())
+
+
+@celery_app.task(
+    bind=True,
+    name="gmvmax.reconcile_campaign_status",
+    queue="gmvmax",
+)
+def reconcile_campaign_status(self, batch_size: int = 500) -> dict:
+    """Repair lifecycle_status/is_deleted drift for GMV campaigns."""
+
+    db = _db_session()
+    scanned = 0
+    updated = 0
+    last_id = 0
+
+    try:
+        while True:
+            rows = (
+                db.execute(
+                    select(TTBGmvMaxCampaign)
+                    .where(TTBGmvMaxCampaign.id > last_id)
+                    .order_by(TTBGmvMaxCampaign.id)
+                    .limit(int(batch_size))
+                )
+                .scalars()
+                .all()
+            )
+
+            if not rows:
+                break
+
+            last_id = getattr(rows[-1], "id", last_id)
+
+            for row in rows:
+                scanned += 1
+                expected_status, expected_deleted = _derive_campaign_lifecycle(
+                    row.operation_status, row.secondary_status
+                )
+
+                if (
+                    row.lifecycle_status != expected_status
+                    or bool(row.is_deleted) != bool(expected_deleted)
+                ):
+                    logger.warning(
+                        "gmvmax lifecycle drift repaired",
+                        extra={
+                            "campaign_pk": getattr(row, "id", None),
+                            "campaign_id": getattr(row, "campaign_id", None),
+                            "old": {
+                                "lifecycle_status": row.lifecycle_status,
+                                "is_deleted": bool(row.is_deleted),
+                            },
+                            "new": {
+                                "lifecycle_status": expected_status,
+                                "is_deleted": bool(expected_deleted),
+                            },
+                        },
+                    )
+                    row.lifecycle_status = expected_status
+                    row.status = expected_status
+                    row.is_deleted = bool(expected_deleted)
+                    updated += 1
+
+            db.commit()
+    finally:
+        _close_session(db)
+
+    return {"status": "ok", "scanned": scanned, "updated": updated}
 
 
 # Beat-driven sweep (see scheduler_catalog) to sync all GMV Max scopes via

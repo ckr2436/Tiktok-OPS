@@ -18,7 +18,7 @@ from app.services.ttb_client_factory import build_ttb_gmvmax_client
 logger = logging.getLogger("gmv.services.gmvmax.sync")
 
 
-_ACTIVE_STATUSES = {"ACTIVE"}
+_ACTIVE_LIFECYCLE_STATUSES = {"ACTIVE"}
 
 
 class GmvMaxSyncService:
@@ -71,7 +71,7 @@ class GmvMaxSyncService:
             select(TTBGmvMaxCampaign)
             .where(TTBGmvMaxCampaign.workspace_id == strategy.workspace_id)
             .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-            .where(TTBGmvMaxCampaign.status.in_(_ACTIVE_STATUSES))
+            .where(TTBGmvMaxCampaign.lifecycle_status.in_(_ACTIVE_LIFECYCLE_STATUSES))
             .where(promotion_filter)
             .order_by(TTBGmvMaxCampaign.ext_updated_time.desc())
         )

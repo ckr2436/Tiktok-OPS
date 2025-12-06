@@ -62,7 +62,7 @@ def _create_campaign(
     advertiser_id: str,
     campaign_id: str,
     store_id: str,
-    status: str,
+    lifecycle_status: str,
     is_deleted: bool,
     ext_updated_time: datetime,
 ) -> GmvCampaign:
@@ -73,7 +73,8 @@ def _create_campaign(
         campaign_id=campaign_id,
         store_id=store_id,
         promotion_type=PromotionTypeEnum.PRODUCT,
-        status=status,
+        status=lifecycle_status,
+        lifecycle_status=lifecycle_status,
         is_deleted=is_deleted,
         ext_updated_time=ext_updated_time,
     )
@@ -97,7 +98,7 @@ def _build_strategy(workspace_id: int, auth_id: int | None = None) -> Monitoring
     )
 
 
-def test_select_active_campaigns_filters_by_status(db_session):
+def test_select_active_campaigns_filters_by_lifecycle_status(db_session):
     workspace_id, auth_id = _ensure_account(db_session)
     active = _create_campaign(
         db_session,
@@ -106,7 +107,7 @@ def test_select_active_campaigns_filters_by_status(db_session):
         advertiser_id="adv-1",
         campaign_id="active-1",
         store_id="store-1",
-        status="ACTIVE",
+        lifecycle_status="ACTIVE",
         is_deleted=False,
         ext_updated_time=datetime(2024, 1, 3),
     )
@@ -117,7 +118,7 @@ def test_select_active_campaigns_filters_by_status(db_session):
         advertiser_id="adv-1",
         campaign_id="inactive-1",
         store_id="store-1",
-        status="INACTIVE",
+        lifecycle_status="INACTIVE",
         is_deleted=False,
         ext_updated_time=datetime(2024, 1, 2),
     )
@@ -128,9 +129,20 @@ def test_select_active_campaigns_filters_by_status(db_session):
         advertiser_id="adv-1",
         campaign_id="deleted-1",
         store_id="store-1",
-        status="DELETED",
+        lifecycle_status="DELETED",
         is_deleted=True,
         ext_updated_time=datetime(2024, 1, 1),
+    )
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="corrupted-1",
+        store_id="store-1",
+        lifecycle_status="ACTIVE",
+        is_deleted=True,
+        ext_updated_time=datetime(2024, 1, 4),
     )
 
     strategy = _build_strategy(workspace_id, auth_id)
@@ -150,7 +162,7 @@ def test_sync_creative_logs_workspace_when_no_active(db_session, caplog):
         advertiser_id="adv-1",
         campaign_id="inactive-2",
         store_id="store-1",
-        status="INACTIVE",
+        lifecycle_status="INACTIVE",
         is_deleted=False,
         ext_updated_time=datetime(2024, 1, 5),
     )

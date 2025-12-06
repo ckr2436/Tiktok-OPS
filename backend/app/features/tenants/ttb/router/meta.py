@@ -377,7 +377,8 @@ def list_account_products(
             .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
             .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
             .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
-            .where(func.lower(TTBGmvMaxCampaign.operation_status) == "enable")
+            .where(TTBGmvMaxCampaign.is_deleted.is_(False))
+            .where(TTBGmvMaxCampaign.lifecycle_status == "ACTIVE")
         )
         if only_unassigned:
             base_query = base_query.filter(func.upper(TTBProduct.status) == "AVAILABLE")
