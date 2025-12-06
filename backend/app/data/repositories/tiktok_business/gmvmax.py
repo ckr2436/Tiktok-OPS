@@ -14,6 +14,7 @@ from app.data.models.gmv_restructured import (
     PromotionTypeEnum,
 )
 from app.gmvmax.services.campaign_mapper import map_gmvmax_campaign_info_to_model
+from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 
 
 def _normalize_identifier(value: Any) -> str | None:
@@ -308,6 +309,8 @@ def mark_campaigns_deleted_for_scope(
     if not ids:
         return 0
 
+    lifecycle_status, _ = _derive_campaign_lifecycle(None, "CAMPAIGN_STATUS_DELETE")
+
     stmt = (
         update(GmvCampaign)
         .where(GmvCampaign.workspace_id == workspace_id)
@@ -317,8 +320,8 @@ def mark_campaigns_deleted_for_scope(
         .where(GmvCampaign.campaign_id.in_(ids))
         .where(GmvCampaign.is_deleted.is_(False))
         .values(
-            status="DELETE",
-            operation_status="DELETE",
+            status=lifecycle_status,
+            lifecycle_status=lifecycle_status,
             secondary_status="CAMPAIGN_STATUS_DELETE",
             is_deleted=True,
             deleted_at=datetime.now(timezone.utc),
@@ -332,7 +335,7 @@ def mark_campaigns_deleted_for_scope(
         .where(GmvCampaignProduct.auth_id == auth_id)
         .where(GmvCampaignProduct.store_id == str(store_id))
         .where(GmvCampaignProduct.campaign_id.in_(ids))
-        .values(operation_status="DELETE")
+        .values(operation_status="DISABLE")
     )
     db.execute(product_cleanup)
 
@@ -354,7 +357,7 @@ def _order_desc_nulls_last(col):
 def _allowed_operation_status_clause():
     return or_(
         GmvCampaign.operation_status.is_(None),
-        GmvCampaign.operation_status != "DELETE",
+        GmvCampaign.operation_status.in_(("ENABLE", "DISABLE")),
     )
 
 

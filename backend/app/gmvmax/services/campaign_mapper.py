@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Mapping
 
 from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
+from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 
 
 def _as_naive_utc(value: datetime | None) -> datetime | None:
@@ -109,7 +110,6 @@ def map_gmvmax_campaign_info_to_model(
     promotion_type_override: PromotionTypeEnum | None = None,
     synced_at: datetime | None = None,
     existing: GmvCampaign | None = None,
-    primary_status_hint: str | None = None,
 ) -> GmvCampaign:
     """Map TikTok GMV Max campaign info payloads into a ``GmvCampaign``.
 
@@ -151,7 +151,6 @@ def map_gmvmax_campaign_info_to_model(
 
     instance.name = payload.get("campaign_name") or payload.get("name")
 
-    normalized_primary_status = _normalize_status(primary_status_hint)
     normalized_secondary_status = _normalize_status(
         payload.get("secondary_status") or payload.get("campaign_status")
     )
@@ -194,26 +193,19 @@ def map_gmvmax_campaign_info_to_model(
 
     instance.raw_json = raw_payload
 
-    # 删除判断：primary_status_hint 仅作为临时 hint，不落库
-    is_remote_deleted = bool(
-        (normalized_primary_status == "STATUS_DELETE")
-        or (effective_secondary_status == "CAMPAIGN_STATUS_DELETE")
+    lifecycle_status, is_deleted = _derive_campaign_lifecycle(
+        instance.operation_status, instance.secondary_status
     )
+    instance.lifecycle_status = lifecycle_status
+    instance.status = lifecycle_status
 
-    if is_remote_deleted:
-        instance.status = "DELETED"
-        instance.is_deleted = True
-        if not instance.deleted_at:
-            instance.deleted_at = resolved_synced
-    else:
-        instance.is_deleted = False
-        instance.deleted_at = None
-        # 只有在知道 secondary_status 的情况下才重算 ACTIVE/INACTIVE，
-        # 否则保留已有 status（例如详情刷新场景）
-        if effective_secondary_status == "CAMPAIGN_STATUS_ENABLE":
-            instance.status = "ACTIVE"
-        elif instance.status is None:
-            instance.status = "INACTIVE"
+    instance.is_deleted = bool(is_deleted)
+    if instance.is_deleted and not instance.deleted_at:
+        instance.deleted_at = datetime.now(timezone.utc)
+    elif not instance.is_deleted:
+        # Preserve any historical deleted_at timestamps when a campaign is
+        # re-activated to keep audit history intact.
+        pass
 
     return instance
 

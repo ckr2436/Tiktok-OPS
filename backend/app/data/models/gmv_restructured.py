@@ -73,6 +73,11 @@ class GmvCampaign(Base):
         ),
         Index("idx_gmv_campaign_advertiser", "advertiser_id"),
         Index(
+            "idx_gmv_campaigns_lifecycle_status",
+            "workspace_id",
+            "lifecycle_status",
+        ),
+        Index(
             "idx_gmv_campaign_workspace_status",
             "workspace_id",
             "promotion_type",
@@ -128,6 +133,9 @@ class GmvCampaign(Base):
         comment="Operation status from data.operation_status (ENABLE/DISABLE)",
     )
     secondary_status: Mapped[str | None] = mapped_column(String(128), default=None)
+    lifecycle_status: Mapped[str | None] = mapped_column(
+        String(32), default=None, comment="Derived lifecycle status"
+    )
     schedule_type: Mapped[str | None] = mapped_column(
         String(64),
         default=None,
