@@ -19,16 +19,19 @@ class _DummyCampaignClient:
         self._responses = responses
         self._counters: dict[str, int] = {key: 0 for key in responses}
         self.requests: list[GMVMaxCampaignGetRequest] = []
+        # 记录每次请求的 primary_status，方便验证参数
+        self.primary_status_calls: list[str | None] = []
 
     async def gmv_max_campaign_get(
         self, request: GMVMaxCampaignGetRequest
     ) -> GMVMaxResponse[GMVMaxCampaignListData]:
         self.requests.append(request)
         primary = request.filtering.primary_status if request.filtering else None
-        idx = self._counters.get(primary, 0)
-        payloads = self._responses.get(primary, [])
+        self.primary_status_calls.append(primary)
+        idx = self._counters.get(primary or "STATUS_NOT_DELETE", 0)
+        payloads = self._responses.get(primary or "STATUS_NOT_DELETE", [])
         response = payloads[idx] if idx < len(payloads) else GMVMaxCampaignListData()
-        self._counters[primary] = idx + 1
+        self._counters[primary or "STATUS_NOT_DELETE"] = idx + 1
         return GMVMaxResponse[GMVMaxCampaignListData](
             code=0, message="OK", data=response
         )
@@ -85,6 +88,10 @@ def test_sync_gmvmax_campaigns_filters_by_primary_status_only(db_session):
         )
     )
     db_session.commit()
+
+    # 第一轮必须“不传 primary_status”（None），第二轮显式传 STATUS_DELETE。
+    # 不能把 STATUS_NOT_DELETE 当成枚举值传给 TikTok。
+    assert client.primary_status_calls == [None, "STATUS_DELETE"]
 
     campaigns = db_session.query(GmvCampaign).order_by(GmvCampaign.campaign_id).all()
     assert len(campaigns) == 3
