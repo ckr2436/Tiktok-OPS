@@ -71,7 +71,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 | Model (table) | Main fields | Purpose |
 | --- | --- | --- |
-| `TTBGmvMaxCampaign` (`gmv_campaigns`) | workspace/auth/advertiser/store IDs, campaign_id/name, official `primary_status`/`secondary_status`/`operation_status`, internal `status` (ACTIVE/INACTIVE/DELETED), roas_bid, budget, timestamps, `raw_json`, `is_deleted`/`deleted_at` | Cached GMV Max campaign metadata. |
+| `TTBGmvMaxCampaign` (`gmv_campaigns`) | workspace/auth/advertiser/store IDs, campaign_id/name, official `secondary_status`/`operation_status` (``primary_status`` used only as request hint), internal `status` (ACTIVE/INACTIVE/DELETED), roas_bid, budget, timestamps, `raw_json`, `is_deleted`/`deleted_at` | Cached GMV Max campaign metadata. |
 | `TTBGmvMaxCampaignProduct` (`ttb_gmvmax_campaign_products`) | campaign/store/item_group ids, operation_status | Mapping of campaigns to promoted products. |
 | `TTBGmvMaxMetricsHourly` (`ttb_gmvmax_metrics_hourly`) | campaign FK, store_id, interval_start/end, impressions/clicks/cost/orders/gross_revenue/roi/... | Hourly GMV Max metrics upserts. |
 | `TTBGmvMaxMetricsDaily` (`ttb_gmvmax_metrics_daily`) | campaign FK, store_id, date, same metric fields as hourly | Daily GMV Max metrics upserts. |
