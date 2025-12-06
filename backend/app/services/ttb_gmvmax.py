@@ -1641,6 +1641,15 @@ async def sync_gmvmax_campaigns(
     if bound_store_id:
         store_scope = [bound_store_id]
         provided_filters["store_ids"] = [bound_store_id]
+    else:
+        logger.warning(
+            "gmvmax.sync_campaigns: missing bound store; falling back to provided filters",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+            },
+        )
 
     base_filters = {k: v for k, v in provided_filters.items() if v is not None}
     if store_scope:
@@ -1767,6 +1776,24 @@ async def sync_gmvmax_campaigns(
                     )
                 )
                 store_for_round = normalized_store_id or str(resolved_store_id or "")
+
+                if (
+                    bound_store_id
+                    and store_for_round
+                    and store_for_round != bound_store_id
+                ):
+                    logger.info(
+                        "gmvmax.sync_campaigns: skip campaign %s for unrelated store",
+                        campaign_identifier,
+                        extra={
+                            "workspace_id": workspace_id,
+                            "auth_id": auth_id,
+                            "advertiser_id": advertiser_id,
+                            "campaign_store_id": store_for_round,
+                            "bound_store_id": bound_store_id,
+                        },
+                    )
+                    continue
 
                 upsert_campaign_from_api(
                     db,
