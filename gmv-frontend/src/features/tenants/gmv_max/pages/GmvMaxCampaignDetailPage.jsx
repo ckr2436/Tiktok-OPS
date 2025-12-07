@@ -36,6 +36,7 @@ import {
   getProductIdentifier,
   getStoreLabel,
   isCampaignDeleted,
+  ensureArray,
 } from './gmvMaxOverview/helpers.js';
 import { normalizeTaskState } from '../utils/taskState.js';
 
@@ -928,13 +929,6 @@ export default function GmvMaxCampaignDetailPage() {
   );
 
   const commonEnabled = Boolean(workspaceId && provider && authId && campaignId);
-  const { ensureFresh, isSyncing: isEnsuringFresh } = useEnsureFreshGmvData({
-    workspaceId,
-    provider,
-    authId,
-    storeId: storeIdFromQuery,
-    reportParams: syncReportParams,
-  });
 
   const campaignQuery = useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId, {
     enabled: commonEnabled,
@@ -997,6 +991,36 @@ export default function GmvMaxCampaignDetailPage() {
 
   const productFiltersReady = Boolean(campaignFilterId);
   const creativeFiltersReady = Boolean(campaignFilterId && itemGroupId);
+
+  const campaignIdsForSync = useMemo(() => {
+    const ids = new Set();
+    const detail = campaignQuery.data;
+    const campaign = detail?.campaign || detail;
+    const primaryId = campaign?.campaign_id || campaign?.campaignId || campaignId;
+    if (primaryId) {
+      ids.add(String(primaryId));
+    }
+    const extraIds = ensureArray(
+      detail?.campaign_ids || detail?.campaignIds || campaign?.campaign_ids || campaign?.campaignIds,
+    );
+    extraIds.forEach((value) => {
+      if (value === undefined || value === null) return;
+      const normalized = String(value);
+      if (normalized) {
+        ids.add(normalized);
+      }
+    });
+    return Array.from(ids);
+  }, [campaignId, campaignQuery.data]);
+
+  const { ensureFresh, isSyncing: isEnsuringFresh } = useEnsureFreshGmvData({
+    workspaceId,
+    provider,
+    authId,
+    reportParams: syncReportParams,
+    levels: ['CAMPAIGN', 'PRODUCT', 'CREATIVE'],
+    campaignIds: campaignIdsForSync,
+  });
 
   const isDashboardTab = activeTab === 'dashboard';
   const isProductsTab = activeTab === 'products';
@@ -1240,8 +1264,8 @@ export default function GmvMaxCampaignDetailPage() {
     [campaignMetricsQuery.data],
   );
   const trendSeries = useMemo(
-    () => buildTrendSeries(campaignMetricsQuery.data?.report),
-    [campaignMetricsQuery.data],
+    () => buildTrendSeries(creativeMetricsQuery.data?.report),
+    [creativeMetricsQuery.data],
   );
   const productTable = useMemo(
     () => buildDimensionTable(productMetricsQuery.data?.report, 'product_id'),
@@ -1428,12 +1452,15 @@ export default function GmvMaxCampaignDetailPage() {
       await metricsSync.startSyncAsync({
         start_date: metricsParams.start_date,
         end_date: metricsParams.end_date,
+        campaign_ids: campaignIdsForSync,
+        levels: ['CAMPAIGN', 'PRODUCT', 'CREATIVE'],
       });
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to sync GMV Max metrics', error);
     }
   }, [
+    campaignIdsForSync,
     ensureFresh,
     isReadOnly,
     metricsSync,

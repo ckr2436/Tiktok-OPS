@@ -155,6 +155,50 @@ const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertis
 const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
 const SYNC_COOLDOWN_MS = 10 * 60 * 1000;
+const OVERVIEW_RANGE_OPTIONS = [
+  { key: 'today', label: '当日' },
+  { key: 'yesterday', label: '昨天' },
+  { key: '7d', label: '近7天' },
+  { key: '14d', label: '14天' },
+  { key: '30d', label: '1个月' },
+  { key: 'custom', label: '自定义' },
+];
+
+function computeOverviewRange(rangeKey, customRange, timeZone) {
+  const normalizedTz = resolveTimezoneLabel(timeZone);
+  const todayRange = getAdvertiserTodayRange(normalizedTz);
+
+  if (rangeKey === 'custom') {
+    if (customRange?.start && customRange?.end) {
+      return formatRangeAsDateStrings({
+        start: new Date(customRange.start),
+        end: new Date(customRange.end),
+        timeZone: normalizedTz,
+      });
+    }
+    return { start_date: '', end_date: '' };
+  }
+
+  if (rangeKey === 'yesterday') {
+    const start = new Date(todayRange.start);
+    start.setUTCDate(start.getUTCDate() - 1);
+    const end = new Date(todayRange.start);
+    end.setUTCDate(end.getUTCDate() - 1);
+    return formatRangeAsDateStrings({ start, end, timeZone: normalizedTz });
+  }
+
+  if (rangeKey === '7d') {
+    return formatRangeAsDateStrings(getAdvertiserRecentRange(7, normalizedTz));
+  }
+  if (rangeKey === '14d') {
+    return formatRangeAsDateStrings(getAdvertiserRecentRange(14, normalizedTz));
+  }
+  if (rangeKey === '30d') {
+    return formatRangeAsDateStrings(getAdvertiserRecentRange(30, normalizedTz));
+  }
+
+  return formatRangeAsDateStrings(todayRange);
+}
 
 export default function GmvMaxOverviewPage() {
   const { wid: workspaceId } = useParams();
@@ -179,6 +223,8 @@ export default function GmvMaxOverviewPage() {
   const [sortOption, setSortOption] = useState('latest');
   const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
+  const [overviewRangeKey, setOverviewRangeKey] = useState('today');
+  const [overviewCustomRange, setOverviewCustomRange] = useState({ start: '', end: '' });
   const autoOptionsRefreshAccounts = useRef(new Set());
   const syncInFlightRef = useRef(false);
   const performSyncRef = useRef(null);
@@ -1148,18 +1194,29 @@ export default function GmvMaxOverviewPage() {
     });
   }, [campaignsQuery.data, campaignsQueryEnabled, includeDeletedCampaigns]);
 
-  const metricsRange = useMemo(
-    () => getAdvertiserRecentRange(7, advertiserTimezone),
-    [advertiserTimezone],
-  );
-
-  const metricsRangeParams = useMemo(
+  const overviewRangeParams = useMemo(
     () => ({
-      ...formatRangeAsDateStrings(metricsRange),
+      ...computeOverviewRange(overviewRangeKey, overviewCustomRange, advertiserTimezone),
       store_ids: storeId ? [String(storeId)] : undefined,
     }),
-    [metricsRange, storeId],
+    [advertiserTimezone, overviewCustomRange, overviewRangeKey, storeId],
   );
+  const hasValidOverviewRange = useMemo(
+    () => Boolean(overviewRangeParams.start_date && overviewRangeParams.end_date),
+    [overviewRangeParams.end_date, overviewRangeParams.start_date],
+  );
+
+  const handleOverviewRangeChange = useCallback((rangeKey) => {
+    setOverviewRangeKey(rangeKey);
+    if (rangeKey !== 'custom') {
+      setOverviewCustomRange({ start: '', end: '' });
+    }
+  }, []);
+
+  const handleOverviewCustomRangeChange = useCallback((key, value) => {
+    setOverviewCustomRange((prev) => ({ ...prev, [key]: value }));
+    setOverviewRangeKey('custom');
+  }, []);
 
   const todayRange = useMemo(() => getAdvertiserTodayRange(advertiserTimezone), [advertiserTimezone]);
   const todayRangeParams = useMemo(
@@ -1173,8 +1230,16 @@ export default function GmvMaxOverviewPage() {
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
   const isSyncInProgress = isSyncing || syncTask.isSyncing;
   const shouldFetchMetrics = useMemo(
-    () => Boolean(workspaceId && authId && storeId && campaignsQueryEnabled && !isSyncInProgress),
-    [authId, campaignsQueryEnabled, isSyncInProgress, storeId, workspaceId],
+    () =>
+      Boolean(
+        workspaceId &&
+          authId &&
+          storeId &&
+          campaignsQueryEnabled &&
+          !isSyncInProgress &&
+          hasValidOverviewRange,
+      ),
+    [authId, campaignsQueryEnabled, hasValidOverviewRange, isSyncInProgress, storeId, workspaceId],
   );
 
   const overallMetricsQuery = useGmvMaxMetricsQuery(
@@ -1183,9 +1248,28 @@ export default function GmvMaxOverviewPage() {
     authId,
     'all',
     {
-      start_date: metricsRangeParams.start_date,
-      end_date: metricsRangeParams.end_date,
-      store_ids: metricsRangeParams.store_ids,
+      start_date: overviewRangeParams.start_date,
+      end_date: overviewRangeParams.end_date,
+      store_ids: overviewRangeParams.store_ids,
+    },
+    {
+      enabled: shouldFetchMetrics,
+      staleTime: 60 * 1000,
+      refetchInterval: shouldFetchMetrics ? autoRefreshMs : undefined,
+      keepPreviousData: true,
+    },
+  );
+  const overviewSummaryQuery = useGmvMaxMetricsQuery(
+    workspaceId,
+    provider,
+    authId,
+    'all',
+    {
+      start_date: overviewRangeParams.start_date,
+      end_date: overviewRangeParams.end_date,
+      store_ids: overviewRangeParams.store_ids,
+      level: 'overview',
+      dimensions: ['stat_time_day'],
     },
     {
       enabled: shouldFetchMetrics,
@@ -1196,6 +1280,12 @@ export default function GmvMaxOverviewPage() {
   );
   const overallReport =
     overallMetricsQuery.data?.report || overallMetricsQuery.data?.data || overallMetricsQuery.data || null;
+  const overviewSummaryReport =
+    overviewSummaryQuery.data?.report || overviewSummaryQuery.data?.data || overviewSummaryQuery.data || null;
+  const overviewSummary = useMemo(() => {
+    if (!overviewSummaryReport) return null;
+    return summariseMetrics(overviewSummaryReport);
+  }, [overviewSummaryReport]);
   const overallSummary = useMemo(() => {
     if (!overallReport) return null;
     return summariseMetrics(overallReport);
@@ -1457,40 +1547,18 @@ export default function GmvMaxOverviewPage() {
   }, [isSyncInProgress, refreshMetrics, syncTask.lastState]);
 
   const performCampaignSync = useCallback(async () => {
-    const normalizedBcId = businessCenterId ? String(businessCenterId) : undefined;
-    const normalizedStoreId = storeId ? String(storeId) : undefined;
-    const payload = {
-      owner_bc_id: normalizedBcId,
-      bc_id: normalizedBcId,
-      advertiser_id: advertiserId ? String(advertiserId) : undefined,
-      store_id: normalizedStoreId,
-      campaign_filter: normalizedStoreId ? { store_ids: [normalizedStoreId] } : undefined,
-      campaign_options: { page_size: clampPageSize(50) },
-      report: {
-        store_ids: normalizedStoreId ? [normalizedStoreId] : undefined,
-        start_date: metricsRangeParams.start_date,
-        end_date: metricsRangeParams.end_date,
-        metrics: DEFAULT_REPORT_METRICS,
-        dimensions: ['campaign_id', 'stat_time_day'],
-        enable_total_metrics: true,
-      },
-    };
-
-    const result = await syncTask.startSync(payload);
+    const result = await syncTask.startSync({
+      start_date: overviewRangeParams.start_date || null,
+      end_date: overviewRangeParams.end_date || null,
+      levels: ['OVERVIEW'],
+      campaign_ids: null,
+    });
     if (result?.state === 'SUCCESS') {
       await refreshScopeQueries();
       return 'SUCCESS';
     }
     throw new Error('同步失败，请稍后再试。');
-  }, [
-    advertiserId,
-    authId,
-    businessCenterId,
-    metricsRangeParams,
-    refreshScopeQueries,
-    storeId,
-    syncTask,
-  ]);
+  }, [overviewRangeParams.end_date, overviewRangeParams.start_date, refreshScopeQueries, syncTask]);
 
   const performSync = useCallback(async () => {
     if (!workspaceId || !provider || !authId) return;
@@ -1511,6 +1579,11 @@ export default function GmvMaxOverviewPage() {
     if (!bindingReady) {
       setSyncNotice(null);
       setSyncError('请先完成店铺-广告主绑定后再同步 GMV Max 数据。');
+      return;
+    }
+    if (!hasValidOverviewRange) {
+      setSyncNotice(null);
+      setSyncError('请选择有效的时间范围后再同步 GMV Max 数据。');
       return;
     }
     if (lastSyncAt && now - lastSyncAt < SYNC_COOLDOWN_MS) {
@@ -1590,6 +1663,7 @@ export default function GmvMaxOverviewPage() {
     bindingConfigPending,
     bindingReady,
     businessCenterId,
+    hasValidOverviewRange,
     isScopeReady,
     isSyncing,
     lastSyncAt,
@@ -1769,7 +1843,8 @@ export default function GmvMaxOverviewPage() {
               isSyncInProgress ||
               !isScopeReady ||
               bindingConfigPending ||
-              !bindingReady
+              !bindingReady ||
+              !hasValidOverviewRange
             }
             title={bindingReady ? undefined : '请先完成店铺-广告主绑定'}
           >
@@ -1860,34 +1935,75 @@ export default function GmvMaxOverviewPage() {
 
       {campaignsQueryEnabled ? (
         <section className="gmvmax-card gmvmax-card--summary">
-          <header className="gmvmax-card__header">
-            <h2>{GmvMaxTexts.summaryBarTitle}</h2>
-            {overallMetricsQuery.isLoading ? <Loading text="汇总指标加载中…" /> : null}
+          <header className="gmvmax-card__header gmvmax-card__header--stacked">
+            <div className="gmvmax-card__header-title">
+              <h2>{GmvMaxTexts.summaryBarTitle}</h2>
+            </div>
+            <div className="gmvmax-card__header-actions gmvmax-card__header-actions--wrap">
+              <div className="gmvmax-date-filters">
+                {OVERVIEW_RANGE_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`gmvmax-chip ${
+                      overviewRangeKey === option.key ? 'gmvmax-chip--active' : ''
+                    }`}
+                    onClick={() => handleOverviewRangeChange(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                {overviewRangeKey === 'custom' ? (
+                  <div className="gmvmax-date-filters__custom">
+                    <input
+                      type="date"
+                      value={overviewCustomRange.start}
+                      onChange={(event) => handleOverviewCustomRangeChange('start', event.target.value)}
+                    />
+                    <span>至</span>
+                    <input
+                      type="date"
+                      value={overviewCustomRange.end}
+                      onChange={(event) => handleOverviewCustomRangeChange('end', event.target.value)}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {overviewSummaryQuery.isLoading ? <Loading text="汇总指标加载中…" /> : null}
+            </div>
           </header>
           <div className="gmvmax-card__body">
-            <div className="gmvmax-overview-summary">
-              <div>
-                <p>{GmvMaxTexts.totalSpend}</p>
-                <strong>{overallSummary ? formatMoney(overallSummary.spend) : '—'}</strong>
-              </div>
-              <div>
-                <p>{GmvMaxTexts.totalGmv}</p>
-                <strong>{overallSummary ? formatMoney(overallSummary.gmv) : '—'}</strong>
-              </div>
-              <div>
-                <p>{GmvMaxTexts.averageRoas}</p>
-                <strong>
-                  {overallSummary && overallSummary.roas !== null ? formatRoi(overallSummary.roas) : '—'}
-                </strong>
-              </div>
-              <div>
-                <p>{GmvMaxTexts.totalOrders}</p>
-                <strong>{overallSummary ? overallSummary.orders : '—'}</strong>
-              </div>
-            </div>
-            {overallMetricsQuery.error ? (
-              <p className="gmvmax-placeholder">汇总指标加载失败，请稍后重试。</p>
-            ) : null}
+            {!hasValidOverviewRange ? (
+              <p className="gmvmax-placeholder">请选择完整的日期范围以查看系列整体表现。</p>
+            ) : (
+              <>
+                <div className="gmvmax-overview-summary">
+                  <div>
+                    <p>{GmvMaxTexts.totalSpend}</p>
+                    <strong>{overviewSummary ? formatMoney(overviewSummary.spend) : '—'}</strong>
+                  </div>
+                  <div>
+                    <p>{GmvMaxTexts.totalGmv}</p>
+                    <strong>{overviewSummary ? formatMoney(overviewSummary.gmv) : '—'}</strong>
+                  </div>
+                  <div>
+                    <p>{GmvMaxTexts.averageRoas}</p>
+                    <strong>
+                      {overviewSummary && overviewSummary.roas !== null
+                        ? formatRoi(overviewSummary.roas)
+                        : '—'}
+                    </strong>
+                  </div>
+                  <div>
+                    <p>{GmvMaxTexts.totalOrders}</p>
+                    <strong>{overviewSummary ? overviewSummary.orders : '—'}</strong>
+                  </div>
+                </div>
+                {overviewSummaryQuery.error ? (
+                  <p className="gmvmax-placeholder">汇总指标加载失败，请稍后重试。</p>
+                ) : null}
+              </>
+            )}
           </div>
         </section>
       ) : null}

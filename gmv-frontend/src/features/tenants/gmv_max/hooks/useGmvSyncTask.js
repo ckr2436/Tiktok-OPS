@@ -134,10 +134,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   }, [polledTask, resolveCompletion]);
 
   const startMutation = useMutation({
-    mutationFn: (payload) =>
-      startGmvMaxSync(workspaceId, payload, {
-        params: { provider, auth_id: authId },
-      }),
+    mutationFn: (payload) => startGmvMaxSync(workspaceId, provider, authId, payload),
     onMutate: () => {
       setError(null);
       setLastState(null);
@@ -237,12 +234,21 @@ export function useEnsureFreshGmvData({
   workspaceId,
   provider,
   authId,
-  storeId,
   reportParams,
+  levels = ["OVERVIEW"],
+  campaignIds,
   freshnessMs = 10 * 60 * 1000,
 }) {
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
   const lastEnsuredRef = useRef(0);
+
+  const normalizedCampaignIds = useMemo(() => {
+    if (!campaignIds) return [];
+    const list = Array.isArray(campaignIds) ? campaignIds : [campaignIds];
+    return list
+      .map((value) => (value === undefined || value === null ? "" : String(value)))
+      .filter(Boolean);
+  }, [campaignIds]);
 
   const ensureFresh = useCallback(
     async () => {
@@ -253,14 +259,12 @@ export function useEnsureFreshGmvData({
       if (!workspaceId || !provider || !authId) {
         return false;
       }
-      const normalizedStoreId = storeId ? String(storeId) : undefined;
-      const payload = { store_id: normalizedStoreId };
-      if (reportParams) {
-        payload.report = {
-          ...reportParams,
-          store_ids: reportParams.store_ids || (normalizedStoreId ? [normalizedStoreId] : undefined),
-        };
-      }
+      const payload = {
+        start_date: reportParams?.start_date || reportParams?.startDate || null,
+        end_date: reportParams?.end_date || reportParams?.endDate || null,
+        levels,
+        campaign_ids: normalizedCampaignIds.length ? normalizedCampaignIds : undefined,
+      };
       const result = await syncTask.startSync(payload);
       if (result?.state === 'SUCCESS') {
         lastEnsuredRef.current = Date.now();
@@ -289,7 +293,7 @@ export function useEnsureFreshGmvData({
       }
       return false;
     },
-    [freshnessMs, reportParams, storeId, syncTask, workspaceId, provider, authId],
+    [freshnessMs, reportParams, syncTask, workspaceId, provider, authId, levels, normalizedCampaignIds],
   );
 
   return {
