@@ -138,6 +138,7 @@ export default function CreateSeriesModal({
   useEffect(() => {
     if (!open) return;
     setSelectedItemIds(new Set());
+    setSelectedIdentities(new Set());
     setPrecheckResult(null);
     setPrecheckParams(null);
     setPrecheckError(null);
