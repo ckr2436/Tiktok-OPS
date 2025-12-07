@@ -21,6 +21,10 @@ from app.data.models.gmv_restructured import (
     GmvCampaignProduct,
     GmvCreativeMetricsDaily,
     GmvCreativeMetricsHourly,
+    GmvDurationMetricsDaily,
+    GmvDurationMetricsHourly,
+    GmvLivestreamMetricsDaily,
+    GmvLivestreamMetricsHourly,
     GmvOverviewMetricsDaily,
     GmvOverviewMetricsHourly,
     GmvProductMetricsDaily,
@@ -622,6 +626,15 @@ def _resolve_store_id_for_metrics(
     campaign.store_id = chosen
     db.add(campaign)
     return chosen
+
+
+def _resolve_room_ids_for_campaign(db: Session, *, campaign_id: str) -> list[str]:
+    stmt = select(GmvCampaignLivestream.room_id).where(
+        GmvCampaignLivestream.campaign_id == str(campaign_id)
+    )
+    rows = [row[0] for row in db.execute(stmt).all() if row and row[0]]
+    deduped = list(dict.fromkeys(_normalize_identifier(value) or "" for value in rows))
+    return [value for value in deduped if value]
 
 
 def _pick_dataset_for_level(
@@ -2342,6 +2355,186 @@ def upsert_metrics_daily_row(
     return instance
 
 
+def _upsert_livestream_metrics_daily(
+    db: Session,
+    *,
+    campaign_id: str,
+    room_id: str,
+    row: Mapping[str, Any],
+) -> GmvLivestreamMetricsDaily:
+    stat_time_day = _parse_date(_extract_field(row, "stat_time_day", "stat_time"))
+    if stat_time_day is None:
+        raise ValueError("date missing")
+
+    stmt = (
+        select(GmvLivestreamMetricsDaily)
+        .where(GmvLivestreamMetricsDaily.room_id == str(room_id))
+        .where(GmvLivestreamMetricsDaily.stat_time_day == stat_time_day)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvLivestreamMetricsDaily(room_id=str(room_id), stat_time_day=stat_time_day)
+        db.add(instance)
+
+    instance.campaign_id = str(campaign_id)
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    for attr, value in {
+        "live_views": _to_int(_extract_field(row, "live_views", "live_watch_cnt")),
+        "live_10s_views": _to_int(
+            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+        ),
+        "live_follows": _to_int(_extract_field(row, "live_follows", "live_followers")),
+    }.items():
+        if value is not None and hasattr(instance, attr):
+            setattr(instance, attr, value)
+
+    db.flush()
+    return instance
+
+
+def _upsert_livestream_metrics_hourly(
+    db: Session,
+    *,
+    campaign_id: str,
+    room_id: str,
+    row: Mapping[str, Any],
+) -> GmvLivestreamMetricsHourly:
+    stat_time_value = _extract_field(row, "stat_time_hour", "interval_start", "stat_time")
+    stat_time_hour = _parse_datetime(stat_time_value)
+    if stat_time_hour is None:
+        raise ValueError("hour missing")
+
+    stmt = (
+        select(GmvLivestreamMetricsHourly)
+        .where(GmvLivestreamMetricsHourly.room_id == str(room_id))
+        .where(GmvLivestreamMetricsHourly.stat_time_hour == stat_time_hour)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvLivestreamMetricsHourly(
+            room_id=str(room_id), stat_time_hour=stat_time_hour
+        )
+        db.add(instance)
+
+    instance.campaign_id = str(campaign_id)
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    for attr, value in {
+        "live_views": _to_int(_extract_field(row, "live_views", "live_watch_cnt")),
+        "live_10s_views": _to_int(
+            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+        ),
+        "live_follows": _to_int(_extract_field(row, "live_follows", "live_followers")),
+    }.items():
+        if value is not None and hasattr(instance, attr):
+            setattr(instance, attr, value)
+
+    db.flush()
+    return instance
+
+
+def _upsert_duration_metrics_daily(
+    db: Session,
+    *,
+    campaign_id: str,
+    row: Mapping[str, Any],
+) -> GmvDurationMetricsDaily:
+    stat_time_day = _parse_date(_extract_field(row, "stat_time_day", "stat_time"))
+    if stat_time_day is None:
+        raise ValueError("date missing")
+
+    duration_value = _normalize_identifier(_extract_field(row, "duration"))
+    if not duration_value:
+        raise ValueError("duration missing")
+
+    item_group_id = _normalize_identifier(_extract_field(row, "item_group_id", "product_id"))
+
+    stmt = (
+        select(GmvDurationMetricsDaily)
+        .where(GmvDurationMetricsDaily.campaign_id == str(campaign_id))
+        .where(GmvDurationMetricsDaily.duration == str(duration_value))
+        .where(GmvDurationMetricsDaily.stat_time_day == stat_time_day)
+    )
+    if item_group_id:
+        stmt = stmt.where(GmvDurationMetricsDaily.item_group_id == item_group_id)
+
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvDurationMetricsDaily(
+            campaign_id=str(campaign_id),
+            duration=str(duration_value),
+            stat_time_day=stat_time_day,
+            item_group_id=item_group_id,
+        )
+        db.add(instance)
+
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    if hasattr(instance, "bid_type"):
+        instance.bid_type = _extract_field(row, "bid_type")
+
+    db.flush()
+    return instance
+
+
+def _upsert_duration_metrics_hourly(
+    db: Session,
+    *,
+    campaign_id: str,
+    row: Mapping[str, Any],
+) -> GmvDurationMetricsHourly:
+    stat_time_value = _extract_field(row, "stat_time_hour", "interval_start", "stat_time")
+    stat_time_hour = _parse_datetime(stat_time_value)
+    if stat_time_hour is None:
+        raise ValueError("hour missing")
+
+    duration_value = _normalize_identifier(_extract_field(row, "duration"))
+    if not duration_value:
+        raise ValueError("duration missing")
+
+    item_group_id = _normalize_identifier(_extract_field(row, "item_group_id", "product_id"))
+
+    stmt = (
+        select(GmvDurationMetricsHourly)
+        .where(GmvDurationMetricsHourly.campaign_id == str(campaign_id))
+        .where(GmvDurationMetricsHourly.duration == str(duration_value))
+        .where(GmvDurationMetricsHourly.stat_time_hour == stat_time_hour)
+    )
+    if item_group_id:
+        stmt = stmt.where(GmvDurationMetricsHourly.item_group_id == item_group_id)
+
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvDurationMetricsHourly(
+            campaign_id=str(campaign_id),
+            duration=str(duration_value),
+            stat_time_hour=stat_time_hour,
+            item_group_id=item_group_id,
+        )
+        db.add(instance)
+
+    metrics_payload = _normalize_metric_payload(row)
+    for field, value in metrics_payload.items():
+        if hasattr(instance, field):
+            setattr(instance, field, value)
+
+    if hasattr(instance, "bid_type"):
+        instance.bid_type = _extract_field(row, "bid_type")
+
+    db.flush()
+    return instance
+
+
 async def sync_gmvmax_product_metrics_hourly(
     db: Session,
     ttb_client: TikTokBusinessGMVMaxClient,
@@ -2775,6 +2968,302 @@ async def sync_gmvmax_overview_metrics(
                     "advertiser_id": advertiser_id,
                     "granularity": granularity_normalized,
                 },
+            )
+            continue
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_livestream_metrics_hourly(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+    campaign_ids: Sequence[str] | None = None,
+    room_ids: Sequence[str] | None = None,
+) -> dict:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        return {"synced_rows": 0}
+
+    resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
+        db, campaign_id=str(campaign.campaign_id)
+    )
+    if not resolved_rooms:
+        logger.warning(
+            "gmvmax livestream metrics sync skipped: no room ids",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
+        )
+        return {"synced_rows": 0}
+
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.LIVE_LIVESTREAM,
+        advertiser_id=str(advertiser_id),
+        store_ids=[store_id],
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.ROOM]["metrics"]),
+        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        room_ids=resolved_rooms,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    request.dimensions = ["room_id", "stat_time_hour"]
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, Mapping)]
+
+    synced_rows = 0
+    for row in rows:
+        room_id = _normalize_identifier(_extract_field(row, "room_id")) or (resolved_rooms[0] if resolved_rooms else None)
+        if not room_id:
+            continue
+        try:
+            _upsert_livestream_metrics_hourly(
+                db, campaign_id=str(campaign.campaign_id), room_id=room_id, row=row
+            )
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip livestream hourly metrics row without timestamp",
+                extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id},
+            )
+            continue
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_livestream_metrics_daily(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+    campaign_ids: Sequence[str] | None = None,
+    room_ids: Sequence[str] | None = None,
+) -> dict:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        return {"synced_rows": 0}
+
+    resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
+        db, campaign_id=str(campaign.campaign_id)
+    )
+    if not resolved_rooms:
+        logger.warning(
+            "gmvmax livestream daily sync skipped: no room ids",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
+        )
+        return {"synced_rows": 0}
+
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.LIVE_LIVESTREAM,
+        advertiser_id=str(advertiser_id),
+        store_ids=[store_id],
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.ROOM]["metrics"]),
+        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        room_ids=resolved_rooms,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    request.dimensions = ["room_id", "stat_time_day"]
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, Mapping)]
+
+    synced_rows = 0
+    for row in rows:
+        room_id = _normalize_identifier(_extract_field(row, "room_id")) or (resolved_rooms[0] if resolved_rooms else None)
+        if not room_id:
+            continue
+        try:
+            _upsert_livestream_metrics_daily(
+                db, campaign_id=str(campaign.campaign_id), room_id=room_id, row=row
+            )
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip livestream daily metrics row without timestamp",
+                extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id},
+            )
+            continue
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_duration_metrics_hourly(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+    campaign_ids: Sequence[str] | None = None,
+    room_ids: Sequence[str] | None = None,
+) -> dict:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        return {"synced_rows": 0}
+
+    resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
+        db, campaign_id=str(campaign.campaign_id)
+    )
+    if not resolved_rooms:
+        logger.warning(
+            "gmvmax duration hourly sync skipped: no room ids",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
+        )
+        return {"synced_rows": 0}
+
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.LIVE_DURATION,
+        advertiser_id=str(advertiser_id),
+        store_ids=[store_id],
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.SESSION]["metrics"]),
+        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        room_ids=resolved_rooms,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    request.dimensions = ["duration", "stat_time_hour"]
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, Mapping)]
+
+    synced_rows = 0
+    for row in rows:
+        try:
+            _upsert_duration_metrics_hourly(
+                db, campaign_id=str(campaign.campaign_id), row=row
+            )
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip duration hourly metrics row without timestamp",
+                extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id},
+            )
+            continue
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_duration_metrics_daily(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+    campaign_ids: Sequence[str] | None = None,
+    room_ids: Sequence[str] | None = None,
+) -> dict:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        return {"synced_rows": 0}
+
+    resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
+        db, campaign_id=str(campaign.campaign_id)
+    )
+    if not resolved_rooms:
+        logger.warning(
+            "gmvmax duration daily sync skipped: no room ids",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
+        )
+        return {"synced_rows": 0}
+
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.LIVE_DURATION,
+        advertiser_id=str(advertiser_id),
+        store_ids=[store_id],
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.SESSION]["metrics"]),
+        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        room_ids=resolved_rooms,
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    request.dimensions = ["duration", "stat_time_day"]
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    rows = [row for row in rows if isinstance(row, Mapping)]
+
+    synced_rows = 0
+    for row in rows:
+        try:
+            _upsert_duration_metrics_daily(db, campaign_id=str(campaign.campaign_id), row=row)
+            synced_rows += 1
+        except ValueError:
+            logger.debug(
+                "skip duration daily metrics row without timestamp",
+                extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id},
             )
             continue
 

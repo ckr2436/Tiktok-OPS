@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from enum import Enum
 from fastapi import HTTPException, status
 from typing import Any, Dict, List, Mapping, Optional, Literal
 
@@ -32,6 +33,15 @@ from app.services.gmvmax_spec import (
 DEFAULT_PROMOTION_TYPES: List[str] = ["PRODUCT", "LIVE"]
 DEFAULT_METRICS: List[str] = list(GMVMAX_DEFAULT_METRICS)
 DEFAULT_DIMENSIONS: List[str] = list(GMVMAX_DEFAULT_DIMENSIONS)
+
+
+class GmvMaxLevel(str, Enum):
+    OVERVIEW = "OVERVIEW"
+    CAMPAIGN = "CAMPAIGN"
+    PRODUCT = "PRODUCT"
+    LIVESTREAM = "LIVESTREAM"
+    DURATION = "DURATION"
+    CREATIVE = "CREATIVE"
 
 
 def normalize_datetime_to_date(value: Any) -> Any:
@@ -420,6 +430,24 @@ class SyncTaskResponse(BaseModel):
 
 # Alias for async operations that fetch external data via Celery workers.
 AsyncTaskResponse = SyncTaskResponse
+
+
+class GmvMaxManualSyncRequest(BaseModel):
+    """Manual sync payload scoped to a single GMV Max auth account."""
+
+    start_date: date | None = None
+    end_date: date | None = None
+    levels: List[GmvMaxLevel]
+    campaign_ids: Optional[List[str]] = None
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def _normalize_dates(cls, value: Any) -> Any:
+        return normalize_datetime_to_date(value)
+
+
+class GmvMaxManualSyncResult(BaseModel):
+    results: Dict[GmvMaxLevel, Dict[str, int]]
 
 
 class BalanceSyncRequest(BaseModel):

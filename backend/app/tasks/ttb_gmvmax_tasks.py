@@ -24,6 +24,7 @@ from app.services.gmvmax_creative_metrics import (
 )
 from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
 from app.services.ttb_api import TTBBusinessError
+from app.gmvmax.services.sync_service import GmvMaxSyncService
 from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action,
@@ -1184,3 +1185,59 @@ def task_gmvmax_strategy_preview(
         raise
     finally:
         _close_session(db)
+
+
+@celery_app.task(
+    name="gmvmax.manual_sync_levels",
+    bind=True,
+    queue="gmvmax",
+)
+def manual_sync_levels_task(
+    self,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    levels: list[str],
+    start_date: str,
+    end_date: str,
+    campaign_ids: Optional[list[str]] = None,
+) -> dict:
+    """Celery worker entrypoint for account-scoped GMV Max manual sync."""
+
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError as exc:  # pragma: no cover - defensive validation
+        self.update_state(state="FAILURE", meta={"error": {"message": str(exc)}})
+        raise
+
+    service = GmvMaxSyncService()
+    try:
+        results = service.sync_levels_for_account(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            levels=levels,
+            start_date=start,
+            end_date=end,
+            campaign_ids=campaign_ids,
+        )
+        payload = {
+            "results": results,
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "levels": levels,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        logger.info(
+            "gmvmax.manual_sync_levels succeeded",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "levels": levels},
+        )
+        return payload
+    except Exception as exc:  # pragma: no cover - logging and bubbling for Celery
+        logger.exception(
+            "gmvmax.manual_sync_levels failed",
+            extra={"workspace_id": workspace_id, "auth_id": auth_id, "levels": levels},
+        )
+        self.update_state(state="FAILURE", meta={"error": {"message": str(exc)}})
+        raise
