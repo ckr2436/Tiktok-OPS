@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from decimal import Decimal
 """Provider-scoped service helpers bridging GMV Max routers to core services."""
 
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, case, func
@@ -23,7 +24,6 @@ from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action as svc_apply_campaign_action,
     decide_campaign_action,
-    create_gmvmax_campaign as svc_create_campaign,
     get_item_group_ids_for_campaign,
     get_or_create_strategy_config,
     sync_gmvmax_campaigns as svc_sync_campaigns,
@@ -31,33 +31,33 @@ from app.services.ttb_gmvmax import (
     sync_gmvmax_metrics_hourly as svc_sync_metrics_hourly,
 )
 from app.services.ttb_api import TTBApiClient, TTBBusinessError
-from app.services.ttb_client_factory import build_ttb_client, build_ttb_gmvmax_client
-from app.providers.tiktok_business.gmvmax_client import (
-    GMVMaxStoreListRequest,
-    GMVMaxStoreAdUsageCheckRequest,
-    GMVMaxIdentityGetRequest,
-    GMVMaxOccupiedCustomShopAdsListRequest,
-    GMVMaxVideoGetRequest,
-    GMVMaxCustomAnchorVideoListGetRequest,
-    GMVMaxResponse,
-    TikTokBusinessGMVMaxClient,
-)
-from .schemas import (
-    CreateCampaignRequest,
-    GMVMaxPrecheckRequest,
-    GMVMaxPrecheckResponse,
-    IdentitySummary,
-    VideoSummary,
-    CustomAnchorVideoSummary,
-    OccupiedAdSummary,
-)
 
 from ._helpers import (
     ensure_ttb_auth_in_workspace,
     get_advertiser_id_for_account,
     get_gmvmax_client_for_account,
+    get_ttb_client_for_account,
     normalize_provider,
+    resolve_account_binding,
 )
+from app.providers.tiktok_business.gmvmax_client import GMVMaxStoreAdUsageCheckRequest
+
+
+_ACTION_NORMALIZATION = {
+    "START": "START",
+    "ENABLE": "START",
+    "RESUME": "START",
+    "RUN": "START",
+    "PAUSE": "PAUSE",
+    "STOP": "PAUSE",
+    "DISABLE": "PAUSE",
+    "SUSPEND": "PAUSE",
+    "SET_BUDGET": "SET_BUDGET",
+    "UPDATE_BUDGET": "SET_BUDGET",
+    "SET_ROAS": "SET_ROAS",
+    "UPDATE_ROAS": "SET_ROAS",
+    "ADJUST_ROI": "SET_ROAS",
+}
 
 
 def _ensure_provider(provider: str) -> str:
@@ -95,6 +95,184 @@ def _order_desc_nulls_last(col):
         case((col.is_(None), 1), else_=0).asc(),
         col.desc(),
     ]
+
+
+def _normalize_action(action: str) -> str:
+    raw = str(action or "").strip().upper()
+    return _ACTION_NORMALIZATION.get(raw, raw)
+
+
+def _load_campaign_payload(campaign: TTBGmvMaxCampaign) -> Mapping[str, Any]:
+    raw = getattr(campaign, "raw_json", None)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:  # noqa: BLE001 - defensive parsing of legacy payloads
+            return {}
+        return parsed if isinstance(parsed, Mapping) else {}
+    if isinstance(raw, Mapping):
+        return raw
+    return {}
+
+
+def _resolve_product_specific_type(campaign: TTBGmvMaxCampaign) -> str:
+    payload = _load_campaign_payload(campaign)
+    specific_type = payload.get("product_specific_type")
+    if not specific_type and isinstance(payload.get("_campaign_info"), Mapping):
+        specific_type = payload["_campaign_info"].get("product_specific_type")
+
+    if specific_type:
+        return str(specific_type).upper()
+
+    item_group_ids = getattr(campaign, "item_group_ids", None)
+    if not item_group_ids:
+        item_group_ids = payload.get("item_group_ids")
+    if item_group_ids:
+        return "CUSTOMIZED_PRODUCTS"
+    return "ALL"
+
+
+def _resolve_store_authorized_bc_id(
+    campaign: TTBGmvMaxCampaign, *, binding_bc_id: str | None
+) -> str | None:
+    payload = _load_campaign_payload(campaign)
+    store_bc_id = payload.get("store_authorized_bc_id")
+    if not store_bc_id and isinstance(payload.get("_campaign_info"), Mapping):
+        store_bc_id = payload.get("_campaign_info", {}).get("store_authorized_bc_id")
+    return str(store_bc_id or binding_bc_id or "").strip() or None
+
+
+def _is_product_campaign(campaign: TTBGmvMaxCampaign) -> bool:
+    if getattr(campaign, "promotion_type", None) == PromotionTypeEnum.PRODUCT:
+        return True
+    return (getattr(campaign, "shopping_ads_type", None) or "").upper() == "PRODUCT"
+
+
+async def _check_promote_all_conflict(
+    *,
+    campaign: TTBGmvMaxCampaign,
+    advertiser_id: str,
+    client,
+    store_authorized_bc_id: str | None,
+) -> None:
+    request = GMVMaxStoreAdUsageCheckRequest(
+        advertiser_id=str(advertiser_id),
+        store_id=str(campaign.store_id or ""),
+        store_authorized_bc_id=store_authorized_bc_id,
+    )
+    response = await client.gmv_max_store_shop_ad_usage_check(request)
+    allowed = getattr(getattr(response, "data", None), "promote_all_products_allowed", None)
+    if allowed is False:
+        raise TTBBusinessError(
+            "All-products GMV Max promotion is not allowed for this store",
+            code="GMVMAX_PROMOTE_ALL_CONFLICT",
+            payload={
+                "campaign_id": getattr(campaign, "campaign_id", None),
+                "store_id": getattr(campaign, "store_id", None),
+            },
+        )
+
+
+async def _check_customized_products_conflict(
+    *,
+    ttb_client: TTBApiClient,
+    campaign: TTBGmvMaxCampaign,
+    advertiser_id: str,
+    bc_id: str | None,
+    item_group_ids: list[str],
+) -> None:
+    products = await ttb_client.get_store_products_for_gmvmax_item_group_ids(
+        bc_id=bc_id,
+        store_id=str(campaign.store_id or ""),
+        advertiser_id=str(advertiser_id),
+        item_group_ids=item_group_ids,
+    )
+
+    status_map = {
+        str(product.get("item_group_id")): {
+            "status": product.get("status"),
+            "gmv_max_ads_status": product.get("gmv_max_ads_status"),
+        }
+        for product in products
+        if product.get("item_group_id")
+    }
+
+    conflicting: list[str] = []
+    for spu_id in item_group_ids:
+        info = status_map.get(spu_id)
+        if not info:
+            conflicting.append(spu_id)
+            continue
+
+        if not (
+            info.get("status") == "AVAILABLE"
+            and info.get("gmv_max_ads_status") == "UNOCCUPIED"
+        ):
+            conflicting.append(spu_id)
+
+    if conflicting:
+        raise TTBBusinessError(
+            "Some SPUs are occupied by other Product GMV Max campaigns",
+            code="GMVMAX_PRODUCT_OCCUPIED",
+            payload={"item_group_ids": conflicting},
+        )
+
+
+async def _ensure_product_campaign_conflict_free(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign: TTBGmvMaxCampaign,
+    advertiser_id: str,
+    gmvmax_client,
+) -> TTBApiClient | None:
+    if not _is_product_campaign(campaign):
+        # TODO: extend mutual exclusion rules for LIVE GMV Max when spec is ready
+        return None
+
+    product_type = _resolve_product_specific_type(campaign)
+    binding = resolve_account_binding(
+        db,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        allow_missing_advertiser=True,
+    )
+    store_authorized_bc_id = _resolve_store_authorized_bc_id(
+        campaign, binding_bc_id=binding.bc_id
+    )
+
+    if product_type == "ALL":
+        await _check_promote_all_conflict(
+            campaign=campaign,
+            advertiser_id=advertiser_id,
+            client=gmvmax_client,
+            store_authorized_bc_id=store_authorized_bc_id,
+        )
+        return None
+
+    if product_type == "CUSTOMIZED_PRODUCTS":
+        item_group_ids = get_item_group_ids_for_campaign(db, campaign=campaign)
+        if not item_group_ids:
+            return None
+
+        ttb_client = get_ttb_client_for_account(db, workspace_id, provider, auth_id)
+        try:
+            await _check_customized_products_conflict(
+                ttb_client=ttb_client,
+                campaign=campaign,
+                advertiser_id=advertiser_id,
+                bc_id=store_authorized_bc_id or binding.bc_id,
+                item_group_ids=item_group_ids,
+            )
+        except Exception:
+            await ttb_client.aclose()
+            raise
+        return ttb_client
+
+    return None
 
 
 def _ensure_campaign(
@@ -798,67 +976,20 @@ async def apply_campaign_action(
 
     normalized_action = _normalize_action(action)
     advertiser_id = get_advertiser_id_for_account(db, workspace_id, provider, auth_id)
+    normalized_action = _normalize_action(action)
     client = get_gmvmax_client_for_account(db, workspace_id, provider, auth_id)
     ttb_client: TTBApiClient | None = None
     try:
-        promotion_type = getattr(campaign, "promotion_type", None)
-        promotion_type_value = str(
-            promotion_type.value if hasattr(promotion_type, "value") else promotion_type or ""
-        ).upper()
-        shopping_ads_type = getattr(campaign, "shopping_ads_type", None)
-        is_product_campaign = promotion_type_value == PromotionTypeEnum.PRODUCT.value or str(
-            shopping_ads_type or ""
-        ).upper() == "PRODUCT"
-        # NOTE:
-        # - We only enforce occupancy checks for *Product* GMV Max campaigns here.
-        # - If/when Live GMV Max is supported, revisit this branching and define
-        #   whether Live series need distinct conflict rules.
-        if normalized_action == "START" and is_product_campaign:
-            product_specific_type = _resolve_product_specific_type(campaign)
-            if product_specific_type == "ALL":
-                usage_resp = await client.gmv_max_store_shop_ad_usage_check(
-                    GMVMaxStoreAdUsageCheckRequest(
-                        advertiser_id=str(advertiser_id),
-                        store_id=str(campaign.store_id or ""),
-                    )
-                )
-                promote_all_products_allowed = bool(
-                    getattr(getattr(usage_resp, "data", None), "promote_all_products_allowed", False)
-                )
-                if not promote_all_products_allowed:
-                    raise TTBBusinessError(
-                        "Product GMV Max ALL campaign conflicts with another running campaign",
-                        code="GMVMAX_PROMOTE_ALL_CONFLICT",
-                        payload={
-                            "campaign_id": campaign.campaign_id,
-                            "store_id": campaign.store_id,
-                        },
-                    )
-            else:
-                item_group_ids = get_item_group_ids_for_campaign(db, campaign=campaign)
-                ttb_client = build_ttb_client(db, auth_id=auth_id)
-                products = await _list_products_for_gmvmax(
-                    ttb_client,
-                    advertiser_id=str(advertiser_id),
-                    store_id=str(campaign.store_id or ""),
-                )
-                status_map = {
-                    str(prod.get("item_group_id")): prod.get("gmv_max_ads_status")
-                    for prod in products
-                    if prod.get("item_group_id")
-                    and prod.get("status") == "AVAILABLE"
-                }
-                conflicting = [
-                    item_id
-                    for item_id in item_group_ids
-                    if status_map.get(item_id) != "UNOCCUPIED"
-                ]
-                if conflicting:
-                    raise TTBBusinessError(
-                        "Some SPUs are already occupied by another Product GMV Max campaign",
-                        code="GMVMAX_PRODUCT_OCCUPIED",
-                        payload={"item_group_ids": conflicting},
-                    )
+        if normalized_action == "START":
+            ttb_client = await _ensure_product_campaign_conflict_free(
+                db,
+                workspace_id=workspace_id,
+                provider=provider,
+                auth_id=auth_id,
+                campaign=campaign,
+                advertiser_id=advertiser_id,
+                gmvmax_client=client,
+            )
 
         log_entry = await svc_apply_campaign_action(
             db,
@@ -867,7 +998,7 @@ async def apply_campaign_action(
             auth_id=auth_id,
             advertiser_id=advertiser_id,
             campaign=campaign,
-            action=action,
+            action=normalized_action,
             payload=payload,
             reason=reason,
             performed_by=performed_by,
