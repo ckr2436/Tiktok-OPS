@@ -9,6 +9,7 @@ export const GmvMaxTexts = {
   disableSeries: '暂停系列',
   deleteSeries: '删除系列',
   createSeries: '新建系列',
+  createProductSeries: '新建 Product GMV Max 系列',
   editSeries: '编辑系列',
   manageProducts: '管理商品',
   viewData: '查看数据',
