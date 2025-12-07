@@ -49,8 +49,8 @@ async function post(url, body, config) {
   return response.data;
 }
 
-export async function startGmvMaxSync(workspaceId, payload = {}, config) {
-  return post(`${tenantPrefix(workspaceId)}/gmvmax/sync`, payload, config);
+export async function startGmvMaxSync(workspaceId, provider, authId, payload = {}, config) {
+  return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/sync`, payload, config);
 }
 
 export async function getTaskStatus(workspaceId, taskId, config) {

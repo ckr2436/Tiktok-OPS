@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
+import { startGmvMaxSync } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
@@ -16,6 +16,30 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   const [currentTaskId, setCurrentTaskId] = useState();
   const [task, setTask] = useState(null);
   const [taskError, setTaskError] = useState(null);
+
+  const buildPayload = useCallback(
+    (payload = {}) => {
+      const normalizedCampaignIds = [];
+      if (payload.campaign_ids) {
+        normalizedCampaignIds.push(
+          ...payload.campaign_ids
+            .map((value) => (value === undefined || value === null ? "" : String(value)))
+            .filter(Boolean),
+        );
+      }
+      if (campaignId) {
+        normalizedCampaignIds.push(String(campaignId));
+      }
+
+      return {
+        start_date: payload.start_date || payload.startDate || null,
+        end_date: payload.end_date || payload.endDate || null,
+        levels: payload.levels || ["CAMPAIGN", "PRODUCT", "CREATIVE"],
+        campaign_ids: normalizedCampaignIds.length ? normalizedCampaignIds : undefined,
+      };
+    },
+    [campaignId],
+  );
 
   const handleSuccess = useCallback(
     (nextTask) => {
@@ -39,7 +63,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   }, []);
 
   const syncMutation = useMutation({
-    mutationFn: (payload) => syncGmvMaxMetrics(workspaceId, provider, authId, campaignId, payload),
+    mutationFn: (payload) => startGmvMaxSync(workspaceId, provider, authId, buildPayload(payload)),
     onMutate: () => {
       setTaskError(null);
       setTask(null);

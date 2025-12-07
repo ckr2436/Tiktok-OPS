@@ -25,7 +25,7 @@ export const GmvMaxTexts = {
   bindingPending: '该店铺的绑定尚未确认。',
   awaitingBalance: '等待余额更新。',
   balanceCashLabel: '现金',
-  summaryBarTitle: '系列整体表现（近7日）',
+  summaryBarTitle: '系列整体表现',
   totalSpend: '总消耗',
   totalGmv: '总 GMV',
   averageRoas: '平均 ROAS',
