@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, case, func
 from sqlalchemy.orm import Session
 
+from app.data.models.gmv_restructured import PromotionTypeEnum
 from app.data.models.ttb_gmvmax import (
     TTBGmvMaxActionLog,
     TTBGmvMaxCampaign,
@@ -22,10 +23,33 @@ from app.services.ttb_gmvmax import (
     aggregate_recent_metrics,
     apply_campaign_action as svc_apply_campaign_action,
     decide_campaign_action,
+    create_gmvmax_campaign as svc_create_campaign,
+    get_item_group_ids_for_campaign,
     get_or_create_strategy_config,
     sync_gmvmax_campaigns as svc_sync_campaigns,
     sync_gmvmax_metrics_daily as svc_sync_metrics_daily,
     sync_gmvmax_metrics_hourly as svc_sync_metrics_hourly,
+)
+from app.services.ttb_api import TTBApiClient, TTBBusinessError
+from app.services.ttb_client_factory import build_ttb_client, build_ttb_gmvmax_client
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxStoreListRequest,
+    GMVMaxStoreAdUsageCheckRequest,
+    GMVMaxIdentityGetRequest,
+    GMVMaxOccupiedCustomShopAdsListRequest,
+    GMVMaxVideoGetRequest,
+    GMVMaxCustomAnchorVideoListGetRequest,
+    GMVMaxResponse,
+    TikTokBusinessGMVMaxClient,
+)
+from .schemas import (
+    CreateCampaignRequest,
+    GMVMaxPrecheckRequest,
+    GMVMaxPrecheckResponse,
+    IdentitySummary,
+    VideoSummary,
+    CustomAnchorVideoSummary,
+    OccupiedAdSummary,
 )
 
 from ._helpers import (
@@ -38,6 +62,26 @@ from ._helpers import (
 
 def _ensure_provider(provider: str) -> str:
     return normalize_provider(provider)
+
+
+def _normalize_action(action: str | None) -> str:
+    mapping = {
+        "START": "START",
+        "ENABLE": "START",
+        "RESUME": "START",
+        "RUN": "START",
+        "PAUSE": "PAUSE",
+        "STOP": "PAUSE",
+        "DISABLE": "PAUSE",
+        "SUSPEND": "PAUSE",
+        "SET_BUDGET": "SET_BUDGET",
+        "UPDATE_BUDGET": "SET_BUDGET",
+        "SET_ROAS": "SET_ROAS",
+        "UPDATE_ROAS": "SET_ROAS",
+        "ADJUST_ROI": "SET_ROAS",
+    }
+    key = str(action or "").strip().upper()
+    return mapping.get(key, key)
 
 
 def _order_desc_nulls_last(col):
@@ -73,6 +117,341 @@ def _ensure_campaign(
     if instance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="campaign not found")
     return instance
+
+
+async def _gather_store_entry(
+    client: TikTokBusinessGMVMaxClient, *, advertiser_id: str, store_id: str
+) -> dict[str, Any] | None:
+    request = GMVMaxStoreListRequest(advertiser_id=str(advertiser_id))
+    response: GMVMaxResponse[Any] = await client.gmv_max_store_list(request)
+    store_list = getattr(response.data, "store_list", []) if response.data else []
+    for entry in store_list:
+        raw = entry.model_dump(exclude_none=False) if hasattr(entry, "model_dump") else entry
+        if isinstance(raw, dict) and str(raw.get("store_id")) == str(store_id):
+            return raw
+    return None
+
+
+async def _list_products_for_gmvmax(
+    ttb_client: TTBApiClient,
+    *,
+    advertiser_id: str,
+    store_id: str,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    async for product in ttb_client.iter_products(
+        store_id=str(store_id),
+        advertiser_id=str(advertiser_id),
+        eligibility="GMV_MAX",
+    ):
+        if isinstance(product, dict):
+            results.append(product)
+    return results
+
+
+def _resolve_product_specific_type(campaign: TTBGmvMaxCampaign) -> str:
+    raw = campaign.raw_json or {}
+    if isinstance(raw, dict):
+        payload = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+        candidate = payload.get("product_specific_type")
+        if isinstance(candidate, str) and candidate:
+            return candidate.upper()
+
+    item_group_ids = getattr(campaign, "item_group_ids", None)
+    if item_group_ids:
+        return "CUSTOMIZED_PRODUCTS"
+
+    return "ALL"
+
+
+async def create_gmvmax_campaign(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    payload: CreateCampaignRequest,
+    store_authorized_bc_id: str | None = None,
+    client: TikTokBusinessGMVMaxClient | None = None,
+) -> TTBGmvMaxCampaign:
+    """Create a *Product* GMV Max campaign with normalized TikTok payload mapping.
+
+    NOTE:
+    - This helper currently only supports Product GMV Max campaigns.
+    - Live GMV Max (LIVE shopping) should be handled by a dedicated helper or
+      an explicit branch once the payload semantics are defined, to avoid
+      overloading the PRODUCT-specific assumptions here.
+    """
+
+    provider = _ensure_provider(provider)
+    ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
+
+    client_provided = client is not None
+    client = client or build_ttb_gmvmax_client(db, auth_id=auth_id)
+
+    try:
+        body = payload.to_client_body(store_authorized_bc_id=store_authorized_bc_id)
+        row = await svc_create_campaign(
+            db,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            client=client,
+            body=body,
+        )
+        db.commit()
+        return row
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        if not client_provided:
+            await client.aclose()
+
+
+async def gmvmax_precheck(
+    db: Session,
+    *,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    advertiser_id: str,
+    payload: GMVMaxPrecheckRequest,
+    client: TikTokBusinessGMVMaxClient | None = None,
+    ttb_client: TTBApiClient | None = None,
+) -> GMVMaxPrecheckResponse:
+    """Run comprehensive Product GMV Max precheck for a tenant binding."""
+
+    provider = _ensure_provider(provider)
+    ensure_ttb_auth_in_workspace(db, workspace_id, auth_id)
+
+    client_provided = client is not None
+    ttb_client_provided = ttb_client is not None
+    client = client or build_ttb_gmvmax_client(db, auth_id=auth_id)
+    ttb_client = ttb_client or build_ttb_client(db, auth_id=auth_id)
+
+    try:
+        store_entry = await _gather_store_entry(
+            client, advertiser_id=advertiser_id, store_id=payload.store_id
+        )
+        is_gmv_max_available = bool(store_entry.get("is_gmv_max_available")) if store_entry else False
+        current_authorized_advertiser_id: str | None = None
+        needs_exclusive_auth = False
+
+        if store_entry:
+            exclusive_info = store_entry.get("exclusive_authorized_advertiser_info")
+            if isinstance(exclusive_info, dict):
+                current_authorized_advertiser_id = exclusive_info.get("advertiser_id")
+                if current_authorized_advertiser_id and str(current_authorized_advertiser_id) != str(advertiser_id):
+                    needs_exclusive_auth = True
+            elif store_entry.get("advertiser_id") and str(store_entry.get("advertiser_id")) != str(advertiser_id):
+                current_authorized_advertiser_id = str(store_entry.get("advertiser_id"))
+                needs_exclusive_auth = True
+
+        if not is_gmv_max_available:
+            return GMVMaxPrecheckResponse(
+                is_gmv_max_available=False,
+                needs_exclusive_auth=False,
+                current_authorized_advertiser_id=current_authorized_advertiser_id,
+                promote_all_products_allowed=False,
+                has_running_custom_shop_ads=False,
+                occupied_custom_shop_ads=[],
+                unoccupied_item_group_ids=[],
+                occupied_item_group_ids=[],
+                available_identities=[],
+                available_videos=[],
+                available_custom_anchor_videos=[],
+                recommended_roas_bid=None,
+                recommended_budget=None,
+                store_usage=None,
+                identities=[],
+                occupancy=None,
+                request_ids={
+                    "store_usage": None,
+                    "identities": None,
+                    "occupancy": None,
+                },
+            )
+
+        usage_resp = await client.gmv_max_store_shop_ad_usage_check(
+            GMVMaxStoreAdUsageCheckRequest(
+                advertiser_id=str(advertiser_id),
+                store_id=str(payload.store_id),
+                store_authorized_bc_id=str(payload.store_authorized_bc_id),
+            )
+        )
+        store_usage = usage_resp.data
+        promote_all_products_allowed = bool(
+            getattr(store_usage, "promote_all_products_allowed", False)
+        )
+        has_running_custom_shop_ads = bool(
+            getattr(store_usage, "is_running_custom_shop_ads", False)
+        )
+
+        occupied_ads: list[OccupiedAdSummary] = []
+        occupancy_resp = None
+        occupancy_data = None
+        if has_running_custom_shop_ads:
+            spu_ids = list(payload.item_group_ids or payload.product_item_group_ids or [])
+            occupancy_resp = await client.gmv_max_occupied_custom_shop_ads_list(
+                GMVMaxOccupiedCustomShopAdsListRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(payload.store_id),
+                    occupied_asset_type="SPU",
+                    asset_ids=[str(item) for item in spu_ids] if spu_ids else [],
+                )
+            )
+            occupancy_data = occupancy_resp.data
+            if occupancy_data:
+                for entry in getattr(occupancy_data, "occupied_custom_shop_ads", []) or []:
+                    occupied_ads.append(
+                        OccupiedAdSummary(
+                            ad_id=getattr(entry, "ad_id", None),
+                            campaign_id=getattr(entry, "campaign_id", None),
+                            advertiser_id=getattr(entry, "advertiser_id", None),
+                            item_group_id=getattr(entry, "item_group_id", None),
+                            create_time=getattr(entry, "create_time", None),
+                        )
+                    )
+        products = await _list_products_for_gmvmax(
+            ttb_client,
+            advertiser_id=advertiser_id,
+            store_id=payload.store_id,
+        )
+        unoccupied_item_group_ids: list[str] = []
+        occupied_item_group_ids: list[str] = []
+        for product in products:
+            if product.get("status") != "AVAILABLE":
+                continue
+            group_id = str(product.get("item_group_id")) if product.get("item_group_id") else None
+            if not group_id:
+                continue
+            gmv_status = product.get("gmv_max_ads_status")
+            if gmv_status == "UNOCCUPIED":
+                unoccupied_item_group_ids.append(group_id)
+            else:
+                occupied_item_group_ids.append(group_id)
+
+        identity_resp = await client.gmv_max_identity_get(
+            GMVMaxIdentityGetRequest(
+                advertiser_id=str(advertiser_id),
+                store_id=str(payload.store_id),
+                store_authorized_bc_id=str(payload.store_authorized_bc_id),
+            )
+        )
+        identity_data = identity_resp.data if identity_resp else None
+        identities = []
+        for entry in getattr(identity_data, "identity_list", []) or []:
+            info = getattr(entry, "identity_info", None)
+            summary = IdentitySummary(
+                identity_id=getattr(info, "identity_id", None),
+                identity_type=getattr(info, "identity_type", None),
+                user_name=getattr(info, "user_name", None),
+                profile_image=getattr(info, "profile_image", None),
+                product_gmv_max_available=getattr(entry, "product_gmv_max_available", None),
+            )
+            if summary.product_gmv_max_available is False:
+                continue
+            identities.append(summary)
+
+        videos: list[VideoSummary] = []
+        try:
+            video_resp = await client.gmv_max_video_get(
+                GMVMaxVideoGetRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(payload.store_id),
+                    store_authorized_bc_id=str(payload.store_authorized_bc_id),
+                )
+            )
+            for entry in getattr(video_resp.data, "list", []) or []:
+                video_info = getattr(entry, "video_info", None)
+                videos.append(
+                    VideoSummary(
+                        item_id=getattr(entry, "item_id", None),
+                        video_id=getattr(video_info, "video_id", None),
+                        preview_url=getattr(video_info, "preview_url", None),
+                        video_cover_url=getattr(video_info, "video_cover_url", None),
+                        duration=getattr(video_info, "duration", None),
+                    )
+                )
+        except Exception:
+            videos = []
+
+        custom_anchor_videos: list[CustomAnchorVideoSummary] = []
+        try:
+            anchor_resp = await client.gmv_max_custom_anchor_video_list_get(
+                GMVMaxCustomAnchorVideoListGetRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(payload.store_id),
+                )
+            )
+            for entry in getattr(anchor_resp.data, "custom_anchor_video_list", []) or []:
+                video_info = getattr(entry, "video_info", None)
+                custom_anchor_videos.append(
+                    CustomAnchorVideoSummary(
+                        custom_anchor_video_id=getattr(entry, "custom_anchor_video_id", None),
+                        video_id=getattr(video_info, "video_id", None),
+                        preview_url=getattr(video_info, "preview_url", None),
+                        video_cover_url=getattr(video_info, "video_cover_url", None),
+                        duration=getattr(video_info, "duration", None),
+                    )
+                )
+        except Exception:
+            custom_anchor_videos = []
+
+        recommended_roas_bid = None
+        recommended_budget = None
+        try:
+            recommend_resp = await ttb_client.recommend_gmvmax_bid(
+                advertiser_id=str(advertiser_id),
+                store_id=str(payload.store_id),
+                shopping_ads_type="PRODUCT",
+                optimization_goal="VALUE",
+                item_group_ids=list(payload.item_group_ids or payload.product_item_group_ids or []),
+                identity_id=payload.identity_id,
+            )
+            recommended_roas_bid = recommend_resp.get("roas_bid")
+            recommended_budget = recommend_resp.get("budget")
+        except Exception:
+            recommended_roas_bid = None
+            recommended_budget = None
+
+        return GMVMaxPrecheckResponse(
+            is_gmv_max_available=is_gmv_max_available,
+            needs_exclusive_auth=needs_exclusive_auth,
+            current_authorized_advertiser_id=current_authorized_advertiser_id,
+            promote_all_products_allowed=promote_all_products_allowed,
+            has_running_custom_shop_ads=has_running_custom_shop_ads,
+            occupied_custom_shop_ads=occupied_ads,
+            unoccupied_item_group_ids=unoccupied_item_group_ids,
+            occupied_item_group_ids=occupied_item_group_ids,
+            available_identities=identities,
+            available_videos=videos,
+            available_custom_anchor_videos=custom_anchor_videos,
+            recommended_roas_bid=recommended_roas_bid,
+            recommended_budget=recommended_budget,
+            store_usage=store_usage,
+            identities=getattr(identity_data, "identity_list", []) if identity_data else [],
+            occupancy=occupancy_data,
+            request_ids={
+                "store_usage": usage_resp.request_id,
+                "identities": getattr(identity_resp, "request_id", None),
+                "occupancy": getattr(occupancy_resp, "request_id", None) if occupancy_resp else None,
+            },
+        )
+    finally:
+        if not client_provided:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+        if not ttb_client_provided:
+            try:
+                await ttb_client.aclose()
+            except Exception:
+                pass
 
 
 async def sync_campaigns(
@@ -417,9 +796,70 @@ async def apply_campaign_action(
         campaign_id=campaign_id,
     )
 
+    normalized_action = _normalize_action(action)
     advertiser_id = get_advertiser_id_for_account(db, workspace_id, provider, auth_id)
     client = get_gmvmax_client_for_account(db, workspace_id, provider, auth_id)
+    ttb_client: TTBApiClient | None = None
     try:
+        promotion_type = getattr(campaign, "promotion_type", None)
+        promotion_type_value = str(
+            promotion_type.value if hasattr(promotion_type, "value") else promotion_type or ""
+        ).upper()
+        shopping_ads_type = getattr(campaign, "shopping_ads_type", None)
+        is_product_campaign = promotion_type_value == PromotionTypeEnum.PRODUCT.value or str(
+            shopping_ads_type or ""
+        ).upper() == "PRODUCT"
+        # NOTE:
+        # - We only enforce occupancy checks for *Product* GMV Max campaigns here.
+        # - If/when Live GMV Max is supported, revisit this branching and define
+        #   whether Live series need distinct conflict rules.
+        if normalized_action == "START" and is_product_campaign:
+            product_specific_type = _resolve_product_specific_type(campaign)
+            if product_specific_type == "ALL":
+                usage_resp = await client.gmv_max_store_shop_ad_usage_check(
+                    GMVMaxStoreAdUsageCheckRequest(
+                        advertiser_id=str(advertiser_id),
+                        store_id=str(campaign.store_id or ""),
+                    )
+                )
+                promote_all_products_allowed = bool(
+                    getattr(getattr(usage_resp, "data", None), "promote_all_products_allowed", False)
+                )
+                if not promote_all_products_allowed:
+                    raise TTBBusinessError(
+                        "Product GMV Max ALL campaign conflicts with another running campaign",
+                        code="GMVMAX_PROMOTE_ALL_CONFLICT",
+                        payload={
+                            "campaign_id": campaign.campaign_id,
+                            "store_id": campaign.store_id,
+                        },
+                    )
+            else:
+                item_group_ids = get_item_group_ids_for_campaign(db, campaign=campaign)
+                ttb_client = build_ttb_client(db, auth_id=auth_id)
+                products = await _list_products_for_gmvmax(
+                    ttb_client,
+                    advertiser_id=str(advertiser_id),
+                    store_id=str(campaign.store_id or ""),
+                )
+                status_map = {
+                    str(prod.get("item_group_id")): prod.get("gmv_max_ads_status")
+                    for prod in products
+                    if prod.get("item_group_id")
+                    and prod.get("status") == "AVAILABLE"
+                }
+                conflicting = [
+                    item_id
+                    for item_id in item_group_ids
+                    if status_map.get(item_id) != "UNOCCUPIED"
+                ]
+                if conflicting:
+                    raise TTBBusinessError(
+                        "Some SPUs are already occupied by another Product GMV Max campaign",
+                        code="GMVMAX_PRODUCT_OCCUPIED",
+                        payload={"item_group_ids": conflicting},
+                    )
+
         log_entry = await svc_apply_campaign_action(
             db,
             ttb_client=client,
@@ -439,6 +879,8 @@ async def apply_campaign_action(
         raise
     finally:
         await client.aclose()
+        if ttb_client is not None:
+            await ttb_client.aclose()
 
     db.refresh(campaign)
     return campaign, log_entry
