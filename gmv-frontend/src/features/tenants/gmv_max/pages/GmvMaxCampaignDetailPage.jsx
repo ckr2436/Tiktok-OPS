@@ -150,12 +150,6 @@ function parseCreativeMetrics(metrics) {
   return { impressions, clicks, spend, gmv, orders, ctr, cpc, roas };
 }
 
-function ensureArray(value) {
-  if (Array.isArray(value)) return value;
-  if (value === undefined || value === null) return [];
-  return [value];
-}
-
 function getMetricValue(entry, key) {
   if (!entry) return 0;
   const metrics = entry.metrics || entry;
