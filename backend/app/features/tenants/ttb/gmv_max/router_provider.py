@@ -102,12 +102,10 @@ from app.services.gmvmax_spec import (
     GMV_REPORT_CONFIG,
     GMVMaxReportLevel,
 )
-from .service import _ensure_provider, list_action_logs
+from .service import _ensure_provider, create_gmvmax_campaign as svc_create_campaign, gmvmax_precheck, list_action_logs
 from app.services.ttb_gmvmax import (
     _extract_item_group_ids_from_payload,
     _sanitize_id_list,
-    build_gmvmax_anchor_params,
-    create_gmvmax_campaign,
     ensure_gmvmax_store_authorized,
     log_campaign_action,
     resolve_store_id_from_page_context,
@@ -2182,17 +2180,17 @@ async def auto_bind_gmvmax_account(
 
 @router.post(
     "/precheck",
-    response_model=AsyncTaskResponse,
+    response_model=GMVMaxPrecheckResponse,
     dependencies=[Depends(require_tenant_member)],
 )
-async def gmvmax_precheck(
+async def gmvmax_precheck_route(
     workspace_id: int,
     provider: str,
     auth_id: int,
     payload: GMVMaxPrecheckRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
-) -> AsyncTaskResponse:
-    """Enqueue precheck (shop usage, identity list, occupancy) via TikTok GMV Max APIs."""
+) -> GMVMaxPrecheckResponse:
+    """Run comprehensive precheck (shop usage, assets, recommendation) synchronously."""
 
     advertiser_id = _normalize_identifier(payload.advertiser_id) or context.advertiser_id
     if not advertiser_id:
@@ -2206,35 +2204,17 @@ async def gmvmax_precheck(
             detail="store_authorized_bc_id is required",
         )
 
-    async_res = celery_app.send_task(
-        "gmvmax.precheck",
-        kwargs={
-            "auth_id": context.auth_id,
-            "advertiser_id": str(advertiser_id),
-            "store_id": str(payload.store_id),
-            "store_authorized_bc_id": payload.store_authorized_bc_id,
-            "identity_id": payload.identity_id,
-            "product_item_group_ids": payload.product_item_group_ids,
-            "occupied_asset_type": payload.occupied_asset_type,
-        },
-        queue="gmvmax",
-    )
-    logger.info(
-        "gmvmax.precheck enqueued",
-        extra={
-            "workspace_id": workspace_id,
-            "auth_id": auth_id,
-            "advertiser_id": advertiser_id,
-            "store_id": payload.store_id,
-            "task_id": async_res.id,
-        },
-    )
-    return _build_task_response(
-        async_res,
-        workspace_id=workspace_id,
-        provider=provider,
-        auth_id=auth_id,
-    )
+    try:
+        return await gmvmax_precheck(
+            context.db,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            advertiser_id=str(advertiser_id),
+            payload=payload,
+        )
+    except Exception as exc:  # noqa: BLE001
+        await _handle_tiktok_error(exc)
 
 
 # === GMV Max campaign lifecycle & details ===
@@ -2252,42 +2232,21 @@ async def create_gmvmax_campaign_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
     """Create a GMV Max campaign (POST /campaign/gmv_max/create/) then fetch detail."""
-    shopping_ads_type = payload.shopping_ads_type or payload.promotion_type
-    if not shopping_ads_type:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "shopping_ads_type_required", "message": "shopping_ads_type is required"},
-        )
-
     try:
         store_authorized_bc_id = await ensure_gmvmax_store_authorized(
             context.client,
             advertiser_id=context.advertiser_id,
             target_store_id=payload.store_id,
         )
-        anchor_params = await build_gmvmax_anchor_params(
-            context.client,
-            advertiser_id=context.advertiser_id,
-            shopping_ads_type=shopping_ads_type,
-            store_id=payload.store_id,
-            store_authorized_bc_id=store_authorized_bc_id,
-            product_specific_type=payload.product_specific_type,
-            item_group_ids=payload.item_group_ids,
-            product_video_specific_type=payload.product_video_specific_type,
-            identity_ids=payload.identity_ids,
-        )
-        row = await create_gmvmax_campaign(
+        row = await svc_create_campaign(
             context.db,
             workspace_id=workspace_id,
             provider=provider,
             auth_id=auth_id,
             advertiser_id=context.advertiser_id,
             client=context.client,
-            body=payload.to_client_body(
-                store_authorized_bc_id=store_authorized_bc_id,
-                anchor_params=anchor_params,
-                shopping_ads_type=shopping_ads_type,
-            ),
+            payload=payload,
+            store_authorized_bc_id=store_authorized_bc_id,
         )
     except Exception as exc:  # noqa: BLE001
         await _handle_tiktok_error(exc)

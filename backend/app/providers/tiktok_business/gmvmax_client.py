@@ -468,6 +468,7 @@ class GMVMaxCampaignCreateBody(BaseModel):
     store_authorized_bc_id: Optional[str] = None
     shopping_ads_type: str
     optimization_goal: str
+    deep_bid_type: Optional[str] = None
     campaign_name: str
     budget: Optional[float] = None
     roas_bid: Optional[float] = None
@@ -475,9 +476,13 @@ class GMVMaxCampaignCreateBody(BaseModel):
     schedule_type: Optional[str] = None
     schedule_start_time: Optional[str] = None
     schedule_end_time: Optional[str] = None
+    product_specific_type: Optional[str] = None
+    item_group_ids: Optional[List[str]] = None
     identity_list: Optional[List[GMVMaxIdentityInfo]] = None
     product_video_specific_type: Optional[str] = None
+    affiliate_posts_enabled: Optional[bool] = None
     custom_anchor_video_list: Optional[List[Dict[str, Any]]] = None
+    item_list: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(extra="allow")
 
