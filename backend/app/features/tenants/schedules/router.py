@@ -14,7 +14,7 @@ from app.core.deps import require_tenant_admin, SessionUser
 from app.core.errors import APIError
 from app.data.db import get_db
 from app.data.models.scheduling import TaskCatalog, Schedule, ScheduleRun
-from app.services.scheduler_catalog import validate_params_or_raise
+from app.services.scheduler_schema_utils import validate_params_or_raise
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants" + "/{workspace_id}/schedules",
