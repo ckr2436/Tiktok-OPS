@@ -371,7 +371,7 @@ export default function CreateSeriesModal({
         return '当前店铺不支持 Product GMV Max';
       }
       if (target.needs_exclusive_auth) {
-        return '当前授权账号与店铺独占授权不匹配';
+        return '当前授权账号与店铺独占授权不匹配，请切换正确的授权账户。';
       }
       if (
         productSpecificType === DEFAULT_PRODUCT_SPECIFIC_TYPE &&
@@ -518,10 +518,6 @@ export default function CreateSeriesModal({
 
       {hasBlockingPrecheckIssue ? (
         <div className="gmvmax-banner gmvmax-banner--error">{hasBlockingPrecheckIssue}</div>
-      ) : precheckResult?.needs_exclusive_auth ? (
-        <div className="gmvmax-banner gmvmax-banner--warning">
-          当前授权账号与店铺独占授权不匹配，请切换正确的授权账户。
-        </div>
       ) : null}
       {precheckError ? <div className="gmvmax-banner gmvmax-banner--error">{precheckError}</div> : null}
 
