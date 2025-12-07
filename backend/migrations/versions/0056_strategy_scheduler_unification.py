@@ -24,9 +24,11 @@ def upgrade() -> None:
         "gmvmax_monitoring_strategies",
         sa.Column("task_name", sa.String(length=128), nullable=True, server_default=sa.text("'gmvmax.strategy'")),
     )
+    # MySQL 5.7+ does not allow JSON columns with a non-NULL default value.
+    # Add the column as nullable first, backfill data, then enforce NOT NULL.
     op.add_column(
         "gmvmax_monitoring_strategies",
-        sa.Column("params_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("params_json", sa.JSON(), nullable=True),
     )
     op.add_column("gmvmax_monitoring_strategies", sa.Column("input_schema_json", sa.JSON(), nullable=True))
 
@@ -69,6 +71,13 @@ def upgrade() -> None:
             SET params_json = '{}' WHERE params_json IS NULL
             """
         )
+    )
+
+    op.alter_column(
+        "gmvmax_monitoring_strategies",
+        "params_json",
+        existing_type=sa.JSON(),
+        nullable=False,
     )
 
 

@@ -646,7 +646,7 @@ class GmvMonitoringStrategy(Base):
     task_name: Mapped[str | None] = mapped_column(
         String(128), nullable=True, default="gmvmax.strategy", server_default=text("'gmvmax.strategy'")
     )
-    params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     input_schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
