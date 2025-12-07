@@ -204,6 +204,7 @@ export default function CreateSeriesModal({
     {
       store_id: selectedStoreId || undefined,
       advertiser_id: advertiserId || undefined,
+      owner_bc_id: bcIdForRequest || undefined,
       ad_creation_eligible: 'GMV_MAX',
       status: 'AVAILABLE',
       page_size: 50,

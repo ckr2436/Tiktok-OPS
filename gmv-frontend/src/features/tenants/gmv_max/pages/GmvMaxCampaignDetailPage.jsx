@@ -1087,6 +1087,18 @@ export default function GmvMaxCampaignDetailPage() {
     const campaign = campaignQuery.data?.campaign || campaignQuery.data;
     return campaign?.store_id || campaign?.storeId || '';
   }, [campaignQuery.data]);
+  const campaignStoreBcId = useMemo(() => {
+    const campaign = campaignQuery.data?.campaign || campaignQuery.data || {};
+    const store = campaign?.store || {};
+    return (
+      campaign?.store_authorized_bc_id ||
+      campaign?.authorized_bc_id ||
+      campaign?.bc_id ||
+      store?.store_authorized_bc_id ||
+      store?.bc_id ||
+      undefined
+    );
+  }, [campaignQuery.data]);
   const sessionProducts = useMemo(() => {
     const products = [];
     sessionList.forEach((session) => {
@@ -1116,6 +1128,7 @@ export default function GmvMaxCampaignDetailPage() {
     {
       store_id: storeIdFromQuery || campaignStoreId || undefined,
       advertiser_id: advertiserId || undefined,
+      owner_bc_id: campaignStoreBcId,
       gmv_max_ads_status: 'UNOCCUPIED',
       page_size: 50,
     },
