@@ -11,6 +11,7 @@ import {
   formatMoney,
   getStoreId,
   getStoreLabel,
+  collectStoreBusinessCenterCandidates,
   parseOptionalFloat,
 } from './helpers.js';
 import { ErrorBlock } from './ErrorHandling.jsx';
@@ -116,6 +117,16 @@ export default function CreateSeriesModal({
     return storeOptions.find((option) => option.value === selectedStoreId)?.data || null;
   }, [selectedStoreId, storeOptions]);
 
+  const storeAuthorizedBcId = useMemo(
+    () => selectedStore?.store_authorized_bc_id || selectedStore?.authorized_bc_id || undefined,
+    [selectedStore],
+  );
+
+  const storeBusinessCenterId = useMemo(() => {
+    const candidates = collectStoreBusinessCenterCandidates(selectedStore);
+    return candidates.length > 0 ? candidates[0] : undefined;
+  }, [selectedStore]);
+
   useEffect(() => {
     if (!open) return;
     setProductSpecificType(DEFAULT_PRODUCT_SPECIFIC_TYPE);
@@ -148,10 +159,9 @@ export default function CreateSeriesModal({
     () => ({
       store_id: selectedStoreId || undefined,
       advertiser_id: advertiserId || undefined,
-      store_authorized_bc_id:
-        selectedStore?.store_authorized_bc_id || selectedStore?.authorized_bc_id || undefined,
+      store_authorized_bc_id: storeAuthorizedBcId,
     }),
-    [advertiserId, selectedStore, selectedStoreId],
+    [advertiserId, selectedStoreId, storeAuthorizedBcId],
   );
 
   const identitiesQuery = useGmvMaxIdentitiesQuery(workspaceId, provider, authId, identityParams, {
@@ -172,6 +182,20 @@ export default function CreateSeriesModal({
     identityOptions.forEach((item) => map.set(item.value, item));
     return map;
   }, [identityOptions]);
+
+  const identityBusinessCenterId = useMemo(() => {
+    const firstIdentity = Array.from(selectedIdentities)[0];
+    if (!firstIdentity) return undefined;
+    const data = identityOptionMap.get(firstIdentity)?.data || {};
+    return (
+      data.identity_authorized_bc_id ||
+      data.identityAuthorizedBcId ||
+      data.authorized_bc_id ||
+      undefined
+    );
+  }, [identityOptionMap, selectedIdentities]);
+
+  const bcIdForRequest = identityBusinessCenterId || storeBusinessCenterId;
 
   const productsQuery = useProductsQuery(
     workspaceId,
@@ -204,14 +228,21 @@ export default function CreateSeriesModal({
       productSpecificType === CUSTOM_PRODUCT_SPECIFIC_TYPE ? sortIds(selectedItemIds) : [];
     return {
       store_id: selectedStoreId,
-      store_authorized_bc_id:
-        selectedStore?.store_authorized_bc_id || selectedStore?.authorized_bc_id || undefined,
+      store_authorized_bc_id: storeAuthorizedBcId,
+      bc_id: bcIdForRequest || undefined,
       advertiser_id: advertiserId || undefined,
       identity_id: null,
       product_specific_type: productSpecificType,
       item_group_ids: itemGroupIds,
     };
-  }, [advertiserId, productSpecificType, selectedItemIds, selectedStore, selectedStoreId]);
+  }, [
+    advertiserId,
+    bcIdForRequest,
+    productSpecificType,
+    selectedItemIds,
+    selectedStoreId,
+    storeAuthorizedBcId,
+  ]);
 
   const precheckMatches = useMemo(() => {
     if (!currentPrecheckParams || !precheckParams) return false;
