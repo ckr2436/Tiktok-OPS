@@ -1538,12 +1538,26 @@ def get_sync_task_state(
     """Return Celery task status for GMV Max sync jobs (campaign/report sync)."""
 
     res: AsyncResult = AsyncResult(task_id, app=celery_app)
-    state = str(res.state)
-    info = res.info if isinstance(res.info, dict) else {}
-    error = info.get("error") if state in {"FAILURE", "RETRY"} else None
-    result = None
-    if state == "SUCCESS":
-        result = info.get("result") if info else res.result
+    try:
+        state = str(res.state)
+        info = res.info if isinstance(res.info, dict) else {}
+        error = info.get("error") if state in {"FAILURE", "RETRY"} else None
+        result = None
+        if state == "SUCCESS":
+            result = info.get("result") if info else res.result
+    except ValueError as exc:
+        logger.warning(
+            "gmvmax.async_task result deserialization failed",
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "task_id": task_id,
+                "error": str(exc),
+            },
+        )
+        state = "FAILURE"
+        result = None
+        error = {"type": "DeserializationError", "message": "Celery result payload invalid"}
 
     logger.info(
         "gmvmax.sync polled",
@@ -1573,12 +1587,26 @@ def get_async_task_state(
     """Return Celery task status for GMV Max async API fetches (report/bid preview)."""
 
     res: AsyncResult = AsyncResult(task_id, app=celery_app)
-    state = str(res.state)
-    info = res.info if isinstance(res.info, dict) else {}
-    error = info.get("error") if state in {"FAILURE", "RETRY"} else None
-    result = None
-    if state == "SUCCESS":
-        result = info.get("result") if info else res.result
+    try:
+        state = str(res.state)
+        info = res.info if isinstance(res.info, dict) else {}
+        error = info.get("error") if state in {"FAILURE", "RETRY"} else None
+        result = None
+        if state == "SUCCESS":
+            result = info.get("result") if info else res.result
+    except ValueError as exc:
+        logger.warning(
+            "gmvmax.async_task result deserialization failed",
+            extra={
+                "workspace_id": context.workspace_id,
+                "auth_id": context.auth_id,
+                "task_id": task_id,
+                "error": str(exc),
+            },
+        )
+        state = "FAILURE"
+        result = None
+        error = {"type": "DeserializationError", "message": "Celery result payload invalid"}
 
     logger.info(
         "gmvmax.async_task polled",

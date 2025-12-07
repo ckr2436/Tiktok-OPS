@@ -779,6 +779,15 @@ class GmvMaxSyncService:
     ) -> dict[str, int]:
         start = start_date or now.date()
         end = end_date or start
+        logger.info(
+            "gmvmax creative metrics sync target mapping",
+            extra={
+                "strategy_id": strategy.id,
+                "workspace_id": strategy.workspace_id,
+                "level": "CREATIVE",
+                "tables": ["gmv_creative_metrics_10min"],
+            },
+        )
         with self._session_factory() as session:
             campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
             if not campaigns:

@@ -1207,8 +1207,9 @@ def manual_sync_levels_task(
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
-    except ValueError as exc:  # pragma: no cover - defensive validation
-        self.update_state(state="FAILURE", meta={"error": {"message": str(exc)}})
+    except ValueError:
+        # Let Celery capture the exception so the backend stores a serializable
+        # failure payload with exc_type/traceback instead of a custom dict.
         raise
 
     service = GmvMaxSyncService()
@@ -1234,10 +1235,9 @@ def manual_sync_levels_task(
             extra={"workspace_id": workspace_id, "auth_id": auth_id, "levels": levels},
         )
         return payload
-    except Exception as exc:  # pragma: no cover - logging and bubbling for Celery
+    except Exception:  # pragma: no cover - logging and bubbling for Celery
         logger.exception(
             "gmvmax.manual_sync_levels failed",
             extra={"workspace_id": workspace_id, "auth_id": auth_id, "levels": levels},
         )
-        self.update_state(state="FAILURE", meta={"error": {"message": str(exc)}})
         raise
