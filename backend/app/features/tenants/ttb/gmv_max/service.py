@@ -30,6 +30,10 @@ from app.services.ttb_gmvmax import (
     sync_gmvmax_metrics_daily as svc_sync_metrics_daily,
     sync_gmvmax_metrics_hourly as svc_sync_metrics_hourly,
 )
+from app.services.ttb_client_factory import (
+    build_ttb_client,
+    build_ttb_gmvmax_client,
+)
 from app.services.ttb_api import TTBApiClient, TTBBusinessError
 
 from ._helpers import (
