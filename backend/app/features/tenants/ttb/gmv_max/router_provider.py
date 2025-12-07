@@ -134,6 +134,7 @@ from .schemas import (
     CreativeHeatingRecord,
     DEFAULT_PROMOTION_TYPES,
     GMVMaxCampaignInfoData,
+    GmvMaxManualSyncRequest,
     GMVMaxPrecheckRequest,
     GMVMaxPrecheckResponse,
     MetricsRequest,
@@ -147,8 +148,6 @@ from .schemas import (
     StrategyUpdateResponse,
     SyncIntervalResponse,
     SyncIntervalUpdateRequest,
-    SyncRequest,
-    SyncTaskResponse,
     SyncTaskStateResponse,
     UpdateCampaignRequest,
     normalize_datetime_to_date,
@@ -1467,80 +1466,60 @@ def update_gmvmax_sync_interval_provider(
     response_model=SyncTaskResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
-async def sync_gmvmax_campaigns_provider(
+def sync_gmvmax_manual(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    payload: SyncRequest,
-    bc_id_query: Optional[str] = Query(None, alias="bc_id"),
-    owner_bc_id_query: Optional[str] = Query(None, alias="owner_bc_id"),
-    advertiser_id_query: Optional[str] = Query(None, alias="advertiser_id"),
-    store_id_query: Optional[str] = Query(None, alias="store_id"),
+    payload: GmvMaxManualSyncRequest,
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> SyncTaskResponse:
-    """Enqueue GMV Max campaign sync (TikTok GET /gmv_max/campaign/get/) via Celery."""
+    """Dispatch account-scoped GMV Max manual sync via Celery."""
 
-    advertiser_id = (
-        payload.advertiser_id or advertiser_id_query or context.advertiser_id
-    )
-    store_id = payload.store_id or store_id_query or context.store_id
-    resolved_bc_id = (
-        payload.owner_bc_id
-        or payload.bc_id
-        or owner_bc_id_query
-        or bc_id_query
-    )
-    scope_context = {
-        "bc_id": resolved_bc_id,
-        "advertiser_id": advertiser_id,
-        "store_id": store_id,
-    }
-    log_context = {
+    if not payload.levels:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "missing_levels", "message": "levels is required"},
+        )
+
+    end = payload.end_date or date.today()
+    start = payload.start_date or (end - timedelta(days=2))
+    if start > end:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_date_range",
+                "message": "start_date must be earlier than or equal to end_date.",
+            },
+        )
+
+    task_kwargs = {
         "workspace_id": context.workspace_id,
         "auth_id": context.auth_id,
-        "scope": scope_context,
+        "levels": [level.value for level in payload.levels],
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "campaign_ids": payload.campaign_ids,
     }
-
-    filters: Dict[str, Any] = {}
-    if payload.campaign_filter:
-        filters.update(
-            payload.campaign_filter.model_dump(exclude_none=True, by_alias=True)
-        )
-    if payload.campaign_options:
-        filters.update(
-            payload.campaign_options.model_dump(exclude_none=True, by_alias=True)
-        )
-    if store_id:
-        filters.setdefault("store_ids", [str(store_id)])
-
-    task_kwargs: Dict[str, Any] = {
-        "workspace_id": context.workspace_id,
-        "auth_id": context.auth_id,
-        "advertiser_id": str(advertiser_id),
-    }
-    if filters:
-        task_kwargs["filters"] = filters
-
-    params_payload = payload.model_dump(exclude_none=True, by_alias=True)
-    if params_payload:
-        task_kwargs["params"] = params_payload
 
     async_res = celery_app.send_task(
-        "gmvmax.sync_campaigns",
-        kwargs=task_kwargs,
-        queue="gmvmax",
+        "gmvmax.manual_sync_levels", kwargs=task_kwargs, queue="gmvmax"
     )
-    task_id = async_res.id or ""
     logger.info(
-        "gmvmax.sync enqueued", extra={**log_context, "task_id": task_id}
-    )
-    status_url = (
-        f"/tenants/{workspace_id}/providers/{provider}/accounts/{auth_id}/gmvmax/sync/{task_id}"
-        if task_id
-        else None
+        "gmvmax.manual_sync_levels dispatched",
+        extra={
+            "workspace_id": context.workspace_id,
+            "auth_id": context.auth_id,
+            "task_id": async_res.id,
+            "levels": task_kwargs["levels"],
+            "start_date": task_kwargs["start_date"],
+            "end_date": task_kwargs["end_date"],
+            "campaign_ids": payload.campaign_ids,
+        },
     )
 
-    return SyncTaskResponse(task_id=task_id, state=str(async_res.state), status_url=status_url)
+    return _build_task_response(
+        async_res, workspace_id=workspace_id, provider=provider, auth_id=auth_id
+    )
 
 
 @router.get(
