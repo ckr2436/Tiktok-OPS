@@ -4,7 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FormField from '../../../../components/ui/FormField.jsx'
 import Loading from '../../../../components/ui/Loading.jsx'
 import Modal from '../../../../components/ui/Modal.jsx'
-import { MONITORING_STRATEGY_LEVELS, PROMOTION_TYPES } from '../constants.js'
+import {
+  MONITORING_STRATEGY_LEVELS,
+  PROMOTION_TYPES,
+  STRATEGY_CATEGORIES,
+  TASK_OPTIONS_BY_CATEGORY,
+  getCategoryLabel,
+  getTaskLabel,
+} from '../constants.js'
 import {
   createMonitoringStrategy,
   deleteMonitoringStrategy,
@@ -23,7 +30,36 @@ function formatDate(value) {
   }
 }
 
+function getDefaultTaskName(category) {
+  const opts = TASK_OPTIONS_BY_CATEGORY[category]
+  return opts && opts.length > 0 ? opts[0].value : ''
+}
+
+function formatParamsSummary(params = {}) {
+  const entries = Object.entries(params || {})
+  if (!entries.length) return '-'
+  return entries
+    .map(([key, value]) => `${key}=${value}`)
+    .join(', ')
+}
+
+function paramsForCategory(category, taskName, paramsJson, limitInput) {
+  if (category !== 'TTB_BASE') return paramsJson || {}
+  const payload = {
+    mode: paramsJson?.mode || 'incremental',
+  }
+  if (limitInput !== '' && limitInput !== null && limitInput !== undefined) {
+    payload.limit = Number(limitInput)
+  } else if (paramsJson?.limit) {
+    payload.limit = paramsJson.limit
+  }
+  return payload
+}
+
 function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
+  const defaultCategory = initial?.category || 'GMVMAX'
+  const defaultTask = initial?.task_name || getDefaultTaskName(defaultCategory)
+
   const [workspaceId, setWorkspaceId] = useState(initial?.workspace_id || '')
   const [authId, setAuthId] = useState(initial?.auth_id || '')
   const [advertiserId, setAdvertiserId] = useState(initial?.advertiser_id || '')
@@ -33,11 +69,19 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
   const [intervalMinutes, setIntervalMinutes] = useState(initial?.interval_minutes || '')
   const [maxCampaigns, setMaxCampaigns] = useState(initial?.max_campaigns_per_run ?? '')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
+  const [category, setCategory] = useState(defaultCategory)
+  const [taskName, setTaskName] = useState(defaultTask)
+  const [paramsMode, setParamsMode] = useState(initial?.params_json?.mode || 'incremental')
+  const [paramsLimit, setParamsLimit] = useState(
+    initial?.params_json?.limit ?? ''
+  )
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
     if (!open) return
+    const nextCategory = initial?.category || 'GMVMAX'
+    const nextTask = initial?.task_name || getDefaultTaskName(nextCategory)
     setError('')
     setWorkspaceId(initial?.workspace_id || '')
     setAuthId(initial?.auth_id || '')
@@ -48,9 +92,25 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
     setIntervalMinutes(initial?.interval_minutes || '')
     setMaxCampaigns(initial?.max_campaigns_per_run ?? '')
     setEnabled(initial?.enabled ?? true)
+    setCategory(nextCategory)
+    setTaskName(nextTask)
+    setParamsMode(initial?.params_json?.mode || 'incremental')
+    setParamsLimit(initial?.params_json?.limit ?? '')
   }, [open, initial])
 
   const disabledBase = mode === 'edit'
+
+  const taskOptions = TASK_OPTIONS_BY_CATEGORY[category] || []
+
+  const handleCategoryChange = (nextCategory) => {
+    setCategory(nextCategory)
+    const defaultTaskName = getDefaultTaskName(nextCategory)
+    setTaskName(defaultTaskName)
+    if (nextCategory !== 'TTB_BASE') {
+      setParamsMode('incremental')
+      setParamsLimit('')
+    }
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -62,24 +122,64 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
       return
     }
 
+    if (category === 'GMVMAX' && !level) {
+      setError('GMVMAX 策略需要选择 level')
+      return
+    }
+
+    const paramsJson =
+      category === 'TTB_BASE'
+        ? (() => {
+            if (!paramsMode || !['incremental', 'full'].includes(paramsMode)) {
+              setError('请选择有效的任务模式')
+              return null
+            }
+            if (paramsLimit !== '' && (Number(paramsLimit) <= 0 || !Number.isInteger(Number(paramsLimit)))) {
+              setError('limit 需为大于 0 的整数')
+              return null
+            }
+            const payload = { mode: paramsMode }
+            if (paramsLimit !== '') {
+              payload.limit = Number(paramsLimit)
+            }
+            return payload
+          })()
+        : paramsForCategory(category, taskName, initial?.params_json || {}, paramsLimit)
+
+    if (paramsJson === null) return
+
+    const payloadBase = {
+      category,
+      task_name: taskName,
+      interval_minutes: interval,
+      max_campaigns_per_run: maxCampaigns === '' ? null : Number(maxCampaigns),
+      enabled,
+      params_json: paramsJson,
+    }
+
+    const gmvmPayload =
+      category === 'GMVMAX'
+        ? {
+            promotion_type: promotionType || null,
+            level,
+          }
+        : {
+            promotion_type: null,
+            level: null,
+          }
+
     const payload = mode === 'edit'
       ? {
-          promotion_type: promotionType || null,
-          level,
-          interval_minutes: interval,
-          max_campaigns_per_run: maxCampaigns === '' ? null : Number(maxCampaigns),
-          enabled,
+          ...payloadBase,
+          ...gmvmPayload,
         }
       : {
           workspace_id: Number(workspaceId),
           auth_id: authId === '' ? null : Number(authId),
           advertiser_id: advertiserId || null,
           store_id: storeId || null,
-          promotion_type: promotionType || null,
-          level,
-          interval_minutes: interval,
-          max_campaigns_per_run: maxCampaigns === '' ? null : Number(maxCampaigns),
-          enabled,
+          ...payloadBase,
+          ...gmvmPayload,
         }
 
     if (mode !== 'edit') {
@@ -97,8 +197,14 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
       const detail = resp?.data?.detail || resp?.data?.message
       const code = resp?.data?.code
 
-      if (resp?.status === 409 && code === 'DUPLICATE_STRATEGY') {
+      if (code === 'INVALID_INTERVAL') {
+        setError('同步间隔必须大于 0 分钟')
+      } else if (code === 'LEVEL_REQUIRED') {
+        setError('GMVMAX 策略需要指定 level')
+      } else if (resp?.status === 409 && code === 'DUPLICATE_STRATEGY') {
         setError('相同 workspace / 维度 的策略已存在，请不要重复创建。')
+      } else if (code === 'PARAMS_INVALID') {
+        setError(detail || '任务参数校验失败')
       } else if (detail) {
         setError(detail)
       } else {
@@ -111,90 +217,171 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
 
   return (
     <Modal open={open} title={mode === 'edit' ? '编辑策略' : '新建策略'} onClose={pending ? undefined : onClose}>
-      <form onSubmit={handleSubmit} className="form-grid">
-        <FormField label="workspace_id" required error={error && !workspaceId && mode !== 'edit'}>
-          <input
-            className="input"
-            type="number"
-            value={workspaceId}
-            onChange={(e) => setWorkspaceId(e.target.value)}
-            disabled={disabledBase}
-            placeholder="必填"
-          />
-        </FormField>
-        <FormField label="auth_id">
-          <input
-            className="input"
-            type="number"
-            value={authId}
-            onChange={(e) => setAuthId(e.target.value)}
-            disabled={disabledBase}
-            placeholder="可空（为空表示该 workspace 下所有授权）"
-          />
-        </FormField>
-        <FormField label="advertiser_id">
-          <input
-            className="input"
-            value={advertiserId}
-            onChange={(e) => setAdvertiserId(e.target.value)}
-            disabled={disabledBase}
-            placeholder="可空（为空表示所有广告主）"
-          />
-        </FormField>
-        <FormField label="store_id">
-          <input
-            className="input"
-            value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-            disabled={disabledBase}
-            placeholder="可空（为空表示所有店铺）"
-          />
-        </FormField>
+      <form onSubmit={handleSubmit} className="form-grid" style={{gap:16}}>
+        <div className="section">
+          <h4 style={{margin:'8px 0'}}>基础范围</h4>
+          <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))'}}>
+            <FormField label="workspace_id" required error={error && !workspaceId && mode !== 'edit'}>
+              <input
+                className="input"
+                type="number"
+                value={workspaceId}
+                onChange={(e) => setWorkspaceId(e.target.value)}
+                disabled={disabledBase}
+                placeholder="必填"
+              />
+            </FormField>
+            <FormField label="auth_id">
+              <input
+                className="input"
+                type="number"
+                value={authId}
+                onChange={(e) => setAuthId(e.target.value)}
+                disabled={disabledBase}
+                placeholder="可空（为空表示该 workspace 下所有授权）"
+              />
+            </FormField>
+            <FormField label="advertiser_id">
+              <input
+                className="input"
+                value={advertiserId}
+                onChange={(e) => setAdvertiserId(e.target.value)}
+                disabled={disabledBase}
+                placeholder="可空（为空表示所有广告主）"
+              />
+            </FormField>
+            <FormField label="store_id">
+              <input
+                className="input"
+                value={storeId}
+                onChange={(e) => setStoreId(e.target.value)}
+                disabled={disabledBase}
+                placeholder="可空（为空表示所有店铺）"
+              />
+            </FormField>
+          </div>
+        </div>
 
-        <FormField label="promotion_type">
-          <select className="input" value={promotionType} onChange={(e) => setPromotionType(e.target.value)}>
-            <option value="">（空）</option>
-            {PROMOTION_TYPES.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </FormField>
+        <div className="section" style={{gridColumn:'1/-1'}}>
+          <h4 style={{margin:'8px 0'}}>任务类别 / 类型</h4>
+          <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))'}}>
+            <FormField label="category" required>
+              <select
+                className="input"
+                value={category}
+                onChange={(e) => handleCategoryChange(e.target.value)}
+              >
+                {STRATEGY_CATEGORIES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </FormField>
+            {category === 'GMVMAX' ? (
+              <FormField label="task_name">
+                <input className="input" value="gmvmax.strategy" disabled />
+              </FormField>
+            ) : (
+              <FormField label="task_name" required>
+                <select
+                  className="input"
+                  value={taskName}
+                  onChange={(e) => setTaskName(e.target.value)}
+                >
+                  {taskOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+          </div>
+        </div>
 
-        <FormField label="level" required>
-          <select className="input" value={level} onChange={(e) => setLevel(e.target.value)}>
-            {MONITORING_STRATEGY_LEVELS.map((lvl) => (
-              <option key={lvl} value={lvl}>{lvl}</option>
-            ))}
-          </select>
-        </FormField>
+        <div className="section" style={{gridColumn:'1/-1'}}>
+          <h4 style={{margin:'8px 0'}}>调度频率</h4>
+          <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))'}}>
+            <FormField label="interval_minutes" required error={error?.includes('间隔') ? error : undefined}>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={intervalMinutes}
+                onChange={(e) => setIntervalMinutes(e.target.value)}
+                placeholder="同步间隔（分钟）"
+              />
+            </FormField>
 
-        <FormField label="interval_minutes" required error={error?.includes('间隔') ? error : undefined}>
-          <input
-            className="input"
-            type="number"
-            min={1}
-            value={intervalMinutes}
-            onChange={(e) => setIntervalMinutes(e.target.value)}
-            placeholder="同步间隔（分钟）"
-          />
-        </FormField>
+            <FormField label="max_campaigns_per_run">
+              <input
+                className="input"
+                type="number"
+                value={maxCampaigns}
+                onChange={(e) => setMaxCampaigns(e.target.value)}
+                placeholder="可空"
+              />
+            </FormField>
 
-        <FormField label="max_campaigns_per_run">
-          <input
-            className="input"
-            type="number"
-            value={maxCampaigns}
-            onChange={(e) => setMaxCampaigns(e.target.value)}
-            placeholder="可空"
-          />
-        </FormField>
+            <FormField label="enabled">
+              <label style={{display:'flex', alignItems:'center', gap:8}}>
+                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+                <span>{enabled ? '启用' : '停用'}</span>
+              </label>
+            </FormField>
+          </div>
+        </div>
 
-        <FormField label="enabled">
-          <label style={{display:'flex', alignItems:'center', gap:8}}>
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            <span>{enabled ? '启用' : '停用'}</span>
-          </label>
-        </FormField>
+        {category === 'GMVMAX' && (
+          <div className="section" style={{gridColumn:'1/-1'}}>
+            <h4 style={{margin:'8px 0'}}>GMVMAX 维度</h4>
+            <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))'}}>
+              <FormField label="promotion_type">
+                <select className="input" value={promotionType} onChange={(e) => setPromotionType(e.target.value)}>
+                  <option value="">（空）</option>
+                  {PROMOTION_TYPES.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="level" required>
+                <select className="input" value={level} onChange={(e) => setLevel(e.target.value)}>
+                  {MONITORING_STRATEGY_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>{lvl}</option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+          </div>
+        )}
+
+        <div className="section" style={{gridColumn:'1/-1'}}>
+          <h4 style={{margin:'8px 0'}}>任务参数</h4>
+          {category === 'TTB_BASE' ? (
+            <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))'}}>
+              <FormField label="mode" required>
+                <select
+                  className="input"
+                  value={paramsMode}
+                  onChange={(e) => setParamsMode(e.target.value)}
+                >
+                  <option value="incremental">incremental</option>
+                  <option value="full">full</option>
+                </select>
+              </FormField>
+              <FormField label="limit" hint="可空；大于 0 的整数">
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  value={paramsLimit}
+                  onChange={(e) => setParamsLimit(e.target.value)}
+                  placeholder="例如 500"
+                />
+              </FormField>
+            </div>
+          ) : (
+            <div style={{padding:'6px 4px', color:'var(--muted)'}}>无需额外参数，按 level / promotion_type 控制策略。</div>
+          )}
+        </div>
 
         {error && <div className="form-error" style={{gridColumn:'1/-1'}}>{error}</div>}
 
@@ -215,12 +402,19 @@ export default function MonitoringStrategiesPage() {
     promotion_type: '',
     level: '',
     enabled: '',
+    category: '',
+    task_name: '',
   })
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [toast, setToast] = useState('')
 
   const queryClient = useQueryClient()
+
+  const taskFilterOptions = useMemo(() => {
+    const cat = filters.category || 'GMVMAX'
+    return TASK_OPTIONS_BY_CATEGORY[cat] || []
+  }, [filters.category])
 
   const queryParams = useMemo(() => {
     const params = { limit: 50, offset: 0 }
@@ -231,6 +425,8 @@ export default function MonitoringStrategiesPage() {
     if (filters.level) params.level = filters.level
     if (filters.enabled === 'true') params.enabled = true
     if (filters.enabled === 'false') params.enabled = false
+    if (filters.category) params.category = filters.category
+    if (filters.task_name) params.task_name = filters.task_name
     return params
   }, [filters])
 
@@ -290,8 +486,8 @@ export default function MonitoringStrategiesPage() {
     <div className="card card--elevated">
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
         <div>
-          <h3 style={{margin:0}}>GMV Max 监控策略</h3>
-          <p className="small-muted" style={{margin:0}}>平台域配置，控制 GMV Max 同步调度。</p>
+          <h3 style={{margin:0}}>策略调度中心</h3>
+          <p className="small-muted" style={{margin:0}}>统一管理 GMVMAX 指标策略与 TikTok 基础同步任务。</p>
         </div>
         <div style={{display:'flex', gap:8}}>
           <button className="btn ghost" onClick={() => strategiesQuery.refetch()} disabled={strategiesQuery.isFetching}>刷新</button>
@@ -322,6 +518,31 @@ export default function MonitoringStrategiesPage() {
               {MONITORING_STRATEGY_LEVELS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </FormField>
+          <FormField label="category">
+            <select
+              className="input"
+              value={filters.category}
+              onChange={(e) => setFilters({ ...filters, category: e.target.value, task_name: '' })}
+            >
+              <option value="">全部</option>
+              {STRATEGY_CATEGORIES.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="task_name">
+            <select
+              className="input"
+              value={filters.task_name}
+              onChange={(e) => setFilters({ ...filters, task_name: e.target.value })}
+              disabled={!filters.category && filters.task_name === '' && !taskFilterOptions.length}
+            >
+              <option value="">全部</option>
+              {taskFilterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FormField>
           <FormField label="enabled">
             <select className="input" value={filters.enabled} onChange={(e) => setFilters({ ...filters, enabled: e.target.value })}>
               <option value="">全部</option>
@@ -336,10 +557,13 @@ export default function MonitoringStrategiesPage() {
       {strategiesQuery.error && <div className="alert alert--error" style={{marginBottom:12}}>{strategiesQuery.error?.message || '加载失败'}</div>}
 
       <div className="table-wrap" style={{border:'1px solid var(--border)', borderRadius:12}}>
-        <table style={{width:'100%', borderCollapse:'collapse', minWidth:1200}}>
+        <table style={{width:'100%', borderCollapse:'collapse', minWidth:1400}}>
           <thead style={{background:'var(--panel-2)'}}>
             <tr>
               <Th>ID</Th>
+              <Th>category</Th>
+              <Th>task_name</Th>
+              <Th>params</Th>
               <Th>workspace_id</Th>
               <Th>auth_id</Th>
               <Th>advertiser_id</Th>
@@ -359,18 +583,21 @@ export default function MonitoringStrategiesPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={16} style={{padding:18}}><Loading text="加载中" /></td></tr>
+              <tr><td colSpan={19} style={{padding:18}}><Loading text="加载中" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={16} style={{padding:18, color:'var(--muted)'}}>暂无数据</td></tr>
+              <tr><td colSpan={19} style={{padding:18, color:'var(--muted)'}}>暂无数据</td></tr>
             ) : rows.map((row) => (
               <tr key={row.id} style={{borderTop:'1px solid var(--border)'}}>
                 <Td>{row.id}</Td>
+                <Td>{getCategoryLabel(row.category)}</Td>
+                <Td>{getTaskLabel(row.category, row.task_name)}</Td>
+                <Td className="truncate" title={formatParamsSummary(row.params_json)}>{formatParamsSummary(row.params_json)}</Td>
                 <Td>{row.workspace_id}</Td>
                 <Td>{row.auth_id}</Td>
                 <Td className="truncate" title={row.advertiser_id}>{row.advertiser_id}</Td>
                 <Td className="truncate" title={row.store_id}>{row.store_id}</Td>
                 <Td>{row.promotion_type || '-'}</Td>
-                <Td>{row.level}</Td>
+                <Td>{row.level || '-'}</Td>
                 <Td>{row.interval_minutes}</Td>
                 <Td>{row.max_campaigns_per_run ?? '-'}</Td>
                 <Td>

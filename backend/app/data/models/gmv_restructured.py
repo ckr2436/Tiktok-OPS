@@ -625,6 +625,8 @@ class GmvMonitoringStrategy(Base):
         Index("idx_workspace_level", "workspace_id", "level", "enabled"),
         Index("idx_auth_store", "auth_id", "store_id"),
         Index("idx_enabled_interval", "enabled", "interval_minutes"),
+        Index("idx_category_enabled", "category", "enabled", "level"),
+        Index("idx_workspace_scope", "workspace_id", "auth_id", "advertiser_id", "store_id"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -636,7 +638,16 @@ class GmvMonitoringStrategy(Base):
     promotion_type: Mapped[PromotionTypeEnum | None] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=True
     )
-    level: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    category: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="GMVMAX", server_default=text("'GMVMAX'")
+    )
+    task_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="gmvmax.strategy", server_default=text("'gmvmax.strategy'")
+    )
+    params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    input_schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
     interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     max_campaigns_per_run: Mapped[int | None] = mapped_column(Integer, default=None)

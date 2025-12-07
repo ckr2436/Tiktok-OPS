@@ -29,7 +29,7 @@ export function buildMenus(session) {
           { to: '/platform/tenants',     label: '公司管理' },
           { to: '/platform/oauth-apps',  label: 'OAuth 应用' },
           { to: '/platform/policies',    label: 'Platform Policies' },
-          { to: '/platform/gmvmax/monitoring-strategies', label: 'GMV Max 监控策略' },
+          { to: '/platform/gmvmax/monitoring-strategies', label: '策略调度中心' },
           { to: '/platform/apis',        label: 'API 管理' },
           { to: '/platform/email',       label: '邮件服务器' },
           { to: '/platform/kie-ai',      label: 'KIE AI 接入' },
