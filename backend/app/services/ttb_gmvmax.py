@@ -106,6 +106,30 @@ __all__ = [
     "fetch_and_cache_campaign_detail",
 ]
 
+GMVMAX_LEVEL_TABLES: dict[str, list[str]] = {
+    "OVERVIEW": ["gmv_overview_metrics_daily", "gmv_overview_metrics_hourly"],
+    "CAMPAIGN": ["gmv_campaign_metrics_daily", "gmv_campaign_metrics_hourly"],
+    "PRODUCT": ["gmv_product_metrics_daily", "gmv_product_metrics_hourly"],
+    "LIVESTREAM": ["gmv_livestream_metrics_daily", "gmv_livestream_metrics_hourly"],
+    "DURATION": ["gmv_duration_metrics_daily", "gmv_duration_metrics_hourly"],
+    "CREATIVE": [
+        "gmv_creative_metrics_daily",
+        "gmv_creative_metrics_hourly",
+        "gmv_creative_metrics_10min",
+    ],
+}
+
+
+def _log_sync_target(level: str, *, granularity: str | None = None) -> None:
+    logger.info(
+        "gmvmax metrics sync target mapping",
+        extra={
+            "level": level,
+            "granularity": granularity,
+            "tables": GMVMAX_LEVEL_TABLES.get(level),
+        },
+    )
+
 
 _DECIMAL_FOUR = Decimal("0.0001")
 _ONE_HUNDRED = Decimal("100")
@@ -2238,6 +2262,7 @@ async def sync_gmvmax_metrics_hourly(
     start_date: date | str,
     end_date: date | str,
 ) -> dict:
+    _log_sync_target("CAMPAIGN", granularity="HOURLY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
@@ -2859,6 +2884,9 @@ async def sync_gmvmax_metrics_daily(
     start_date: date | str,
     end_date: date | str,
 ) -> dict:
+    _log_sync_target("PRODUCT", granularity="DAILY")
+    _log_sync_target("PRODUCT", granularity="HOURLY")
+    _log_sync_target("CAMPAIGN", granularity="DAILY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
@@ -2923,6 +2951,7 @@ async def sync_gmvmax_overview_metrics(
     end_date: date | str,
     granularity: str = "DAILY",
 ) -> dict:
+    _log_sync_target("OVERVIEW", granularity=str(granularity or "").strip().upper())
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
     if not store_ids:
@@ -2988,6 +3017,7 @@ async def sync_gmvmax_livestream_metrics_hourly(
     campaign_ids: Sequence[str] | None = None,
     room_ids: Sequence[str] | None = None,
 ) -> dict:
+    _log_sync_target("LIVESTREAM", granularity="HOURLY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
@@ -3064,6 +3094,7 @@ async def sync_gmvmax_livestream_metrics_daily(
     campaign_ids: Sequence[str] | None = None,
     room_ids: Sequence[str] | None = None,
 ) -> dict:
+    _log_sync_target("LIVESTREAM", granularity="DAILY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
@@ -3140,6 +3171,7 @@ async def sync_gmvmax_duration_metrics_hourly(
     campaign_ids: Sequence[str] | None = None,
     room_ids: Sequence[str] | None = None,
 ) -> dict:
+    _log_sync_target("DURATION", granularity="HOURLY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
@@ -3213,6 +3245,7 @@ async def sync_gmvmax_duration_metrics_daily(
     campaign_ids: Sequence[str] | None = None,
     room_ids: Sequence[str] | None = None,
 ) -> dict:
+    _log_sync_target("DURATION", granularity="DAILY")
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
