@@ -44,7 +44,10 @@ from ._helpers import (
     normalize_provider,
     resolve_account_binding,
 )
-from app.providers.tiktok_business.gmvmax_client import GMVMaxStoreAdUsageCheckRequest
+from app.providers.tiktok_business.gmvmax_client import (
+    GMVMaxStoreAdUsageCheckRequest,
+    GMVMaxStoreListRequest,
+)
 
 
 _ACTION_NORMALIZATION = {
