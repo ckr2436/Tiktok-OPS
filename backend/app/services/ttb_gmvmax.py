@@ -2342,6 +2342,229 @@ def upsert_metrics_daily_row(
     return instance
 
 
+async def sync_gmvmax_product_metrics_hourly(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+) -> dict[str, Any]:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    synced_rows = 0
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        logger.warning(
+            "gmvmax product hourly metrics sync skipped: missing store_id",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign.campaign_id,
+                "granularity": "HOURLY",
+            },
+        )
+        return {"synced_rows": 0}
+
+    campaign_ids = [campaign.campaign_id]
+    page = 1
+    while True:
+        request = _build_campaign_report_request(
+            advertiser_id=str(advertiser_id),
+            campaign_ids=campaign_ids,
+            store_id=store_id,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            granularity="HOURLY",
+            metrics=_DEFAULT_REPORT_METRICS,
+            dimensions=["campaign_id", "item_group_id", "stat_time_hour"],
+            page=page,
+            page_size=_REPORT_PAGE_SIZE,
+        )
+        try:
+            response = await ttb_client.gmv_max_report_get(request)
+        except Exception:
+            logger.exception(
+                "gmvmax product hourly report fetch failed",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign.campaign_id,
+                    "page": page,
+                },
+            )
+            raise
+
+        data = getattr(response, "data", None)
+        rows_raw = getattr(data, "list", None) or []
+        rows = [_merge_report_entry(item) for item in rows_raw]
+        rows = [row for row in rows if isinstance(row, dict)]
+        for row in rows:
+            stat_time_value = _extract_field(row, "stat_time_hour", "stat_time", "interval_start")
+            stat_time_hour = _parse_datetime(stat_time_value)
+            item_group_id = _normalize_identifier(
+                _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
+            )
+            if stat_time_hour is None or not item_group_id:
+                logger.debug(
+                    "skip product hourly row missing identifiers",
+                    extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id, "auth_id": auth_id},
+                )
+                continue
+
+            metrics_payload = _normalize_metric_payload(row)
+            _upsert_product_metrics_hourly(
+                db,
+                campaign_id=str(campaign.campaign_id),
+                stat_time_hour=stat_time_hour,
+                item_group_id=item_group_id,
+                metrics=metrics_payload,
+                bid_type=_extract_field(row, "bid_type"),
+            )
+            synced_rows += 1
+
+        page_info = getattr(data, "page_info", None)
+        has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False))
+        total_page = getattr(page_info, "total_page", None) if page_info else None
+        if has_more:
+            page += 1
+            continue
+        try:
+            total_page_int = int(total_page) if total_page is not None else None
+        except (TypeError, ValueError):
+            total_page_int = None
+        if total_page_int is not None and page < total_page_int:
+            page += 1
+            continue
+        break
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
+async def sync_gmvmax_product_metrics_daily(
+    db: Session,
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    campaign: GmvCampaign,
+    start_date: date | str,
+    end_date: date | str,
+) -> dict[str, Any]:
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    synced_rows = 0
+    store_id = _resolve_store_id_for_metrics(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        campaign=campaign,
+    )
+    if not store_id:
+        logger.warning(
+            "gmvmax product daily metrics sync skipped: missing store_id",
+            extra={
+                "workspace_id": workspace_id,
+                "auth_id": auth_id,
+                "advertiser_id": advertiser_id,
+                "campaign_id": campaign.campaign_id,
+                "granularity": "DAILY",
+            },
+        )
+        return {"synced_rows": 0}
+
+    campaign_ids = [campaign.campaign_id]
+    page = 1
+    while True:
+        request = _build_campaign_report_request(
+            advertiser_id=str(advertiser_id),
+            campaign_ids=campaign_ids,
+            store_id=store_id,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            granularity="DAILY",
+            metrics=_DEFAULT_REPORT_METRICS,
+            dimensions=["campaign_id", "item_group_id", "stat_time_day"],
+            page=page,
+            page_size=_REPORT_PAGE_SIZE,
+        )
+        try:
+            response = await ttb_client.gmv_max_report_get(request)
+        except Exception:
+            logger.exception(
+                "gmvmax product daily report fetch failed",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "campaign_id": campaign.campaign_id,
+                    "page": page,
+                },
+            )
+            raise
+
+        data = getattr(response, "data", None)
+        rows_raw = getattr(data, "list", None) or []
+        rows = [_merge_report_entry(item) for item in rows_raw]
+        rows = [row for row in rows if isinstance(row, dict)]
+        for row in rows:
+            stat_date = _parse_date(_extract_field(row, "stat_time_day", "date", "stat_time"))
+            item_group_id = _normalize_identifier(
+                _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
+            )
+            if stat_date is None or not item_group_id:
+                logger.debug(
+                    "skip product daily row missing identifiers",
+                    extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id, "auth_id": auth_id},
+                )
+                continue
+
+            metrics_payload = _normalize_metric_payload(row)
+            _upsert_product_metrics_daily(
+                db,
+                campaign_id=str(campaign.campaign_id),
+                stat_time_day=stat_date,
+                item_group_id=item_group_id,
+                metrics=metrics_payload,
+                bid_type=_extract_field(row, "bid_type"),
+            )
+            synced_rows += 1
+
+        page_info = getattr(data, "page_info", None)
+        has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False))
+        total_page = getattr(page_info, "total_page", None) if page_info else None
+        if has_more:
+            page += 1
+            continue
+        try:
+            total_page_int = int(total_page) if total_page is not None else None
+        except (TypeError, ValueError):
+            total_page_int = None
+        if total_page_int is not None and page < total_page_int:
+            page += 1
+            continue
+        break
+
+    db.flush()
+    return {"synced_rows": synced_rows}
+
+
 def _upsert_overview_daily(
     db: Session, *, advertiser_id: str, row: Mapping[str, Any]
 ) -> GmvOverviewMetricsDaily:
