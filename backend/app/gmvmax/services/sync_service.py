@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 
 from sqlalchemy import select
@@ -14,6 +14,13 @@ from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 from app.gmvmax.domain.monitoring_strategy import MonitoringStrategy
 from app.services.gmvmax_creative_metrics import sync_creative_metrics_10min_for_campaign
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
+from app.services.ttb_gmvmax import (
+    sync_gmvmax_metrics_daily,
+    sync_gmvmax_metrics_hourly,
+    sync_gmvmax_overview_metrics,
+    sync_gmvmax_product_metrics_daily,
+    sync_gmvmax_product_metrics_hourly,
+)
 
 logger = logging.getLogger("gmv.services.gmvmax.sync")
 
@@ -29,11 +36,11 @@ class GmvMaxSyncService:
 
     def sync_strategy(self, strategy: MonitoringStrategy, now: datetime) -> None:
         handlers = {
-            "OVERVIEW_DAILY": self._noop,
-            "CAMPAIGN_DAILY": self._noop,
-            "CAMPAIGN_HOURLY": self._noop,
-            "PRODUCT_DAILY": self._noop,
-            "PRODUCT_HOURLY": self._noop,
+            "OVERVIEW_DAILY": self._sync_overview_daily,
+            "CAMPAIGN_DAILY": self._sync_campaign_daily,
+            "CAMPAIGN_HOURLY": self._sync_campaign_hourly,
+            "PRODUCT_DAILY": self._sync_product_daily,
+            "PRODUCT_HOURLY": self._sync_product_hourly,
             "CREATIVE_10MIN": self._sync_creative_10min,
             "LIVESTREAM_DAILY": self._noop,
             "LIVESTREAM_HOURLY": self._noop,
@@ -52,6 +59,31 @@ class GmvMaxSyncService:
         logger.info(
             "gmvmax sync placeholder - extend with concrete logic",
             extra={"strategy_id": strategy.id, "level": strategy.level},
+        )
+
+    def _sync_campaign_hourly(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        start = now.date() - timedelta(days=2)
+        self._sync_campaign_metrics(strategy, start_date=start, end_date=now.date(), granularity="HOUR")
+
+    def _sync_campaign_daily(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        start = now.date() - timedelta(days=2)
+        self._sync_campaign_metrics(strategy, start_date=start, end_date=now.date(), granularity="DAY")
+
+    def _sync_product_hourly(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        start = now.date() - timedelta(days=2)
+        self._sync_product_metrics(strategy, start_date=start, end_date=now.date(), granularity="HOUR")
+
+    def _sync_product_daily(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        start = now.date() - timedelta(days=2)
+        self._sync_product_metrics(strategy, start_date=start, end_date=now.date(), granularity="DAY")
+
+    def _sync_overview_daily(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        start = now.date() - timedelta(days=2)
+        self._sync_overview_metrics(
+            strategy,
+            start_date=start,
+            end_date=now.date(),
+            granularity="DAILY",
         )
 
     def _select_active_campaigns(self, session: Session, strategy: MonitoringStrategy) -> list[TTBGmvMaxCampaign]:
@@ -97,6 +129,303 @@ class GmvMaxSyncService:
         stmt = stmt.limit(limit_value)
 
         return list(session.execute(stmt).scalars().all())
+
+    def _sync_campaign_metrics(
+        self,
+        strategy: MonitoringStrategy,
+        *,
+        start_date,
+        end_date,
+        granularity: str,
+    ) -> None:
+        with self._session_factory() as session:
+            campaigns = self._select_active_campaigns(session, strategy)
+            if not campaigns:
+                logger.info(
+                    "gmvmax campaign metrics sync skipped: no active campaigns",
+                    extra={
+                        "strategy_id": strategy.id,
+                        "workspace_id": strategy.workspace_id,
+                        "granularity": granularity,
+                    },
+                )
+                return
+
+            async def _run() -> dict[str, int]:
+                totals: Dict[str, int] = {"campaign_rows": 0, "overview_rows": 0}
+
+                grouped: Dict[int, List[TTBGmvMaxCampaign]] = {}
+                for campaign in campaigns:
+                    auth_id = getattr(campaign, "auth_id", None)
+                    if auth_id is None:
+                        logger.warning(
+                            "gmvmax campaign metrics sync skipped campaign without auth_id",
+                            extra={"campaign_id": getattr(campaign, "id", None)},
+                        )
+                        continue
+                    grouped.setdefault(int(auth_id), []).append(campaign)
+
+                for auth_id, auth_campaigns in grouped.items():
+                    client = build_ttb_gmvmax_client(session, auth_id=auth_id)
+                    try:
+                        for campaign in auth_campaigns:
+                            advertiser_id = strategy.advertiser_id or getattr(campaign, "advertiser_id", None)
+                            if not advertiser_id:
+                                logger.warning(
+                                    "gmvmax campaign metrics sync skipped: missing advertiser_id",
+                                    extra={"campaign_id": getattr(campaign, "id", None)},
+                                )
+                                continue
+
+                            if granularity.upper() == "DAY":
+                                result = await sync_gmvmax_metrics_daily(
+                                    session,
+                                    client,
+                                    workspace_id=strategy.workspace_id,
+                                    auth_id=auth_id,
+                                    advertiser_id=str(advertiser_id),
+                                    campaign=campaign,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                )
+                            else:
+                                result = await sync_gmvmax_metrics_hourly(
+                                    session,
+                                    client,
+                                    workspace_id=strategy.workspace_id,
+                                    auth_id=auth_id,
+                                    advertiser_id=str(advertiser_id),
+                                    campaign=campaign,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                )
+
+                            totals["campaign_rows"] += int(result.get("synced_rows", 0) or 0)
+                    finally:
+                        try:
+                            await client.aclose()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("gmvmax client close failed", exc_info=True)
+
+                return totals
+
+            result = asyncio.run(_run())
+            session.commit()
+            logger.info(
+                "gmvmax campaign metrics sync done",
+                extra={
+                    "strategy_id": strategy.id,
+                    "workspace_id": strategy.workspace_id,
+                    "granularity": granularity,
+                    "campaigns": len(campaigns),
+                    "campaign_ids": [getattr(campaign, "campaign_id", None) for campaign in campaigns[:5]],
+                    "result": result,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
+
+    def _sync_product_metrics(
+        self,
+        strategy: MonitoringStrategy,
+        *,
+        start_date,
+        end_date,
+        granularity: str,
+    ) -> None:
+        if strategy.promotion_type and strategy.promotion_type != PromotionTypeEnum.PRODUCT.value:
+            logger.warning(
+                "gmvmax product metrics sync skipped: unsupported promotion_type",
+                extra={
+                    "strategy_id": strategy.id,
+                    "workspace_id": strategy.workspace_id,
+                    "promotion_type": strategy.promotion_type,
+                    "granularity": granularity,
+                },
+            )
+            return
+
+        with self._session_factory() as session:
+            campaigns = self._select_active_campaigns(session, strategy)
+            if not campaigns:
+                logger.info(
+                    "gmvmax product metrics sync skipped: no active campaigns",
+                    extra={
+                        "strategy_id": strategy.id,
+                        "workspace_id": strategy.workspace_id,
+                        "granularity": granularity,
+                    },
+                )
+                return
+
+            async def _run() -> dict[str, int]:
+                totals: Dict[str, int] = {"product_rows": 0}
+
+                grouped: Dict[int, List[TTBGmvMaxCampaign]] = {}
+                for campaign in campaigns:
+                    auth_id = getattr(campaign, "auth_id", None)
+                    if auth_id is None:
+                        logger.warning(
+                            "gmvmax product metrics sync skipped campaign without auth_id",
+                            extra={"campaign_id": getattr(campaign, "id", None)},
+                        )
+                        continue
+                    grouped.setdefault(int(auth_id), []).append(campaign)
+
+                for auth_id, auth_campaigns in grouped.items():
+                    client = build_ttb_gmvmax_client(session, auth_id=auth_id)
+                    try:
+                        for campaign in auth_campaigns:
+                            advertiser_id = strategy.advertiser_id or getattr(campaign, "advertiser_id", None)
+                            if not advertiser_id:
+                                logger.warning(
+                                    "gmvmax product metrics sync skipped: missing advertiser_id",
+                                    extra={"campaign_id": getattr(campaign, "id", None)},
+                                )
+                                continue
+
+                            if granularity.upper() == "DAY":
+                                result = await sync_gmvmax_product_metrics_daily(
+                                    session,
+                                    client,
+                                    workspace_id=strategy.workspace_id,
+                                    auth_id=auth_id,
+                                    advertiser_id=str(advertiser_id),
+                                    campaign=campaign,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                )
+                            else:
+                                result = await sync_gmvmax_product_metrics_hourly(
+                                    session,
+                                    client,
+                                    workspace_id=strategy.workspace_id,
+                                    auth_id=auth_id,
+                                    advertiser_id=str(advertiser_id),
+                                    campaign=campaign,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                )
+
+                            totals["product_rows"] += int(result.get("synced_rows", 0) or 0)
+                    finally:
+                        try:
+                            await client.aclose()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("gmvmax client close failed", exc_info=True)
+
+                return totals
+
+            result = asyncio.run(_run())
+            session.commit()
+            logger.info(
+                "gmvmax product metrics sync done",
+                extra={
+                    "strategy_id": strategy.id,
+                    "workspace_id": strategy.workspace_id,
+                    "granularity": granularity,
+                    "campaigns": len(campaigns),
+                    "campaign_ids": [getattr(campaign, "campaign_id", None) for campaign in campaigns[:5]],
+                    "result": result,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
+
+    def _sync_overview_metrics(
+        self,
+        strategy: MonitoringStrategy,
+        *,
+        start_date,
+        end_date,
+        granularity: str,
+    ) -> None:
+        with self._session_factory() as session:
+            campaigns = self._select_active_campaigns(session, strategy)
+            if not campaigns:
+                logger.info(
+                    "gmvmax overview sync skipped: no active campaigns",
+                    extra={
+                        "strategy_id": strategy.id,
+                        "workspace_id": strategy.workspace_id,
+                        "granularity": granularity,
+                    },
+                )
+                return
+
+            async def _run() -> int:
+                written = 0
+                grouped: Dict[int, List[TTBGmvMaxCampaign]] = {}
+                for campaign in campaigns:
+                    auth_id = getattr(campaign, "auth_id", None)
+                    if auth_id is None:
+                        logger.warning(
+                            "gmvmax overview sync skipped campaign without auth_id",
+                            extra={"campaign_id": getattr(campaign, "id", None)},
+                        )
+                        continue
+                    grouped.setdefault(int(auth_id), []).append(campaign)
+
+                for auth_id, auth_campaigns in grouped.items():
+                    client = build_ttb_gmvmax_client(session, auth_id=auth_id)
+                    try:
+                        advertiser_id = strategy.advertiser_id or getattr(auth_campaigns[0], "advertiser_id", None)
+                        if not advertiser_id:
+                            logger.warning(
+                                "gmvmax overview sync skipped: missing advertiser_id",
+                                extra={"strategy_id": strategy.id, "auth_id": auth_id},
+                            )
+                            continue
+
+                        store_ids = {
+                            str(c.store_id)
+                            for c in auth_campaigns
+                            if getattr(c, "store_id", None)
+                        }
+                        if strategy.store_id:
+                            store_ids.add(str(strategy.store_id))
+
+                        if not store_ids:
+                            logger.warning(
+                                "gmvmax overview sync skipped: no store_id available",
+                                extra={"strategy_id": strategy.id, "auth_id": auth_id},
+                            )
+                            continue
+
+                        result = await sync_gmvmax_overview_metrics(
+                            session,
+                            client,
+                            workspace_id=strategy.workspace_id,
+                            auth_id=auth_id,
+                            advertiser_id=str(advertiser_id),
+                            store_ids=sorted(store_ids),
+                            start_date=start_date,
+                            end_date=end_date,
+                            granularity=granularity,
+                        )
+                        written += int(result.get("synced_rows", 0) or 0)
+                    finally:
+                        try:
+                            await client.aclose()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("gmvmax client close failed", exc_info=True)
+
+                return written
+
+            rows_written = asyncio.run(_run())
+            session.commit()
+            logger.info(
+                "gmvmax overview metrics sync done",
+                extra={
+                    "strategy_id": strategy.id,
+                    "workspace_id": strategy.workspace_id,
+                    "granularity": granularity,
+                    "campaigns": len(campaigns),
+                    "rows_written": rows_written,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
 
     def _sync_creative_10min(self, strategy: MonitoringStrategy, now: datetime) -> None:
         today = now.date()
