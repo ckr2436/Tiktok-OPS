@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from fastapi import HTTPException, status
 from typing import Any, Dict, List, Mapping, Optional, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -12,12 +13,14 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignInfoData,
     GMVMaxCampaignUpdateBody,
     GMVMaxIdentity,
+    GMVMaxIdentityInfo,
     GMVMaxReportData,
     GMVMaxOccupiedListData,
     GMVMaxSession,
     GMVMaxSessionProduct,
     GMVMaxSessionSettings,
     GMVMaxStoreAdUsageCheckData,
+    GMVMaxVideoInfo,
     PageInfo,
 )
 from app.services.gmvmax_spec import (
@@ -106,79 +109,195 @@ class CampaignListOptions(BaseModel):
     page_size: Optional[int] = Field(default=None, ge=1, le=50)
 
 
-class CreateCampaignRequest(BaseModel):
-    """Tenant payload for creating a GMV Max campaign."""
+class GMVMaxIdentityRequest(BaseModel):
+    identity_id: str
+    identity_type: Literal["TT_USER", "TTS_TT", "BC_AUTH_TT"]
+    identity_authorized_bc_id: Optional[str] = None
+    store_id: Optional[str] = None
 
-    name: str
-    store_id: str
-    item_group_ids: Optional[List[str]] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCustomAnchorVideo(BaseModel):
+    identity_info: GMVMaxIdentityRequest
+    item_id: str
+    spu_id_list: List[str]
+    video_info: Optional[GMVMaxVideoInfo] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxItemVideo(BaseModel):
+    identity_info: GMVMaxIdentityRequest
+    item_id: str
+    spu_id_list: List[str]
+    video_info: GMVMaxVideoInfo
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CreateCampaignRequest(BaseModel):
+    """Tenant payload for creating a *Product* GMV Max campaign.
+
+    NOTE:
+    - This schema currently targets Product GMV Max only.
+    - Live GMV Max (LIVE shopping) is not supported here yet and should use a
+      separate endpoint or an extended schema in the future (for example, a
+      dedicated ``CreateLiveGmvMaxCampaignRequest`` or an explicit ``gmvmax_mode``
+      flag that branches in the service layer).
+    """
+
+    # Legacy fields (kept for backward compatibility)
+    name: Optional[str] = None
+    objective_type: Optional[str] = None
     promotion_type: Optional[str] = None
-    shopping_ads_type: Optional[str] = None
-    objective_type: str
-    daily_budget: Optional[float] = None
-    budget: Optional[float] = None
     budget_mode: Optional[str] = None
-    roas_bid: Optional[float] = None
-    deep_bid_type: Optional[str] = None
     promotion_days: Optional[Dict[str, Any]] = None
-    schedule_type: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    product_specific_type: Optional[str] = None
-    product_video_specific_type: Optional[str] = None
     identity_ids: Optional[List[str]] = None
+
+    # New fields aligned with TikTok Product GMV Max create
+    advertiser_id: Optional[str] = None
+    store_id: str
     store_authorized_bc_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+
+    shopping_ads_type: Literal["PRODUCT"] = "PRODUCT"
+    optimization_goal: Literal["VALUE"] = "VALUE"
+    deep_bid_type: Literal["VO_MIN_ROAS"] = "VO_MIN_ROAS"
+
+    product_specific_type: Literal["ALL", "CUSTOMIZED_PRODUCTS"] = "ALL"
+    item_group_ids: Optional[List[str]] = None
+
+    roas_bid: Optional[float] = None
+    budget: Optional[int] = None
+
+    schedule_type: Literal["SCHEDULE_FROM_NOW", "SCHEDULE_START_END", "SCHEDULE"] | None = None
+    schedule_start_time: Optional[datetime] = None
+    schedule_end_time: Optional[datetime] = None
+
+    product_video_specific_type: Literal["AUTO_SELECTION", "CUSTOM_SELECTION"] = "AUTO_SELECTION"
+    identity_list: Optional[List["GMVMaxIdentityRequest"]] = None
+    affiliate_posts_enabled: Optional[bool] = None
+    custom_anchor_video_list: Optional[List["GMVMaxCustomAnchorVideo"]] = None
+    item_list: Optional[List["GMVMaxItemVideo"]] = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _alias_campaign_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values.get("campaign_name") is None and values.get("name") is not None:
+            values["campaign_name"] = values.get("name")
+        return values
+
+    def _resolved_schedule_type(self) -> Optional[str]:
+        schedule_type = self.schedule_type
+        if schedule_type is None and (self.schedule_start_time or self.schedule_end_time):
+            schedule_type = "SCHEDULE_START_END"
+        if schedule_type is None and (self.start_time or self.end_time):
+            schedule_type = "SCHEDULE"
+        return schedule_type
 
     def to_client_body(
         self,
         *,
         store_authorized_bc_id: str | None = None,
-        anchor_params: Mapping[str, Any] | None = None,
-        shopping_ads_type: str | None = None,
     ) -> GMVMaxCampaignCreateBody:
-        resolved_type = (
-            shopping_ads_type
-            or self.shopping_ads_type
-            or self.promotion_type
+        campaign_name = self.campaign_name or self.name
+        if not campaign_name:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "GMVMAX_INVALID_REQUEST", "message": "campaign_name is required"},
+            )
+
+        product_specific_type = self.product_specific_type or "ALL"
+        item_group_ids = self.item_group_ids
+        if product_specific_type == "CUSTOMIZED_PRODUCTS" and not item_group_ids:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "GMVMAX_INVALID_REQUEST",
+                    "message": "item_group_ids are required for CUSTOMIZED_PRODUCTS",
+                },
+            )
+
+        product_video_specific_type = self.product_video_specific_type or "AUTO_SELECTION"
+        if product_video_specific_type == "CUSTOM_SELECTION" and not self.item_list:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "GMVMAX_INVALID_REQUEST",
+                    "message": "item_list is required for CUSTOM_SELECTION",
+                },
+            )
+
+        schedule_type = self._resolved_schedule_type()
+        schedule_start = self.schedule_start_time or self.start_time
+        schedule_end = self.schedule_end_time or self.end_time
+        if schedule_type == "SCHEDULE_FROM_NOW" and schedule_start is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "GMVMAX_INVALID_REQUEST",
+                    "message": "schedule_start_time is required for SCHEDULE_FROM_NOW",
+                },
+            )
+        if schedule_type == "SCHEDULE_START_END" and (schedule_start is None or schedule_end is None):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "GMVMAX_INVALID_REQUEST",
+                    "message": "schedule_start_time and schedule_end_time are required",
+                },
+            )
+
+        identity_list: list[dict[str, Any]] | None = None
+        if self.identity_list is not None:
+            identity_list = [
+                identity.model_dump(exclude_none=True) for identity in self.identity_list
+            ]
+        elif self.identity_ids:
+            identity_list = [{"identity_id": str(identity_id)} for identity_id in self.identity_ids]
+
+        custom_anchor_video_list = (
+            [anchor.model_dump(exclude_none=True) for anchor in self.custom_anchor_video_list]
+            if self.custom_anchor_video_list
+            else None
         )
-        if resolved_type is None:
-            raise ValueError("shopping_ads_type is required for GMV Max campaign creation")
-
-        schedule_type = self.schedule_type
-        if schedule_type is None and (self.start_time or self.end_time):
-            schedule_type = "SCHEDULE"
-
-        budget_value: float | None
-        if self.daily_budget is not None:
-            budget_value = float(self.daily_budget)
-        else:
-            budget_value = float(self.budget) if self.budget is not None else None
+        item_list = (
+            [item.model_dump(exclude_none=True) for item in self.item_list]
+            if self.item_list
+            else None
+        )
 
         payload: Dict[str, Any] = {
             "store_id": str(self.store_id),
-            "shopping_ads_type": str(resolved_type),
-            "optimization_goal": str(self.objective_type),
-            "campaign_name": self.name,
-            "budget": budget_value,
-            "budget_mode": self.budget_mode,
+            # Product GMV Max only: shopping_ads_type is locked to PRODUCT.
+            "store_authorized_bc_id": store_authorized_bc_id or self.store_authorized_bc_id,
+            # Product GMV Max uses VALUE as optimization_goal and VO_MIN_ROAS as deep_bid_type.
+            "shopping_ads_type": "PRODUCT",
+            "optimization_goal": "VALUE",
+            "deep_bid_type": "VO_MIN_ROAS",
+            "campaign_name": campaign_name,
+            "budget": float(self.budget) if self.budget is not None else None,
             "roas_bid": float(self.roas_bid) if self.roas_bid is not None else None,
-            "deep_bid_type": self.deep_bid_type,
             "promotion_days": self.promotion_days,
             "schedule_type": schedule_type,
-            "schedule_start_time": self.start_time.isoformat() if self.start_time else None,
-            "schedule_end_time": self.end_time.isoformat() if self.end_time else None,
-            "product_specific_type": self.product_specific_type,
-            "product_video_specific_type": self.product_video_specific_type,
-            "item_group_ids": [str(item) for item in self.item_group_ids]
-            if self.item_group_ids
-            else None,
-            "store_authorized_bc_id": store_authorized_bc_id or self.store_authorized_bc_id,
+            "schedule_start_time": schedule_start.isoformat() if schedule_start else None,
+            "schedule_end_time": schedule_end.isoformat() if schedule_end else None,
+            "product_specific_type": product_specific_type,
+            "item_group_ids": [str(item) for item in item_group_ids] if item_group_ids else None,
+            "product_video_specific_type": product_video_specific_type,
+            "identity_list": identity_list,
+            "affiliate_posts_enabled": self.affiliate_posts_enabled,
+            "custom_anchor_video_list": custom_anchor_video_list,
+            "item_list": item_list,
         }
-
-        if anchor_params:
-            payload.update(anchor_params)
+        # TODO(live-gmvmax): When adding Live GMV Max support, either split this
+        # method or branch on an explicit mode flag instead of assuming PRODUCT
+        # defaults here.
 
         cleaned = {key: value for key, value in payload.items() if value is not None}
         return GMVMaxCampaignCreateBody(**cleaned)
@@ -599,6 +718,54 @@ class BindingStatusResponse(BaseModel):
     store_id: Optional[str] = None
 
 
+class OccupiedAdSummary(BaseModel):
+    """Lightweight summary for VS/PS occupied ads."""
+
+    ad_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    item_group_id: Optional[str] = None
+    create_time: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class IdentitySummary(BaseModel):
+    """Identity entry usable for Product GMV Max."""
+
+    identity_id: Optional[str] = None
+    identity_type: Optional[str] = None
+    user_name: Optional[str] = None
+    profile_image: Optional[str] = None
+    product_gmv_max_available: Optional[bool] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class VideoSummary(BaseModel):
+    """Video entry usable for Product GMV Max."""
+
+    item_id: Optional[str] = None
+    video_id: Optional[str] = None
+    preview_url: Optional[str] = None
+    video_cover_url: Optional[str] = None
+    duration: Optional[float] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CustomAnchorVideoSummary(BaseModel):
+    """Custom anchor video entry."""
+
+    custom_anchor_video_id: Optional[str] = None
+    video_id: Optional[str] = None
+    preview_url: Optional[str] = None
+    video_cover_url: Optional[str] = None
+    duration: Optional[float] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class GMVMaxPrecheckRequest(BaseModel):
     """Request payload for GMV Max asset preflight checks."""
 
@@ -608,11 +775,39 @@ class GMVMaxPrecheckRequest(BaseModel):
     identity_id: Optional[str] = None
     product_item_group_ids: Optional[List[str]] = None
     occupied_asset_type: Optional[str] = None
+    product_specific_type: Optional[Literal["ALL", "CUSTOMIZED_PRODUCTS"]] = None
+    item_group_ids: Optional[List[str]] = None
 
 
 class GMVMaxPrecheckResponse(BaseModel):
     """Aggregated payload combining store, identity, and occupancy checks."""
 
+    # Store & auth
+    is_gmv_max_available: bool
+    needs_exclusive_auth: bool
+    current_authorized_advertiser_id: Optional[str] = None
+
+    # Shop level usage
+    promote_all_products_allowed: bool
+    has_running_custom_shop_ads: bool
+    occupied_custom_shop_ads: List[OccupiedAdSummary] = Field(default_factory=list)
+
+    # Product occupancy
+    unoccupied_item_group_ids: List[str] = Field(default_factory=list)
+    occupied_item_group_ids: List[str] = Field(default_factory=list)
+
+    # Creative resources
+    available_identities: List[IdentitySummary] = Field(default_factory=list)
+    available_videos: List[VideoSummary] = Field(default_factory=list)
+    available_custom_anchor_videos: List[CustomAnchorVideoSummary] = Field(
+        default_factory=list
+    )
+
+    # Recommendations
+    recommended_roas_bid: Optional[float] = None
+    recommended_budget: Optional[int] = None
+
+    # Legacy fields for backward compatibility
     store_usage: Optional[GMVMaxStoreAdUsageCheckData] = None
     identities: List[GMVMaxIdentity] = Field(default_factory=list)
     occupancy: Optional[GMVMaxOccupiedListData] = None
