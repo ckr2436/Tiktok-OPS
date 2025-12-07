@@ -110,6 +110,10 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
       setParamsMode('incremental')
       setParamsLimit('')
     }
+    if (nextCategory !== 'GMVMAX') {
+      setPromotionType('')
+      setLevel('')
+    }
   }
 
   const handleSubmit = async (event) => {
@@ -270,6 +274,7 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
                 className="input"
                 value={category}
                 onChange={(e) => handleCategoryChange(e.target.value)}
+                disabled={disabledBase}
               >
                 {STRATEGY_CATEGORIES.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -286,6 +291,7 @@ function StrategyFormModal({ open, mode, onClose, onSubmit, initial }) {
                   className="input"
                   value={taskName}
                   onChange={(e) => setTaskName(e.target.value)}
+                  disabled={disabledBase}
                 >
                   {taskOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
