@@ -202,7 +202,7 @@ def reconcile_campaign_status(self, batch_size: int = 500) -> dict:
     return {"status": "ok", "scanned": scanned, "updated": updated}
 
 
-# Beat-driven sweep (see scheduler_catalog) to sync all GMV Max scopes via
+# Beat-driven sweep used by the GMV Max strategy scheduler to sync all scopes via
 # TikTok /gmv_max/campaign/get/ and upsert TTBGmvMaxCampaign* tables.
 @celery_app.task(
     bind=True,
@@ -508,7 +508,7 @@ def task_gmvmax_sync_advertiser_balance(
         _close_session(db)
 
 
-# Metric sync (hourly/daily windows) scheduled via scheduler_catalog; calls
+# Metric sync (hourly/daily windows) invoked by the GMV Max strategy scheduler; calls
 # TikTok GMV Max report endpoints and upserts TTBGmvMaxMetricsDaily/Hourly.
 @celery_app.task(
     bind=True,
@@ -1029,7 +1029,7 @@ def task_gmvmax_evaluate_strategy(
         _close_session(db)
 
 
-# Periodic every ~15 minutes (scheduler_catalog) to evaluate TTBGmvMaxCreativeHeating
+# Periodic evaluations (strategy scheduler) to evaluate TTBGmvMaxCreativeHeating
 # and stop creatives via TikTok /campaign/gmv_max/action/apply/ when needed.
 @celery_app.task(
     bind=True,

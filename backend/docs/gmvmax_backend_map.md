@@ -84,12 +84,12 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 | Task name | File | Purpose | Schedule / trigger |
 | --- | --- | --- | --- |
-| `ttb.sync_gmvmax` | `backend/app/tasks/ttb_gmvmax_tasks.py` | Beat-driven global sweep over GMV Max bindings to sync campaigns/metrics. | Periodic; guarded by Redis lock (used by beat). |
-| `gmvmax.sync_campaigns` | same | Sync campaigns for a workspace/auth/advertiser scope into DB. | Scheduled every ~10 minutes via `scheduler_catalog` plus manual. |
+| `ttb.sync_gmvmax` | `backend/app/tasks/ttb_gmvmax_tasks.py` | Beat-driven global sweep over GMV Max bindings to sync campaigns/metrics. | Periodic; guarded by Redis lock (used by beat) and drives the strategy scheduler. |
+| `gmvmax.sync_campaigns` | same | Sync campaigns for a workspace/auth/advertiser scope into DB. | Triggered via the strategy scheduler (`gmvmax.sync.run_scheduler`) from `ttb.sync_gmvmax`; manual triggers still allowed. |
 | `gmvmax.sync_advertiser_balance` | same | Sync advertiser balance for GMV Max eligibility. | Manual; can be scheduled. |
-| `gmvmax.sync_metrics` | same | Sync hourly or daily metrics for a campaign. | Hourly/daily schedules in `scheduler_catalog` (every 10 minutes for recent hours, daily at 03:00 UTC). |
-| `gmvmax.apply_action` | same | Apply campaign action (start/pause/delete/update budget/strategy) and log. | Manual/strategy-driven; in beat catalog as manual. |
-| `gmvmax.creative_heating_cycle` | same | Evaluate creative heating configs and stop creatives when thresholds missed. | Every 15 minutes via `scheduler_catalog`. |
+| `gmvmax.sync_metrics` | same | Sync hourly or daily metrics for a campaign. | Dispatched by the strategy scheduler chain (e.g., from `ttb.sync_gmvmax`); no standalone beat catalog. |
+| `gmvmax.apply_action` | same | Apply campaign action (start/pause/delete/update budget/strategy) and log. | Manual/strategy-driven; invoked via strategy scheduler when applicable. |
+| `gmvmax.creative_heating_cycle` | same | Evaluate creative heating configs and stop creatives when thresholds missed. | Triggered via strategy scheduler or manual runs; not advertised in a beat catalog. |
 | `gmvmax.precheck` | same | Run store/identity eligibility prechecks (usage, identity list, occupancy). | Triggered by `/precheck` route. |
 | `gmvmax.report_get` | same | Fetch GMV Max report data asynchronously (metrics sync). | Enqueued by metrics sync route. |
 | `gmvmax.strategy_preview` | same | Call bid recommendation API for strategy preview. | Enqueued by strategy preview route. |
@@ -119,7 +119,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 ## 4. Flow diagrams for key use cases
 
 1. **GMV Max metrics sync (hourly/daily)**
-   - Scheduler (see `scheduler_catalog.py`) or user triggers `POST /gmvmax/{campaign_id}/metrics/sync` → router builds `GMVMaxReportGetRequest` and enqueues `gmvmax.report_get`/`gmvmax.sync_metrics`.
+   - Strategy scheduler chain (`ttb.sync_gmvmax` → `gmvmax.sync.run_scheduler`) or user triggers `POST /gmvmax/{campaign_id}/metrics/sync` → router builds `GMVMaxReportGetRequest` and enqueues `gmvmax.report_get`/`gmvmax.sync_metrics`.
    - Celery task (`gmvmax.sync_metrics`) opens DB session, loads campaign, and calls `sync_gmvmax_metrics_hourly` or `sync_gmvmax_metrics_daily` → TikTok client `gmv_max_report_get` → TikTok API.
    - Service parses report rows into `TTBGmvMaxMetricsHourly`/`TTBGmvMaxMetricsDaily` (and creative metrics when needed) with upserts.
    - Router/consumer polls `GET /gmvmax/tasks/{task_id}` to check status and then reads metrics via `GET /gmvmax/{campaign_id}/metrics` (which queries stored DTOs).
@@ -138,6 +138,6 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 
 - Identify the frontend call (e.g., campaign list, metrics sync) and map to the router path in `router_provider.py`; check the associated schema for required parameters.
 - Trace router → service (`backend/app/features/tenants/ttb/gmv_max/service.py` and `backend/app/services/ttb_gmvmax.py`) to see which TikTok client method is invoked and which DB tables are written.
-- Inspect Celery tasks in `backend/app/tasks/ttb_gmvmax_tasks.py` to confirm whether a background sync is still running or failing (task names logged, beat schedule in `scheduler_catalog.py`).
+- Inspect Celery tasks in `backend/app/tasks/ttb_gmvmax_tasks.py` to confirm whether a background sync is still running or failing (task names logged; strategy scheduler driven by `ttb.sync_gmvmax`).
 - Verify DB tables: campaigns (`ttb_gmvmax_campaigns`), metrics (`ttb_gmvmax_metrics_hourly/daily`, `ttb_gmvmax_creative_metrics_daily`), strategy (`ttb_gmvmax_strategy_configs`), and action logs/heating (`ttb_gmvmax_action_logs`, `ttb_gmvmax_creative_heating`).
 - For TikTok API issues, check the client wrapper method corresponding to the API path to confirm payload normalization, then review router/service logging (`gmv.ttb.gmvmax.router`, `gmv.tenants.gmvmax`, `gmv.tasks.gmvmax`).
