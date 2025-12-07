@@ -75,6 +75,18 @@ export default function EditSeriesModal({
     return ids;
   }, [detailProducts]);
 
+  const campaignStoreBcId = useMemo(() => {
+    const store = detail?.campaign?.store || {};
+    return (
+      detail?.campaign?.store_authorized_bc_id ||
+      detail?.campaign?.authorized_bc_id ||
+      detail?.campaign?.bc_id ||
+      store.store_authorized_bc_id ||
+      store.bc_id ||
+      undefined
+    );
+  }, [detail]);
+
   const initialIdentities = useMemo(() => {
     const list = ensureArray(
       detail?.campaign?.identities || detail?.campaign?.identity_list || detail?.campaign?.identityList,
@@ -92,6 +104,7 @@ export default function EditSeriesModal({
     {
       store_id: selectedStoreId || storeId || undefined,
       advertiser_id: campaign?.advertiser_id || campaign?.advertiserId || undefined,
+      owner_bc_id: campaignStoreBcId,
       gmv_max_ads_status: 'UNOCCUPIED',
       page_size: 50,
     },
