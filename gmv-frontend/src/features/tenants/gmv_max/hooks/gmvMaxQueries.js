@@ -14,6 +14,7 @@ import {
   rebindAutoGmvMaxBinding,
   getGmvMaxOptions,
   getGmvMaxIdentities,
+  precheckGmvMaxCampaign,
   getGmvMaxStrategy,
   listAccounts,
   listAdvertisers,
@@ -425,6 +426,13 @@ export function useUpdateGmvMaxStrategyMutation(workspaceId, provider, authId, c
 export function useCreateGmvMaxCampaignMutation(workspaceId, provider, authId, options = {}) {
   return useMutation({
     mutationFn: (payload) => createGmvMaxCampaign(workspaceId, provider, authId, payload),
+    ...options,
+  });
+}
+
+export function useGmvMaxPrecheckMutation(workspaceId, provider, authId, options = {}) {
+  return useMutation({
+    mutationFn: (payload) => precheckGmvMaxCampaign(workspaceId, provider, authId, payload),
     ...options,
   });
 }

@@ -222,6 +222,10 @@ export async function createGmvMaxCampaign(workspaceId, provider, authId, payloa
   return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax`, payload, config);
 }
 
+export async function precheckGmvMaxCampaign(workspaceId, provider, authId, payload, config) {
+  return post(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/precheck`, payload, config);
+}
+
 export async function getGmvMaxCampaign(workspaceId, provider, authId, campaignId, config) {
   return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}`, config);
 }
