@@ -148,6 +148,7 @@ from .schemas import (
     StrategyUpdateResponse,
     SyncIntervalResponse,
     SyncIntervalUpdateRequest,
+    SyncTaskResponse,
     SyncTaskStateResponse,
     UpdateCampaignRequest,
     normalize_datetime_to_date,

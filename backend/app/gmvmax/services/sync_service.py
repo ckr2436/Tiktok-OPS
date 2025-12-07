@@ -84,7 +84,7 @@ class GmvMaxSyncService:
             interval_minutes=0,
             enabled=True,
             promotion_type=None,
-            max_campaigns_per_run=None,
+            max_campaigns_per_run=200,
             params_json={},
             input_schema_json=None,
         )
@@ -239,19 +239,32 @@ class GmvMaxSyncService:
         if campaign_ids:
             stmt = stmt.where(TTBGmvMaxCampaign.campaign_id.in_(campaign_ids))
 
-        limit_value = 30
-        if strategy.max_campaigns_per_run:
+        limit_value: int | None = 30
+        if strategy.max_campaigns_per_run is not None:
             try:
                 candidate = int(strategy.max_campaigns_per_run)
                 if candidate > 0:
                     limit_value = candidate
+                else:
+                    limit_value = None
             except (TypeError, ValueError):
                 logger.warning(
                     "gmvmax monitoring strategy has invalid max_campaigns_per_run",
                     extra={"strategy_id": strategy.id, "max_campaigns_per_run": strategy.max_campaigns_per_run},
                 )
 
-        stmt = stmt.limit(limit_value)
+        if limit_value is not None:
+            stmt = stmt.limit(limit_value)
+        else:
+            logger.info(
+                "gmvmax active campaign query without limit",
+                extra={
+                    "strategy_id": strategy.id,
+                    "workspace_id": strategy.workspace_id,
+                    "task_name": strategy.task_name,
+                    "campaign_filter_ids": campaign_ids,
+                },
+            )
 
         return list(session.execute(stmt).scalars().all())
 
@@ -614,7 +627,7 @@ class GmvMaxSyncService:
                                     campaign=campaign,
                                     start_date=start_date,
                                     end_date=end_date,
-                                    campaign_ids=campaign_ids,
+                                    campaign_ids=[str(campaign.campaign_id)] if campaign_ids else None,
                                 )
                             else:
                                 result = await sync_gmvmax_livestream_metrics_hourly(
@@ -626,7 +639,7 @@ class GmvMaxSyncService:
                                     campaign=campaign,
                                     start_date=start_date,
                                     end_date=end_date,
-                                    campaign_ids=campaign_ids,
+                                    campaign_ids=[str(campaign.campaign_id)] if campaign_ids else None,
                                 )
 
                             totals["livestream_rows"] += int(result.get("synced_rows", 0) or 0)
@@ -648,6 +661,8 @@ class GmvMaxSyncService:
                     "granularity": granularity,
                     "campaigns": len(campaigns),
                     "campaign_ids": [getattr(campaign, "campaign_id", None) for campaign in campaigns[:5]],
+                    "requested_campaign_ids": campaign_ids,
+                    "auth_ids": sorted({int(auth_id) for auth_id in (getattr(c, "auth_id", None) for c in campaigns) if auth_id is not None}),
                     "result": result,
                     "start_date": start_date,
                     "end_date": end_date,
@@ -709,7 +724,7 @@ class GmvMaxSyncService:
                                     campaign=campaign,
                                     start_date=start_date,
                                     end_date=end_date,
-                                    campaign_ids=campaign_ids,
+                                    campaign_ids=[str(campaign.campaign_id)] if campaign_ids else None,
                                 )
                             else:
                                 result = await sync_gmvmax_duration_metrics_hourly(
@@ -721,7 +736,7 @@ class GmvMaxSyncService:
                                     campaign=campaign,
                                     start_date=start_date,
                                     end_date=end_date,
-                                    campaign_ids=campaign_ids,
+                                    campaign_ids=[str(campaign.campaign_id)] if campaign_ids else None,
                                 )
 
                             totals["duration_rows"] += int(result.get("synced_rows", 0) or 0)
@@ -743,6 +758,8 @@ class GmvMaxSyncService:
                     "granularity": granularity,
                     "campaigns": len(campaigns),
                     "campaign_ids": [getattr(campaign, "campaign_id", None) for campaign in campaigns[:5]],
+                    "requested_campaign_ids": campaign_ids,
+                    "auth_ids": sorted({int(auth_id) for auth_id in (getattr(c, "auth_id", None) for c in campaigns) if auth_id is not None}),
                     "result": result,
                     "start_date": start_date,
                     "end_date": end_date,
