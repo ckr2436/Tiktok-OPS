@@ -8,6 +8,8 @@ from typing import Any
 from app.celery_app import celery_app
 from app.gmvmax.domain.monitoring_strategy import GmvMaxMonitoringStrategyRepository
 from app.gmvmax.services.sync_service import GmvMaxSyncService
+from app.services.scheduler_schema_utils import validate_params_or_raise
+from app.services.scheduler_task_registry import get_task_config
 
 logger = logging.getLogger("gmv.tasks.gmvmax.strategy")
 
@@ -19,6 +21,32 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _validate_strategy_params(strategy: Any, config: dict[str, Any] | None) -> None:
+    schema = strategy.input_schema_json or {}
+    if not schema:
+        schema = dict(config.get("input_schema") or {}) if config else {}
+    params = strategy.params_json if hasattr(strategy, "params_json") else None
+    if params is None:
+        params = {}
+    validate_params_or_raise(schema, params)
+
+
+def _build_celery_kwargs(strategy: Any, config: dict[str, Any]) -> dict[str, Any]:
+    kwargs = dict(strategy.params_json or {})
+    if "workspace_id" not in kwargs and getattr(strategy, "workspace_id", None) is not None:
+        kwargs["workspace_id"] = strategy.workspace_id
+    if "auth_id" not in kwargs and getattr(strategy, "auth_id", None) is not None:
+        kwargs["auth_id"] = strategy.auth_id
+    if "advertiser_id" not in kwargs and getattr(strategy, "advertiser_id", None) is not None:
+        kwargs["advertiser_id"] = strategy.advertiser_id
+    if "store_id" not in kwargs and getattr(strategy, "store_id", None) is not None:
+        kwargs["store_id"] = strategy.store_id
+
+    if "scope" not in kwargs and config.get("default_scope"):
+        kwargs["scope"] = config["default_scope"]
+    return kwargs
+
+
 @celery_app.task(name="gmvmax.sync.run_scheduler", ignore_result=True)
 def run_gmvmax_sync_scheduler() -> dict[str, Any]:
     now = _now_utc()
@@ -28,22 +56,66 @@ def run_gmvmax_sync_scheduler() -> dict[str, Any]:
 
     dispatched = 0
     for strategy in strategies:
-        try:
-            repo.mark_started(strategy.id, now)
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "gmvmax sync scheduler: failed to mark started",
-                exc_info=True,
-                extra={"strategy_id": strategy.id},
+        category = strategy.category or "GMVMAX"
+        task_name = strategy.task_name or "gmvmax.strategy"
+        config = get_task_config(category, task_name)
+        if not config:
+            repo.mark_error(strategy.id, now, f"unknown task: {category}/{task_name}")
+            logger.error(
+                "strategy scheduler: unknown task",
+                extra={"strategy_id": strategy.id, "category": category, "task_name": task_name},
             )
             continue
 
-        celery_app.send_task(
-            "gmvmax.sync.run_for_strategy",
-            kwargs={"strategy_id": strategy.id},
-            queue="gmvmax_sync",
-        )
-        dispatched += 1
+        try:
+            _validate_strategy_params(strategy, config)
+        except Exception as exc:  # noqa: BLE001
+            repo.mark_error(strategy.id, now, str(exc))
+            logger.error(
+                "strategy scheduler: invalid params",
+                exc_info=True,
+                extra={"strategy_id": strategy.id, "category": category, "task_name": task_name},
+            )
+            continue
+
+        if config.get("kind") == "gmvmax_strategy":
+            try:
+                repo.mark_started(strategy.id, now)
+                celery_app.send_task(
+                    "gmvmax.sync.run_for_strategy",
+                    kwargs={"strategy_id": strategy.id},
+                    queue="gmvmax_sync",
+                )
+                dispatched += 1
+            except Exception:
+                repo.mark_error(strategy.id, now, "dispatch_failed")
+                logger.exception(
+                    "gmvmax sync scheduler: dispatch failed",
+                    extra={"strategy_id": strategy.id, "category": category},
+                )
+        elif config.get("kind") == "celery_task":
+            try:
+                repo.mark_started(strategy.id, now)
+                kwargs = _build_celery_kwargs(strategy, config)
+                celery_app.send_task(
+                    config["celery_task"],
+                    kwargs=kwargs,
+                    queue=config.get("queue"),
+                )
+                repo.mark_success(strategy.id, now)
+                dispatched += 1
+            except Exception as exc:  # noqa: BLE001
+                repo.mark_error(strategy.id, now, str(exc))
+                logger.exception(
+                    "strategy scheduler: dispatch failed",
+                    extra={"strategy_id": strategy.id, "category": category, "task_name": task_name},
+                )
+        else:
+            repo.mark_error(strategy.id, now, f"unsupported kind: {config.get('kind')}")
+            logger.error(
+                "strategy scheduler: unsupported kind",
+                extra={"strategy_id": strategy.id, "category": category, "task_name": task_name},
+            )
 
     logger.info(
         "gmvmax sync scheduler completed",

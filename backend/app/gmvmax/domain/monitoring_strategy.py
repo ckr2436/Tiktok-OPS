@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -21,11 +21,15 @@ class MonitoringStrategy:
     auth_id: int | None
     advertiser_id: str | None
     store_id: str | None
-    level: str
+    level: str | None
+    category: str
+    task_name: str
     interval_minutes: int
     enabled: bool
     promotion_type: str | None = None
     max_campaigns_per_run: int | None = None
+    params_json: dict[str, Any] = field(default_factory=dict)
+    input_schema_json: dict[str, Any] | None = None
 
 
 class GmvMaxMonitoringStrategyRepository:
@@ -41,13 +45,17 @@ class GmvMaxMonitoringStrategyRepository:
             auth_id=int(row.auth_id) if row.auth_id is not None else None,
             advertiser_id=str(row.advertiser_id) if row.advertiser_id is not None else None,
             store_id=str(row.store_id) if row.store_id is not None else None,
-            level=str(row.level),
+            level=str(row.level) if row.level is not None else None,
+            category=str(row.category or "GMVMAX"),
+            task_name=str(row.task_name or "gmvmax.strategy"),
             interval_minutes=int(row.interval_minutes),
             enabled=bool(row.enabled),
             promotion_type=row.promotion_type.value if row.promotion_type else None,
             max_campaigns_per_run=int(row.max_campaigns_per_run)
             if row.max_campaigns_per_run is not None
             else None,
+            params_json=dict(row.params_json or {}),
+            input_schema_json=dict(row.input_schema_json or {}),
         )
 
     def _session(self) -> Session:
