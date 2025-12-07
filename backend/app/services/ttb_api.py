@@ -590,7 +590,7 @@ class TTBApiClient:
     async def fetch_advertiser_balances(
         self,
         *,
-        bc_id: str,
+        bc_id: str | None,
         advertiser_ids: Iterable[str] | None = None,
         page_size: int = _MAX_PAGE_SIZE,
         fields: Iterable[str] | None = None,
@@ -711,6 +711,65 @@ class TTBApiClient:
             extractor="products",
         ):
             yield it
+
+    async def get_store_products_for_gmvmax_item_group_ids(
+        self,
+        *,
+        bc_id: str,
+        store_id: str,
+        advertiser_id: str,
+        item_group_ids: list[str],
+        page_size: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Batch-fetch GMV Max eligible products for the given item_group_ids.
+
+        TikTok's /store/product/get/ accepts up to 10 ``item_group_ids`` per
+        request. This helper splits the list into batches, applies the
+        ``ad_creation_eligible=GMV_MAX`` filter, and aggregates all returned
+        ``store_products`` entries.
+        """
+
+        cleaned_ids = [
+            str(item).strip()
+            for item in item_group_ids
+            if item is not None and str(item).strip()
+        ]
+        if not cleaned_ids:
+            return []
+
+        batches = [
+            cleaned_ids[i : i + 10]
+            for i in range(0, len(cleaned_ids), 10)
+        ]
+
+        results: list[dict[str, Any]] = []
+        for batch in batches:
+            params: Dict[str, Any] = {
+                "store_id": str(store_id),
+                "advertiser_id": str(advertiser_id),
+                "page_size": page_size,
+                "filtering": json.dumps(
+                    {
+                        "ad_creation_eligible": "GMV_MAX",
+                        "item_group_ids": batch,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+            if bc_id:
+                params["bc_id"] = str(bc_id)
+
+            payload = await self._request_json(
+                "GET",
+                self._paths.products_list,
+                params=params,
+            )
+            data = payload.get("data") or {}
+            items = data.get("store_products") or []
+            if isinstance(items, list):
+                results.extend([item for item in items if isinstance(item, dict)])
+
+        return results
 
     # ---------- GMV Max ----------
 
