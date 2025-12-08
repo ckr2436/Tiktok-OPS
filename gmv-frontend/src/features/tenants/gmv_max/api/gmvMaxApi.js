@@ -1,5 +1,10 @@
 import http from '@/lib/http.js';
 import { normProvider } from '@/features/tenants/integrations/tiktok_business/service.js';
+import {
+  GmvMaxMetricsLevel,
+  GMV_MAX_LEVELS_REQUIRING_CAMPAIGN,
+  GMV_MAX_LEVELS_REQUIRING_ITEM_GROUP,
+} from '../constants/metrics.js';
 
 export function clampPageSize(size, max = 50) {
   const limit = Number.isFinite(Number(max)) && Number(max) > 0 ? Math.floor(Number(max)) : 50;
@@ -244,6 +249,8 @@ export async function syncGmvMaxMetrics(workspaceId, provider, authId, campaignI
 
 export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, config) {
   const normalizedParams = params ? { ...params } : {};
+  const levelValue = normalizedParams.level ?? GmvMaxMetricsLevel.CAMPAIGN;
+  normalizedParams.level = levelValue;
 
   const campaignIds = normalizeIdList(
     normalizedParams.campaign_ids ?? normalizedParams.campaign_id,
@@ -252,10 +259,13 @@ export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId
     normalizedParams.item_group_ids ?? normalizedParams.item_group_id,
   );
 
-  const needsCampaignFilter =
-    normalizedParams.level === 'product' || normalizedParams.level === 'creative';
+  const needsCampaignFilter = GMV_MAX_LEVELS_REQUIRING_CAMPAIGN.has(levelValue);
+  const needsItemGroupFilter = GMV_MAX_LEVELS_REQUIRING_ITEM_GROUP.has(levelValue);
   if (needsCampaignFilter && campaignIds.length === 0 && campaignId) {
     campaignIds.push(String(campaignId));
+  }
+  if (needsItemGroupFilter && itemGroupIds.length === 0 && normalizedParams.item_group_id) {
+    itemGroupIds.push(String(normalizedParams.item_group_id));
   }
 
   const sanitizedParams =

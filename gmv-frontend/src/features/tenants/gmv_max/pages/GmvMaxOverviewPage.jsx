@@ -85,6 +85,7 @@ import {
   toChoiceList,
   extractChoiceList,
 } from './gmvMaxOverview/helpers.js';
+import { GmvMaxMetricsLevel } from '../constants/metrics.js';
 import {
   formatRangeAsDateStrings,
   getAdvertiserRecentRange,
@@ -1268,7 +1269,7 @@ export default function GmvMaxOverviewPage() {
       start_date: overviewRangeParams.start_date,
       end_date: overviewRangeParams.end_date,
       store_ids: overviewRangeParams.store_ids,
-      level: 'overview',
+      level: GmvMaxMetricsLevel.OVERVIEW,
       dimensions: ['stat_time_day'],
     },
     {
