@@ -788,9 +788,13 @@ class GmvCampaignMetricsDaily(
     __tablename__ = "gmv_campaign_metrics_daily"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
-            "stat_time_day",
             "promotion_type",
+            "stat_time_day",
             name="uk_campaign_daily",
         ),
         Index("idx_campaign_daily_campaign", "campaign_id", "stat_time_day"),
@@ -798,8 +802,11 @@ class GmvCampaignMetricsDaily(
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
@@ -816,9 +823,13 @@ class GmvCampaignMetricsHourly(
     __tablename__ = "gmv_campaign_metrics_hourly"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
-            "stat_time_hour",
             "promotion_type",
+            "stat_time_hour",
             name="uk_campaign_hourly",
         ),
         Index("idx_campaign_hourly_campaign", "campaign_id", "stat_time_hour"),
@@ -826,8 +837,11 @@ class GmvCampaignMetricsHourly(
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    store_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     promotion_type: Mapped[PromotionTypeEnum] = mapped_column(
         SqlEnum(PromotionTypeEnum), nullable=False
     )
