@@ -27,6 +27,7 @@ from app.data.models.gmv_restructured import (
     GmvLivestreamMetricsHourly,
     GmvOverviewMetricsDaily,
     GmvOverviewMetricsHourly,
+    GmvOverviewSnapshot,
     GmvProductMetricsDaily,
     GmvProductMetricsHourly,
     GmvStrategyConfig,
@@ -102,8 +103,11 @@ __all__ = [
     "create_gmvmax_campaign",
     "update_gmvmax_campaign",
     "fetch_gmvmax_report_by_level",
+    "fetch_overview_summary_rows",
     "get_item_group_ids_for_campaign",
     "fetch_and_cache_campaign_detail",
+    "normalize_overview_metrics",
+    "upsert_overview_snapshot",
 ]
 
 GMVMAX_LEVEL_TABLES: dict[str, list[str]] = {
@@ -151,6 +155,14 @@ def _sanitize_id_list(values: Sequence[str] | Sequence[int] | None) -> list[str]
         cleaned.append(text)
     return cleaned or None
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
+_OVERVIEW_FINANCIAL_METRICS = (
+    "cost",
+    "net_cost",
+    "orders",
+    "gross_revenue",
+    "cost_per_order",
+    "roi",
+)
 
 
 class GMVMaxReportEntry(TypedDict):
@@ -3018,6 +3030,122 @@ def _upsert_overview_hourly(
     return instance
 
 
+async def fetch_overview_summary_rows(
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    store_id: str,
+    start_date: date | str,
+    end_date: date | str,
+    dimensions: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    requested_dimensions = list(dimensions or ["advertiser_id"])
+    start_date_str = _normalize_date(start_date)
+    end_date_str = _normalize_date(end_date)
+
+    request = build_gmv_max_report_request(
+        dataset=GMVMaxDataset.OVERVIEW,
+        advertiser_id=str(advertiser_id),
+        store_ids=[str(store_id)],
+        start_date=start_date_str,
+        end_date=end_date_str,
+        metrics=list(_OVERVIEW_FINANCIAL_METRICS),
+        page_size=_REPORT_PAGE_SIZE,
+    )
+    request.dimensions = requested_dimensions
+
+    response = await ttb_client.gmv_max_report_get(request)
+    data = getattr(response, "data", None)
+    rows_raw = getattr(data, "list", None) or []
+    rows = [_merge_report_entry(item) for item in rows_raw]
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def normalize_overview_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
+    return _normalize_metric_payload(row)
+
+
+def _aggregate_overview_metrics(metric_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    cost_cents = _sum_int([_to_int(row.get("cost_cents")) for row in metric_rows])
+    net_cost_cents = _sum_int([
+        _to_int(row.get("net_cost_cents")) for row in metric_rows
+    ])
+    orders = _sum_int([_to_int(row.get("orders")) for row in metric_rows])
+    gross_revenue_cents = _sum_int(
+        [_to_int(row.get("gross_revenue_cents")) for row in metric_rows]
+    )
+
+    cost_per_order: Decimal | None = None
+    if cost_cents and orders:
+        try:
+            cost_per_order = (
+                Decimal(cost_cents) / Decimal(orders) / _ONE_HUNDRED
+            ).quantize(_DECIMAL_FOUR)
+        except (InvalidOperation, ZeroDivisionError):  # pragma: no cover
+            cost_per_order = None
+
+    roi = _calc_roi(gross_revenue_cents, cost_cents)
+
+    return {
+        "cost_cents": cost_cents,
+        "net_cost_cents": net_cost_cents,
+        "orders": orders,
+        "gross_revenue_cents": gross_revenue_cents,
+        "cost_per_order": cost_per_order,
+        "roi": roi,
+    }
+
+
+def upsert_overview_snapshot(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    snapshot_type: str,
+    start_date: date | None,
+    end_date: date | None,
+    metrics_rows: Sequence[Mapping[str, Any]],
+) -> GmvOverviewSnapshot:
+    aggregated = _aggregate_overview_metrics(metrics_rows)
+
+    stmt = (
+        select(GmvOverviewSnapshot)
+        .where(GmvOverviewSnapshot.workspace_id == int(workspace_id))
+        .where(GmvOverviewSnapshot.auth_id == int(auth_id))
+        .where(GmvOverviewSnapshot.advertiser_id == str(advertiser_id))
+        .where(GmvOverviewSnapshot.store_id == str(store_id))
+        .where(GmvOverviewSnapshot.snapshot_type == str(snapshot_type))
+        .where(GmvOverviewSnapshot.end_date == end_date)
+    )
+    instance = db.execute(stmt).scalars().first()
+    if instance is None:
+        instance = GmvOverviewSnapshot(
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            snapshot_type=str(snapshot_type),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        db.add(instance)
+
+    instance.start_date = start_date
+    instance.end_date = end_date
+    instance.snapshot_at = datetime.utcnow()
+    instance.cost_cents = aggregated.get("cost_cents")
+    instance.net_cost_cents = aggregated.get("net_cost_cents")
+    instance.orders = aggregated.get("orders")
+    instance.gross_revenue_cents = aggregated.get("gross_revenue_cents")
+    instance.cost_per_order = aggregated.get("cost_per_order")
+    instance.roi = aggregated.get("roi")
+
+    db.flush()
+    return instance
+
+
 def _build_campaign_report_request(
     *,
     advertiser_id: str,
@@ -3128,6 +3256,7 @@ async def sync_gmvmax_overview_metrics(
     start_date: date | str,
     end_date: date | str,
     granularity: str = "DAILY",
+    hour_window: tuple[datetime, datetime] | None = None,
 ) -> dict:
     _log_sync_target("OVERVIEW", granularity=str(granularity or "").strip().upper())
     start_date_str = _normalize_date(start_date)
@@ -3162,6 +3291,13 @@ async def sync_gmvmax_overview_metrics(
         rows = [row for row in rows if isinstance(row, dict)]
 
         for row in rows:
+            if granularity_normalized == "HOUR" and hour_window:
+                stat_time_value = _extract_field(row, "stat_time_hour", "stat_time")
+                stat_time_hour = _parse_datetime(stat_time_value)
+                if stat_time_hour is None:
+                    continue
+                if not (hour_window[0] <= stat_time_hour <= hour_window[1]):
+                    continue
             try:
                 if granularity_normalized == "HOUR":
                     _upsert_overview_hourly(

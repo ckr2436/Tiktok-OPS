@@ -556,7 +556,7 @@ def _execute_task(
                 details={"reason": msg},
             )
             db.commit()
-            return {"error": msg}
+            return {"error": msg, "code": "CONCURRENT_JOB_SKIPPED"}
 
         def _run_provider_scope() -> None:
             nonlocal processed, errors

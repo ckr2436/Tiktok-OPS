@@ -744,8 +744,8 @@ class TenSecondLiveMetricExtras:
     )
 
 
-class GmvOverviewMetricsDaily(Base, BaseMetricMixin):
-    """Advertiser-level daily metrics."""
+class GmvOverviewMetricsDaily(Base, CoreFinancialMetricMixin):
+    """Advertiser-level daily metrics (financial only)."""
 
     __tablename__ = "gmv_overview_metrics_daily"
     __table_args__ = (
@@ -755,7 +755,7 @@ class GmvOverviewMetricsDaily(Base, BaseMetricMixin):
             "advertiser_id",
             "store_id",
             "stat_time_day",
-            name="uk_overview_daily",
+            name="uk_gmv_overview_metrics_daily_scope",
         ),
         Index("idx_overview_daily_advertiser", "advertiser_id", "stat_time_day"),
     )
@@ -768,8 +768,8 @@ class GmvOverviewMetricsDaily(Base, BaseMetricMixin):
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-class GmvOverviewMetricsHourly(Base, BaseMetricMixin):
-    """Advertiser-level hourly metrics."""
+class GmvOverviewMetricsHourly(Base, CoreFinancialMetricMixin):
+    """Advertiser-level hourly metrics (financial only)."""
 
     __tablename__ = "gmv_overview_metrics_hourly"
     __table_args__ = (
@@ -779,7 +779,7 @@ class GmvOverviewMetricsHourly(Base, BaseMetricMixin):
             "advertiser_id",
             "store_id",
             "stat_time_hour",
-            name="uk_overview_hourly",
+            name="uk_gmv_overview_metrics_hourly_scope",
         ),
         Index("idx_overview_hourly_advertiser", "advertiser_id", "stat_time_hour"),
     )
@@ -790,6 +790,43 @@ class GmvOverviewMetricsHourly(Base, BaseMetricMixin):
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
+
+
+class GmvOverviewSnapshot(Base, CoreFinancialMetricMixin):
+    """Snapshot rollups for overview financial metrics."""
+
+    __tablename__ = "gmv_overview_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "snapshot_type",
+            "end_date",
+            name="uk_gmv_overview_snapshot_scope",
+        ),
+        Index(
+            "ix_gmv_overview_snapshots_ws_auth_adv",
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    snapshot_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    snapshot_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
 
 
 class GmvCampaignMetricsDaily(
