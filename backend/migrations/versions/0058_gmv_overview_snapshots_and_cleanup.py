@@ -111,7 +111,7 @@ def upgrade() -> None:
         sa.Column("snapshot_type", sa.String(length=32), nullable=False),
         sa.Column(
             "snapshot_at",
-            sa.DateTime(timezone=False, fsp=6),
+            sa.DateTime(timezone=False).with_variant(mysql.DATETIME(fsp=6), "mysql"),
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP(6)"),
         ),
