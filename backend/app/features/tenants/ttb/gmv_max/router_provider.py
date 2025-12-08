@@ -2700,8 +2700,6 @@ async def query_gmvmax_metrics_provider(
             cost_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
             gross_value = float(Decimal(revenue_cents) / Decimal(100)) if revenue_cents else 0.0
             orders_value = int(row.orders or 0)
-            impressions_value = int(row.impressions or 0)
-            clicks_value = int(row.clicks or 0)
             roas_value: float | None = None
             if spend_cents > 0:
                 roas_value = float(Decimal(revenue_cents) / Decimal(spend_cents))
@@ -2715,8 +2713,6 @@ async def query_gmvmax_metrics_provider(
                         "gross_revenue": gross_value,
                         "gmv": gross_value,
                         "orders": orders_value,
-                        "impressions": impressions_value,
-                        "clicks": clicks_value,
                         "roas": roas_value,
                         "roi": roas_value,
                     },
@@ -2808,8 +2804,6 @@ async def query_gmvmax_metrics_provider(
                 ),
                 func.sum(GmvCampaignMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
                 func.sum(GmvCampaignMetricsDaily.orders).label("orders"),
-                func.sum(GmvCampaignMetricsDaily.impressions).label("impressions"),
-                func.sum(GmvCampaignMetricsDaily.clicks).label("clicks"),
             )
             .join(GmvCampaign, GmvCampaign.campaign_id == GmvCampaignMetricsDaily.campaign_id)
             .where(GmvCampaign.workspace_id == workspace_id)
@@ -2829,15 +2823,11 @@ async def query_gmvmax_metrics_provider(
             "spend_cents": 0,
             "gross_revenue_cents": 0,
             "orders": 0,
-            "impressions": 0,
-            "clicks": 0,
         }
         for row in rows:
             totals["spend_cents"] += int(row.spend_cents or 0)
             totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
             totals["orders"] += int(row.orders or 0)
-            totals["impressions"] += int(row.impressions or 0)
-            totals["clicks"] += int(row.clicks or 0)
 
         spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
         gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
@@ -2848,8 +2838,6 @@ async def query_gmvmax_metrics_provider(
             "gmv": float(gmv_total),
             "gross_revenue": float(gmv_total),
             "orders": totals["orders"],
-            "impressions": totals["impressions"],
-            "clicks": totals["clicks"],
             "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
             "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
         }

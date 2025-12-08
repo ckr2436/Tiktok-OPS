@@ -693,6 +693,17 @@ class BaseMetricMixin:
     video_view_rate_100: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
 
 
+class CampaignMetricMixin:
+    """Financial-only metrics supported at the campaign level."""
+
+    cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    net_cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    orders: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    gross_revenue_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    cost_per_order: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+
+
 class AllShopsMetricMixin:
     """Omni-shop financial rollups for LIVE reporting."""
 
@@ -720,12 +731,22 @@ class GmvOverviewMetricsDaily(Base, BaseMetricMixin):
 
     __tablename__ = "gmv_overview_metrics_daily"
     __table_args__ = (
-        UniqueConstraint("advertiser_id", "stat_time_day", name="uk_overview_daily"),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "stat_time_day",
+            name="uk_overview_daily",
+        ),
         Index("idx_overview_daily_advertiser", "advertiser_id", "stat_time_day"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
 
 
@@ -734,16 +755,26 @@ class GmvOverviewMetricsHourly(Base, BaseMetricMixin):
 
     __tablename__ = "gmv_overview_metrics_hourly"
     __table_args__ = (
-        UniqueConstraint("advertiser_id", "stat_time_hour", name="uk_overview_hourly"),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "stat_time_hour",
+            name="uk_overview_hourly",
+        ),
         Index("idx_overview_hourly_advertiser", "advertiser_id", "stat_time_hour"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
 
-class GmvCampaignMetricsDaily(Base, BaseMetricMixin, LiveMetricExtras):
+class GmvCampaignMetricsDaily(Base, CampaignMetricMixin, LiveMetricExtras):
     """Campaign-level daily metrics supporting product and LIVE."""
 
     __tablename__ = "gmv_campaign_metrics_daily"
@@ -770,7 +801,7 @@ class GmvCampaignMetricsDaily(Base, BaseMetricMixin, LiveMetricExtras):
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
-class GmvCampaignMetricsHourly(Base, BaseMetricMixin, LiveMetricExtras):
+class GmvCampaignMetricsHourly(Base, CampaignMetricMixin, LiveMetricExtras):
     """Campaign-level hourly metrics supporting product and LIVE."""
 
     __tablename__ = "gmv_campaign_metrics_hourly"
