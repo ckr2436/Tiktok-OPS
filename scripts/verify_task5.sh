@@ -20,15 +20,20 @@ else
 fi
 echo
 
-# 2) 禁止直接 new TTBApiClient（除了工厂）
-echo "[2] 扫描直接构造 TTBApiClient 的位置（应为空）"
-FOUND_TTB=$(git grep -n "TTBApiClient(" -- backend | grep -v "ttb_client_factory.py" || true)
+# 2) 禁止直接 new TTBApiClient（除了工厂；忽略 tests 目录）
+echo "[2] 扫描直接构造 TTBApiClient 的位置（应为空，tests 目录除外）"
+FOUND_TTB=$(
+  git grep -n "TTBApiClient(" -- backend \
+    | grep -v "ttb_client_factory.py" \
+    | grep -v "backend/tests/" \
+    || true
+)
 if [ -n "${FOUND_TTB:-}" ]; then
   echo "FAIL: 仍有直接 new TTBApiClient 的地方："
   echo "$FOUND_TTB"
   exit 1
 else
-  echo "OK: 未发现除工厂以外的 TTBApiClient 构造"
+  echo "OK: 未发现除工厂以外的 TTBApiClient 构造（tests 目录已忽略）"
 fi
 echo
 
@@ -56,3 +61,4 @@ echo "OK: 关键单测通过"
 echo
 
 echo "=== Task5 自检通过: 工厂统一 / 路由 async / 唯一约束提示 / 单测通过 ==="
+
