@@ -668,29 +668,43 @@ class GmvMonitoringStrategy(Base):
     )
 
 
-class BaseMetricMixin:
-    """Common metric columns reused across tables."""
+class CoreFinancialMetricMixin:
+    """Financial metrics that are shared by all GMV Max levels."""
 
-    impressions: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    product_impressions: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    clicks: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    product_clicks: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    product_click_rate: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
     net_cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
     orders: Mapped[int | None] = mapped_column(BigInteger, default=None)
     gross_revenue_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
     cost_per_order: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
     roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+
+
+class ImpressionMetricMixin:
+    """Exposure/click related metrics used by most levels."""
+
+    impressions: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    product_impressions: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    clicks: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    product_clicks: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    product_click_rate: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     ad_click_rate: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     ad_conversion_rate: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     conversion_rate: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
+
+
+class VideoViewRateMetricMixin:
+    """Video view progress metrics for creative/video heavy levels."""
+
     video_view_rate_2s: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     video_view_rate_6s: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     video_view_rate_25: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     video_view_rate_50: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     video_view_rate_75: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     video_view_rate_100: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
+
+
+class BaseMetricMixin(CoreFinancialMetricMixin, ImpressionMetricMixin):
+    """Common metric columns reused across tables."""
 
 
 class CampaignMetricMixin:
@@ -856,10 +870,19 @@ class GmvProductMetricsDaily(Base, BaseMetricMixin):
     __tablename__ = "gmv_product_metrics_daily"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "item_group_id", "stat_time_day", name="uk_product_daily"
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "item_group_id",
+            "stat_time_day",
+            name="uk_product_daily",
         ),
         Index(
             "idx_product_daily_campaign_item",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "item_group_id",
             "stat_time_day",
@@ -867,6 +890,10 @@ class GmvProductMetricsDaily(Base, BaseMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
@@ -879,10 +906,19 @@ class GmvProductMetricsHourly(Base, BaseMetricMixin):
     __tablename__ = "gmv_product_metrics_hourly"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "item_group_id", "stat_time_hour", name="uk_product_hourly"
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "item_group_id",
+            "stat_time_hour",
+            name="uk_product_hourly",
         ),
         Index(
             "idx_product_hourly_campaign_item",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "item_group_id",
             "stat_time_hour",
@@ -890,22 +926,35 @@ class GmvProductMetricsHourly(Base, BaseMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     bid_type: Mapped[str | None] = mapped_column(String(64), default=None)
 
 
-class GmvCreativeMetricsDaily(Base, BaseMetricMixin):
+class GmvCreativeMetricsDaily(Base, BaseMetricMixin, VideoViewRateMetricMixin):
     """Creative-level daily metrics."""
 
     __tablename__ = "gmv_creative_metrics_daily"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "creative_id", "stat_time_day", name="uk_creative_daily"
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "creative_id",
+            "stat_time_day",
+            name="uk_creative_daily",
         ),
         Index(
             "idx_creative_daily_campaign",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "creative_id",
             "stat_time_day",
@@ -913,22 +962,35 @@ class GmvCreativeMetricsDaily(Base, BaseMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-class GmvCreativeMetricsHourly(Base, BaseMetricMixin):
+class GmvCreativeMetricsHourly(Base, BaseMetricMixin, VideoViewRateMetricMixin):
     """Creative-level hourly metrics."""
 
     __tablename__ = "gmv_creative_metrics_hourly"
     __table_args__ = (
         UniqueConstraint(
-            "campaign_id", "creative_id", "stat_time_hour", name="uk_creative_hourly"
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "creative_id",
+            "stat_time_hour",
+            name="uk_creative_hourly",
         ),
         Index(
             "idx_creative_hourly_campaign",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "creative_id",
             "stat_time_hour",
@@ -936,18 +998,26 @@ class GmvCreativeMetricsHourly(Base, BaseMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
 
-class GmvCreativeMetrics10Min(Base, BaseMetricMixin):
+class GmvCreativeMetrics10Min(Base, BaseMetricMixin, VideoViewRateMetricMixin):
     """Creative-level 10 minute snapshots."""
 
     __tablename__ = "gmv_creative_metrics_10min"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
             "creative_id",
             "stat_time_day",
@@ -956,6 +1026,8 @@ class GmvCreativeMetrics10Min(Base, BaseMetricMixin):
         ),
         Index(
             "idx_creative_10min_campaign",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "creative_id",
             "stat_time_day",
@@ -964,6 +1036,10 @@ class GmvCreativeMetrics10Min(Base, BaseMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
@@ -976,6 +1052,10 @@ class GmvDurationMetricsDaily(Base, BaseMetricMixin, AllShopsMetricMixin):
     __tablename__ = "gmv_duration_metrics_daily"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
             "item_group_id",
             "duration",
@@ -984,6 +1064,8 @@ class GmvDurationMetricsDaily(Base, BaseMetricMixin, AllShopsMetricMixin):
         ),
         Index(
             "idx_duration_daily_campaign",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "item_group_id",
             "duration",
@@ -992,6 +1074,10 @@ class GmvDurationMetricsDaily(Base, BaseMetricMixin, AllShopsMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str | None] = mapped_column(String(64), default=None)
     duration: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1005,6 +1091,10 @@ class GmvDurationMetricsHourly(Base, BaseMetricMixin, AllShopsMetricMixin):
     __tablename__ = "gmv_duration_metrics_hourly"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
             "campaign_id",
             "item_group_id",
             "duration",
@@ -1013,6 +1103,8 @@ class GmvDurationMetricsHourly(Base, BaseMetricMixin, AllShopsMetricMixin):
         ),
         Index(
             "idx_duration_hourly_campaign",
+            "workspace_id",
+            "auth_id",
             "campaign_id",
             "item_group_id",
             "duration",
@@ -1021,6 +1113,10 @@ class GmvDurationMetricsHourly(Base, BaseMetricMixin, AllShopsMetricMixin):
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     item_group_id: Mapped[str | None] = mapped_column(String(64), default=None)
     duration: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1035,11 +1131,30 @@ class GmvLivestreamMetricsDaily(
 
     __tablename__ = "gmv_livestream_metrics_daily"
     __table_args__ = (
-        UniqueConstraint("room_id", "stat_time_day", name="uk_livestream_daily"),
-        Index("idx_livestream_daily_room", "room_id", "stat_time_day"),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "room_id",
+            "stat_time_day",
+            name="uk_livestream_daily",
+        ),
+        Index(
+            "idx_livestream_daily_room",
+            "workspace_id",
+            "auth_id",
+            "store_id",
+            "room_id",
+            "stat_time_day",
+        ),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     room_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
@@ -1054,11 +1169,30 @@ class GmvLivestreamMetricsHourly(
 
     __tablename__ = "gmv_livestream_metrics_hourly"
     __table_args__ = (
-        UniqueConstraint("room_id", "stat_time_hour", name="uk_livestream_hourly"),
-        Index("idx_livestream_hourly_room", "room_id", "stat_time_hour"),
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "room_id",
+            "stat_time_hour",
+            name="uk_livestream_hourly",
+        ),
+        Index(
+            "idx_livestream_hourly_room",
+            "workspace_id",
+            "auth_id",
+            "store_id",
+            "room_id",
+            "stat_time_hour",
+        ),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     room_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)

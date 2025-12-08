@@ -1599,6 +1599,9 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             _extract_field(row, "video_view_rate_100", "ad_video_view_rate_p100"),
             quantize=_DECIMAL_FOUR,
         ),
+        "live_10s_views": _to_int(
+            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+        ),
         "cost_per_live_view": _to_decimal(
             _extract_field(row, "cost_per_live_view"), quantize=_DECIMAL_FOUR
         ),
@@ -2059,6 +2062,10 @@ async def fetch_and_cache_campaign_detail(
 def _upsert_product_metrics_hourly(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     stat_time_hour: datetime,
     item_group_id: str,
@@ -2067,6 +2074,10 @@ def _upsert_product_metrics_hourly(
 ) -> GmvProductMetricsHourly:
     stmt = (
         select(GmvProductMetricsHourly)
+        .where(GmvProductMetricsHourly.workspace_id == workspace_id)
+        .where(GmvProductMetricsHourly.auth_id == auth_id)
+        .where(GmvProductMetricsHourly.advertiser_id == advertiser_id)
+        .where(GmvProductMetricsHourly.store_id == store_id)
         .where(GmvProductMetricsHourly.campaign_id == campaign_id)
         .where(GmvProductMetricsHourly.item_group_id == item_group_id)
         .where(GmvProductMetricsHourly.stat_time_hour == stat_time_hour)
@@ -2074,6 +2085,10 @@ def _upsert_product_metrics_hourly(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvProductMetricsHourly(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             campaign_id=campaign_id,
             item_group_id=item_group_id,
             stat_time_hour=stat_time_hour,
@@ -2094,6 +2109,10 @@ def _upsert_product_metrics_hourly(
 def _upsert_product_metrics_daily(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     stat_time_day: date,
     item_group_id: str,
@@ -2102,6 +2121,10 @@ def _upsert_product_metrics_daily(
 ) -> GmvProductMetricsDaily:
     stmt = (
         select(GmvProductMetricsDaily)
+        .where(GmvProductMetricsDaily.workspace_id == workspace_id)
+        .where(GmvProductMetricsDaily.auth_id == auth_id)
+        .where(GmvProductMetricsDaily.advertiser_id == advertiser_id)
+        .where(GmvProductMetricsDaily.store_id == store_id)
         .where(GmvProductMetricsDaily.campaign_id == campaign_id)
         .where(GmvProductMetricsDaily.item_group_id == item_group_id)
         .where(GmvProductMetricsDaily.stat_time_day == stat_time_day)
@@ -2109,6 +2132,10 @@ def _upsert_product_metrics_daily(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvProductMetricsDaily(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             campaign_id=campaign_id,
             item_group_id=item_group_id,
             stat_time_day=stat_time_day,
@@ -2129,6 +2156,10 @@ def _upsert_product_metrics_daily(
 def _upsert_creative_metrics(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     creative_id: str,
     metrics_row: Mapping[str, Any],
@@ -2145,6 +2176,10 @@ def _upsert_creative_metrics(
     if stat_time_day is not None:
         stmt = (
             select(GmvCreativeMetricsDaily)
+            .where(GmvCreativeMetricsDaily.workspace_id == workspace_id)
+            .where(GmvCreativeMetricsDaily.auth_id == auth_id)
+            .where(GmvCreativeMetricsDaily.advertiser_id == advertiser_id)
+            .where(GmvCreativeMetricsDaily.store_id == store_id)
             .where(GmvCreativeMetricsDaily.campaign_id == campaign_id)
             .where(GmvCreativeMetricsDaily.creative_id == creative_id)
             .where(GmvCreativeMetricsDaily.stat_time_day == stat_time_day)
@@ -2152,6 +2187,10 @@ def _upsert_creative_metrics(
         instance = db.execute(stmt).scalars().first()
         if instance is None:
             instance = GmvCreativeMetricsDaily(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
                 campaign_id=campaign_id,
                 creative_id=creative_id,
                 stat_time_day=stat_time_day,
@@ -2160,6 +2199,10 @@ def _upsert_creative_metrics(
     else:
         stmt = (
             select(GmvCreativeMetricsHourly)
+            .where(GmvCreativeMetricsHourly.workspace_id == workspace_id)
+            .where(GmvCreativeMetricsHourly.auth_id == auth_id)
+            .where(GmvCreativeMetricsHourly.advertiser_id == advertiser_id)
+            .where(GmvCreativeMetricsHourly.store_id == store_id)
             .where(GmvCreativeMetricsHourly.campaign_id == campaign_id)
             .where(GmvCreativeMetricsHourly.creative_id == creative_id)
             .where(GmvCreativeMetricsHourly.stat_time_hour == stat_time_hour)
@@ -2167,6 +2210,10 @@ def _upsert_creative_metrics(
         instance = db.execute(stmt).scalars().first()
         if instance is None and stat_time_hour is not None:
             instance = GmvCreativeMetricsHourly(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
                 campaign_id=campaign_id,
                 creative_id=creative_id,
                 stat_time_hour=stat_time_hour,
@@ -2176,6 +2223,10 @@ def _upsert_creative_metrics(
     if normalized_item:
         instance.item_group_id = normalized_item
 
+    instance.workspace_id = workspace_id
+    instance.auth_id = auth_id
+    instance.advertiser_id = advertiser_id
+    instance.store_id = store_id
     for field, value in metrics.items():
         if hasattr(instance, field):
             setattr(instance, field, value)
@@ -2257,6 +2308,10 @@ def upsert_metrics_hourly_row(
     if item_group_id:
         _upsert_product_metrics_hourly(
             db,
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign.campaign_id),
             stat_time_hour=stat_time_hour,
             item_group_id=item_group_id,
@@ -2398,6 +2453,10 @@ def upsert_metrics_daily_row(
     if item_group_id:
         _upsert_product_metrics_daily(
             db,
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign.campaign_id),
             stat_time_day=stat_date,
             item_group_id=item_group_id,
@@ -2412,6 +2471,10 @@ def upsert_metrics_daily_row(
 def _upsert_livestream_metrics_daily(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     room_id: str,
     row: Mapping[str, Any],
@@ -2422,14 +2485,26 @@ def _upsert_livestream_metrics_daily(
 
     stmt = (
         select(GmvLivestreamMetricsDaily)
+        .where(GmvLivestreamMetricsDaily.workspace_id == workspace_id)
+        .where(GmvLivestreamMetricsDaily.auth_id == auth_id)
+        .where(GmvLivestreamMetricsDaily.advertiser_id == advertiser_id)
+        .where(GmvLivestreamMetricsDaily.store_id == store_id)
         .where(GmvLivestreamMetricsDaily.room_id == str(room_id))
         .where(GmvLivestreamMetricsDaily.stat_time_day == stat_time_day)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
-        instance = GmvLivestreamMetricsDaily(room_id=str(room_id), stat_time_day=stat_time_day)
+        instance = GmvLivestreamMetricsDaily(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
+            room_id=str(room_id),
+            stat_time_day=stat_time_day,
+        )
         db.add(instance)
 
+    instance.store_id = store_id
     instance.campaign_id = str(campaign_id)
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
@@ -2453,6 +2528,10 @@ def _upsert_livestream_metrics_daily(
 def _upsert_livestream_metrics_hourly(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     room_id: str,
     row: Mapping[str, Any],
@@ -2464,16 +2543,26 @@ def _upsert_livestream_metrics_hourly(
 
     stmt = (
         select(GmvLivestreamMetricsHourly)
+        .where(GmvLivestreamMetricsHourly.workspace_id == workspace_id)
+        .where(GmvLivestreamMetricsHourly.auth_id == auth_id)
+        .where(GmvLivestreamMetricsHourly.advertiser_id == advertiser_id)
+        .where(GmvLivestreamMetricsHourly.store_id == store_id)
         .where(GmvLivestreamMetricsHourly.room_id == str(room_id))
         .where(GmvLivestreamMetricsHourly.stat_time_hour == stat_time_hour)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvLivestreamMetricsHourly(
-            room_id=str(room_id), stat_time_hour=stat_time_hour
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
+            room_id=str(room_id),
+            stat_time_hour=stat_time_hour,
         )
         db.add(instance)
 
+    instance.store_id = store_id
     instance.campaign_id = str(campaign_id)
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
@@ -2497,6 +2586,10 @@ def _upsert_livestream_metrics_hourly(
 def _upsert_duration_metrics_daily(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     row: Mapping[str, Any],
 ) -> GmvDurationMetricsDaily:
@@ -2512,6 +2605,10 @@ def _upsert_duration_metrics_daily(
 
     stmt = (
         select(GmvDurationMetricsDaily)
+        .where(GmvDurationMetricsDaily.workspace_id == workspace_id)
+        .where(GmvDurationMetricsDaily.auth_id == auth_id)
+        .where(GmvDurationMetricsDaily.advertiser_id == advertiser_id)
+        .where(GmvDurationMetricsDaily.store_id == store_id)
         .where(GmvDurationMetricsDaily.campaign_id == str(campaign_id))
         .where(GmvDurationMetricsDaily.duration == str(duration_value))
         .where(GmvDurationMetricsDaily.stat_time_day == stat_time_day)
@@ -2522,6 +2619,10 @@ def _upsert_duration_metrics_daily(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvDurationMetricsDaily(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign_id),
             duration=str(duration_value),
             stat_time_day=stat_time_day,
@@ -2529,6 +2630,7 @@ def _upsert_duration_metrics_daily(
         )
         db.add(instance)
 
+    instance.store_id = store_id
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
         if hasattr(instance, field):
@@ -2544,6 +2646,10 @@ def _upsert_duration_metrics_daily(
 def _upsert_duration_metrics_hourly(
     db: Session,
     *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
     campaign_id: str,
     row: Mapping[str, Any],
 ) -> GmvDurationMetricsHourly:
@@ -2560,6 +2666,10 @@ def _upsert_duration_metrics_hourly(
 
     stmt = (
         select(GmvDurationMetricsHourly)
+        .where(GmvDurationMetricsHourly.workspace_id == workspace_id)
+        .where(GmvDurationMetricsHourly.auth_id == auth_id)
+        .where(GmvDurationMetricsHourly.advertiser_id == advertiser_id)
+        .where(GmvDurationMetricsHourly.store_id == store_id)
         .where(GmvDurationMetricsHourly.campaign_id == str(campaign_id))
         .where(GmvDurationMetricsHourly.duration == str(duration_value))
         .where(GmvDurationMetricsHourly.stat_time_hour == stat_time_hour)
@@ -2570,6 +2680,10 @@ def _upsert_duration_metrics_hourly(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvDurationMetricsHourly(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign_id),
             duration=str(duration_value),
             stat_time_hour=stat_time_hour,
@@ -2577,6 +2691,7 @@ def _upsert_duration_metrics_hourly(
         )
         db.add(instance)
 
+    instance.store_id = store_id
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
         if hasattr(instance, field):
@@ -2674,6 +2789,10 @@ async def sync_gmvmax_product_metrics_hourly(
             metrics_payload = _normalize_metric_payload(row)
             _upsert_product_metrics_hourly(
                 db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
                 campaign_id=str(campaign.campaign_id),
                 stat_time_hour=stat_time_hour,
                 item_group_id=item_group_id,
@@ -2785,6 +2904,10 @@ async def sync_gmvmax_product_metrics_daily(
             metrics_payload = _normalize_metric_payload(row)
             _upsert_product_metrics_daily(
                 db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
                 campaign_id=str(campaign.campaign_id),
                 stat_time_day=stat_date,
                 item_group_id=item_group_id,
@@ -3139,7 +3262,14 @@ async def sync_gmvmax_livestream_metrics_hourly(
             continue
         try:
             _upsert_livestream_metrics_hourly(
-                db, campaign_id=str(campaign.campaign_id), room_id=room_id, row=row
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=str(store_id),
+                campaign_id=str(campaign.campaign_id),
+                room_id=room_id,
+                row=row,
             )
             synced_rows += 1
         except ValueError:
@@ -3216,7 +3346,14 @@ async def sync_gmvmax_livestream_metrics_daily(
             continue
         try:
             _upsert_livestream_metrics_daily(
-                db, campaign_id=str(campaign.campaign_id), room_id=room_id, row=row
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=str(store_id),
+                campaign_id=str(campaign.campaign_id),
+                room_id=room_id,
+                row=row,
             )
             synced_rows += 1
         except ValueError:
@@ -3290,7 +3427,13 @@ async def sync_gmvmax_duration_metrics_hourly(
     for row in rows:
         try:
             _upsert_duration_metrics_hourly(
-                db, campaign_id=str(campaign.campaign_id), row=row
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
+                campaign_id=str(campaign.campaign_id),
+                row=row,
             )
             synced_rows += 1
         except ValueError:
@@ -3363,7 +3506,15 @@ async def sync_gmvmax_duration_metrics_daily(
     synced_rows = 0
     for row in rows:
         try:
-            _upsert_duration_metrics_daily(db, campaign_id=str(campaign.campaign_id), row=row)
+            _upsert_duration_metrics_daily(
+                db,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
+                campaign_id=str(campaign.campaign_id),
+                row=row,
+            )
             synced_rows += 1
         except ValueError:
             logger.debug(
@@ -3472,6 +3623,10 @@ async def _sync_creative_level_daily(
             try:
                 _upsert_creative_metrics(
                     db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=campaign.advertiser_id,
+                    store_id=store_id,
                     campaign_id=str(campaign.campaign_id),
                     creative_id=str(creative_id),
                     stat_time_day=stat_time_day,
