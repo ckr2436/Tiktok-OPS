@@ -707,15 +707,13 @@ class BaseMetricMixin(CoreFinancialMetricMixin, ImpressionMetricMixin):
     """Common metric columns reused across tables."""
 
 
-class CampaignMetricMixin:
-    """Financial-only metrics supported at the campaign level."""
+class CampaignMetricMixin(CoreFinancialMetricMixin, ImpressionMetricMixin):
+    """Financial + exposure metrics supported at the campaign level.
 
-    cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    net_cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    orders: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    gross_revenue_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    cost_per_order: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
-    roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    We reuse the shared core financial and impression metrics so that campaign-level
+    tables expose fields like `impressions` / `clicks` in addition to cost/ROI,
+    matching what the sync pipeline and tests expect.
+    """
 
 
 class AllShopsMetricMixin:
