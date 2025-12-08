@@ -36,6 +36,7 @@ from app.data.models.gmv_restructured import (
     GmvCampaign,
     GmvCampaignMetricsDaily,
     GmvCampaignProduct,
+    GmvOverviewMetricsDaily,
     GmvCreativeMetricsDaily,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
@@ -156,6 +157,13 @@ from .schemas import (
 
 router = APIRouter(prefix="/gmvmax")
 logger = logging.getLogger("gmv.ttb.gmvmax.router")
+
+SUPPORTED_GMVMAX_METRIC_LEVELS: set[GMVMaxReportLevel] = {
+    GMVMaxReportLevel.OVERVIEW,
+    GMVMaxReportLevel.CAMPAIGN,
+    GMVMaxReportLevel.PRODUCT,
+    GMVMaxReportLevel.CREATIVE,
+}
 
 
 # === GMV Max sync cadence & task monitoring ===
@@ -2669,19 +2677,27 @@ async def query_gmvmax_metrics_provider(
         )
 
     level_param = (request.query_params.get("level") or level or "campaign").lower()
-    if level_param not in {"campaign", "product", "creative"}:
+    try:
+        level_value = GMVMaxReportLevel(level_param)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"invalid GMV Max metrics level: {level_param}",
         )
 
-    if level_param == "product" and not (clean_campaign_ids and len(clean_campaign_ids) > 0):
+    if level_value not in SUPPORTED_GMVMAX_METRIC_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"invalid GMV Max metrics level: {level_param}",
+        )
+
+    if level_value is GMVMaxReportLevel.PRODUCT and not (clean_campaign_ids and len(clean_campaign_ids) > 0):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Item level metrics requires at least 1 campaign_id filter.",
         )
 
-    if level_param == "creative" and (
+    if level_value is GMVMaxReportLevel.CREATIVE and (
         not (clean_campaign_ids and len(clean_campaign_ids) > 0)
         or not (clean_item_group_ids and len(clean_item_group_ids) > 0)
     ):
@@ -2691,6 +2707,38 @@ async def query_gmvmax_metrics_provider(
         )
 
     db = context.db
+
+    def _serialize_overview_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        serialized: list[dict[str, Any]] = []
+        for row in rows:
+            spend_cents = int(row.spend_cents or 0)
+            revenue_cents = int(row.gross_revenue_cents or 0)
+            spend_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
+            revenue_value = float(Decimal(revenue_cents) / Decimal(100)) if revenue_cents else 0.0
+            roas_value: float | None = None
+            if spend_cents > 0:
+                roas_value = float(Decimal(revenue_cents) / Decimal(spend_cents))
+
+            serialized.append(
+                {
+                    "metrics": {
+                        "spend": spend_value,
+                        "cost": spend_value,
+                        "net_cost": spend_value,
+                        "gross_revenue": revenue_value,
+                        "gmv": revenue_value,
+                        "orders": int(row.orders or 0),
+                        "roas": roas_value,
+                        "roi": roas_value,
+                    },
+                    "dimensions": {
+                        "advertiser_id": str(effective_advertiser_id),
+                        "store_id": str(effective_store_id),
+                        "stat_time_day": row.stat_time_day.isoformat(),
+                    },
+                }
+            )
+        return serialized
 
     def _serialize_campaign_rows(rows: list[Any]) -> list[dict[str, Any]]:
         serialized: list[dict[str, Any]] = []
@@ -2793,7 +2841,56 @@ async def query_gmvmax_metrics_provider(
     rows: list[Any] = []
     summary: dict[str, Any] | None = None
 
-    if level_param in {"campaign", "product"}:
+    if level_value is GMVMaxReportLevel.OVERVIEW:
+        stmt = (
+            select(
+                GmvOverviewMetricsDaily.stat_time_day.label("stat_time_day"),
+                func.sum(
+                    func.coalesce(
+                        GmvOverviewMetricsDaily.net_cost_cents,
+                        GmvOverviewMetricsDaily.cost_cents,
+                        0,
+                    )
+                ).label("spend_cents"),
+                func.sum(GmvOverviewMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
+                func.sum(GmvOverviewMetricsDaily.orders).label("orders"),
+            )
+            .where(GmvOverviewMetricsDaily.workspace_id == workspace_id)
+            .where(GmvOverviewMetricsDaily.auth_id == auth_id)
+            .where(GmvOverviewMetricsDaily.advertiser_id == str(effective_advertiser_id))
+            .where(GmvOverviewMetricsDaily.store_id == str(effective_store_id))
+            .where(GmvOverviewMetricsDaily.stat_time_day >= start)
+            .where(GmvOverviewMetricsDaily.stat_time_day <= end)
+            .group_by(GmvOverviewMetricsDaily.stat_time_day)
+            .order_by(GmvOverviewMetricsDaily.stat_time_day.asc())
+        )
+
+        rows = db.execute(stmt).all()
+
+        totals = {
+            "spend_cents": 0,
+            "gross_revenue_cents": 0,
+            "orders": 0,
+        }
+        for row in rows:
+            totals["spend_cents"] += int(row.spend_cents or 0)
+            totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
+            totals["orders"] += int(row.orders or 0)
+
+        spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
+        gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
+        summary = {
+            "spend": float(spend_total),
+            "cost": float(spend_total),
+            "net_cost": float(spend_total),
+            "gmv": float(gmv_total),
+            "gross_revenue": float(gmv_total),
+            "orders": totals["orders"],
+            "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
+            "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
+        }
+
+    elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
         campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
         stmt = (
             select(
@@ -2910,11 +3007,12 @@ async def query_gmvmax_metrics_provider(
             "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
         }
 
-    serialized_rows = (
-        _serialize_campaign_rows(rows)
-        if level_param in {"campaign", "product"}
-        else _serialize_creative_rows(rows)
-    )
+    if level_value is GMVMaxReportLevel.OVERVIEW:
+        serialized_rows = _serialize_overview_rows(rows)
+    elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
+        serialized_rows = _serialize_campaign_rows(rows)
+    else:
+        serialized_rows = _serialize_creative_rows(rows)
 
     return {
         "report": {

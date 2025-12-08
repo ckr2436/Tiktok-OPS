@@ -3,6 +3,7 @@ import { useQueries } from "@tanstack/react-query";
 
 import { getGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey, composeMetricsQueryKey } from "./gmvMaxQueries.js";
+import { GmvMaxMetricsLevel } from "../constants/metrics.js";
 
 const resolveEnabled = (flag) => Boolean(flag);
 
@@ -35,17 +36,21 @@ export function useGmvMaxMetrics({
   );
 
   const campaignParams = useMemo(
-    () => ({ ...commonParams, level: "campaign" }),
+    () => ({ ...commonParams, level: GmvMaxMetricsLevel.CAMPAIGN }),
     [commonParams],
   );
 
   const productParams = useMemo(
-    () => ({ ...commonParams, level: "product" }),
+    () => ({ ...commonParams, level: GmvMaxMetricsLevel.PRODUCT }),
     [commonParams],
   );
 
   const creativeParams = useMemo(
-    () => ({ ...commonParams, level: "creative", item_group_id: itemGroupId || undefined }),
+    () => ({
+      ...commonParams,
+      level: GmvMaxMetricsLevel.CREATIVE,
+      item_group_id: itemGroupId || undefined,
+    }),
     [commonParams, itemGroupId],
   );
 
