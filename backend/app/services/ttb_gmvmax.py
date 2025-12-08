@@ -2784,7 +2784,13 @@ async def sync_gmvmax_product_metrics_daily(
 
 
 def _upsert_overview_daily(
-    db: Session, *, advertiser_id: str, row: Mapping[str, Any]
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    row: Mapping[str, Any],
 ) -> GmvOverviewMetricsDaily:
     stat_date = _parse_date(_extract_field(row, "stat_time_day", "date", "stat_time"))
     if stat_date is None:
@@ -2792,13 +2798,20 @@ def _upsert_overview_daily(
 
     stmt = (
         select(GmvOverviewMetricsDaily)
+        .where(GmvOverviewMetricsDaily.workspace_id == int(workspace_id))
+        .where(GmvOverviewMetricsDaily.auth_id == int(auth_id))
         .where(GmvOverviewMetricsDaily.advertiser_id == str(advertiser_id))
+        .where(GmvOverviewMetricsDaily.store_id == str(store_id))
         .where(GmvOverviewMetricsDaily.stat_time_day == stat_date)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvOverviewMetricsDaily(
-            advertiser_id=str(advertiser_id), stat_time_day=stat_date
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            stat_time_day=stat_date,
         )
         db.add(instance)
 
@@ -2812,7 +2825,13 @@ def _upsert_overview_daily(
 
 
 def _upsert_overview_hourly(
-    db: Session, *, advertiser_id: str, row: Mapping[str, Any]
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    row: Mapping[str, Any],
 ) -> GmvOverviewMetricsHourly:
     stat_time_value = _extract_field(row, "stat_time_hour", "stat_time")
     stat_time_hour = _parse_datetime(stat_time_value)
@@ -2821,13 +2840,20 @@ def _upsert_overview_hourly(
 
     stmt = (
         select(GmvOverviewMetricsHourly)
+        .where(GmvOverviewMetricsHourly.workspace_id == int(workspace_id))
+        .where(GmvOverviewMetricsHourly.auth_id == int(auth_id))
         .where(GmvOverviewMetricsHourly.advertiser_id == str(advertiser_id))
+        .where(GmvOverviewMetricsHourly.store_id == str(store_id))
         .where(GmvOverviewMetricsHourly.stat_time_hour == stat_time_hour)
     )
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvOverviewMetricsHourly(
-            advertiser_id=str(advertiser_id), stat_time_hour=stat_time_hour
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            stat_time_hour=stat_time_hour,
         )
         db.add(instance)
 
@@ -2958,47 +2984,64 @@ async def sync_gmvmax_overview_metrics(
         return {"synced_rows": 0}
 
     metrics = list(GMVMAX_BASE_METRICS)
-    request = build_gmv_max_report_request(
-        dataset=GMVMaxDataset.OVERVIEW,
-        advertiser_id=str(advertiser_id),
-        store_ids=list(store_ids),
-        start_date=start_date_str,
-        end_date=end_date_str,
-        metrics=metrics,
-        page_size=_REPORT_PAGE_SIZE,
-    )
-
     granularity_normalized = str(granularity or "").strip().upper()
-    if granularity_normalized == "HOUR":
-        request.dimensions = ["advertiser_id", "stat_time_hour"]
-    else:
-        request.dimensions = ["advertiser_id", "stat_time_day"]
-
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, dict)]
-
     synced_rows = 0
-    for row in rows:
-        try:
-            if granularity_normalized == "HOUR":
-                _upsert_overview_hourly(db, advertiser_id=advertiser_id, row=row)
-            else:
-                _upsert_overview_daily(db, advertiser_id=advertiser_id, row=row)
-            synced_rows += 1
-        except ValueError:
-            logger.debug(
-                "skip overview metrics row without timestamp",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "advertiser_id": advertiser_id,
-                    "granularity": granularity_normalized,
-                },
-            )
-            continue
+
+    for store_id in store_ids:
+        request = build_gmv_max_report_request(
+            dataset=GMVMaxDataset.OVERVIEW,
+            advertiser_id=str(advertiser_id),
+            store_ids=[str(store_id)],
+            start_date=start_date_str,
+            end_date=end_date_str,
+            metrics=metrics,
+            page_size=_REPORT_PAGE_SIZE,
+        )
+
+        if granularity_normalized == "HOUR":
+            request.dimensions = ["advertiser_id", "stat_time_hour"]
+        else:
+            request.dimensions = ["advertiser_id", "stat_time_day"]
+
+        response = await ttb_client.gmv_max_report_get(request)
+        data = getattr(response, "data", None)
+        rows_raw = getattr(data, "list", None) or []
+        rows = [_merge_report_entry(item) for item in rows_raw]
+        rows = [row for row in rows if isinstance(row, dict)]
+
+        for row in rows:
+            try:
+                if granularity_normalized == "HOUR":
+                    _upsert_overview_hourly(
+                        db,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=advertiser_id,
+                        store_id=str(store_id),
+                        row=row,
+                    )
+                else:
+                    _upsert_overview_daily(
+                        db,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=advertiser_id,
+                        store_id=str(store_id),
+                        row=row,
+                    )
+                synced_rows += 1
+            except ValueError:
+                logger.debug(
+                    "skip overview metrics row without timestamp",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "store_id": store_id,
+                        "granularity": granularity_normalized,
+                    },
+                )
+                continue
 
     db.flush()
     return {"synced_rows": synced_rows}
