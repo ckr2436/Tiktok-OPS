@@ -1501,6 +1501,17 @@ def sync_gmvmax_manual(
             },
         )
 
+    if any(level.value == "OVERVIEW" for level in payload.levels):
+        days_inclusive = (end - start).days + 1
+        if days_inclusive > 365:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "date_range_too_long",
+                    "message": "OVERVIEW date range must not exceed 365 days.",
+                },
+            )
+
     task_kwargs = {
         "workspace_id": context.workspace_id,
         "auth_id": context.auth_id,

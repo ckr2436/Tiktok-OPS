@@ -9,21 +9,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.data.db import SessionLocal
-from app.data.models.gmv_restructured import PromotionTypeEnum
+from app.data.models.gmv_restructured import (
+    GmvOverviewMetricsDaily,
+    GmvOverviewMetricsHourly,
+    PromotionTypeEnum,
+)
+from app.data.models.ttb_entities import TTBAdvertiserStoreLink
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign
 from app.gmvmax.domain.monitoring_strategy import MonitoringStrategy
 from app.services.gmvmax_creative_metrics import sync_creative_metrics_10min_for_campaign
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_gmvmax import (
+    fetch_overview_summary_rows,
+    normalize_overview_metrics,
+    sync_gmvmax_duration_metrics_daily,
+    sync_gmvmax_duration_metrics_hourly,
+    sync_gmvmax_livestream_metrics_daily,
+    sync_gmvmax_livestream_metrics_hourly,
     sync_gmvmax_metrics_daily,
     sync_gmvmax_metrics_hourly,
     sync_gmvmax_overview_metrics,
     sync_gmvmax_product_metrics_daily,
     sync_gmvmax_product_metrics_hourly,
-    sync_gmvmax_livestream_metrics_daily,
-    sync_gmvmax_livestream_metrics_hourly,
-    sync_gmvmax_duration_metrics_daily,
-    sync_gmvmax_duration_metrics_hourly,
+    upsert_overview_snapshot,
 )
 
 logger = logging.getLogger("gmv.services.gmvmax.sync")
@@ -42,6 +50,7 @@ class GmvMaxSyncService:
     def sync_strategy(self, strategy: MonitoringStrategy, now: datetime) -> None:
         handlers = {
             "OVERVIEW_DAILY": self._sync_overview_daily,
+            "OVERVIEW_HOURLY": self._sync_overview_hourly,
             "CAMPAIGN_DAILY": self._sync_campaign_daily,
             "CAMPAIGN_HOURLY": self._sync_campaign_hourly,
             "PRODUCT_DAILY": self._sync_product_daily,
@@ -94,13 +103,10 @@ class GmvMaxSyncService:
         )
 
         handlers: dict[str, Callable[[], dict[str, int]]] = {
-            "OVERVIEW": lambda: self._sync_overview_metrics(
+            "OVERVIEW": lambda: self._sync_overview_manual(
                 strategy,
                 start_date=start_date,
                 end_date=end_date,
-                granularity="HOURLY",
-                campaign_ids=campaign_ids,
-                require_active_campaigns=require_active_campaigns,
             ),
             "CAMPAIGN": lambda: self._sync_campaign_metrics(
                 strategy,
@@ -205,13 +211,74 @@ class GmvMaxSyncService:
         )
 
     def _sync_overview_daily(self, strategy: MonitoringStrategy, now: datetime) -> None:
-        start = now.date() - timedelta(days=2)
+        target = now.date() - timedelta(days=1)
         self._sync_overview_metrics(
             strategy,
-            start_date=start,
-            end_date=now.date(),
+            start_date=target,
+            end_date=target,
             granularity="DAILY",
         )
+
+    def _sync_overview_hourly(self, strategy: MonitoringStrategy, now: datetime) -> None:
+        current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+        target_start = current_hour_start - timedelta(hours=1)
+        target_end = current_hour_start - timedelta(microseconds=1)
+        self._sync_overview_metrics(
+            strategy,
+            start_date=target_start.date(),
+            end_date=target_end.date(),
+            granularity="HOURLY",
+            hour_window=(target_start, target_end),
+        )
+
+    def _select_overview_accounts(
+        self, session: Session, strategy: MonitoringStrategy
+    ) -> list[dict[str, str | int]]:
+        stmt = (
+            select(
+                TTBAdvertiserStoreLink.auth_id,
+                TTBAdvertiserStoreLink.advertiser_id,
+                TTBAdvertiserStoreLink.store_id,
+            )
+            .where(TTBAdvertiserStoreLink.workspace_id == int(strategy.workspace_id))
+            .order_by(TTBAdvertiserStoreLink.last_seen_at.desc())
+        )
+
+        if strategy.auth_id is not None:
+            stmt = stmt.where(TTBAdvertiserStoreLink.auth_id == int(strategy.auth_id))
+        if strategy.advertiser_id:
+            stmt = stmt.where(
+                TTBAdvertiserStoreLink.advertiser_id == str(strategy.advertiser_id)
+            )
+        if strategy.store_id:
+            stmt = stmt.where(TTBAdvertiserStoreLink.store_id == str(strategy.store_id))
+
+        rows = session.execute(stmt).all()
+        deduped: dict[tuple[int, str, str], dict[str, str | int]] = {}
+        for auth_id, advertiser_id, store_id in rows:
+            if not (auth_id and advertiser_id and store_id):
+                continue
+            key = (int(auth_id), str(advertiser_id), str(store_id))
+            deduped.setdefault(
+                key,
+                {
+                    "auth_id": int(auth_id),
+                    "advertiser_id": str(advertiser_id),
+                    "store_id": str(store_id),
+                },
+            )
+
+        if not deduped and all(
+            [strategy.auth_id is not None, strategy.advertiser_id, strategy.store_id]
+        ):
+            key = (int(strategy.auth_id), str(strategy.advertiser_id), str(strategy.store_id))
+            deduped[key] = {
+                "auth_id": int(strategy.auth_id),
+                "advertiser_id": str(strategy.advertiser_id),
+                "store_id": str(strategy.store_id),
+            }
+
+        return list(deduped.values())
 
     def _select_campaigns_by_status(
         self,
@@ -539,30 +606,13 @@ class GmvMaxSyncService:
         start_date,
         end_date,
         granularity: str,
-        campaign_ids: Optional[list[str]] = None,
-        require_active_campaigns: bool = True,
+        hour_window: tuple[datetime, datetime] | None = None,
     ) -> dict[str, int]:
         with self._session_factory() as session:
-            campaigns = self._select_campaigns_for_sync(
-                session,
-                strategy,
-                campaign_ids=campaign_ids,
-                require_active_campaigns=require_active_campaigns,
-            )
-            if not campaigns:
-                if require_active_campaigns:
-                    logger.info(
-                        "gmvmax overview sync skipped: no active campaigns",
-                        extra={
-                            "strategy_id": strategy.id,
-                            "workspace_id": strategy.workspace_id,
-                            "granularity": granularity,
-                        },
-                    )
-                    return {"synced_rows": 0}
-
+            accounts = self._select_overview_accounts(session, strategy)
+            if not accounts:
                 logger.info(
-                    "gmvmax overview sync skipped: no campaigns found",
+                    "gmvmax overview sync skipped: no advertiser/store bound",
                     extra={
                         "strategy_id": strategy.id,
                         "workspace_id": strategy.workspace_id,
@@ -571,66 +621,45 @@ class GmvMaxSyncService:
                 )
                 return {"synced_rows": 0}
 
-            async def _run() -> int:
-                written = 0
-                grouped: Dict[int, List[TTBGmvMaxCampaign]] = {}
-                for campaign in campaigns:
-                    auth_id = getattr(campaign, "auth_id", None)
-                    if auth_id is None:
-                        logger.warning(
-                            "gmvmax overview sync skipped campaign without auth_id",
-                            extra={"campaign_id": getattr(campaign, "id", None)},
-                        )
-                        continue
-                    grouped.setdefault(int(auth_id), []).append(campaign)
+            granularity_normalized = str(granularity or "").upper()
+            granularity_arg = "HOUR" if granularity_normalized in {"HOURLY", "HOUR"} else "DAY"
 
-                for auth_id, auth_campaigns in grouped.items():
+            async def _run() -> dict[str, int]:
+                rows_written = 0
+                grouped: Dict[int, list[dict[str, str | int]]] = {}
+                for account in accounts:
+                    auth_id = int(account["auth_id"])
+                    grouped.setdefault(auth_id, []).append(account)
+
+                for auth_id, auth_accounts in grouped.items():
                     client = build_ttb_gmvmax_client(session, auth_id=auth_id)
                     try:
-                        advertiser_id = strategy.advertiser_id or getattr(auth_campaigns[0], "advertiser_id", None)
-                        if not advertiser_id:
-                            logger.warning(
-                                "gmvmax overview sync skipped: missing advertiser_id",
-                                extra={"strategy_id": strategy.id, "auth_id": auth_id},
+                        for account in auth_accounts:
+                            advertiser_id = str(account["advertiser_id"])
+                            store_id = str(account["store_id"])
+
+                            result = await sync_gmvmax_overview_metrics(
+                                session,
+                                client,
+                                workspace_id=strategy.workspace_id,
+                                auth_id=auth_id,
+                                advertiser_id=advertiser_id,
+                                store_ids=[store_id],
+                                start_date=start_date,
+                                end_date=end_date,
+                                granularity=granularity_arg,
+                                hour_window=hour_window,
                             )
-                            continue
-
-                        store_ids = {
-                            str(c.store_id)
-                            for c in auth_campaigns
-                            if getattr(c, "store_id", None)
-                        }
-                        if strategy.store_id:
-                            store_ids.add(str(strategy.store_id))
-
-                        if not store_ids:
-                            logger.warning(
-                                "gmvmax overview sync skipped: no store_id available",
-                                extra={"strategy_id": strategy.id, "auth_id": auth_id},
-                            )
-                            continue
-
-                        result = await sync_gmvmax_overview_metrics(
-                            session,
-                            client,
-                            workspace_id=strategy.workspace_id,
-                            auth_id=auth_id,
-                            advertiser_id=str(advertiser_id),
-                            store_ids=sorted(store_ids),
-                            start_date=start_date,
-                            end_date=end_date,
-                            granularity=granularity,
-                        )
-                        written += int(result.get("synced_rows", 0) or 0)
+                            rows_written += int(result.get("synced_rows", 0) or 0)
                     finally:
                         try:
                             await client.aclose()
                         except Exception:  # noqa: BLE001
                             logger.warning("gmvmax client close failed", exc_info=True)
 
-                return written
+                return {"synced_rows": rows_written}
 
-            rows_written = asyncio.run(_run())
+            result = asyncio.run(_run())
             session.commit()
             logger.info(
                 "gmvmax overview metrics sync done",
@@ -638,14 +667,121 @@ class GmvMaxSyncService:
                     "strategy_id": strategy.id,
                     "workspace_id": strategy.workspace_id,
                     "granularity": granularity,
-                    "campaigns": len(campaigns),
-                    "rows_written": rows_written,
+                    "hour_window": hour_window,
+                    "accounts": len(accounts),
+                    "rows_written": result.get("synced_rows", 0),
                     "start_date": start_date,
                     "end_date": end_date,
                 },
             )
 
-            return {"synced_rows": int(rows_written or 0)}
+            return {"synced_rows": int(result.get("synced_rows", 0) or 0)}
+
+    def _sync_overview_manual(
+        self,
+        strategy: MonitoringStrategy,
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, int]:
+        days_inclusive = (end_date - start_date).days + 1
+        if days_inclusive > 365:
+            logger.warning(
+                "gmvmax overview manual sync aborted: date range too long",
+                extra={
+                    "workspace_id": strategy.workspace_id,
+                    "auth_id": strategy.auth_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "days": days_inclusive,
+                },
+            )
+            return {
+                "synced_rows": 0,
+                "error": {
+                    "code": "OVERVIEW_DATE_RANGE_TOO_LONG",
+                    "message": "OVERVIEW date range must not exceed 365 days.",
+                },
+            }
+        with self._session_factory() as session:
+            accounts = self._select_overview_accounts(session, strategy)
+            if not accounts:
+                logger.info(
+                    "gmvmax overview manual sync skipped: no advertiser/store bound",
+                    extra={
+                        "workspace_id": strategy.workspace_id,
+                        "auth_id": strategy.auth_id,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                    },
+                )
+                return {
+                    "synced_rows": 0,
+                    "error": {
+                        "code": "NO_ADVERTISER",
+                        "message": "no advertiser/store bound for this account",
+                    },
+                }
+
+            async def _run() -> int:
+                snapshots_written = 0
+                grouped: Dict[int, list[dict[str, str | int]]] = {}
+                for account in accounts:
+                    auth_id = int(account["auth_id"])
+                    grouped.setdefault(auth_id, []).append(account)
+
+                for auth_id, auth_accounts in grouped.items():
+                    client = build_ttb_gmvmax_client(session, auth_id=auth_id)
+                    try:
+                        for account in auth_accounts:
+                            advertiser_id = str(account["advertiser_id"])
+                            store_id = str(account["store_id"])
+                            rows = await fetch_overview_summary_rows(
+                                client,
+                                advertiser_id=advertiser_id,
+                                store_id=store_id,
+                                start_date=start_date,
+                                end_date=end_date,
+                                dimensions=["advertiser_id"],
+                            )
+                            metrics_rows = [normalize_overview_metrics(row) for row in rows]
+
+                            if metrics_rows:
+                                upsert_overview_snapshot(
+                                    session,
+                                    workspace_id=strategy.workspace_id,
+                                    auth_id=auth_id,
+                                    advertiser_id=advertiser_id,
+                                    store_id=store_id,
+                                    snapshot_type="MANUAL",
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                    metrics_rows=metrics_rows,
+                                )
+                                snapshots_written += 1
+                    finally:
+                        try:
+                            await client.aclose()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("gmvmax client close failed", exc_info=True)
+
+                return snapshots_written
+
+            snapshots = asyncio.run(_run())
+            session.commit()
+            logger.info(
+                "gmvmax overview manual sync done",
+                extra={
+                    "workspace_id": strategy.workspace_id,
+                    "auth_id": strategy.auth_id,
+                    "accounts": len(accounts),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "snapshot_type": "MANUAL",
+                    "snapshots": snapshots,
+                },
+            )
+            return {"synced_rows": snapshots}
 
     def _sync_livestream_metrics(
         self,

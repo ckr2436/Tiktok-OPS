@@ -1227,6 +1227,11 @@ def manual_sync_levels_task(
             campaign_ids=campaign_ids,
             require_active_campaigns=False,
         )
+        errors = [
+            {"level": level, **value["error"]}
+            for level, value in results.items()
+            if isinstance(value, dict) and value.get("error")
+        ]
         payload = {
             "results": results,
             "workspace_id": workspace_id,
@@ -1234,6 +1239,7 @@ def manual_sync_levels_task(
             "levels": levels,
             "start_date": start_date,
             "end_date": end_date,
+            "errors": errors,
         }
         logger.info(
             "gmvmax.manual_sync_levels succeeded",
