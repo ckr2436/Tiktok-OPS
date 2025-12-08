@@ -1602,8 +1602,13 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "cost_per_live_view": _to_decimal(
             _extract_field(row, "cost_per_live_view"), quantize=_DECIMAL_FOUR
         ),
-        "cost_per_10_second_live_view": _to_decimal(
-            _extract_field(row, "cost_per_10_second_live_view"), quantize=_DECIMAL_FOUR
+        "cost_per_10s_live_view": _to_decimal(
+            _extract_field(
+                row,
+                "cost_per_10s_live_view",
+                "cost_per_10_second_live_view",
+            ),
+            quantize=_DECIMAL_FOUR,
         ),
         "all_shops_orders": _to_int(_extract_field(row, "all_shops_orders")),
         "all_shops_gross_revenue_cents": _to_int(all_shops_gross_revenue_cents_value)

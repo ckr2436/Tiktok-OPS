@@ -721,7 +721,13 @@ class LiveMetricExtras(AllShopsMetricMixin):
     """LIVE-only engagement metrics and derived unit costs."""
 
     cost_per_live_view: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
-    cost_per_10_second_live_view: Mapped[float | None] = mapped_column(
+
+
+class TenSecondLiveMetricExtras:
+    """10-second live view metrics for LIVE GMV (campaign/livestream/duration)."""
+
+    live_10s_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    cost_per_10s_live_view: Mapped[float | None] = mapped_column(
         Numeric(18, 4), default=None
     )
 
@@ -774,7 +780,9 @@ class GmvOverviewMetricsHourly(Base, BaseMetricMixin):
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
 
-class GmvCampaignMetricsDaily(Base, CampaignMetricMixin, LiveMetricExtras):
+class GmvCampaignMetricsDaily(
+    Base, CampaignMetricMixin, LiveMetricExtras, TenSecondLiveMetricExtras
+):
     """Campaign-level daily metrics supporting product and LIVE."""
 
     __tablename__ = "gmv_campaign_metrics_daily"
@@ -797,11 +805,12 @@ class GmvCampaignMetricsDaily(Base, CampaignMetricMixin, LiveMetricExtras):
     )
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    live_10s_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
-class GmvCampaignMetricsHourly(Base, CampaignMetricMixin, LiveMetricExtras):
+class GmvCampaignMetricsHourly(
+    Base, CampaignMetricMixin, LiveMetricExtras, TenSecondLiveMetricExtras
+):
     """Campaign-level hourly metrics supporting product and LIVE."""
 
     __tablename__ = "gmv_campaign_metrics_hourly"
@@ -824,7 +833,6 @@ class GmvCampaignMetricsHourly(Base, CampaignMetricMixin, LiveMetricExtras):
     )
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    live_10s_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
@@ -1006,7 +1014,9 @@ class GmvDurationMetricsHourly(Base, BaseMetricMixin, AllShopsMetricMixin):
     bid_type: Mapped[str | None] = mapped_column(String(64), default=None)
 
 
-class GmvLivestreamMetricsDaily(Base, BaseMetricMixin, LiveMetricExtras):
+class GmvLivestreamMetricsDaily(
+    Base, BaseMetricMixin, LiveMetricExtras, TenSecondLiveMetricExtras
+):
     """Livestream-level daily metrics."""
 
     __tablename__ = "gmv_livestream_metrics_daily"
@@ -1020,11 +1030,12 @@ class GmvLivestreamMetricsDaily(Base, BaseMetricMixin, LiveMetricExtras):
     campaign_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    live_10s_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
-class GmvLivestreamMetricsHourly(Base, BaseMetricMixin, LiveMetricExtras):
+class GmvLivestreamMetricsHourly(
+    Base, BaseMetricMixin, LiveMetricExtras, TenSecondLiveMetricExtras
+):
     """Livestream-level hourly metrics."""
 
     __tablename__ = "gmv_livestream_metrics_hourly"
@@ -1038,6 +1049,5 @@ class GmvLivestreamMetricsHourly(Base, BaseMetricMixin, LiveMetricExtras):
     campaign_id: Mapped[str | None] = mapped_column(String(64), default=None)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
-    live_10s_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
