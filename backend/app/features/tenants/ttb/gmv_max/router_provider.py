@@ -1504,6 +1504,8 @@ def sync_gmvmax_manual(
     task_kwargs = {
         "workspace_id": context.workspace_id,
         "auth_id": context.auth_id,
+        "advertiser_id": context.advertiser_id,
+        "store_id": context.store_id,
         "levels": [level.value for level in payload.levels],
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),

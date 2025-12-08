@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 
@@ -95,6 +95,8 @@ def _build_strategy(workspace_id: int, auth_id: int | None = None) -> Monitoring
         enabled=True,
         promotion_type=None,
         max_campaigns_per_run=None,
+        category="GMVMAX",
+        task_name="gmvmax.creative_10min",
     )
 
 
@@ -176,3 +178,139 @@ def test_sync_creative_logs_workspace_when_no_active(db_session, caplog):
     assert any("no active campaigns" in record.message for record in caplog.records)
     last = caplog.records[-1]
     assert getattr(last, "workspace_id", None) == workspace_id
+
+
+def test_manual_sync_uses_historical_campaigns(db_session, monkeypatch, caplog):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="gmv-disabled",
+        store_id="store-1",
+        lifecycle_status="DISABLED",
+        is_deleted=False,
+        ext_updated_time=datetime(2024, 1, 5),
+    )
+
+    service = GmvMaxSyncService(session_factory=lambda: contextlib.nullcontext(db_session))
+
+    class _FakeClient:
+        async def aclose(self) -> None:  # pragma: no cover - trivial
+            return None
+
+    monkeypatch.setattr(
+        "app.gmvmax.services.sync_service.build_ttb_gmvmax_client", lambda *_, **__: _FakeClient()
+    )
+
+    async def _fake_sync_gmvmax_overview_metrics(*_, **__):
+        return {"synced_rows": 1}
+
+    monkeypatch.setattr(
+        "app.gmvmax.services.sync_service.sync_gmvmax_overview_metrics", _fake_sync_gmvmax_overview_metrics
+    )
+
+    caplog.set_level(logging.INFO, logger="gmv.services.gmvmax.sync")
+    results = service.sync_levels_for_account(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+        levels=["OVERVIEW"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 2),
+        require_active_campaigns=False,
+    )
+
+    assert results["OVERVIEW"]["synced_rows"] == 1
+    assert not any("no active campaigns" in record.message for record in caplog.records)
+
+
+def test_auto_sync_skips_without_active_campaigns(db_session, caplog):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="gmv-ended",
+        store_id="store-1",
+        lifecycle_status="ENDED",
+        is_deleted=False,
+        ext_updated_time=datetime(2024, 1, 4),
+    )
+
+    service = GmvMaxSyncService(session_factory=lambda: contextlib.nullcontext(db_session))
+
+    caplog.set_level(logging.INFO, logger="gmv.services.gmvmax.sync")
+    results = service.sync_levels_for_account(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-1",
+        levels=["OVERVIEW"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 2),
+    )
+
+    assert results["OVERVIEW"]["synced_rows"] == 0
+    assert any("no active campaigns" in record.message for record in caplog.records)
+
+
+def test_manual_sync_filters_by_store_binding(db_session, monkeypatch):
+    workspace_id, auth_id = _ensure_account(db_session)
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="gmv-store-a",
+        store_id="store-a",
+        lifecycle_status="DISABLED",
+        is_deleted=False,
+        ext_updated_time=datetime(2024, 1, 6),
+    )
+    _create_campaign(
+        db_session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        campaign_id="gmv-store-b",
+        store_id="store-b",
+        lifecycle_status="DISABLED",
+        is_deleted=False,
+        ext_updated_time=datetime(2024, 1, 6),
+    )
+
+    observed_store_ids: list[list[str]] = []
+
+    async def _fake_sync_gmvmax_overview_metrics(*_, store_ids: list[str], **__):
+        observed_store_ids.append(store_ids)
+        return {"synced_rows": 1}
+
+    monkeypatch.setattr(
+        "app.gmvmax.services.sync_service.sync_gmvmax_overview_metrics", _fake_sync_gmvmax_overview_metrics
+    )
+
+    service = GmvMaxSyncService(session_factory=lambda: contextlib.nullcontext(db_session))
+    class _FakeClient:
+        async def aclose(self) -> None:  # pragma: no cover - trivial
+            return None
+
+    monkeypatch.setattr(
+        "app.gmvmax.services.sync_service.build_ttb_gmvmax_client", lambda *_, **__: _FakeClient()
+    )
+    results = service.sync_levels_for_account(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id="adv-1",
+        store_id="store-a",
+        levels=["OVERVIEW"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 2),
+        require_active_campaigns=False,
+    )
+
+    assert results["OVERVIEW"]["synced_rows"] == 1
+    assert observed_store_ids == [["store-a"]]

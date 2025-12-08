@@ -1197,6 +1197,8 @@ def manual_sync_levels_task(
     *,
     workspace_id: int,
     auth_id: int,
+    advertiser_id: str | None = None,
+    store_id: str | None = None,
     levels: list[str],
     start_date: str,
     end_date: str,
@@ -1217,10 +1219,13 @@ def manual_sync_levels_task(
         results = service.sync_levels_for_account(
             workspace_id=workspace_id,
             auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             levels=levels,
             start_date=start,
             end_date=end,
             campaign_ids=campaign_ids,
+            require_active_campaigns=False,
         )
         payload = {
             "results": results,

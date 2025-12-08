@@ -30,6 +30,7 @@ logger = logging.getLogger("gmv.services.gmvmax.sync")
 
 
 _ACTIVE_LIFECYCLE_STATUSES = {"ACTIVE"}
+_HISTORICAL_LIFECYCLE_STATUSES = {"ACTIVE", "DISABLED", "ENDED"}
 
 
 class GmvMaxSyncService:
@@ -64,10 +65,13 @@ class GmvMaxSyncService:
         *,
         workspace_id: int,
         auth_id: int,
+        advertiser_id: str | None = None,
+        store_id: str | None = None,
         levels: list[str],
         start_date: date,
         end_date: date,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, dict[str, int]]:
         """Manually trigger GMV Max sync for specific levels scoped to an auth account."""
 
@@ -76,8 +80,8 @@ class GmvMaxSyncService:
             id=0,
             workspace_id=workspace_id,
             auth_id=auth_id,
-            advertiser_id=None,
-            store_id=None,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
             level="CAMPAIGN_HOURLY",
             category="GMVMAX",
             task_name="gmvmax.manual_sync",
@@ -96,6 +100,7 @@ class GmvMaxSyncService:
                 end_date=end_date,
                 granularity="HOURLY",
                 campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
             ),
             "CAMPAIGN": lambda: self._sync_campaign_metrics(
                 strategy,
@@ -103,6 +108,7 @@ class GmvMaxSyncService:
                 end_date=end_date,
                 granularity="HOUR",
                 campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
             ),
             "PRODUCT": lambda: self._sync_product_metrics(
                 strategy,
@@ -110,6 +116,7 @@ class GmvMaxSyncService:
                 end_date=end_date,
                 granularity="HOUR",
                 campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
             ),
             "CREATIVE": lambda: self._sync_creative_10min(
                 strategy,
@@ -124,6 +131,7 @@ class GmvMaxSyncService:
                 end_date=end_date,
                 granularity="HOUR",
                 campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
             ),
             "DURATION": lambda: self._sync_duration_metrics(
                 strategy,
@@ -131,6 +139,7 @@ class GmvMaxSyncService:
                 end_date=end_date,
                 granularity="HOUR",
                 campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
             ),
         }
 
@@ -204,18 +213,19 @@ class GmvMaxSyncService:
             granularity="DAILY",
         )
 
-    def _select_active_campaigns(
+    def _select_campaigns_by_status(
         self,
         session: Session,
         strategy: MonitoringStrategy,
         *,
         campaign_ids: Optional[list[str]] = None,
+        lifecycle_statuses: set[str],
     ) -> list[TTBGmvMaxCampaign]:
         stmt = (
             select(TTBGmvMaxCampaign)
             .where(TTBGmvMaxCampaign.workspace_id == strategy.workspace_id)
             .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-            .where(TTBGmvMaxCampaign.lifecycle_status.in_(_ACTIVE_LIFECYCLE_STATUSES))
+            .where(TTBGmvMaxCampaign.lifecycle_status.in_(lifecycle_statuses))
             .order_by(TTBGmvMaxCampaign.ext_updated_time.desc())
         )
 
@@ -268,6 +278,40 @@ class GmvMaxSyncService:
 
         return list(session.execute(stmt).scalars().all())
 
+    def _select_active_campaigns(
+        self,
+        session: Session,
+        strategy: MonitoringStrategy,
+        *,
+        campaign_ids: Optional[list[str]] = None,
+    ) -> list[TTBGmvMaxCampaign]:
+        return self._select_campaigns_by_status(
+            session,
+            strategy,
+            campaign_ids=campaign_ids,
+            lifecycle_statuses=_ACTIVE_LIFECYCLE_STATUSES,
+        )
+
+    def _select_campaigns_for_sync(
+        self,
+        session: Session,
+        strategy: MonitoringStrategy,
+        *,
+        campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
+    ) -> list[TTBGmvMaxCampaign]:
+        campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+
+        if campaigns or require_active_campaigns:
+            return campaigns
+
+        return self._select_campaigns_by_status(
+            session,
+            strategy,
+            campaign_ids=campaign_ids,
+            lifecycle_statuses=_HISTORICAL_LIFECYCLE_STATUSES,
+        )
+
     def _sync_campaign_metrics(
         self,
         strategy: MonitoringStrategy,
@@ -276,9 +320,15 @@ class GmvMaxSyncService:
         end_date,
         granularity: str,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, int]:
         with self._session_factory() as session:
-            campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+            campaigns = self._select_campaigns_for_sync(
+                session,
+                strategy,
+                campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
+            )
             if not campaigns:
                 logger.info(
                     "gmvmax campaign metrics sync skipped: no active campaigns",
@@ -374,6 +424,7 @@ class GmvMaxSyncService:
         end_date,
         granularity: str,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, int]:
         if strategy.promotion_type and strategy.promotion_type != PromotionTypeEnum.PRODUCT.value:
             logger.warning(
@@ -388,7 +439,12 @@ class GmvMaxSyncService:
             return {"synced_rows": 0}
 
         with self._session_factory() as session:
-            campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+            campaigns = self._select_campaigns_for_sync(
+                session,
+                strategy,
+                campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
+            )
             if not campaigns:
                 logger.info(
                     "gmvmax product metrics sync skipped: no active campaigns",
@@ -484,12 +540,29 @@ class GmvMaxSyncService:
         end_date,
         granularity: str,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, int]:
         with self._session_factory() as session:
-            campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+            campaigns = self._select_campaigns_for_sync(
+                session,
+                strategy,
+                campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
+            )
             if not campaigns:
+                if require_active_campaigns:
+                    logger.info(
+                        "gmvmax overview sync skipped: no active campaigns",
+                        extra={
+                            "strategy_id": strategy.id,
+                            "workspace_id": strategy.workspace_id,
+                            "granularity": granularity,
+                        },
+                    )
+                    return {"synced_rows": 0}
+
                 logger.info(
-                    "gmvmax overview sync skipped: no active campaigns",
+                    "gmvmax overview sync skipped: no campaigns found",
                     extra={
                         "strategy_id": strategy.id,
                         "workspace_id": strategy.workspace_id,
@@ -582,9 +655,15 @@ class GmvMaxSyncService:
         end_date,
         granularity: str,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, int]:
         with self._session_factory() as session:
-            campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+            campaigns = self._select_campaigns_for_sync(
+                session,
+                strategy,
+                campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
+            )
             if not campaigns:
                 logger.info(
                     "gmvmax livestream metrics sync skipped: no active campaigns",
@@ -679,9 +758,15 @@ class GmvMaxSyncService:
         end_date,
         granularity: str,
         campaign_ids: Optional[list[str]] = None,
+        require_active_campaigns: bool = True,
     ) -> dict[str, int]:
         with self._session_factory() as session:
-            campaigns = self._select_active_campaigns(session, strategy, campaign_ids=campaign_ids)
+            campaigns = self._select_campaigns_for_sync(
+                session,
+                strategy,
+                campaign_ids=campaign_ids,
+                require_active_campaigns=require_active_campaigns,
+            )
             if not campaigns:
                 logger.info(
                     "gmvmax duration metrics sync skipped: no active campaigns",
