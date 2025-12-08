@@ -2209,8 +2209,14 @@ def upsert_metrics_hourly_row(
         fallback=_normalize_promotion_type(campaign.shopping_ads_type),
     )
 
+    store_id = _normalize_identifier(getattr(campaign, "store_id", None)) or ""
+
     stmt = (
         select(GmvCampaignMetricsHourly)
+        .where(GmvCampaignMetricsHourly.workspace_id == campaign.workspace_id)
+        .where(GmvCampaignMetricsHourly.auth_id == campaign.auth_id)
+        .where(GmvCampaignMetricsHourly.advertiser_id == campaign.advertiser_id)
+        .where(GmvCampaignMetricsHourly.store_id == store_id)
         .where(GmvCampaignMetricsHourly.campaign_id == str(campaign.campaign_id))
         .where(GmvCampaignMetricsHourly.promotion_type == promotion_type)
         .where(GmvCampaignMetricsHourly.stat_time_hour == stat_time_hour)
@@ -2218,13 +2224,19 @@ def upsert_metrics_hourly_row(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvCampaignMetricsHourly(
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign.campaign_id),
             promotion_type=promotion_type,
             stat_time_hour=stat_time_hour,
         )
         db.add(instance)
 
-    store_id = _normalize_identifier(getattr(campaign, "store_id", None))
+    instance.workspace_id = campaign.workspace_id
+    instance.auth_id = campaign.auth_id
+    instance.advertiser_id = campaign.advertiser_id
     if store_id:
         instance.store_id = store_id
 
@@ -2338,8 +2350,14 @@ def upsert_metrics_daily_row(
         fallback=_normalize_promotion_type(campaign.shopping_ads_type),
     )
 
+    store_id = _normalize_identifier(getattr(campaign, "store_id", None)) or ""
+
     stmt = (
         select(GmvCampaignMetricsDaily)
+        .where(GmvCampaignMetricsDaily.workspace_id == campaign.workspace_id)
+        .where(GmvCampaignMetricsDaily.auth_id == campaign.auth_id)
+        .where(GmvCampaignMetricsDaily.advertiser_id == campaign.advertiser_id)
+        .where(GmvCampaignMetricsDaily.store_id == store_id)
         .where(GmvCampaignMetricsDaily.campaign_id == str(campaign.campaign_id))
         .where(GmvCampaignMetricsDaily.promotion_type == promotion_type)
         .where(GmvCampaignMetricsDaily.stat_time_day == stat_date)
@@ -2347,13 +2365,19 @@ def upsert_metrics_daily_row(
     instance = db.execute(stmt).scalars().first()
     if instance is None:
         instance = GmvCampaignMetricsDaily(
+            workspace_id=campaign.workspace_id,
+            auth_id=campaign.auth_id,
+            advertiser_id=campaign.advertiser_id,
+            store_id=store_id,
             campaign_id=str(campaign.campaign_id),
             promotion_type=promotion_type,
             stat_time_day=stat_date,
         )
         db.add(instance)
 
-    store_id = _normalize_identifier(getattr(campaign, "store_id", None))
+    instance.workspace_id = campaign.workspace_id
+    instance.auth_id = campaign.auth_id
+    instance.advertiser_id = campaign.advertiser_id
     if store_id:
         instance.store_id = store_id
 
