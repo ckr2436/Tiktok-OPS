@@ -85,7 +85,7 @@ import {
   extractChoiceList,
 } from './gmvMaxOverview/helpers.js';
 import { GmvMaxMetricsLevel } from '../constants/metrics.js';
-import { formatRangeAsDateStrings, getAdvertiserRecentRange, resolveTimezoneLabel } from '../utils/timezone.js';
+import * as timezoneUtils from '../utils/timezone.js';
 import { SeriesErrorNotice } from './gmvMaxOverview/ErrorHandling.jsx';
 import ProductSelectionPanel from './gmvMaxOverview/ProductSelectionPanel.jsx';
 import CreateSeriesModal from './gmvMaxOverview/CreateSeriesModal.jsx';
@@ -160,12 +160,19 @@ const OVERVIEW_RANGE_OPTIONS = [
 ];
 
 function computeOverviewRange(rangeKey, customRange, timeZone) {
-  const normalizedTz = resolveTimezoneLabel(timeZone);
+  const normalizedTz = timezoneUtils.resolveTimezoneLabel(timeZone);
+  const getAdvertiserTodayRange = timezoneUtils.getAdvertiserTodayRange
+    || ((tz) => {
+      const now = new Date();
+      const start = new Date(now);
+      start.setUTCHours(0, 0, 0, 0);
+      return { start, end: now, timeZone: tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' };
+    });
   const todayRange = getAdvertiserTodayRange(normalizedTz);
 
   if (rangeKey === 'custom') {
     if (customRange?.start && customRange?.end) {
-      return formatRangeAsDateStrings({
+      return timezoneUtils.formatRangeAsDateStrings({
         start: new Date(customRange.start),
         end: new Date(customRange.end),
         timeZone: normalizedTz,
@@ -179,20 +186,26 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
     start.setUTCDate(start.getUTCDate() - 1);
     const end = new Date(todayRange.start);
     end.setUTCDate(end.getUTCDate() - 1);
-    return formatRangeAsDateStrings({ start, end, timeZone: normalizedTz });
+    return timezoneUtils.formatRangeAsDateStrings({ start, end, timeZone: normalizedTz });
   }
 
   if (rangeKey === '7d') {
-    return formatRangeAsDateStrings(getAdvertiserRecentRange(7, normalizedTz));
+    return timezoneUtils.formatRangeAsDateStrings(
+      timezoneUtils.getAdvertiserRecentRange(7, normalizedTz),
+    );
   }
   if (rangeKey === '14d') {
-    return formatRangeAsDateStrings(getAdvertiserRecentRange(14, normalizedTz));
+    return timezoneUtils.formatRangeAsDateStrings(
+      timezoneUtils.getAdvertiserRecentRange(14, normalizedTz),
+    );
   }
   if (rangeKey === '30d') {
-    return formatRangeAsDateStrings(getAdvertiserRecentRange(30, normalizedTz));
+    return timezoneUtils.formatRangeAsDateStrings(
+      timezoneUtils.getAdvertiserRecentRange(30, normalizedTz),
+    );
   }
 
-  return formatRangeAsDateStrings(todayRange);
+  return timezoneUtils.formatRangeAsDateStrings(todayRange);
 }
 
 export default function GmvMaxOverviewPage() {
@@ -210,7 +223,7 @@ export default function GmvMaxOverviewPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState(null);
   const [lastSyncAt, setLastSyncAt] = useState(null);
-  const [advertiserTimezone, setAdvertiserTimezone] = useState(() => resolveTimezoneLabel());
+  const [advertiserTimezone, setAdvertiserTimezone] = useState(() => timezoneUtils.resolveTimezoneLabel());
   const [includeDeletedCampaigns, setIncludeDeletedCampaigns] = useState(false);
   const [seriesStatusFilter, setSeriesStatusFilter] = useState('running');
   const [seriesStoreFilter, setSeriesStoreFilter] = useState('');
@@ -734,7 +747,7 @@ export default function GmvMaxOverviewPage() {
   }, [advertiserById, resolvedAdvertiserId]);
 
   useEffect(() => {
-    setAdvertiserTimezone(resolveTimezoneLabel(advertiserTimezoneFromOptions));
+    setAdvertiserTimezone(timezoneUtils.resolveTimezoneLabel(advertiserTimezoneFromOptions));
   }, [advertiserTimezoneFromOptions]);
 
   const storeOptions = useMemo(() => {
