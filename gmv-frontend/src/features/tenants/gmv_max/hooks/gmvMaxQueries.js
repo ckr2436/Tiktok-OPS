@@ -39,6 +39,7 @@ import {
   updateGmvMaxStrategy,
   normalizeIdList,
 } from '../api/gmvMaxApi.js';
+import { GmvMaxMetricsLevel } from '../constants/metrics.js';
 
 function composeKey(...parts) {
   return ['gmvMax', ...parts];
