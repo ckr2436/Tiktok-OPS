@@ -75,7 +75,6 @@ import {
   filterCampaignsByStatus,
   parseOptionalFloat,
   summariseMetrics,
-  summariseMetricsByCampaign,
   formatMoney,
   formatRoi,
   getCampaignStatusMeta,
@@ -1219,15 +1218,6 @@ export default function GmvMaxOverviewPage() {
     setOverviewRangeKey('custom');
   }, []);
 
-  const todayRange = useMemo(() => getAdvertiserTodayRange(advertiserTimezone), [advertiserTimezone]);
-  const todayRangeParams = useMemo(
-    () => ({
-      ...formatRangeAsDateStrings(todayRange),
-      store_ids: storeId ? [String(storeId)] : undefined,
-    }),
-    [storeId, todayRange],
-  );
-
   const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
   const isSyncInProgress = isSyncing || syncTask.isSyncing;
   const shouldFetchMetrics = useMemo(
@@ -1243,23 +1233,6 @@ export default function GmvMaxOverviewPage() {
     [authId, campaignsQueryEnabled, hasValidOverviewRange, isSyncInProgress, storeId, workspaceId],
   );
 
-  const overallMetricsQuery = useGmvMaxMetricsQuery(
-    workspaceId,
-    provider,
-    authId,
-    'all',
-    {
-      start_date: overviewRangeParams.start_date,
-      end_date: overviewRangeParams.end_date,
-      store_ids: overviewRangeParams.store_ids,
-    },
-    {
-      enabled: shouldFetchMetrics,
-      staleTime: 60 * 1000,
-      refetchInterval: shouldFetchMetrics ? autoRefreshMs : undefined,
-      keepPreviousData: true,
-    },
-  );
   const overviewSummaryQuery = useGmvMaxMetricsQuery(
     workspaceId,
     provider,
@@ -1279,59 +1252,22 @@ export default function GmvMaxOverviewPage() {
       keepPreviousData: true,
     },
   );
-  const overallReport =
-    overallMetricsQuery.data?.report || overallMetricsQuery.data?.data || overallMetricsQuery.data || null;
   const overviewSummaryReport =
     overviewSummaryQuery.data?.report || overviewSummaryQuery.data?.data || overviewSummaryQuery.data || null;
   const overviewSummary = useMemo(() => {
     if (!overviewSummaryReport) return null;
     return summariseMetrics(overviewSummaryReport);
   }, [overviewSummaryReport]);
-  const overallSummary = useMemo(() => {
-    if (!overallReport) return null;
-    return summariseMetrics(overallReport);
-  }, [overallReport]);
-  const metricsByCampaign = useMemo(
-    () => (overallReport ? summariseMetricsByCampaign(overallReport) : new Map()),
-    [overallReport],
-  );
-
-  const todayMetricsQuery = useGmvMaxMetricsQuery(
-    workspaceId,
-    provider,
-    authId,
-    'all',
-    {
-      start_date: todayRangeParams.start_date,
-      end_date: todayRangeParams.end_date,
-      store_ids: todayRangeParams.store_ids,
-    },
-    {
-      enabled: shouldFetchMetrics,
-      staleTime: 60 * 1000,
-      refetchInterval: shouldFetchMetrics ? autoRefreshMs : undefined,
-      keepPreviousData: true,
-    },
-  );
-  const todayReport =
-    todayMetricsQuery.data?.report || todayMetricsQuery.data?.data || todayMetricsQuery.data || null;
-  const todayMetricsByCampaign = useMemo(
-    () => (todayReport ? summariseMetricsByCampaign(todayReport) : new Map()),
-    [todayReport],
-  );
+  const overviewCostPerOrder = useMemo(() => {
+    if (!overviewSummary || !overviewSummary.orders) return null;
+    return overviewSummary.orders > 0 ? overviewSummary.spend / overviewSummary.orders : null;
+  }, [overviewSummary]);
 
   const refreshMetrics = useCallback(async () => {
-    const metricsPromises = [];
-    if (typeof overallMetricsQuery.refetch === 'function') {
-      metricsPromises.push(overallMetricsQuery.refetch());
+    if (typeof overviewSummaryQuery.refetch === 'function') {
+      await overviewSummaryQuery.refetch();
     }
-    if (typeof todayMetricsQuery.refetch === 'function') {
-      metricsPromises.push(todayMetricsQuery.refetch());
-    }
-    if (metricsPromises.length > 0) {
-      await Promise.all(metricsPromises);
-    }
-  }, [overallMetricsQuery.refetch, todayMetricsQuery.refetch]);
+  }, [overviewSummaryQuery.refetch]);
 
   const campaignDetailQueries = useQueries({
     queries: campaignsQueryEnabled
@@ -1404,9 +1340,7 @@ export default function GmvMaxOverviewPage() {
   ]);
 
   const campaignCardsWithMeta = useMemo(() => {
-    const metricMap = metricsByCampaign || new Map();
     return filteredCampaignCards.map((card) => {
-      const campaignId = card.campaign?.campaign_id || card.campaign?.id;
       const deleted = isCampaignDeleted(card.campaign);
       const statusMeta = getCampaignStatusMeta(
         card.campaign?.operation_status ||
@@ -1428,21 +1362,16 @@ export default function GmvMaxOverviewPage() {
         statusMeta,
         createdAt,
         storeName: resolveStoreName(card.campaign),
-        metricsSummary: campaignId ? metricMap.get(String(campaignId)) || null : null,
-        metricsLoading: overallMetricsQuery.isLoading,
-        metricsError: overallMetricsQuery.error,
       };
     });
-  }, [filteredCampaignCards, metricsByCampaign, overallMetricsQuery.error, overallMetricsQuery.isLoading, resolveStoreName]);
+  }, [filteredCampaignCards, resolveStoreName]);
 
   const seriesRows = useMemo(() => {
     const search = seriesSearch.trim().toLowerCase();
     return campaignCardsWithMeta
       .map((card) => {
-        const campaignId = card.campaign?.campaign_id || card.campaign?.id;
         return {
           ...card,
-          todaySummary: campaignId ? todayMetricsByCampaign.get(String(campaignId)) || null : null,
           storeId: getStoreId(card.campaign) || card.campaign?.store_id || card.campaign?.storeId,
         };
       })
@@ -1456,18 +1385,12 @@ export default function GmvMaxOverviewPage() {
         }
         return true;
       });
-  }, [campaignCardsWithMeta, seriesSearch, seriesStatusFilter, seriesStoreFilter, todayMetricsByCampaign]);
+  }, [campaignCardsWithMeta, seriesSearch, seriesStatusFilter, seriesStoreFilter]);
 
   const sortedSeriesRows = useMemo(() => {
     const list = [...seriesRows];
-    const getRoas = (card) => card.todaySummary?.roas ?? card.metricsSummary?.roas ?? -Infinity;
-    const getGmv = (card) => card.todaySummary?.gmv ?? card.metricsSummary?.gmv ?? 0;
-    const getSpend = (card) => card.todaySummary?.spend ?? card.metricsSummary?.spend ?? 0;
     const getCreated = (card) => (Number.isFinite(card.createdAt) ? card.createdAt : 0);
     list.sort((a, b) => {
-      if (sortOption === 'roas') return getRoas(b) - getRoas(a);
-      if (sortOption === 'gmv') return getGmv(b) - getGmv(a);
-      if (sortOption === 'spend') return getSpend(b) - getSpend(a);
       return getCreated(b) - getCreated(a);
     });
     return list;
@@ -1988,16 +1911,18 @@ export default function GmvMaxOverviewPage() {
                     <strong>{overviewSummary ? formatMoney(overviewSummary.gmv) : '—'}</strong>
                   </div>
                   <div>
-                    <p>{GmvMaxTexts.averageRoas}</p>
+                    <p>{GmvMaxTexts.overviewRoi}</p>
                     <strong>
-                      {overviewSummary && overviewSummary.roas !== null
-                        ? formatRoi(overviewSummary.roas)
-                        : '—'}
+                      {overviewSummary && overviewSummary.roas !== null ? formatRoi(overviewSummary.roas) : '—'}
                     </strong>
                   </div>
                   <div>
-                    <p>{GmvMaxTexts.totalOrders}</p>
+                    <p>{GmvMaxTexts.roiOrders}</p>
                     <strong>{overviewSummary ? overviewSummary.orders : '—'}</strong>
+                  </div>
+                  <div>
+                    <p>{GmvMaxTexts.costPerOrder}</p>
+                    <strong>{overviewCostPerOrder !== null ? formatMoney(overviewCostPerOrder) : '—'}</strong>
                   </div>
                 </div>
                 {overviewSummaryQuery.error ? (
@@ -2064,15 +1989,12 @@ export default function GmvMaxOverviewPage() {
                 </div>
               </div>
               <div className="gmvmax-series-filters__row gmvmax-series-filters__row--end">
-                <label className="gmvmax-select gmvmax-select--inline">
-                  <span>{GmvMaxTexts.sortBy}</span>
-                  <select value={sortOption} onChange={(event) => setSortOption(event.target.value)}>
-                    <option value="latest">{GmvMaxTexts.sortLatest}</option>
-                    <option value="spend">{GmvMaxTexts.sortTodaySpend}</option>
-                    <option value="roas">{GmvMaxTexts.sortBestRoas}</option>
-                    <option value="gmv">{GmvMaxTexts.sortBestGmv}</option>
-                  </select>
-                </label>
+                  <label className="gmvmax-select gmvmax-select--inline">
+                    <span>{GmvMaxTexts.sortBy}</span>
+                    <select value={sortOption} onChange={(event) => setSortOption(event.target.value)}>
+                      <option value="latest">{GmvMaxTexts.sortLatest}</option>
+                    </select>
+                  </label>
                 <label className="gmvmax-checkbox gmvmax-checkbox--inline">
                   <input
                     type="checkbox"
@@ -2113,23 +2035,20 @@ export default function GmvMaxOverviewPage() {
                       <th>{GmvMaxTexts.seriesName}</th>
                       <th>{GmvMaxTexts.storeLabel}</th>
                       <th>{GmvMaxTexts.statusLabel}</th>
-                      <th>{GmvMaxTexts.todaySpend}</th>
-                      <th>{GmvMaxTexts.todayGmv}</th>
-                      <th>ROAS</th>
                       <th className="col-actions">{GmvMaxTexts.actionsLabel}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {campaignsLoading || todayMetricsQuery.isLoading ? (
+                    {campaignsLoading ? (
                       <tr>
-                        <td colSpan={7}>
+                        <td colSpan={4}>
                           <Loading text="加载系列数据…" />
                         </td>
                       </tr>
                     ) : null}
                     {!campaignsLoading && sortedSeriesRows.length === 0 ? (
                       <tr>
-                        <td colSpan={7}>{GmvMaxTexts.noSeriesForScope}</td>
+                        <td colSpan={4}>{GmvMaxTexts.noSeriesForScope}</td>
                       </tr>
                     ) : null}
                     {sortedSeriesRows.map((card) => {
@@ -2139,11 +2058,6 @@ export default function GmvMaxOverviewPage() {
                         card.campaign?.campaign_name ||
                         card.detail?.campaign?.name ||
                         `系列 ${campaignId}`;
-                      const todaySpend = card.todaySummary?.spend ?? null;
-                      const todayGmv = card.todaySummary?.gmv ?? null;
-                      const roas =
-                        card.todaySummary?.roas ?? card.metricsSummary?.roas ??
-                        (todaySpend && todaySpend > 0 ? (todayGmv || 0) / todaySpend : null);
                       const statusClass = `gmvmax-status-pill gmvmax-status-pill--${card.statusMeta?.tone || 'muted'}`;
                       return (
                         <tr key={campaignId}>
@@ -2154,9 +2068,6 @@ export default function GmvMaxOverviewPage() {
                           <td>
                             <span className={statusClass}>{card.statusMeta?.label || GmvMaxTexts.statusUnknown}</span>
                           </td>
-                          <td>{todaySpend === null ? '—' : `$${formatMoney(todaySpend)}`}</td>
-                          <td>{todayGmv === null ? '—' : `$${formatMoney(todayGmv)}`}</td>
-                          <td>{roas === null ? '—' : formatRoi(roas)}</td>
                           <td className="col-actions">
                             <div className="gmvmax-series-actions">
                               <button
