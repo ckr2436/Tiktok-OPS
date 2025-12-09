@@ -289,10 +289,10 @@ export async function getGmvMaxMetrics(workspaceId, provider, authId, campaignId
     ...(config || {}),
     params: searchParams,
   };
-  return get(
-    `${accountPrefix(workspaceId, provider, authId)}/gmvmax/${encode(campaignId)}/metrics`,
-    axiosConfig,
-  );
+  const basePath = `${accountPrefix(workspaceId, provider, authId)}/gmvmax`;
+  const metricsPath = campaignId ? `${basePath}/${encode(campaignId)}/metrics` : `${basePath}/metrics`;
+
+  return get(metricsPath, axiosConfig);
 }
 
 export async function applyGmvMaxAction(workspaceId, provider, authId, campaignId, payload, config) {

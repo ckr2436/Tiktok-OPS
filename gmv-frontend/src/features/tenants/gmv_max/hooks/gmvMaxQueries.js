@@ -45,7 +45,7 @@ function composeKey(...parts) {
 }
 
 export function composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId) {
-  return composeKey('metrics', workspaceId, provider, authId, campaignId);
+  return composeKey('metrics', workspaceId, provider, authId, campaignId || '');
 }
 
 function normalizeMetricsKeyParams(params = {}, campaignId) {
@@ -229,10 +229,15 @@ export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId
 
 export function useGmvMaxMetricsQuery(workspaceId, provider, authId, campaignId, params = {}, options = {}) {
   const { enabled, refetchInterval, onError, ...rest } = options;
+  const normalizedLevel = String(params?.level || '').toLowerCase();
+  const allowsCampaignless = normalizedLevel === GmvMaxMetricsLevel.OVERVIEW;
   return useQuery({
     queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
     queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params),
-    enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    enabled: resolveEnabled(
+      Boolean(workspaceId && provider && authId && (campaignId || allowsCampaignless)),
+      enabled,
+    ),
     refetchInterval,
     retry: false,
     refetchOnWindowFocus: false,
