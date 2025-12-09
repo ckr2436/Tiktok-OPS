@@ -2000,6 +2000,10 @@ export default function GmvMaxOverviewPage() {
                       {overviewCostPerOrder !== null ? formatMoney(overviewCostPerOrder) : '—'}
                     </strong>
                   </div>
+                  <div>
+                    <p>{GmvMaxTexts.costPerOrder}</p>
+                    <strong>{overviewCostPerOrder !== null ? formatMoney(overviewCostPerOrder) : '—'}</strong>
+                  </div>
                 </div>
                 {overviewSummaryQuery.error ? (
                   <p className="gmvmax-placeholder">汇总指标加载失败，请稍后重试。</p>
