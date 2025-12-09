@@ -208,6 +208,65 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
   return timezoneUtils.formatRangeAsDateStrings(todayRange);
 }
 
+function centsToAmount(value) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric / 100 : null;
+}
+
+function coerceNumber(value) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function deriveOverviewSnapshotSummary(payload) {
+  if (!payload) return null;
+
+  const report = payload.report || payload.data?.report || payload.data;
+  const snapshot = payload.snapshot || payload.data?.snapshot || payload.data;
+  const snapshotCandidate = snapshot || report?.summary || payload;
+
+  const hasSnapshotFields = snapshotCandidate
+    && [
+      'cost_cents',
+      'net_cost_cents',
+      'gross_revenue_cents',
+      'orders',
+      'roi',
+      'cost_per_order',
+    ].some((key) => key in snapshotCandidate);
+
+  if (hasSnapshotFields) {
+    const spendValue = centsToAmount(
+      snapshotCandidate.net_cost_cents ?? snapshotCandidate.cost_cents,
+    );
+    const gmvValue = centsToAmount(snapshotCandidate.gross_revenue_cents);
+    return {
+      spend: spendValue,
+      gmv: gmvValue,
+      roas: coerceNumber(snapshotCandidate.roi ?? snapshotCandidate.roas),
+      orders: coerceNumber(snapshotCandidate.orders),
+      costPerOrder: coerceNumber(snapshotCandidate.cost_per_order),
+    };
+  }
+
+  if (report) {
+    const summarised = summariseMetrics(report);
+    if (summarised) {
+      return {
+        ...summarised,
+        costPerOrder:
+          summarised.orders && summarised.orders > 0
+            ? summarised.spend / summarised.orders
+            : null,
+      };
+    }
+  }
+
+  return null;
+}
+
 export default function GmvMaxOverviewPage() {
   const { wid: workspaceId } = useParams();
   const navigate = useNavigate();
@@ -1205,7 +1264,7 @@ export default function GmvMaxOverviewPage() {
   const overviewRangeParams = useMemo(
     () => ({
       ...computeOverviewRange(overviewRangeKey, overviewCustomRange, advertiserTimezone),
-      store_ids: storeId ? [String(storeId)] : undefined,
+      store_id: storeId ? String(storeId) : undefined,
     }),
     [advertiserTimezone, overviewCustomRange, overviewRangeKey, storeId],
   );
@@ -1245,13 +1304,12 @@ export default function GmvMaxOverviewPage() {
     workspaceId,
     provider,
     authId,
-    'all',
+    undefined,
     {
       start_date: overviewRangeParams.start_date,
       end_date: overviewRangeParams.end_date,
-      store_ids: overviewRangeParams.store_ids,
+      store_id: overviewRangeParams.store_id,
       level: GmvMaxMetricsLevel.OVERVIEW,
-      dimensions: ['stat_time_day'],
     },
     {
       enabled: shouldFetchMetrics,
@@ -1260,14 +1318,16 @@ export default function GmvMaxOverviewPage() {
       keepPreviousData: true,
     },
   );
-  const overviewSummaryReport =
-    overviewSummaryQuery.data?.report || overviewSummaryQuery.data?.data || overviewSummaryQuery.data || null;
-  const overviewSummary = useMemo(() => {
-    if (!overviewSummaryReport) return null;
-    return summariseMetrics(overviewSummaryReport);
-  }, [overviewSummaryReport]);
+  const overviewSummary = useMemo(
+    () => deriveOverviewSnapshotSummary(overviewSummaryQuery.data),
+    [overviewSummaryQuery.data],
+  );
   const overviewCostPerOrder = useMemo(() => {
-    if (!overviewSummary || !overviewSummary.orders) return null;
+    if (!overviewSummary) return null;
+    if (overviewSummary.costPerOrder !== undefined && overviewSummary.costPerOrder !== null) {
+      return overviewSummary.costPerOrder;
+    }
+    if (!overviewSummary.orders) return null;
     return overviewSummary.orders > 0 ? overviewSummary.spend / overviewSummary.orders : null;
   }, [overviewSummary]);
 
@@ -1910,23 +1970,35 @@ export default function GmvMaxOverviewPage() {
             ) : (
               <>
                 <div className="gmvmax-overview-summary">
-                  <div>
-                    <p>{GmvMaxTexts.totalSpend}</p>
-                    <strong>{overviewSummary ? formatMoney(overviewSummary.spend) : '—'}</strong>
+                  <div className="gmvmax-overview-summary__item">
+                    <span className="gmvmax-overview-summary__label">{GmvMaxTexts.totalSpend}</span>
+                    <strong className="gmvmax-overview-summary__value">
+                      {overviewSummary ? formatMoney(overviewSummary.spend) : '—'}
+                    </strong>
                   </div>
-                  <div>
-                    <p>{GmvMaxTexts.totalGmv}</p>
-                    <strong>{overviewSummary ? formatMoney(overviewSummary.gmv) : '—'}</strong>
+                  <div className="gmvmax-overview-summary__item">
+                    <span className="gmvmax-overview-summary__label">{GmvMaxTexts.totalGmv}</span>
+                    <strong className="gmvmax-overview-summary__value">
+                      {overviewSummary ? formatMoney(overviewSummary.gmv) : '—'}
+                    </strong>
                   </div>
-                  <div>
-                    <p>{GmvMaxTexts.overviewRoi}</p>
-                    <strong>
+                  <div className="gmvmax-overview-summary__item">
+                    <span className="gmvmax-overview-summary__label">{GmvMaxTexts.overviewRoi}</span>
+                    <strong className="gmvmax-overview-summary__value">
                       {overviewSummary && overviewSummary.roas !== null ? formatRoi(overviewSummary.roas) : '—'}
                     </strong>
                   </div>
-                  <div>
-                    <p>{GmvMaxTexts.roiOrders}</p>
-                    <strong>{overviewSummary ? overviewSummary.orders : '—'}</strong>
+                  <div className="gmvmax-overview-summary__item">
+                    <span className="gmvmax-overview-summary__label">{GmvMaxTexts.roiOrders}</span>
+                    <strong className="gmvmax-overview-summary__value">
+                      {overviewSummary ? overviewSummary.orders : '—'}
+                    </strong>
+                  </div>
+                  <div className="gmvmax-overview-summary__item">
+                    <span className="gmvmax-overview-summary__label">{GmvMaxTexts.costPerOrder}</span>
+                    <strong className="gmvmax-overview-summary__value">
+                      {overviewCostPerOrder !== null ? formatMoney(overviewCostPerOrder) : '—'}
+                    </strong>
                   </div>
                   <div>
                     <p>{GmvMaxTexts.costPerOrder}</p>

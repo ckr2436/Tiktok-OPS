@@ -259,6 +259,10 @@ a:hover{ opacity:.95; }
 .gmvmax-presets-row .gmvmax-button{ flex:0 0 auto; }
 .gmvmax-subtext{ margin:4px 0 0; color:var(--muted); }
 .gmvmax-placeholder{ margin:0; padding:12px 16px; border-radius:12px; border:1px dashed var(--border); background:var(--panel-2); color:var(--muted); }
+.gmvmax-overview-summary{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; align-items:center; }
+.gmvmax-overview-summary__item{ display:flex; align-items:center; gap:8px; min-height:40px; }
+.gmvmax-overview-summary__label{ color:var(--muted); font-weight:600; white-space:nowrap; }
+.gmvmax-overview-summary__value{ font-size:1.1rem; font-weight:700; }
 .gmvmax-inline-error{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-radius:12px; border:1px solid rgba(239,68,68,.35); background:rgba(239,68,68,.12); color:#b91c1c; flex-wrap:wrap; }
 .gmvmax-inline-error-text{ margin:0; color:#b91c1c; font-weight:600; }
 .gmvmax-status-banner{ padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--panel-2); color:var(--muted); font-weight:600; }

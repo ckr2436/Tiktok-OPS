@@ -30,7 +30,7 @@ export const GmvMaxTexts = {
   totalGmv: '总 GMV',
   averageRoas: '平均 ROAS',
   overviewRoi: 'ROI',
-  roiOrders: 'ROI 订单数',
+  roiOrders: '订单数',
   costPerOrder: '单转',
   scopeFilters: '范围筛选',
   scopeDescription: '选择店铺来管理 GMV Max，商家中心与广告主将自动识别并隐藏。',

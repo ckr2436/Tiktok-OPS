@@ -20,16 +20,16 @@ describe('getGmvMaxMetrics', () => {
   });
 
   it('uses overview level from metrics enum', async () => {
-    await getGmvMaxMetrics(2, 'tiktok-business', 3, 'all', {
+    await getGmvMaxMetrics(2, 'tiktok-business', 3, undefined, {
       level: GmvMaxMetricsLevel.OVERVIEW,
       start_date: '2025-12-07',
       end_date: '2025-12-07',
-      store_ids: ['store-1'],
-      dimensions: ['stat_time_day'],
+      store_id: 'store-1',
     });
 
     expect(http.get).toHaveBeenCalledTimes(1);
-    const [, config] = http.get.mock.calls[0];
+    const [url, config] = http.get.mock.calls[0];
+    expect(url).toContain('/gmvmax/metrics');
     expect(config.params.get('level')).toBe(GmvMaxMetricsLevel.OVERVIEW);
   });
 
