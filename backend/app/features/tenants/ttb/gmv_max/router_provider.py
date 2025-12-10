@@ -2873,12 +2873,29 @@ async def _query_gmvmax_metrics(
             gross_cents = int(snapshot.gross_revenue_cents or 0)
             orders_value = int(snapshot.orders or 0)
 
-            spend_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
-            gross_value = float(Decimal(gross_cents) / Decimal(100)) if gross_cents else 0.0
-            roi_value = float(snapshot.roi) if snapshot.roi is not None else None
-            cpo_value = float(snapshot.cost_per_order) if snapshot.cost_per_order is not None else None
-            if cpo_value is None and orders_value > 0 and spend_cents:
-                cpo_value = float(Decimal(spend_cents) / Decimal(orders_value) / Decimal(100))
+            spend_value = round(float(Decimal(spend_cents) / Decimal(100)), 2) if spend_cents else 0.0
+            gross_value = round(float(Decimal(gross_cents) / Decimal(100)), 2) if gross_cents else 0.0
+
+            roi_value: float | None = None
+            if snapshot.roi is not None:
+                roi_value = float(snapshot.roi)
+            elif spend_cents and gross_cents:
+                roi_value = float(
+                    Decimal(gross_cents) / Decimal(spend_cents)
+                )
+
+            cpo_value: float | None = None
+            if snapshot.cost_per_order is not None:
+                cpo_value = float(snapshot.cost_per_order)
+            elif orders_value > 0 and spend_cents:
+                cpo_value = float(
+                    (Decimal(spend_cents) / Decimal(orders_value)) / Decimal(100)
+                )
+
+            if cpo_value is not None:
+                cpo_value = round(cpo_value, 4)
+            if roi_value is not None:
+                roi_value = round(roi_value, 4)
 
             summary = {
                 "spend": spend_value,
@@ -2910,7 +2927,7 @@ async def _query_gmvmax_metrics(
                         "store_id": str(effective_store_id),
                         "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
                         "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
-                        "stat_time_day": (snapshot.end_date or snapshot.start_date or start).isoformat(),
+                        "stat_time_day": (snapshot.end_date or snapshot.start_date or end or start).isoformat(),
                     },
                 }
             ]
@@ -3075,21 +3092,75 @@ async def query_gmvmax_metrics_root_provider(
     item_group_ids: Optional[List[str]] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
-    return await _query_gmvmax_metrics(
-        request,
-        workspace_id=workspace_id,
-        provider=provider,
-        auth_id=auth_id,
-        campaign_id=campaign_id,
-        store_id=store_id,
-        level=level,
-        start_date=start_date,
-        end_date=end_date,
-        advertiser_id=advertiser_id,
-        campaign_ids=campaign_ids,
-        item_group_ids=item_group_ids,
-        context=context,
+    level_param = (request.query_params.get("level") or level or "campaign").lower()
+    try:
+        level_value = GMVMaxReportLevel(level_param)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"invalid GMV Max metrics level: {level_param}",
+        )
+
+    end = _normalize_date_value(end_date, field_name="end_date") or date.today()
+    start = _normalize_date_value(start_date, field_name="start_date") or (
+        end - timedelta(days=6)
     )
+    effective_store_id = store_id or context.store_id
+    effective_advertiser_id = advertiser_id or context.advertiser_id
+
+    try:
+        return await _query_gmvmax_metrics(
+            request,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            campaign_id=campaign_id,
+            store_id=store_id,
+            level=level,
+            start_date=start_date,
+            end_date=end_date,
+            advertiser_id=advertiser_id,
+            campaign_ids=campaign_ids,
+            item_group_ids=item_group_ids,
+            context=context,
+        )
+    except HTTPException as exc:  # noqa: PERF203 - explicit passthrough
+        if (
+            level_value is GMVMaxReportLevel.OVERVIEW
+            and exc.status_code == status.HTTP_404_NOT_FOUND
+            and isinstance(exc.detail, str)
+            and "campaign not found in cache" in exc.detail
+        ):
+            logger.info(
+                "gmvmax overview metrics fallback on missing campaign cache",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "store_id": effective_store_id,
+                    "advertiser_id": effective_advertiser_id,
+                    "start_date": start,
+                    "end_date": end,
+                },
+            )
+            empty_list: list[dict[str, Any]] = []
+            return {
+                "report": {
+                    "list": empty_list,
+                    "page_info": {
+                        "page": 1,
+                        "page_size": 0,
+                        "total_number": 0,
+                        "total_page": 1,
+                        "cursor": None,
+                        "has_more": False,
+                        "has_next": False,
+                    },
+                    "summary": None,
+                },
+                "request_id": None,
+            }
+
+        raise
 
 
 @router.get(
@@ -3113,22 +3184,75 @@ async def query_gmvmax_metrics_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
     """Return GMV Max performance metrics for the requested campaign and level."""
+    level_param = (request.query_params.get("level") or level or "campaign").lower()
+    try:
+        level_value = GMVMaxReportLevel(level_param)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"invalid GMV Max metrics level: {level_param}",
+        )
 
-    return await _query_gmvmax_metrics(
-        request,
-        workspace_id=workspace_id,
-        provider=provider,
-        auth_id=auth_id,
-        campaign_id=campaign_id,
-        store_id=store_id,
-        level=level,
-        start_date=start_date,
-        end_date=end_date,
-        advertiser_id=advertiser_id,
-        campaign_ids=campaign_ids,
-        item_group_ids=item_group_ids,
-        context=context,
+    end = _normalize_date_value(end_date, field_name="end_date") or date.today()
+    start = _normalize_date_value(start_date, field_name="start_date") or (
+        end - timedelta(days=6)
     )
+    effective_store_id = store_id or context.store_id
+    effective_advertiser_id = advertiser_id or context.advertiser_id
+
+    try:
+        return await _query_gmvmax_metrics(
+            request,
+            workspace_id=workspace_id,
+            provider=provider,
+            auth_id=auth_id,
+            campaign_id=campaign_id,
+            store_id=store_id,
+            level=level,
+            start_date=start_date,
+            end_date=end_date,
+            advertiser_id=advertiser_id,
+            campaign_ids=campaign_ids,
+            item_group_ids=item_group_ids,
+            context=context,
+        )
+    except HTTPException as exc:  # noqa: PERF203 - explicit passthrough
+        if (
+            level_value is GMVMaxReportLevel.OVERVIEW
+            and exc.status_code == status.HTTP_404_NOT_FOUND
+            and isinstance(exc.detail, str)
+            and "campaign not found in cache" in exc.detail
+        ):
+            logger.info(
+                "gmvmax overview metrics fallback on missing campaign cache",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "store_id": effective_store_id,
+                    "advertiser_id": effective_advertiser_id,
+                    "start_date": start,
+                    "end_date": end,
+                },
+            )
+            empty_list: list[dict[str, Any]] = []
+            return {
+                "report": {
+                    "list": empty_list,
+                    "page_info": {
+                        "page": 1,
+                        "page_size": 0,
+                        "total_number": 0,
+                        "total_page": 1,
+                        "cursor": None,
+                        "has_more": False,
+                        "has_next": False,
+                    },
+                    "summary": None,
+                },
+                "request_id": None,
+            }
+
+        raise
 
 
 
