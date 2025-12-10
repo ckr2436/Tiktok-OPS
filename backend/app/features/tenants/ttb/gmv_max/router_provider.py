@@ -2295,7 +2295,7 @@ async def create_gmvmax_campaign_provider(
 
 
 @router.put(
-    "/{campaign_id}",
+    "/campaigns/{campaign_id}",
     response_model=CampaignDetailResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -2398,7 +2398,7 @@ async def list_gmvmax_campaigns_provider(
 
 
 @router.get(
-    "/{campaign_id}",
+    "/campaigns/{campaign_id}",
     response_model=CampaignDetailResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -2473,7 +2473,7 @@ async def get_gmvmax_campaign_provider(
 
 
 @router.post(
-    "/{campaign_id}/refresh",
+    "/campaigns/{campaign_id}/refresh",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -2583,7 +2583,7 @@ async def sync_advertiser_balance(
 
 
 @router.post(
-    "/{campaign_id}/metrics/sync",
+    "/campaigns/{campaign_id}/metrics/sync",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -3130,7 +3130,7 @@ async def query_gmvmax_metrics_root_provider(
 
 
 @router.get(
-    "/{campaign_id}/metrics",
+    "/campaigns/{campaign_id}/metrics",
     response_model=MetricsResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3335,7 +3335,7 @@ async def _apply_creative_heating_action(
 
 
 @router.post(
-    "/{campaign_id}/actions",
+    "/campaigns/{campaign_id}/actions",
     response_model=Union[CampaignActionResponse, CreativeHeatingActionResponse],
 )
 async def apply_gmvmax_campaign_action_provider(
@@ -3484,7 +3484,7 @@ async def apply_gmvmax_campaign_action_provider(
 
 
 @router.get(
-    "/{campaign_id}/actions",
+    "/campaigns/{campaign_id}/actions",
     response_model=ActionLogEntry,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3519,7 +3519,7 @@ async def list_gmvmax_action_logs_provider(
 
 
 @router.get(
-    "/{campaign_id}/creatives/heating",
+    "/campaigns/{campaign_id}/creatives/heating",
     response_model=CreativeHeatingListResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3545,7 +3545,7 @@ async def list_gmvmax_creative_heating_provider(
 
 
 @router.get(
-    "/{campaign_id}/strategy",
+    "/campaigns/{campaign_id}/strategy",
     response_model=StrategyResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3607,7 +3607,7 @@ async def get_gmvmax_strategy_provider(
 
 
 @router.put(
-    "/{campaign_id}/strategy",
+    "/campaigns/{campaign_id}/strategy",
     response_model=StrategyUpdateResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -3662,7 +3662,7 @@ async def update_gmvmax_strategy_provider(
 
 
 @router.post(
-    "/{campaign_id}/strategies/preview",
+    "/campaigns/{campaign_id}/strategies/preview",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
