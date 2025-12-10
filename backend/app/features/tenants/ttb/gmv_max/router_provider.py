@@ -229,6 +229,26 @@ class _TTLCache:
 _metrics_cache = _TTLCache(ttl_seconds=60.0, maxsize=200)
 
 
+def _empty_overview_metrics_response() -> dict[str, Any]:
+    empty_list: list[dict[str, Any]] = []
+    return {
+        "report": {
+            "list": empty_list,
+            "page_info": {
+                "page": 1,
+                "page_size": 0,
+                "total_number": 0,
+                "total_page": 1,
+                "cursor": None,
+                "has_more": False,
+                "has_next": False,
+            },
+            "summary": None,
+        },
+        "request_id": None,
+    }
+
+
 def _campaign_row_to_schema(row: GmvCampaign) -> GMVMaxCampaign:
     if row.raw_json:
         try:
@@ -2838,216 +2858,239 @@ async def _query_gmvmax_metrics(
     summary: dict[str, Any] | None = None
     serialized_rows: list[dict[str, Any]] | None = None
 
-    if level_value is GMVMaxReportLevel.OVERVIEW:
-        stmt = (
-            select(GmvOverviewSnapshot)
-            .where(GmvOverviewSnapshot.workspace_id == workspace_id)
-            .where(GmvOverviewSnapshot.auth_id == auth_id)
-            .where(GmvOverviewSnapshot.advertiser_id == str(effective_advertiser_id))
-            .where(GmvOverviewSnapshot.store_id == str(effective_store_id))
-            .where(GmvOverviewSnapshot.snapshot_type == "MANUAL")
-            .where(GmvOverviewSnapshot.start_date == start)
-            .where(GmvOverviewSnapshot.end_date == end)
-            .order_by(GmvOverviewSnapshot.snapshot_at.desc())
-            .limit(1)
-        )
+    try:
+        if level_value is GMVMaxReportLevel.OVERVIEW:
+            stmt = (
+                select(GmvOverviewSnapshot)
+                .where(GmvOverviewSnapshot.workspace_id == workspace_id)
+                .where(GmvOverviewSnapshot.auth_id == auth_id)
+                .where(GmvOverviewSnapshot.advertiser_id == str(effective_advertiser_id))
+                .where(GmvOverviewSnapshot.store_id == str(effective_store_id))
+                .where(GmvOverviewSnapshot.snapshot_type == "MANUAL")
+                .where(GmvOverviewSnapshot.start_date == start)
+                .where(GmvOverviewSnapshot.end_date == end)
+                .order_by(GmvOverviewSnapshot.snapshot_at.desc())
+                .limit(1)
+            )
 
-        snapshot = db.execute(stmt).scalars().first()
+            snapshot = db.execute(stmt).scalars().first()
 
-        if snapshot is None:
+            if snapshot is None:
+                logger.info(
+                    "gmvmax overview metrics snapshot not found",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": str(effective_advertiser_id),
+                        "store_id": str(effective_store_id),
+                        "start_date": start.isoformat(),
+                        "end_date": end.isoformat(),
+                    },
+                )
+                summary = None
+                serialized_rows = []
+            else:
+                spend_cents = int(snapshot.net_cost_cents or snapshot.cost_cents or 0)
+                gross_cents = int(snapshot.gross_revenue_cents or 0)
+                orders_value = int(snapshot.orders or 0)
+
+                spend_value = round(float(Decimal(spend_cents) / Decimal(100)), 2) if spend_cents else 0.0
+                gross_value = round(float(Decimal(gross_cents) / Decimal(100)), 2) if gross_cents else 0.0
+
+                roi_value: float | None = None
+                if snapshot.roi is not None:
+                    roi_value = float(snapshot.roi)
+                elif spend_cents and gross_cents:
+                    roi_value = float(
+                        Decimal(gross_cents) / Decimal(spend_cents)
+                    )
+
+                cpo_value: float | None = None
+                if snapshot.cost_per_order is not None:
+                    cpo_value = float(snapshot.cost_per_order)
+                elif orders_value > 0 and spend_cents:
+                    cpo_value = float(
+                        (Decimal(spend_cents) / Decimal(orders_value)) / Decimal(100)
+                    )
+
+                if cpo_value is not None:
+                    cpo_value = round(cpo_value, 4)
+                if roi_value is not None:
+                    roi_value = round(roi_value, 4)
+
+                summary = {
+                    "spend": spend_value,
+                    "cost": spend_value,
+                    "net_cost": spend_value,
+                    "gmv": gross_value,
+                    "gross_revenue": gross_value,
+                    "orders": orders_value,
+                    "cost_per_order": cpo_value,
+                    "roas": roi_value,
+                    "roi": roi_value,
+                }
+
+                serialized_rows = [
+                    {
+                        "metrics": {
+                            "spend": spend_value,
+                            "cost": spend_value,
+                            "net_cost": spend_value,
+                            "gmv": gross_value,
+                            "gross_revenue": gross_value,
+                            "orders": orders_value,
+                            "cost_per_order": cpo_value,
+                            "roas": roi_value,
+                            "roi": roi_value,
+                        },
+                        "dimensions": {
+                            "advertiser_id": str(effective_advertiser_id),
+                            "store_id": str(effective_store_id),
+                            "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
+                            "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
+                            "stat_time_day": (snapshot.end_date or snapshot.start_date or end or start).isoformat(),
+                        },
+                    }
+                ]
+
+        elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
+            campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
+            stmt = (
+                select(
+                    GmvCampaign.campaign_id,
+                    GmvCampaignMetricsDaily.stat_time_day.label("stat_time_day"),
+                    func.sum(func.coalesce(GmvCampaignMetricsDaily.net_cost_cents, GmvCampaignMetricsDaily.cost_cents, 0)).label(
+                        "spend_cents"
+                    ),
+                    func.sum(GmvCampaignMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
+                    func.sum(GmvCampaignMetricsDaily.orders).label("orders"),
+                )
+                .join(GmvCampaign, GmvCampaign.campaign_id == GmvCampaignMetricsDaily.campaign_id)
+                .where(GmvCampaign.workspace_id == workspace_id)
+                .where(GmvCampaign.auth_id == auth_id)
+                .where(GmvCampaign.advertiser_id == str(effective_advertiser_id))
+                .where(GmvCampaign.campaign_id.in_(campaign_filter_ids))
+                .where(GmvCampaign.store_id == str(effective_store_id))
+                .where(GmvCampaign.is_deleted.is_(False))
+                .where(GmvCampaignMetricsDaily.stat_time_day >= start)
+                .where(GmvCampaignMetricsDaily.stat_time_day <= end)
+                .group_by(GmvCampaign.campaign_id, GmvCampaignMetricsDaily.stat_time_day)
+                .order_by(GmvCampaignMetricsDaily.stat_time_day.asc())
+            )
+            rows = db.execute(stmt).all()
+
+            totals = {
+                "spend_cents": 0,
+                "gross_revenue_cents": 0,
+                "orders": 0,
+            }
+            for row in rows:
+                totals["spend_cents"] += int(row.spend_cents or 0)
+                totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
+                totals["orders"] += int(row.orders or 0)
+
+            spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
+            gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
+            summary = {
+                "spend": float(spend_total),
+                "cost": float(spend_total),
+                "net_cost": float(spend_total),
+                "gmv": float(gmv_total),
+                "gross_revenue": float(gmv_total),
+                "orders": totals["orders"],
+                "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
+                "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
+            }
+        else:
+            campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
+            snapshots = latest_creative_metrics_snapshots(
+                db,
+                workspace_id=workspace_id,
+                provider=provider,
+                auth_id=auth_id,
+                campaign_ids=campaign_filter_ids,
+                start_date=start,
+                end_date=end,
+                store_ids=[str(effective_store_id)],
+                product_ids=clean_item_group_ids,
+            )
+
+            rows = list(snapshots)
+
+            historical_end = min(end, date.today() - timedelta(days=1)) if start < date.today() else None
+            if historical_end and historical_end >= start:
+                creative_stmt = (
+                    select(GmvCreativeMetricsDaily)
+                    .where(GmvCreativeMetricsDaily.campaign_id.in_(campaign_filter_ids))
+                    .where(func.date(GmvCreativeMetricsDaily.stat_time_day) >= start)
+                    .where(func.date(GmvCreativeMetricsDaily.stat_time_day) <= historical_end)
+                    .order_by(GmvCreativeMetricsDaily.stat_time_day.asc())
+                )
+                if clean_item_group_ids:
+                    creative_stmt = creative_stmt.where(GmvCreativeMetricsDaily.item_group_id.in_(clean_item_group_ids))
+
+                rows.extend(list(db.execute(creative_stmt).scalars().all()))
+
+            totals = {
+                "spend": Decimal("0"),
+                "gmv": Decimal("0"),
+                "orders": 0,
+                "impressions": 0,
+                "clicks": 0,
+            }
+            for row in rows:
+                spend_cents = getattr(row, "net_cost_cents", None) or getattr(row, "cost_cents", None)
+                spend_value = (
+                    Decimal(spend_cents) / Decimal(100)
+                    if spend_cents is not None
+                    else Decimal(getattr(row, "net_cost", 0) or getattr(row, "cost", 0) or 0)
+                )
+                gross_cents = getattr(row, "gross_revenue_cents", None)
+                gross_value = (
+                    Decimal(gross_cents) / Decimal(100)
+                    if gross_cents is not None
+                    else Decimal(getattr(row, "gross_revenue", 0) or 0)
+                )
+                totals["spend"] += spend_value
+                totals["gmv"] += gross_value
+                totals["orders"] += int(getattr(row, "orders", 0) or 0)
+                totals["impressions"] += int(getattr(row, "impressions", 0) or 0)
+                totals["clicks"] += int(getattr(row, "clicks", 0) or 0)
+
+            summary = {
+                "spend": float(totals["spend"]),
+                "cost": float(totals["spend"]),
+                "net_cost": float(totals["spend"]),
+                "gmv": float(totals["gmv"]),
+                "gross_revenue": float(totals["gmv"]),
+                "orders": totals["orders"],
+                "impressions": totals["impressions"],
+                "clicks": totals["clicks"],
+                "roas": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
+                "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
+            }
+
+    except HTTPException as exc:  # noqa: PERF203 - explicit passthrough
+        if (
+            level_value is GMVMaxReportLevel.OVERVIEW
+            and exc.status_code == status.HTTP_404_NOT_FOUND
+            and isinstance(exc.detail, str)
+            and "campaign not found in cache" in exc.detail
+        ):
             logger.info(
-                "gmvmax overview metrics snapshot not found",
+                "gmvmax overview metrics fallback on missing campaign cache",
                 extra={
                     "workspace_id": workspace_id,
                     "auth_id": auth_id,
-                    "advertiser_id": str(effective_advertiser_id),
-                    "store_id": str(effective_store_id),
-                    "start_date": start.isoformat(),
-                    "end_date": end.isoformat(),
+                    "store_id": effective_store_id,
+                    "advertiser_id": effective_advertiser_id,
+                    "start_date": start,
+                    "end_date": end,
                 },
             )
-            summary = None
-            serialized_rows = []
-        else:
-            spend_cents = int(snapshot.net_cost_cents or snapshot.cost_cents or 0)
-            gross_cents = int(snapshot.gross_revenue_cents or 0)
-            orders_value = int(snapshot.orders or 0)
+            return _empty_overview_metrics_response()
 
-            spend_value = round(float(Decimal(spend_cents) / Decimal(100)), 2) if spend_cents else 0.0
-            gross_value = round(float(Decimal(gross_cents) / Decimal(100)), 2) if gross_cents else 0.0
-
-            roi_value: float | None = None
-            if snapshot.roi is not None:
-                roi_value = float(snapshot.roi)
-            elif spend_cents and gross_cents:
-                roi_value = float(
-                    Decimal(gross_cents) / Decimal(spend_cents)
-                )
-
-            cpo_value: float | None = None
-            if snapshot.cost_per_order is not None:
-                cpo_value = float(snapshot.cost_per_order)
-            elif orders_value > 0 and spend_cents:
-                cpo_value = float(
-                    (Decimal(spend_cents) / Decimal(orders_value)) / Decimal(100)
-                )
-
-            if cpo_value is not None:
-                cpo_value = round(cpo_value, 4)
-            if roi_value is not None:
-                roi_value = round(roi_value, 4)
-
-            summary = {
-                "spend": spend_value,
-                "cost": spend_value,
-                "net_cost": spend_value,
-                "gmv": gross_value,
-                "gross_revenue": gross_value,
-                "orders": orders_value,
-                "cost_per_order": cpo_value,
-                "roas": roi_value,
-                "roi": roi_value,
-            }
-
-            serialized_rows = [
-                {
-                    "metrics": {
-                        "spend": spend_value,
-                        "cost": spend_value,
-                        "net_cost": spend_value,
-                        "gmv": gross_value,
-                        "gross_revenue": gross_value,
-                        "orders": orders_value,
-                        "cost_per_order": cpo_value,
-                        "roas": roi_value,
-                        "roi": roi_value,
-                    },
-                    "dimensions": {
-                        "advertiser_id": str(effective_advertiser_id),
-                        "store_id": str(effective_store_id),
-                        "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
-                        "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
-                        "stat_time_day": (snapshot.end_date or snapshot.start_date or end or start).isoformat(),
-                    },
-                }
-            ]
-
-    elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
-        campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
-        stmt = (
-            select(
-                GmvCampaign.campaign_id,
-                GmvCampaignMetricsDaily.stat_time_day.label("stat_time_day"),
-                func.sum(func.coalesce(GmvCampaignMetricsDaily.net_cost_cents, GmvCampaignMetricsDaily.cost_cents, 0)).label(
-                    "spend_cents"
-                ),
-                func.sum(GmvCampaignMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
-                func.sum(GmvCampaignMetricsDaily.orders).label("orders"),
-            )
-            .join(GmvCampaign, GmvCampaign.campaign_id == GmvCampaignMetricsDaily.campaign_id)
-            .where(GmvCampaign.workspace_id == workspace_id)
-            .where(GmvCampaign.auth_id == auth_id)
-            .where(GmvCampaign.advertiser_id == str(effective_advertiser_id))
-            .where(GmvCampaign.campaign_id.in_(campaign_filter_ids))
-            .where(GmvCampaign.store_id == str(effective_store_id))
-            .where(GmvCampaign.is_deleted.is_(False))
-            .where(GmvCampaignMetricsDaily.stat_time_day >= start)
-            .where(GmvCampaignMetricsDaily.stat_time_day <= end)
-            .group_by(GmvCampaign.campaign_id, GmvCampaignMetricsDaily.stat_time_day)
-            .order_by(GmvCampaignMetricsDaily.stat_time_day.asc())
-        )
-        rows = db.execute(stmt).all()
-
-        totals = {
-            "spend_cents": 0,
-            "gross_revenue_cents": 0,
-            "orders": 0,
-        }
-        for row in rows:
-            totals["spend_cents"] += int(row.spend_cents or 0)
-            totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
-            totals["orders"] += int(row.orders or 0)
-
-        spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
-        gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
-        summary = {
-            "spend": float(spend_total),
-            "cost": float(spend_total),
-            "net_cost": float(spend_total),
-            "gmv": float(gmv_total),
-            "gross_revenue": float(gmv_total),
-            "orders": totals["orders"],
-            "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
-            "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
-        }
-    else:
-        campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
-        snapshots = latest_creative_metrics_snapshots(
-            db,
-            workspace_id=workspace_id,
-            provider=provider,
-            auth_id=auth_id,
-            campaign_ids=campaign_filter_ids,
-            start_date=start,
-            end_date=end,
-            store_ids=[str(effective_store_id)],
-            product_ids=clean_item_group_ids,
-        )
-
-        rows = list(snapshots)
-
-        historical_end = min(end, date.today() - timedelta(days=1)) if start < date.today() else None
-        if historical_end and historical_end >= start:
-            creative_stmt = (
-                select(GmvCreativeMetricsDaily)
-                .where(GmvCreativeMetricsDaily.campaign_id.in_(campaign_filter_ids))
-                .where(func.date(GmvCreativeMetricsDaily.stat_time_day) >= start)
-                .where(func.date(GmvCreativeMetricsDaily.stat_time_day) <= historical_end)
-                .order_by(GmvCreativeMetricsDaily.stat_time_day.asc())
-            )
-            if clean_item_group_ids:
-                creative_stmt = creative_stmt.where(GmvCreativeMetricsDaily.item_group_id.in_(clean_item_group_ids))
-
-            rows.extend(list(db.execute(creative_stmt).scalars().all()))
-
-        totals = {
-            "spend": Decimal("0"),
-            "gmv": Decimal("0"),
-            "orders": 0,
-            "impressions": 0,
-            "clicks": 0,
-        }
-        for row in rows:
-            spend_cents = getattr(row, "net_cost_cents", None) or getattr(row, "cost_cents", None)
-            spend_value = (
-                Decimal(spend_cents) / Decimal(100)
-                if spend_cents is not None
-                else Decimal(getattr(row, "net_cost", 0) or getattr(row, "cost", 0) or 0)
-            )
-            gross_cents = getattr(row, "gross_revenue_cents", None)
-            gross_value = (
-                Decimal(gross_cents) / Decimal(100)
-                if gross_cents is not None
-                else Decimal(getattr(row, "gross_revenue", 0) or 0)
-            )
-            totals["spend"] += spend_value
-            totals["gmv"] += gross_value
-            totals["orders"] += int(getattr(row, "orders", 0) or 0)
-            totals["impressions"] += int(getattr(row, "impressions", 0) or 0)
-            totals["clicks"] += int(getattr(row, "clicks", 0) or 0)
-
-        summary = {
-            "spend": float(totals["spend"]),
-            "cost": float(totals["spend"]),
-            "net_cost": float(totals["spend"]),
-            "gmv": float(totals["gmv"]),
-            "gross_revenue": float(totals["gmv"]),
-            "orders": totals["orders"],
-            "impressions": totals["impressions"],
-            "clicks": totals["clicks"],
-            "roas": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
-            "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
-        }
+        raise
 
     if serialized_rows is None and level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
         serialized_rows = _serialize_campaign_rows(rows)
@@ -3142,23 +3185,7 @@ async def query_gmvmax_metrics_root_provider(
                     "end_date": end,
                 },
             )
-            empty_list: list[dict[str, Any]] = []
-            return {
-                "report": {
-                    "list": empty_list,
-                    "page_info": {
-                        "page": 1,
-                        "page_size": 0,
-                        "total_number": 0,
-                        "total_page": 1,
-                        "cursor": None,
-                        "has_more": False,
-                        "has_next": False,
-                    },
-                    "summary": None,
-                },
-                "request_id": None,
-            }
+            return _empty_overview_metrics_response()
 
         raise
 
@@ -3234,23 +3261,7 @@ async def query_gmvmax_metrics_provider(
                     "end_date": end,
                 },
             )
-            empty_list: list[dict[str, Any]] = []
-            return {
-                "report": {
-                    "list": empty_list,
-                    "page_info": {
-                        "page": 1,
-                        "page_size": 0,
-                        "total_number": 0,
-                        "total_page": 1,
-                        "cursor": None,
-                        "has_more": False,
-                        "has_next": False,
-                    },
-                    "summary": None,
-                },
-                "request_id": None,
-            }
+            return _empty_overview_metrics_response()
 
         raise
 
