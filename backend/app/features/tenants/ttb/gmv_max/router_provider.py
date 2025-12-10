@@ -2417,7 +2417,7 @@ async def list_gmvmax_campaigns_provider(
 
 
 @router.get(
-    "/{campaign_id}",
+    "/{campaign_id:int}",
     response_model=CampaignDetailResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -2425,23 +2425,29 @@ async def get_gmvmax_campaign_provider(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    campaign_id: str = Path(...),
+    campaign_id: int = Path(...),
     advertiser_id: Optional[str] = Query(None),
     include_sessions: bool = Query(True),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> CampaignDetailResponse:
     """Return campaign detail from cache and fetch sessions on demand when requested."""
 
+    logger.info(
+        "gmvmax campaign detail route hit",
+        extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign_id},
+    )
+
     if context.db is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="database unavailable")
 
     adv = advertiser_id or context.advertiser_id
+    campaign_id_str = str(campaign_id)
     row = (
         context.db.query(GmvCampaign)
         .filter(GmvCampaign.workspace_id == int(workspace_id))
         .filter(GmvCampaign.auth_id == int(auth_id))
         .filter(GmvCampaign.advertiser_id == str(adv))
-        .filter(GmvCampaign.campaign_id == str(campaign_id))
+        .filter(GmvCampaign.campaign_id == campaign_id_str)
         .order_by(GmvCampaign.updated_at.desc())
         .first()
     )
@@ -2459,7 +2465,7 @@ async def get_gmvmax_campaign_provider(
             session_resp = await context.client.gmv_max_session_list(
                 GMVMaxSessionListRequest(
                     advertiser_id=str(adv),
-                    campaign_id=str(campaign_id),
+                    campaign_id=campaign_id_str,
                 )
             )
             data = getattr(session_resp, "data", None)
@@ -2475,7 +2481,7 @@ async def get_gmvmax_campaign_provider(
                 extra={
                     "workspace_id": workspace_id,
                     "auth_id": auth_id,
-                    "campaign_id": str(campaign_id),
+                    "campaign_id": campaign_id_str,
                     "advertiser_id": str(adv),
                 },
             )
@@ -3135,6 +3141,16 @@ async def query_gmvmax_metrics_root_provider(
     item_group_ids: Optional[List[str]] = Query(None),
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
+    logger.info(
+        "gmvmax metrics overview route hit",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "campaign_id": campaign_id,
+            "store_id": store_id,
+            "level": level,
+        },
+    )
     level_param = (request.query_params.get("level") or level or "campaign").lower()
     try:
         level_value = GMVMaxReportLevel(level_param)
@@ -3191,7 +3207,7 @@ async def query_gmvmax_metrics_root_provider(
 
 
 @router.get(
-    "/campaigns/{campaign_id}/metrics",
+    "/campaigns/{campaign_id:int}/metrics",
     response_model=MetricsResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3200,7 +3216,7 @@ async def query_gmvmax_metrics_provider(
     workspace_id: int,
     provider: str,
     auth_id: int,
-    campaign_id: str,
+    campaign_id: int = Path(...),
     store_id: Optional[str] = Query(None),
     level: str = Query("campaign"),
     start_date: Optional[Union[date, datetime, str]] = Query(None),
@@ -3211,6 +3227,17 @@ async def query_gmvmax_metrics_provider(
     context: GMVMaxRouteContext = Depends(get_route_context),
 ) -> MetricsResponse:
     """Return GMV Max performance metrics for the requested campaign and level."""
+    logger.info(
+        "gmvmax metrics campaign route hit",
+        extra={
+            "workspace_id": workspace_id,
+            "auth_id": auth_id,
+            "campaign_id": campaign_id,
+            "store_id": store_id,
+            "level": level,
+        },
+    )
+    campaign_id_str = str(campaign_id)
     level_param = (request.query_params.get("level") or level or "campaign").lower()
     try:
         level_value = GMVMaxReportLevel(level_param)
@@ -3233,7 +3260,7 @@ async def query_gmvmax_metrics_provider(
             workspace_id=workspace_id,
             provider=provider,
             auth_id=auth_id,
-            campaign_id=campaign_id,
+            campaign_id=campaign_id_str,
             store_id=store_id,
             level=level,
             start_date=start_date,
