@@ -37,6 +37,7 @@ from app.data.models.gmv_restructured import (
     GmvCampaignMetricsDaily,
     GmvCampaignProduct,
     GmvOverviewMetricsDaily,
+    GmvOverviewSnapshot,
     GmvCreativeMetricsDaily,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
@@ -2294,7 +2295,7 @@ async def create_gmvmax_campaign_provider(
 
 
 @router.put(
-    "/{campaign_id}",
+    "/campaigns/{campaign_id}",
     response_model=CampaignDetailResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -2397,7 +2398,7 @@ async def list_gmvmax_campaigns_provider(
 
 
 @router.get(
-    "/{campaign_id}",
+    "/campaigns/{campaign_id}",
     response_model=CampaignDetailResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -2472,7 +2473,7 @@ async def get_gmvmax_campaign_provider(
 
 
 @router.post(
-    "/{campaign_id}/refresh",
+    "/campaigns/{campaign_id}/refresh",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -2582,7 +2583,7 @@ async def sync_advertiser_balance(
 
 
 @router.post(
-    "/{campaign_id}/metrics/sync",
+    "/campaigns/{campaign_id}/metrics/sync",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -2639,25 +2640,21 @@ async def sync_gmvmax_metrics_provider(
     )
 
 
-@router.get(
-    "/{campaign_id}/metrics",
-    response_model=MetricsResponse,
-    dependencies=[Depends(require_tenant_member)],
-)
-async def query_gmvmax_metrics_provider(
+async def _query_gmvmax_metrics(
     request: Request,
+    *,
     workspace_id: int,
     provider: str,
     auth_id: int,
-    campaign_id: str,
-    store_id: Optional[str] = Query(None),
-    level: str = Query("campaign"),
-    start_date: Optional[Union[date, datetime, str]] = Query(None),
-    end_date: Optional[Union[date, datetime, str]] = Query(None),
-    advertiser_id: Optional[str] = Query(None),
-    campaign_ids: Optional[List[str]] = Query(None),
-    item_group_ids: Optional[List[str]] = Query(None),
-    context: GMVMaxRouteContext = Depends(get_route_context),
+    campaign_id: Optional[str],
+    store_id: Optional[str],
+    level: str,
+    start_date: Optional[Union[date, datetime, str]],
+    end_date: Optional[Union[date, datetime, str]],
+    advertiser_id: Optional[str],
+    campaign_ids: Optional[List[str]],
+    item_group_ids: Optional[List[str]],
+    context: GMVMaxRouteContext,
 ) -> MetricsResponse:
     """Return GMV Max performance metrics for the requested campaign and level."""
 
@@ -2675,20 +2672,6 @@ async def query_gmvmax_metrics_provider(
     clean_campaign_ids = _sanitize_id_list(campaign_ids)
     clean_item_group_ids = _sanitize_id_list(item_group_ids)
 
-    effective_store_id = store_id or context.store_id
-    if not effective_store_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "missing_store", "message": "store_id is required"},
-        )
-
-    effective_advertiser_id = advertiser_id or context.advertiser_id
-    if not effective_advertiser_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "missing_advertiser", "message": "advertiser_id is required"},
-        )
-
     level_param = (request.query_params.get("level") or level or "campaign").lower()
     try:
         level_value = GMVMaxReportLevel(level_param)
@@ -2702,6 +2685,39 @@ async def query_gmvmax_metrics_provider(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"invalid GMV Max metrics level: {level_param}",
+        )
+
+    if level_value is not GMVMaxReportLevel.OVERVIEW and not (
+        clean_campaign_ids or campaign_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "missing_campaign_id",
+                "message": "campaign_id is required unless level is OVERVIEW.",
+            },
+        )
+
+    effective_store_id = store_id or context.store_id
+    if level_value is GMVMaxReportLevel.OVERVIEW and not effective_store_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "missing_store_id",
+                "message": "store_id is required for OVERVIEW metrics.",
+            },
+        )
+    if not effective_store_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_store", "message": "store_id is required"},
+        )
+
+    effective_advertiser_id = advertiser_id or context.advertiser_id
+    if not effective_advertiser_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_advertiser", "message": "advertiser_id is required"},
         )
 
     if level_value is GMVMaxReportLevel.PRODUCT and not (clean_campaign_ids and len(clean_campaign_ids) > 0):
@@ -2853,58 +2869,89 @@ async def query_gmvmax_metrics_provider(
 
     rows: list[Any] = []
     summary: dict[str, Any] | None = None
+    serialized_rows: list[dict[str, Any]] | None = None
 
     if level_value is GMVMaxReportLevel.OVERVIEW:
         stmt = (
-            select(
-                GmvOverviewMetricsDaily.stat_time_day.label("stat_time_day"),
-                func.sum(
-                    func.coalesce(
-                        GmvOverviewMetricsDaily.net_cost_cents,
-                        GmvOverviewMetricsDaily.cost_cents,
-                        0,
-                    )
-                ).label("spend_cents"),
-                func.sum(GmvOverviewMetricsDaily.gross_revenue_cents).label("gross_revenue_cents"),
-                func.sum(GmvOverviewMetricsDaily.orders).label("orders"),
-            )
-            .where(GmvOverviewMetricsDaily.workspace_id == workspace_id)
-            .where(GmvOverviewMetricsDaily.auth_id == auth_id)
-            .where(GmvOverviewMetricsDaily.advertiser_id == str(effective_advertiser_id))
-            .where(GmvOverviewMetricsDaily.store_id == str(effective_store_id))
-            .where(GmvOverviewMetricsDaily.stat_time_day >= start)
-            .where(GmvOverviewMetricsDaily.stat_time_day <= end)
-            .group_by(GmvOverviewMetricsDaily.stat_time_day)
-            .order_by(GmvOverviewMetricsDaily.stat_time_day.asc())
+            select(GmvOverviewSnapshot)
+            .where(GmvOverviewSnapshot.workspace_id == workspace_id)
+            .where(GmvOverviewSnapshot.auth_id == auth_id)
+            .where(GmvOverviewSnapshot.advertiser_id == str(effective_advertiser_id))
+            .where(GmvOverviewSnapshot.store_id == str(effective_store_id))
+            .where(GmvOverviewSnapshot.snapshot_type == "MANUAL")
+            .where(GmvOverviewSnapshot.start_date == start)
+            .where(GmvOverviewSnapshot.end_date == end)
+            .order_by(GmvOverviewSnapshot.snapshot_at.desc())
+            .limit(1)
         )
 
-        rows = db.execute(stmt).all()
+        snapshot = db.execute(stmt).scalars().first()
 
-        totals = {
-            "spend_cents": 0,
-            "gross_revenue_cents": 0,
-            "orders": 0,
-        }
-        for row in rows:
-            totals["spend_cents"] += int(row.spend_cents or 0)
-            totals["gross_revenue_cents"] += int(row.gross_revenue_cents or 0)
-            totals["orders"] += int(row.orders or 0)
+        if snapshot is None:
+            logger.info(
+                "gmvmax overview metrics snapshot not found",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": str(effective_advertiser_id),
+                    "store_id": str(effective_store_id),
+                    "start_date": start.isoformat(),
+                    "end_date": end.isoformat(),
+                },
+            )
+            rows = []
+            summary = None
+        else:
+            spend_cents = int(snapshot.cost_cents or snapshot.net_cost_cents or 0)
+            gross_cents = int(snapshot.gross_revenue_cents or 0)
+            spend_value = Decimal(spend_cents) / Decimal(100) if spend_cents else Decimal(0)
+            gross_value = Decimal(gross_cents) / Decimal(100) if gross_cents else Decimal(0)
+            orders_value = int(snapshot.orders or 0)
+            cpo_value: float | None = None
+            if orders_value > 0:
+                cpo_value = float(spend_value / Decimal(orders_value))
+            roi_value: float | None = None
+            if spend_cents > 0:
+                roi_value = float(gross_value / spend_value)
 
-        spend_total = Decimal(totals["spend_cents"]) / Decimal(100) if totals["spend_cents"] else Decimal(0)
-        gmv_total = Decimal(totals["gross_revenue_cents"]) / Decimal(100) if totals["gross_revenue_cents"] else Decimal(0)
-        summary = {
-            "spend": float(spend_total),
-            "cost": float(spend_total),
-            "net_cost": float(spend_total),
-            "gmv": float(gmv_total),
-            "gross_revenue": float(gmv_total),
-            "orders": totals["orders"],
-            "roas": float(gmv_total / spend_total) if spend_total > 0 else None,
-            "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
-        }
+            summary = {
+                "spend": float(spend_value),
+                "cost": float(spend_value),
+                "net_cost": float(spend_value),
+                "gmv": float(gross_value),
+                "gross_revenue": float(gross_value),
+                "orders": orders_value,
+                "cost_per_order": cpo_value,
+                "roas": roi_value,
+                "roi": roi_value,
+            }
+
+            rows = [
+                {
+                    "metrics": {
+                        "spend": spend_value,
+                        "cost": spend_value,
+                        "net_cost": spend_value,
+                        "gmv": gross_value,
+                        "gross_revenue": gross_value,
+                        "orders": orders_value,
+                        "cost_per_order": cpo_value,
+                        "roas": roi_value,
+                        "roi": roi_value,
+                    },
+                    "dimensions": {
+                        "advertiser_id": str(effective_advertiser_id),
+                        "store_id": str(effective_store_id),
+                        "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
+                        "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
+                        "stat_time_day": (snapshot.end_date or snapshot.start_date or start).isoformat(),
+                    },
+                }
+            ]
+            serialized_rows = rows
 
     elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
-        campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
+        campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
         stmt = (
             select(
                 GmvCampaign.campaign_id,
@@ -2952,7 +2999,7 @@ async def query_gmvmax_metrics_provider(
             "roi": float(gmv_total / spend_total) if spend_total > 0 else None,
         }
     else:
-        campaign_filter_ids = clean_campaign_ids or [str(campaign_id)]
+        campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
         snapshots = latest_creative_metrics_snapshots(
             db,
             workspace_id=workspace_id,
@@ -3020,11 +3067,11 @@ async def query_gmvmax_metrics_provider(
             "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
         }
 
-    if level_value is GMVMaxReportLevel.OVERVIEW:
+    if serialized_rows is None and level_value is GMVMaxReportLevel.OVERVIEW:
         serialized_rows = _serialize_overview_rows(rows)
-    elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
+    elif serialized_rows is None and level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
         serialized_rows = _serialize_campaign_rows(rows)
-    else:
+    elif serialized_rows is None:
         serialized_rows = _serialize_creative_rows(rows)
 
     return {
@@ -3043,6 +3090,83 @@ async def query_gmvmax_metrics_provider(
         },
         "request_id": None,
     }
+
+
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+async def query_gmvmax_metrics_root_provider(
+    request: Request,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: Optional[str] = Query(None),
+    store_id: Optional[str] = Query(None),
+    level: str = Query("campaign"),
+    start_date: Optional[Union[date, datetime, str]] = Query(None),
+    end_date: Optional[Union[date, datetime, str]] = Query(None),
+    advertiser_id: Optional[str] = Query(None),
+    campaign_ids: Optional[List[str]] = Query(None),
+    item_group_ids: Optional[List[str]] = Query(None),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> MetricsResponse:
+    return await _query_gmvmax_metrics(
+        request,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        campaign_id=campaign_id,
+        store_id=store_id,
+        level=level,
+        start_date=start_date,
+        end_date=end_date,
+        advertiser_id=advertiser_id,
+        campaign_ids=campaign_ids,
+        item_group_ids=item_group_ids,
+        context=context,
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/metrics",
+    response_model=MetricsResponse,
+    dependencies=[Depends(require_tenant_member)],
+)
+async def query_gmvmax_metrics_provider(
+    request: Request,
+    workspace_id: int,
+    provider: str,
+    auth_id: int,
+    campaign_id: str,
+    store_id: Optional[str] = Query(None),
+    level: str = Query("campaign"),
+    start_date: Optional[Union[date, datetime, str]] = Query(None),
+    end_date: Optional[Union[date, datetime, str]] = Query(None),
+    advertiser_id: Optional[str] = Query(None),
+    campaign_ids: Optional[List[str]] = Query(None),
+    item_group_ids: Optional[List[str]] = Query(None),
+    context: GMVMaxRouteContext = Depends(get_route_context),
+) -> MetricsResponse:
+    """Return GMV Max performance metrics for the requested campaign and level."""
+
+    return await _query_gmvmax_metrics(
+        request,
+        workspace_id=workspace_id,
+        provider=provider,
+        auth_id=auth_id,
+        campaign_id=campaign_id,
+        store_id=store_id,
+        level=level,
+        start_date=start_date,
+        end_date=end_date,
+        advertiser_id=advertiser_id,
+        campaign_ids=campaign_ids,
+        item_group_ids=item_group_ids,
+        context=context,
+    )
+
 
 
 # === GMV Max actions, creative heating, and strategy ===
@@ -3211,7 +3335,7 @@ async def _apply_creative_heating_action(
 
 
 @router.post(
-    "/{campaign_id}/actions",
+    "/campaigns/{campaign_id}/actions",
     response_model=Union[CampaignActionResponse, CreativeHeatingActionResponse],
 )
 async def apply_gmvmax_campaign_action_provider(
@@ -3360,7 +3484,7 @@ async def apply_gmvmax_campaign_action_provider(
 
 
 @router.get(
-    "/{campaign_id}/actions",
+    "/campaigns/{campaign_id}/actions",
     response_model=ActionLogEntry,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3395,7 +3519,7 @@ async def list_gmvmax_action_logs_provider(
 
 
 @router.get(
-    "/{campaign_id}/creatives/heating",
+    "/campaigns/{campaign_id}/creatives/heating",
     response_model=CreativeHeatingListResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3421,7 +3545,7 @@ async def list_gmvmax_creative_heating_provider(
 
 
 @router.get(
-    "/{campaign_id}/strategy",
+    "/campaigns/{campaign_id}/strategy",
     response_model=StrategyResponse,
     dependencies=[Depends(require_tenant_member)],
 )
@@ -3483,7 +3607,7 @@ async def get_gmvmax_strategy_provider(
 
 
 @router.put(
-    "/{campaign_id}/strategy",
+    "/campaigns/{campaign_id}/strategy",
     response_model=StrategyUpdateResponse,
     dependencies=[Depends(require_tenant_admin)],
 )
@@ -3538,7 +3662,7 @@ async def update_gmvmax_strategy_provider(
 
 
 @router.post(
-    "/{campaign_id}/strategies/preview",
+    "/campaigns/{campaign_id}/strategies/preview",
     response_model=AsyncTaskResponse,
     dependencies=[Depends(require_tenant_member)],
 )
