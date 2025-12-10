@@ -36,7 +36,6 @@ from app.data.models.gmv_restructured import (
     GmvCampaign,
     GmvCampaignMetricsDaily,
     GmvCampaignProduct,
-    GmvOverviewMetricsDaily,
     GmvOverviewSnapshot,
     GmvCreativeMetricsDaily,
 )
@@ -2430,7 +2429,7 @@ async def get_gmvmax_campaign_provider(
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             detail="campaign not found in cache; trigger refresh first",
-    )
+        )
 
     sessions: List[GMVMaxSession] = []
     sessions_page_info = None
@@ -2737,38 +2736,6 @@ async def _query_gmvmax_metrics(
 
     db = context.db
 
-    def _serialize_overview_rows(rows: list[Any]) -> list[dict[str, Any]]:
-        serialized: list[dict[str, Any]] = []
-        for row in rows:
-            spend_cents = int(row.spend_cents or 0)
-            revenue_cents = int(row.gross_revenue_cents or 0)
-            spend_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
-            revenue_value = float(Decimal(revenue_cents) / Decimal(100)) if revenue_cents else 0.0
-            roas_value: float | None = None
-            if spend_cents > 0:
-                roas_value = float(Decimal(revenue_cents) / Decimal(spend_cents))
-
-            serialized.append(
-                {
-                    "metrics": {
-                        "spend": spend_value,
-                        "cost": spend_value,
-                        "net_cost": spend_value,
-                        "gross_revenue": revenue_value,
-                        "gmv": revenue_value,
-                        "orders": int(row.orders or 0),
-                        "roas": roas_value,
-                        "roi": roas_value,
-                    },
-                    "dimensions": {
-                        "advertiser_id": str(effective_advertiser_id),
-                        "store_id": str(effective_store_id),
-                        "stat_time_day": row.stat_time_day.isoformat(),
-                    },
-                }
-            )
-        return serialized
-
     def _serialize_campaign_rows(rows: list[Any]) -> list[dict[str, Any]]:
         serialized: list[dict[str, Any]] = []
         for row in rows:
@@ -2899,55 +2866,54 @@ async def _query_gmvmax_metrics(
                     "end_date": end.isoformat(),
                 },
             )
-            rows = []
             summary = None
+            serialized_rows = []
         else:
             spend_cents = int(snapshot.net_cost_cents or snapshot.cost_cents or 0)
-            gmv_cents = int(snapshot.gross_revenue_cents or 0)
+            gross_cents = int(snapshot.gross_revenue_cents or 0)
             orders_value = int(snapshot.orders or 0)
 
-            spend = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
-            gmv = float(Decimal(gmv_cents) / Decimal(100)) if gmv_cents else 0.0
-
-            roi_value = (
-                float(snapshot.roi)
-                if snapshot.roi is not None
-                else (float(gmv / spend) if spend > 0 else None)
-            )
-            cpo_value = (
-                float(snapshot.cost_per_order)
-                if snapshot.cost_per_order is not None
-                else (
-                    float(Decimal(spend_cents) / Decimal(orders_value) / Decimal(100))
-                    if spend_cents and orders_value
-                    else None
-                )
-            )
+            spend_value = float(Decimal(spend_cents) / Decimal(100)) if spend_cents else 0.0
+            gross_value = float(Decimal(gross_cents) / Decimal(100)) if gross_cents else 0.0
+            roi_value = float(snapshot.roi) if snapshot.roi is not None else None
+            cpo_value = float(snapshot.cost_per_order) if snapshot.cost_per_order is not None else None
+            if cpo_value is None and orders_value > 0 and spend_cents:
+                cpo_value = float(Decimal(spend_cents) / Decimal(orders_value) / Decimal(100))
 
             summary = {
-                "spend": spend,
-                "cost": spend,
-                "net_cost": spend,
-                "gmv": gmv,
-                "gross_revenue": gmv,
+                "spend": spend_value,
+                "cost": spend_value,
+                "net_cost": spend_value,
+                "gmv": gross_value,
+                "gross_revenue": gross_value,
                 "orders": orders_value,
                 "cost_per_order": cpo_value,
                 "roas": roi_value,
                 "roi": roi_value,
             }
 
-            row = {
-                "metrics": dict(summary),
-                "dimensions": {
-                    "advertiser_id": str(effective_advertiser_id),
-                    "store_id": str(effective_store_id),
-                    "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
-                    "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
-                    "stat_time_day": (snapshot.end_date or snapshot.start_date or start).isoformat(),
-                },
-            }
-            rows = [row]
-            serialized_rows = rows
+            serialized_rows = [
+                {
+                    "metrics": {
+                        "spend": spend_value,
+                        "cost": spend_value,
+                        "net_cost": spend_value,
+                        "gmv": gross_value,
+                        "gross_revenue": gross_value,
+                        "orders": orders_value,
+                        "cost_per_order": cpo_value,
+                        "roas": roi_value,
+                        "roi": roi_value,
+                    },
+                    "dimensions": {
+                        "advertiser_id": str(effective_advertiser_id),
+                        "store_id": str(effective_store_id),
+                        "start_date": snapshot.start_date.isoformat() if snapshot.start_date else None,
+                        "end_date": snapshot.end_date.isoformat() if snapshot.end_date else None,
+                        "stat_time_day": (snapshot.end_date or snapshot.start_date or start).isoformat(),
+                    },
+                }
+            ]
 
     elif level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
         campaign_filter_ids = clean_campaign_ids or ([str(campaign_id)] if campaign_id is not None else [])
@@ -3066,9 +3032,7 @@ async def _query_gmvmax_metrics(
             "roi": float(totals["gmv"] / totals["spend"]) if totals["spend"] > 0 else None,
         }
 
-    if serialized_rows is None and level_value is GMVMaxReportLevel.OVERVIEW:
-        serialized_rows = _serialize_overview_rows(rows)
-    elif serialized_rows is None and level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
+    if serialized_rows is None and level_value in {GMVMaxReportLevel.CAMPAIGN, GMVMaxReportLevel.PRODUCT}:
         serialized_rows = _serialize_campaign_rows(rows)
     elif serialized_rows is None:
         serialized_rows = _serialize_creative_rows(rows)
