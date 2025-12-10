@@ -31,6 +31,7 @@ import {
   getGmvMaxOptions,
 } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
+import { loadOverviewRange, saveOverviewRange } from '../utils/overviewRangeStorage.js';
 
 import {
   PROVIDER,
@@ -74,7 +75,6 @@ import {
   isCampaignDeleted,
   filterCampaignsByStatus,
   parseOptionalFloat,
-  summariseMetrics,
   formatMoney,
   formatRoi,
   getCampaignStatusMeta,
@@ -149,7 +149,6 @@ const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertis
 
 const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
-const SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 const OVERVIEW_RANGE_OPTIONS = [
   { key: 'today', label: '当日' },
   { key: 'yesterday', label: '昨天' },
@@ -225,8 +224,37 @@ function deriveOverviewSnapshotSummary(payload) {
 
   const report = payload.report || payload.data?.report || payload.data;
   const snapshot = payload.snapshot || payload.data?.snapshot || payload.data;
-  const snapshotCandidate = snapshot || report?.summary || payload;
+  const summarySource = report?.summary || snapshot || payload;
 
+  if (summarySource && typeof summarySource === 'object') {
+    const spendValue = coerceNumber(
+      summarySource.cost ?? summarySource.spend ?? summarySource.net_cost,
+    );
+    const gmvValue = coerceNumber(summarySource.gmv ?? summarySource.gross_revenue);
+    const ordersValue = coerceNumber(summarySource.orders);
+    const roasValue = coerceNumber(summarySource.roas ?? summarySource.roi);
+    const costPerOrderValue = coerceNumber(summarySource.cost_per_order);
+
+    const hasDirectFields = [
+      spendValue,
+      gmvValue,
+      ordersValue,
+      roasValue,
+      costPerOrderValue,
+    ].some((value) => value !== null);
+
+    if (hasDirectFields) {
+      return {
+        spend: spendValue,
+        gmv: gmvValue,
+        roas: roasValue,
+        orders: ordersValue,
+        costPerOrder: costPerOrderValue,
+      };
+    }
+  }
+
+  const snapshotCandidate = snapshot || report?.summary || payload;
   const hasSnapshotFields = snapshotCandidate
     && [
       'cost_cents',
@@ -251,19 +279,6 @@ function deriveOverviewSnapshotSummary(payload) {
     };
   }
 
-  if (report) {
-    const summarised = summariseMetrics(report);
-    if (summarised) {
-      return {
-        ...summarised,
-        costPerOrder:
-          summarised.orders && summarised.orders > 0
-            ? summarised.spend / summarised.orders
-            : null,
-      };
-    }
-  }
-
   return null;
 }
 
@@ -281,7 +296,6 @@ export default function GmvMaxOverviewPage() {
   const [intervalNotice, setIntervalNotice] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState(null);
-  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [advertiserTimezone, setAdvertiserTimezone] = useState(() => timezoneUtils.resolveTimezoneLabel());
   const [includeDeletedCampaigns, setIncludeDeletedCampaigns] = useState(false);
   const [seriesStatusFilter, setSeriesStatusFilter] = useState('running');
@@ -389,6 +403,32 @@ export default function GmvMaxOverviewPage() {
     authId,
     businessCenterId,
     hasLoadedScope,
+    provider,
+    storeId,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    const savedRange = loadOverviewRange(workspaceId, provider, authId, storeId);
+    if (savedRange) {
+      setOverviewRangeKey(savedRange.rangeKey || 'today');
+      setOverviewCustomRange(savedRange.customRange || { start: '', end: '' });
+    } else {
+      setOverviewRangeKey('today');
+      setOverviewCustomRange({ start: '', end: '' });
+    }
+  }, [authId, provider, storeId, workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId || !provider || !authId || !storeId) return;
+    saveOverviewRange(workspaceId, provider, authId, storeId, {
+      rangeKey: overviewRangeKey,
+      customRange: overviewCustomRange,
+    });
+  }, [
+    authId,
+    overviewCustomRange,
+    overviewRangeKey,
     provider,
     storeId,
     workspaceId,
@@ -1556,7 +1596,6 @@ export default function GmvMaxOverviewPage() {
     if (!workspaceId || !provider || !authId) return;
     let nextNotice = null;
     let nextError = null;
-    const now = Date.now();
 
     if (!isScopeReady) {
       setSyncNotice(null);
@@ -1578,18 +1617,12 @@ export default function GmvMaxOverviewPage() {
       setSyncError('请选择有效的时间范围后再同步 GMV Max 数据。');
       return;
     }
-    if (lastSyncAt && now - lastSyncAt < SYNC_COOLDOWN_MS) {
-      setSyncNotice(null);
-      setSyncError('同步请求过于频繁，请稍后再试。');
-      return;
-    }
     if (syncInFlightRef.current || isSyncing || syncTask.isSyncing) return;
 
     syncInFlightRef.current = true;
     setSyncNotice({ variant: 'info', message: '正在同步 GMV Max 数据，请稍候…' });
     setSyncError(null);
     setIsSyncing(true);
-    setLastSyncAt(now);
     try {
       await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
       const refetchPromises = [];
@@ -1658,7 +1691,6 @@ export default function GmvMaxOverviewPage() {
     hasValidOverviewRange,
     isScopeReady,
     isSyncing,
-    lastSyncAt,
     metadataSyncMutation,
     performCampaignSync,
     productSyncMutation,
