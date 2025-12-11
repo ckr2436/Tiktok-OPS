@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable, Collection, Mapping, Optional, Sequence, TypedDict
 
 from sqlalchemy import select, func, delete, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.data.models.gmv_restructured import (
@@ -3109,20 +3110,36 @@ def upsert_overview_snapshot(
     metrics_rows: Sequence[Mapping[str, Any]],
 ) -> GmvOverviewSnapshot:
     aggregated = _aggregate_overview_metrics(metrics_rows)
+    now = datetime.utcnow()
 
-    stmt = (
-        select(GmvOverviewSnapshot)
-        .where(GmvOverviewSnapshot.workspace_id == int(workspace_id))
-        .where(GmvOverviewSnapshot.auth_id == int(auth_id))
-        .where(GmvOverviewSnapshot.advertiser_id == str(advertiser_id))
-        .where(GmvOverviewSnapshot.store_id == str(store_id))
-        .where(GmvOverviewSnapshot.snapshot_type == str(snapshot_type))
-        .where(GmvOverviewSnapshot.start_date == start_date)
-        .where(GmvOverviewSnapshot.end_date == end_date)
-    )
-    instance = db.execute(stmt).scalars().first()
-    if instance is None:
-        instance = GmvOverviewSnapshot(
+    def _fetch_existing() -> GmvOverviewSnapshot | None:
+        stmt = (
+            select(GmvOverviewSnapshot)
+            .where(GmvOverviewSnapshot.workspace_id == int(workspace_id))
+            .where(GmvOverviewSnapshot.auth_id == int(auth_id))
+            .where(GmvOverviewSnapshot.advertiser_id == str(advertiser_id))
+            .where(GmvOverviewSnapshot.store_id == str(store_id))
+            .where(GmvOverviewSnapshot.snapshot_type == str(snapshot_type))
+            .where(GmvOverviewSnapshot.start_date == start_date)
+            .where(GmvOverviewSnapshot.end_date == end_date)
+            .order_by(GmvOverviewSnapshot.snapshot_at.desc())
+        )
+        return db.execute(stmt).scalars().first()
+
+    def _apply_snapshot_values(target: GmvOverviewSnapshot) -> None:
+        target.start_date = start_date
+        target.end_date = end_date
+        target.snapshot_at = now
+        target.cost_cents = aggregated.get("cost_cents")
+        target.net_cost_cents = aggregated.get("net_cost_cents")
+        target.orders = aggregated.get("orders")
+        target.gross_revenue_cents = aggregated.get("gross_revenue_cents")
+        target.cost_per_order = aggregated.get("cost_per_order")
+        target.roi = aggregated.get("roi")
+
+    snapshot = _fetch_existing()
+    if snapshot is None:
+        snapshot = GmvOverviewSnapshot(
             workspace_id=int(workspace_id),
             auth_id=int(auth_id),
             advertiser_id=str(advertiser_id),
@@ -3131,20 +3148,35 @@ def upsert_overview_snapshot(
             start_date=start_date,
             end_date=end_date,
         )
-        db.add(instance)
+        db.add(snapshot)
 
-    instance.start_date = start_date
-    instance.end_date = end_date
-    instance.snapshot_at = datetime.utcnow()
-    instance.cost_cents = aggregated.get("cost_cents")
-    instance.net_cost_cents = aggregated.get("net_cost_cents")
-    instance.orders = aggregated.get("orders")
-    instance.gross_revenue_cents = aggregated.get("gross_revenue_cents")
-    instance.cost_per_order = aggregated.get("cost_per_order")
-    instance.roi = aggregated.get("roi")
+    _apply_snapshot_values(snapshot)
 
-    db.flush()
-    return instance
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if "uk_gmv_overview_snapshot" not in str(exc.orig):
+            raise
+        snapshot = _fetch_existing()
+        if snapshot is None:
+            raise
+        _apply_snapshot_values(snapshot)
+        db.add(snapshot)
+        db.flush()
+
+    if snapshot_type == "MANUAL":
+        retention_days = 90
+        cutoff_date = date.today() - timedelta(days=retention_days)
+        (
+            db.query(GmvOverviewSnapshot)
+            .filter(GmvOverviewSnapshot.snapshot_type == "MANUAL")
+            .filter(GmvOverviewSnapshot.end_date < cutoff_date)
+            .delete(synchronize_session=False)
+        )
+        db.flush()
+
+    return snapshot
 
 
 def _build_campaign_report_request(
