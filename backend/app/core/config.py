@@ -176,6 +176,7 @@ class Settings(BaseSettings):
     # =========================
     GMV_MAX_OPTIONS_POLL_TIMEOUT_SECONDS: float = 3.0
     GMV_MAX_OPTIONS_POLL_INTERVAL_SECONDS: float = 0.3
+    GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS: int = 90
 
     # =========================
     # Sync wait helpers
