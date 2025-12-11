@@ -9,6 +9,7 @@ from typing import Sequence
 from urllib.parse import urlparse
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Queue, Exchange
 
 from app.core.config import settings
@@ -143,6 +144,14 @@ beat_schedule.setdefault(
             )
         ),
         "options": {"queue": "gmvmax_sync"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_cleanup_overview_snapshots",
+    {
+        "task": "gmvmax.cleanup_overview_snapshots",
+        "schedule": crontab(hour=3, minute=0),
+        "options": {"queue": "gmvmax"},
     },
 )
 celery_app.conf.beat_schedule = beat_schedule

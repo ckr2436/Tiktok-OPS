@@ -803,8 +803,9 @@ class GmvOverviewSnapshot(Base, CoreFinancialMetricMixin):
             "advertiser_id",
             "store_id",
             "snapshot_type",
+            "start_date",
             "end_date",
-            name="uk_gmv_overview_snapshot_scope",
+            name="uk_gmv_overview_snapshots_range",
         ),
         Index(
             "ix_gmv_overview_snapshots_ws_auth_adv",

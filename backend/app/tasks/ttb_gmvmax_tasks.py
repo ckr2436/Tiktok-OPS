@@ -13,7 +13,9 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
+from app.core.config import settings
 from app.data.db import get_db
+from app.data.models.gmv_restructured import GmvOverviewSnapshot
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_balances import sync_advertiser_balance
@@ -46,6 +48,10 @@ from app.providers.tiktok_business.gmvmax_client import (
 )
 
 logger = logging.getLogger("gmv.tasks.gmvmax")
+
+GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS = int(
+    getattr(settings, "GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS", 90)
+)
 
 
 T = TypeVar("T")
@@ -133,6 +139,31 @@ def _iter_active_campaigns(
     if advertiser_id is not None:
         query = query.where(TTBGmvMaxCampaign.advertiser_id == str(advertiser_id))
     return list(db.execute(query).scalars().all())
+
+
+@celery_app.task(
+    name="gmvmax.cleanup_overview_snapshots",
+    queue="gmvmax",
+)
+def cleanup_overview_snapshots() -> int:
+    """删除超出 TTL 的 GMV Max overview 快照。"""
+
+    cutoff = date.today() - timedelta(days=GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS)
+    db = _db_session()
+    try:
+        deleted = (
+            db.query(GmvOverviewSnapshot)
+            .filter(GmvOverviewSnapshot.end_date < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        logger.info(
+            "gmvmax overview snapshots cleanup done",
+            extra={"cutoff": cutoff.isoformat(), "deleted": int(deleted)},
+        )
+        return int(deleted)
+    finally:
+        _close_session(db)
 
 
 @celery_app.task(

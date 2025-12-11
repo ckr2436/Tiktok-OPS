@@ -3117,6 +3117,7 @@ def upsert_overview_snapshot(
         .where(GmvOverviewSnapshot.advertiser_id == str(advertiser_id))
         .where(GmvOverviewSnapshot.store_id == str(store_id))
         .where(GmvOverviewSnapshot.snapshot_type == str(snapshot_type))
+        .where(GmvOverviewSnapshot.start_date == start_date)
         .where(GmvOverviewSnapshot.end_date == end_date)
     )
     instance = db.execute(stmt).scalars().first()
