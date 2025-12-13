@@ -1530,6 +1530,7 @@ export default function GmvMaxOverviewPage() {
   const metadataSyncMutation = useSyncAccountMetadataMutation(workspaceId, provider, authId);
   const productSyncMutation = useSyncAccountProductsMutation(workspaceId, provider, authId);
   const balanceSyncMutation = useSyncAdvertiserBalanceMutation(workspaceId, provider, authId);
+  const balanceSyncMutateRef = useRef(balanceSyncMutation.mutate);
   const syncStatusLabel = useMemo(() => {
     const state = (syncTask.lastState || '').toUpperCase();
     if (state === 'PENDING') return '排队中…';
@@ -1778,6 +1779,10 @@ export default function GmvMaxOverviewPage() {
   ]);
 
   useEffect(() => {
+    balanceSyncMutateRef.current = balanceSyncMutation.mutate;
+  }, [balanceSyncMutation.mutate]);
+
+  useEffect(() => {
     if (balanceRefreshIntervalRef.current) {
       clearInterval(balanceRefreshIntervalRef.current);
       balanceRefreshIntervalRef.current = null;
@@ -1787,7 +1792,7 @@ export default function GmvMaxOverviewPage() {
     }
 
     const syncBalance = () => {
-      balanceSyncMutation.mutate({
+      balanceSyncMutateRef.current?.({
         bc_id: businessCenterId,
         advertiser_id: advertiserId,
         store_id: storeId,
@@ -1802,15 +1807,7 @@ export default function GmvMaxOverviewPage() {
         balanceRefreshIntervalRef.current = null;
       }
     };
-  }, [
-    advertiserId,
-    authId,
-    balanceSyncMutation,
-    businessCenterId,
-    provider,
-    storeId,
-    workspaceId,
-  ]);
+  }, [advertiserId, authId, businessCenterId, provider, storeId, workspaceId]);
 
   const handleOpenCreate = useCallback(() => {
     if (!canCreateSeries) return;
