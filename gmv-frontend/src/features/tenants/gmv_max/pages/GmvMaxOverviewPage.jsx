@@ -149,6 +149,8 @@ const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertis
 
 const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
+const AUTO_OVERVIEW_SYNC_KEYS = ['today', 'yesterday', '7d', '14d', '30d'];
+const BALANCE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const OVERVIEW_RANGE_OPTIONS = [
   { key: 'today', label: '当日' },
   { key: 'yesterday', label: '昨天' },
@@ -267,7 +269,7 @@ function deriveOverviewSnapshotSummary(payload) {
 
   if (hasSnapshotFields) {
     const spendValue = centsToAmount(
-      snapshotCandidate.net_cost_cents ?? snapshotCandidate.cost_cents,
+      snapshotCandidate.cost_cents ?? snapshotCandidate.net_cost_cents,
     );
     const gmvValue = centsToAmount(snapshotCandidate.gross_revenue_cents);
     return {
@@ -310,6 +312,8 @@ export default function GmvMaxOverviewPage() {
   const syncInFlightRef = useRef(false);
   const performSyncRef = useRef(null);
   const lastAutoSyncScopeRef = useRef('');
+  const overviewAutoSyncScopeRef = useRef('');
+  const balanceRefreshIntervalRef = useRef();
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
   const businessCenterId = scope.bcId ? String(scope.bcId) : '';
@@ -1710,6 +1714,41 @@ export default function GmvMaxOverviewPage() {
     performSyncRef.current = performSync;
   }, [performSync]);
 
+  const autoSyncOverviewRanges = useCallback(async () => {
+    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
+    if (syncTask.isSyncing) return;
+
+    const ranges = AUTO_OVERVIEW_SYNC_KEYS.map((rangeKey) => ({
+      key: rangeKey,
+      params: computeOverviewRange(rangeKey, { start: '', end: '' }, advertiserTimezone),
+    }));
+
+    for (const { key, params } of ranges) {
+      if (!params.start_date || !params.end_date) continue;
+      try {
+        const syncResult = await syncTask.startSync({
+          start_date: params.start_date,
+          end_date: params.end_date,
+          levels: ['OVERVIEW'],
+          campaign_ids: null,
+        });
+        if (syncResult?.completion) {
+          await syncResult.completion.catch(() => {});
+        }
+      } catch (error) {
+        console.error('Failed to auto-sync GMV Max overview', key, error);
+      }
+    }
+  }, [
+    advertiserTimezone,
+    authId,
+    isScopeReady,
+    provider,
+    storeId,
+    syncTask,
+    workspaceId,
+  ]);
+
   useEffect(() => {
     if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
     const scopeKey = `${workspaceId}:${provider}:${authId}:${storeId}`;
@@ -1719,6 +1758,59 @@ export default function GmvMaxOverviewPage() {
       performSyncRef.current();
     }
   }, [authId, isScopeReady, provider, storeId, workspaceId]);
+
+  useEffect(() => {
+    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
+    if (syncTask.isSyncing) return;
+    const scopeKey = `${workspaceId}:${provider}:${authId}:${storeId}:${advertiserTimezone}`;
+    if (overviewAutoSyncScopeRef.current === scopeKey) return;
+    overviewAutoSyncScopeRef.current = scopeKey;
+    autoSyncOverviewRanges();
+  }, [
+    advertiserTimezone,
+    authId,
+    autoSyncOverviewRanges,
+    isScopeReady,
+    provider,
+    storeId,
+    syncTask.isSyncing,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (balanceRefreshIntervalRef.current) {
+      clearInterval(balanceRefreshIntervalRef.current);
+      balanceRefreshIntervalRef.current = null;
+    }
+    if (!workspaceId || !provider || !authId || !businessCenterId || !advertiserId || !storeId) {
+      return undefined;
+    }
+
+    const syncBalance = () => {
+      balanceSyncMutation.mutate({
+        bc_id: businessCenterId,
+        advertiser_id: advertiserId,
+        store_id: storeId,
+      });
+    };
+
+    syncBalance();
+    balanceRefreshIntervalRef.current = setInterval(syncBalance, BALANCE_REFRESH_INTERVAL_MS);
+    return () => {
+      if (balanceRefreshIntervalRef.current) {
+        clearInterval(balanceRefreshIntervalRef.current);
+        balanceRefreshIntervalRef.current = null;
+      }
+    };
+  }, [
+    advertiserId,
+    authId,
+    balanceSyncMutation,
+    businessCenterId,
+    provider,
+    storeId,
+    workspaceId,
+  ]);
 
   const handleOpenCreate = useCallback(() => {
     if (!canCreateSeries) return;
