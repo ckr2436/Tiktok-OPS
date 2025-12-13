@@ -5,7 +5,7 @@ import contextlib
 import logging
 """Celery task layer orchestrating GMV Max syncs and actions."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
@@ -18,7 +18,7 @@ from app.data.db import get_db
 from app.data.models.gmv_restructured import GmvOverviewSnapshot
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
-from app.services.ttb_balances import sync_advertiser_balance
+from app.services.ttb_balances import select_latest_balance, sync_advertiser_balance
 from app.services.gmvmax_heating import run_creative_heating_cycle
 from app.services.gmvmax_creative_metrics import (
     latest_creative_metrics_snapshots,
@@ -51,6 +51,10 @@ logger = logging.getLogger("gmv.tasks.gmvmax")
 
 GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS = int(
     getattr(settings, "GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS", 90)
+)
+
+BALANCE_FETCH_MIN_INTERVAL_SECONDS = int(
+    getattr(settings, "TTB_BALANCE_MIN_FETCH_INTERVAL_SECONDS", 300)
 )
 
 
@@ -496,6 +500,43 @@ def task_gmvmax_sync_advertiser_balance(
         return {"status": "skipped", "reason": "missing identifiers"}
     db = _db_session()
     try:
+        last_balance = None
+        if advertiser_id and auth_id:
+            last_balance = select_latest_balance(
+                db,
+                workspace_id=int(workspace_id),
+                auth_id=int(auth_id),
+                advertiser_id=str(advertiser_id),
+            )
+        if last_balance and last_balance.fetched_at:
+            fetched_at = last_balance.fetched_at
+            if fetched_at.tzinfo is None:
+                fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - fetched_at) < timedelta(
+                seconds=BALANCE_FETCH_MIN_INTERVAL_SECONDS
+            ):
+                logger.info(
+                    "gmvmax.sync_advertiser_balance skipped (recently synced)",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "bc_id": bc_id,
+                        "schedule_id": schedule_id,
+                        "idempotency_key": idempotency_key,
+                        "run_id": run_id,
+                        "fetched_at": fetched_at.isoformat(),
+                    },
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "recently_synced",
+                    "currency": last_balance.currency,
+                    "cash_balance": float(last_balance.cash_balance)
+                    if last_balance.cash_balance is not None
+                    else None,
+                    "fetched_at": fetched_at.isoformat(),
+                }
         result = asyncio.run(
             sync_advertiser_balance(
                 db,
