@@ -322,6 +322,25 @@ class DBScheduler(Scheduler):
         mis_grace = int(row.misfire_grace_s or 0)
         jitter = int(row.jitter_s or 0)
 
+        # 对 interval 计划做基础校验，避免 interval_seconds < MIN_INTERVAL 时陷入高频触发
+        if row.schedule_type == "interval" and (
+            not row.interval_seconds or row.interval_seconds < MIN_INTERVAL
+        ):
+            logger.warning(
+                "schedule interval_seconds below MIN_INTERVAL; disabling to avoid tight loop",
+                extra={
+                    "schedule_id": int(row.id),
+                    "interval_seconds": row.interval_seconds,
+                    "min_interval": MIN_INTERVAL,
+                },
+            )
+            db.execute(
+                update(Schedule)
+                .where(Schedule.id == row.id)
+                .values(next_fire_at=None, enabled=False)
+            )
+            return
+
         # 计算“本次应触发的时刻”（fire_at 使用 aware UTC 或 DB 原值）
         if row.schedule_type == "oneoff":
             fire_at = row.oneoff_run_at
