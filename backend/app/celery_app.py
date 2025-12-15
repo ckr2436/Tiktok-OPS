@@ -154,6 +154,14 @@ beat_schedule.setdefault(
         "options": {"queue": "gmvmax"},
     },
 )
+beat_schedule.setdefault(
+    "gmvmax_cleanup_campaign_tables",
+    {
+        "task": "gmvmax.cleanup_campaign_tables",
+        "schedule": crontab(hour=4, minute=0),
+        "options": {"queue": "gmvmax"},
+    },
+)
 celery_app.conf.beat_schedule = beat_schedule
 
 # GMV Max 同步任务周期模板（仅启用选中的一个，避免多个节拍并行）

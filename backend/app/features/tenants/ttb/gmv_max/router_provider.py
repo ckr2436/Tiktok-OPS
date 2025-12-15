@@ -492,20 +492,31 @@ def _log_action_entry(
 
 
 def _dto_to_report_entry(row: GMVMaxMetricDTO) -> GMVMaxReportEntry:
+    def _decimal_to_str(value: Any, *, quantize: str | None = None) -> str | None:
+        if value is None:
+            return None
+        try:
+            dec_value = Decimal(value)
+        except Exception:  # noqa: BLE001 - defensive conversion
+            return None
+        if quantize:
+            dec_value = dec_value.quantize(Decimal(quantize))
+        return format(dec_value.normalize(), "f")
+
     metrics = {
         "impressions": row.impressions,
         "clicks": row.clicks,
-        "cost": row.cost,
-        "net_cost": row.net_cost,
+        "cost": _decimal_to_str(row.cost, quantize="0.01"),
+        "net_cost": _decimal_to_str(row.net_cost, quantize="0.01"),
         "orders": row.orders,
-        "cost_per_order": row.cost_per_order,
-        "gross_revenue": row.gross_revenue,
-        "roi": row.roi,
+        "cost_per_order": _decimal_to_str(row.cost_per_order, quantize="0.0001"),
+        "gross_revenue": _decimal_to_str(row.gross_revenue, quantize="0.01"),
+        "roi": _decimal_to_str(row.roi, quantize="0.0001"),
         "product_impressions": row.product_impressions,
         "product_clicks": row.product_clicks,
-        "product_click_rate": row.product_click_rate,
-        "ad_click_rate": row.ad_click_rate,
-        "ad_conversion_rate": row.ad_conversion_rate,
+        "product_click_rate": _decimal_to_str(row.product_click_rate, quantize="0.0001"),
+        "ad_click_rate": _decimal_to_str(row.ad_click_rate, quantize="0.0001"),
+        "ad_conversion_rate": _decimal_to_str(row.ad_conversion_rate, quantize="0.0001"),
         "live_views": row.live_views,
         "live_follows": row.live_follows,
     }

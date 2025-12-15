@@ -69,6 +69,24 @@ from .gmv_restructured import (
     GmvLivestreamMetricsDaily,
     GmvLivestreamMetricsHourly,
 )
+from .gmvmax_campaign_catalog import (
+    GmvmaxProductCampaignCatalog,
+    GmvmaxLiveCampaignCatalog,
+    GmvmaxProductCampaignItemGroup,
+    GmvmaxLiveCampaignIdentity,
+)
+from .gmvmax_campaign_metrics import (
+    GmvmaxProductCampaignMetricsDaily,
+    GmvmaxProductCampaignMetricsHourly,
+    GmvmaxLiveCampaignMetricsDaily,
+    GmvmaxLiveCampaignMetricsHourly,
+)
+from .gmvmax_campaign_snapshots import (
+    GmvmaxProductCampaignSnapshotBatch,
+    GmvmaxProductCampaignSnapshotRow,
+    GmvmaxLiveCampaignSnapshotBatch,
+    GmvmaxLiveCampaignSnapshotRow,
+)
 from .openai_whisper import OpenAIWhisperJob
 from .email_settings import PlatformEmailSetting, MailSendMode, MailEncryption
 from .video_site_cookies import VideoSiteCookies
@@ -138,6 +156,18 @@ __all__ = [
     "GmvDurationMetricsHourly",
     "GmvLivestreamMetricsDaily",
     "GmvLivestreamMetricsHourly",
+    "GmvmaxProductCampaignCatalog",
+    "GmvmaxLiveCampaignCatalog",
+    "GmvmaxProductCampaignItemGroup",
+    "GmvmaxLiveCampaignIdentity",
+    "GmvmaxProductCampaignMetricsDaily",
+    "GmvmaxProductCampaignMetricsHourly",
+    "GmvmaxLiveCampaignMetricsDaily",
+    "GmvmaxLiveCampaignMetricsHourly",
+    "GmvmaxProductCampaignSnapshotBatch",
+    "GmvmaxProductCampaignSnapshotRow",
+    "GmvmaxLiveCampaignSnapshotBatch",
+    "GmvmaxLiveCampaignSnapshotRow",
     "OpenAIWhisperJob",
     "VideoSiteCookies",
     "VideoSiteLoginSession",
