@@ -14,16 +14,19 @@ from sqlalchemy.orm import Session
 from app.data.models.gmv_restructured import GmvCampaign, GmvCampaignMetricsDaily
 
 
-def _cents_to_amount(value: Optional[int]) -> float | None:
+def _cents_to_amount(value: Optional[int]) -> Decimal | None:
     if value is None:
         return None
-    return float(Decimal(value) / Decimal(100))
+    return (Decimal(value) / Decimal(100)).quantize(Decimal("0.01"))
 
 
-def _to_float(value: Optional[Decimal | float | int]) -> float | None:
+def _to_decimal(value: Optional[Decimal | float | int]) -> Decimal | None:
     if value is None:
         return None
-    return float(value)
+    try:
+        return Decimal(value)
+    except Exception:  # noqa: BLE001 - defensive conversion
+        return None
 
 
 class GMVMaxMetricDTO(BaseModel):
@@ -34,12 +37,12 @@ class GMVMaxMetricDTO(BaseModel):
     store_id: Optional[str] = None
     impressions: Optional[int] = None
     clicks: Optional[int] = None
-    cost: Optional[float] = None
-    net_cost: Optional[float] = None
+    cost: Optional[Decimal] = None
+    net_cost: Optional[Decimal] = None
     orders: Optional[int] = None
-    cost_per_order: Optional[float] = None
-    gross_revenue: Optional[float] = None
-    roi: Optional[float] = None
+    cost_per_order: Optional[Decimal] = None
+    gross_revenue: Optional[Decimal] = None
+    roi: Optional[Decimal] = None
     product_impressions: Optional[int] = None
     product_clicks: Optional[int] = None
     product_click_rate: Optional[float] = None
@@ -57,29 +60,23 @@ class _MetricsRow:
 
 
 def _serialize_row(row: _MetricsRow) -> GMVMaxMetricDTO:
-    cost = _cents_to_amount(row.metric.cost_cents)
-    orders = row.metric.orders or 0
-    cost_per_order = None
-    if cost is not None and orders > 0:
-        cost_per_order = cost / orders
-
     return GMVMaxMetricDTO(
         stat_time_day=row.metric.stat_time_day,
         campaign_id=row.campaign_id,
         store_id=row.store_id,
         impressions=row.metric.impressions,
         clicks=row.metric.clicks,
-        cost=cost,
+        cost=_cents_to_amount(row.metric.cost_cents),
         net_cost=_cents_to_amount(row.metric.net_cost_cents),
         orders=row.metric.orders,
-        cost_per_order=cost_per_order,
+        cost_per_order=_to_decimal(row.metric.cost_per_order),
         gross_revenue=_cents_to_amount(row.metric.gross_revenue_cents),
-        roi=_to_float(row.metric.roi),
+        roi=_to_decimal(row.metric.roi),
         product_impressions=row.metric.product_impressions,
         product_clicks=row.metric.product_clicks,
-        product_click_rate=_to_float(row.metric.product_click_rate),
-        ad_click_rate=_to_float(row.metric.ad_click_rate),
-        ad_conversion_rate=_to_float(row.metric.ad_conversion_rate),
+        product_click_rate=_to_decimal(row.metric.product_click_rate),
+        ad_click_rate=_to_decimal(row.metric.ad_click_rate),
+        ad_conversion_rate=_to_decimal(row.metric.ad_conversion_rate),
         live_views=row.metric.live_views,
         live_follows=row.metric.live_follows,
     )

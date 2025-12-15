@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.data.db import get_db
 from app.data.models.gmv_restructured import GmvOverviewSnapshot
 from app.data.models.ttb_gmvmax import TTBGmvMaxActionLog, TTBGmvMaxCampaign
+from app.gmvmax.services.campaign_cleanup import cleanup_campaign_tables
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_balances import select_latest_balance, sync_advertiser_balance
 from app.services.gmvmax_heating import run_creative_heating_cycle
@@ -51,6 +52,15 @@ logger = logging.getLogger("gmv.tasks.gmvmax")
 
 GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS = int(
     getattr(settings, "GMVMAX_OVERVIEW_SNAPSHOT_TTL_DAYS", 90)
+)
+GMVMAX_CAMPAIGN_METRICS_HOURLY_TTL_DAYS = int(
+    getattr(settings, "GMVMAX_CAMPAIGN_METRICS_HOURLY_TTL_DAYS", 90)
+)
+GMVMAX_CAMPAIGN_METRICS_DAILY_TTL_DAYS = int(
+    getattr(settings, "GMVMAX_CAMPAIGN_METRICS_DAILY_TTL_DAYS", 730)
+)
+GMVMAX_CAMPAIGN_SNAPSHOT_TTL_DAYS = int(
+    getattr(settings, "GMVMAX_CAMPAIGN_SNAPSHOT_TTL_DAYS", 90)
 )
 
 BALANCE_FETCH_MIN_INTERVAL_SECONDS = int(
@@ -166,6 +176,26 @@ def cleanup_overview_snapshots() -> int:
             extra={"cutoff": cutoff.isoformat(), "deleted": int(deleted)},
         )
         return int(deleted)
+    finally:
+        _close_session(db)
+
+
+@celery_app.task(
+    name="gmvmax.cleanup_campaign_tables",
+    queue="gmvmax",
+)
+def cleanup_campaign_tables_task() -> dict:
+    """Scheduled cleanup for GMV Max campaign metrics and snapshots."""
+
+    db = _db_session()
+    try:
+        result = cleanup_campaign_tables(
+            db,
+            hourly_retention_days=GMVMAX_CAMPAIGN_METRICS_HOURLY_TTL_DAYS,
+            daily_retention_days=GMVMAX_CAMPAIGN_METRICS_DAILY_TTL_DAYS,
+            snapshot_retention_days=GMVMAX_CAMPAIGN_SNAPSHOT_TTL_DAYS,
+        )
+        return result
     finally:
         _close_session(db)
 
