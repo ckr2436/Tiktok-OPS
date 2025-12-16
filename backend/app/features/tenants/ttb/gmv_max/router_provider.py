@@ -2405,6 +2405,7 @@ def _apply_catalog_filters(
     primary_status: str | None,
     start_time: datetime | None,
     end_time: datetime | None,
+    include_deleted: bool,
 ):
     if store_filters:
         stmt = stmt.where(model.store_id.in_(store_filters))
@@ -2418,6 +2419,13 @@ def _apply_catalog_filters(
         stmt = stmt.where(model.create_time_utc >= start_time)
     if end_time:
         stmt = stmt.where(model.create_time_utc <= end_time)
+    if not include_deleted:
+        stmt = stmt.where(
+            or_(
+                model.secondary_status.is_(None),
+                model.secondary_status != "CAMPAIGN_STATUS_DELETE",
+            )
+        )
     return stmt
 
 
@@ -2540,6 +2548,7 @@ async def list_gmvmax_campaigns_provider(
             primary_status=primary_status,
             start_time=parsed_start_dt,
             end_time=parsed_end_dt,
+            include_deleted=include_deleted,
         )
 
     stmts = []
