@@ -24,7 +24,10 @@ from app.data.models.ttb_entities import (
     TTBBCAdvertiserLink,
     TTBProduct,
 )
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxProductCampaignCatalog,
+    GmvmaxProductCampaignItemGroup,
+)
 
 from . import common
 
@@ -369,16 +372,31 @@ def list_account_products(
             .filter(TTBProduct.store_id == normalized_store)
         )
         assignment_stmt = (
-            select(TTBGmvMaxCampaignProduct.item_group_id)
+            select(GmvmaxProductCampaignItemGroup.item_group_id)
             .join(
-                TTBGmvMaxCampaign,
-                TTBGmvMaxCampaign.id == TTBGmvMaxCampaignProduct.campaign_pk,
+                GmvmaxProductCampaignCatalog,
+                (
+                    GmvmaxProductCampaignCatalog.workspace_id
+                    == GmvmaxProductCampaignItemGroup.workspace_id
+                )
+                & (
+                    GmvmaxProductCampaignCatalog.auth_id
+                    == GmvmaxProductCampaignItemGroup.auth_id
+                )
+                & (
+                    GmvmaxProductCampaignCatalog.advertiser_id
+                    == GmvmaxProductCampaignItemGroup.advertiser_id
+                )
+                & (
+                    GmvmaxProductCampaignCatalog.campaign_id
+                    == GmvmaxProductCampaignItemGroup.campaign_id
+                ),
             )
-            .where(TTBGmvMaxCampaignProduct.workspace_id == int(workspace_id))
-            .where(TTBGmvMaxCampaignProduct.auth_id == int(auth_id))
-            .where(TTBGmvMaxCampaignProduct.store_id == str(normalized_store))
-            .where(TTBGmvMaxCampaign.is_deleted.is_(False))
-            .where(TTBGmvMaxCampaign.lifecycle_status == "ACTIVE")
+            .where(GmvmaxProductCampaignItemGroup.workspace_id == int(workspace_id))
+            .where(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+            .where(GmvmaxProductCampaignItemGroup.store_id == str(normalized_store))
+            .where(GmvmaxProductCampaignItemGroup.advertiser_id == normalized_adv)
+            .where(GmvmaxProductCampaignCatalog.operation_status == "ENABLE")
         )
         if only_unassigned:
             base_query = base_query.filter(func.upper(TTBProduct.status) == "AVAILABLE")
