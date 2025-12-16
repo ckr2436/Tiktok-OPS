@@ -28,6 +28,12 @@ def upgrade() -> None:
     for table in list(existing):
         for prefix in PREFIXES:
             if table.startswith(prefix):
+                for referencing_table in existing:
+                    for fk in inspector.get_foreign_keys(referencing_table):
+                        if fk["referred_table"] == table:
+                            op.drop_constraint(
+                                fk["name"], referencing_table, type_="foreignkey"
+                            )
                 op.drop_table(table)
                 break
 
