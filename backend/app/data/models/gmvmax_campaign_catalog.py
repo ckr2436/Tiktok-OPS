@@ -9,6 +9,7 @@ defined in ``gmvmax_campaign_metrics.py`` while manual snapshot caches live in
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import BigInteger, ForeignKey, Index, JSON, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
@@ -57,7 +58,7 @@ class GmvmaxProductCampaignCatalog(Base):
     product_specific_type: Mapped[str | None] = mapped_column(String(64))
     optimization_goal: Mapped[str | None] = mapped_column(String(64))
     deep_bid_type: Mapped[str | None] = mapped_column(String(64))
-    roas_bid: Mapped[float | None] = mapped_column(Numeric(18, 4))
+    roas_bid: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     budget_cents: Mapped[int | None] = mapped_column(BigInteger)
     schedule_type: Mapped[str | None] = mapped_column(String(64))
     schedule_start_time_utc: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
@@ -113,7 +114,7 @@ class GmvmaxLiveCampaignCatalog(Base):
     shopping_ads_type: Mapped[str] = mapped_column(String(16), default="LIVE", nullable=False)
     optimization_goal: Mapped[str | None] = mapped_column(String(64))
     deep_bid_type: Mapped[str | None] = mapped_column(String(64))
-    roas_bid: Mapped[float | None] = mapped_column(Numeric(18, 4))
+    roas_bid: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     budget_cents: Mapped[int | None] = mapped_column(BigInteger)
     schedule_type: Mapped[str | None] = mapped_column(String(64))
     schedule_start_time_utc: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))

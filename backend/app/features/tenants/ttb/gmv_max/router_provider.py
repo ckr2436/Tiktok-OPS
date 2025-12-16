@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequ
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 from celery.result import AsyncResult
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
@@ -38,6 +38,10 @@ from app.data.models.gmv_restructured import (
     GmvCampaignProduct,
     GmvOverviewSnapshot,
     GmvCreativeMetricsDaily,
+)
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxLiveCampaignCatalog,
+    GmvmaxProductCampaignCatalog,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
     list_heating_configs,
@@ -2364,6 +2368,117 @@ async def update_gmvmax_campaign_provider(
     )
 
 
+def _normalize_promo_types(types: Optional[List[str]]) -> list[str]:
+    if not types:
+        return ["LIVE", "PRODUCT"]
+
+    normalized: list[str] = []
+    for promo_type in types:
+        value = str(promo_type).upper()
+        if value in ("PRODUCT", "PRODUCT_GMV_MAX", "PRODUCT_GMV"):
+            normalized.append("PRODUCT")
+        elif value in ("LIVE", "LIVE_GMV_MAX", "LIVE_GMV"):
+            normalized.append("LIVE")
+
+    return sorted(set(normalized)) or ["LIVE", "PRODUCT"]
+
+
+def _parse_iso8601_utc(dt_str: str | None) -> datetime | None:
+    if not dt_str:
+        return None
+    try:
+        parsed = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _apply_catalog_filters(
+    stmt,
+    model,
+    *,
+    store_filters: list[str] | None,
+    campaign_ids: list[str] | None,
+    campaign_name: str | None,
+    primary_status: str | None,
+    start_time: datetime | None,
+    end_time: datetime | None,
+    include_deleted: bool,
+):
+    if store_filters:
+        stmt = stmt.where(model.store_id.in_(store_filters))
+    if campaign_ids:
+        stmt = stmt.where(model.campaign_id.in_(campaign_ids))
+    if campaign_name:
+        stmt = stmt.where(model.campaign_name.ilike(f"%{campaign_name}%"))
+    if primary_status:
+        stmt = stmt.where(model.operation_status == str(primary_status))
+    if start_time:
+        stmt = stmt.where(model.create_time_utc >= start_time)
+    if end_time:
+        stmt = stmt.where(model.create_time_utc <= end_time)
+    if not include_deleted:
+        stmt = stmt.where(
+            or_(
+                model.secondary_status.is_(None),
+                model.secondary_status != "CAMPAIGN_STATUS_DELETE",
+            )
+        )
+    return stmt
+
+
+def _format_datetime_utc(dt_value: Any) -> str | None:
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value
+    if isinstance(dt_value, datetime):
+        if dt_value.tzinfo:
+            dt_value = dt_value.astimezone(timezone.utc)
+        else:
+            dt_value = dt_value.replace(tzinfo=timezone.utc)
+        return dt_value.isoformat().replace("+00:00", "Z")
+    return None
+
+
+def _format_decimal_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    return str(value)
+
+
+def _catalog_row_to_campaign(row: Mapping[str, Any]) -> GMVMaxCampaign:
+    detail_json = row.get("detail_raw_json") if isinstance(row.get("detail_raw_json"), Mapping) else {}
+    roas_bid_value = row.get("roas_bid")
+    if roas_bid_value is None and isinstance(detail_json, Mapping):
+        roas_bid_value = detail_json.get("roas_bid")
+
+    payload: Dict[str, Any] = {
+        "campaign_id": row.get("campaign_id"),
+        "campaign_name": row.get("campaign_name"),
+        "advertiser_id": row.get("advertiser_id"),
+        "operation_status": row.get("operation_status"),
+        "secondary_status": row.get("secondary_status"),
+        "objective_type": row.get("objective_type"),
+        "gmv_max_promotion_type": row.get("gmv_max_promotion_type"),
+        "schedule_type": row.get("schedule_type"),
+        "schedule_start_time": _format_datetime_utc(row.get("schedule_start_time_utc")),
+        "schedule_end_time": _format_datetime_utc(row.get("schedule_end_time_utc")),
+        "create_time": _format_datetime_utc(row.get("create_time_utc")),
+        "modify_time": _format_datetime_utc(row.get("modify_time_utc")),
+        "roas_bid": _format_decimal_str(roas_bid_value),
+        "bid_type": detail_json.get("bid_type") if isinstance(detail_json, Mapping) else None,
+        "target_roi_budget": detail_json.get("target_roi_budget") if isinstance(detail_json, Mapping) else None,
+        "max_delivery_budget": detail_json.get("max_delivery_budget") if isinstance(detail_json, Mapping) else None,
+    }
+
+    return GMVMaxCampaign.model_validate(payload)
+
+
 @router.get(
     "",
     response_model=CampaignListResponse,
@@ -2397,32 +2512,73 @@ async def list_gmvmax_campaigns_provider(
     if not store_filters and context.store_id:
         store_filters = [str(context.store_id)]
 
-    query = (
-        context.db.query(GmvCampaign)
-        .filter(GmvCampaign.workspace_id == int(workspace_id))
-        .filter(GmvCampaign.advertiser_id == str(adv))
-        .filter(GmvCampaign.auth_id == int(auth_id))
-    )
-    if store_filters:
-        query = query.filter(GmvCampaign.store_id.in_(store_filters))
-    if campaign_ids:
-        query = query.filter(GmvCampaign.campaign_id.in_([str(item) for item in campaign_ids]))
-    if campaign_name:
-        query = query.filter(GmvCampaign.name.ilike(f"%{campaign_name}%"))
-    if primary_status:
-        query = query.filter(GmvCampaign.status == str(primary_status))
-    if not include_deleted:
-        query = query.filter(GmvCampaign.is_deleted.is_(False))
-        query = query.filter(GmvCampaign.lifecycle_status != "DELETED")
+    promotion_types = _normalize_promo_types(gmv_max_promotion_types)
+    parsed_start_dt = _parse_iso8601_utc(creation_filter_start_time)
+    parsed_end_dt = _parse_iso8601_utc(creation_filter_end_time)
+    campaign_id_filters = [str(item) for item in campaign_ids] if campaign_ids else None
 
-    total = query.count()
+    def _stmt(model, promo: str):
+        stmt = select(
+            model.campaign_id.label("campaign_id"),
+            model.campaign_name.label("campaign_name"),
+            model.advertiser_id.label("advertiser_id"),
+            model.operation_status.label("operation_status"),
+            model.secondary_status.label("secondary_status"),
+            model.objective_type.label("objective_type"),
+            model.schedule_type.label("schedule_type"),
+            model.schedule_start_time_utc.label("schedule_start_time_utc"),
+            model.schedule_end_time_utc.label("schedule_end_time_utc"),
+            model.create_time_utc.label("create_time_utc"),
+            model.modify_time_utc.label("modify_time_utc"),
+            model.roas_bid.label("roas_bid"),
+            model.detail_raw_json.label("detail_raw_json"),
+            literal(promo).label("gmv_max_promotion_type"),
+            model.updated_at.label("updated_at"),
+        ).where(
+            model.workspace_id == int(workspace_id),
+            model.auth_id == int(auth_id),
+            model.advertiser_id == str(adv),
+        )
+        return _apply_catalog_filters(
+            stmt,
+            model,
+            store_filters=store_filters,
+            campaign_ids=campaign_id_filters,
+            campaign_name=campaign_name,
+            primary_status=primary_status,
+            start_time=parsed_start_dt,
+            end_time=parsed_end_dt,
+            include_deleted=include_deleted,
+        )
+
+    stmts = []
+    if "PRODUCT" in promotion_types:
+        stmts.append(_stmt(GmvmaxProductCampaignCatalog, "PRODUCT"))
+    if "LIVE" in promotion_types:
+        stmts.append(_stmt(GmvmaxLiveCampaignCatalog, "LIVE"))
+
+    if not stmts:
+        return CampaignListResponse(
+            items=[],
+            page_info=PageInfo(page=page_value, page_size=page_size_value, total_number=0),
+            request_id=None,
+        )
+
+    base = (stmts[0] if len(stmts) == 1 else union_all(*stmts)).subquery()
+    total = context.db.execute(select(func.count()).select_from(base)).scalar_one()
+
     rows = (
-        query.order_by(GmvCampaign.updated_at.desc())
-        .offset((page_value - 1) * page_size_value)
-        .limit(page_size_value)
+        context.db.execute(
+            select(base)
+            .order_by(base.c.updated_at.desc())
+            .offset((page_value - 1) * page_size_value)
+            .limit(page_size_value)
+        )
+        .mappings()
         .all()
     )
-    items = [_campaign_row_to_schema(row) for row in rows]
+
+    items = [_catalog_row_to_campaign(row) for row in rows]
     page_info = PageInfo(page=page_value, page_size=page_size_value, total_number=total)
     return CampaignListResponse(items=items, page_info=page_info, request_id=None)
 
