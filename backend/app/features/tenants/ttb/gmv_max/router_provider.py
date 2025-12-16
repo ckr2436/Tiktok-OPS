@@ -2548,7 +2548,14 @@ async def list_gmvmax_campaigns_provider(
     if "LIVE" in promotion_types:
         stmts.append(_stmt(GmvmaxLiveCampaignCatalog, "LIVE"))
 
-    base = union_all(*stmts).subquery()
+    if not stmts:
+        return CampaignListResponse(
+            items=[],
+            page_info=PageInfo(page=page_value, page_size=page_size_value, total_number=0),
+            request_id=None,
+        )
+
+    base = (stmts[0] if len(stmts) == 1 else union_all(*stmts)).subquery()
     total = context.db.execute(select(func.count()).select_from(base)).scalar_one()
 
     rows = (
