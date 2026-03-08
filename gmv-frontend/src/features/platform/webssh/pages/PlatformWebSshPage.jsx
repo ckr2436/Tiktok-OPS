@@ -5,9 +5,11 @@ import '@xterm/xterm/css/xterm.css'
 import { apiRoot } from '@/core/config.js'
 
 function buildWebSocketUrl() {
-  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const base = apiRoot.startsWith('/') ? apiRoot : `/${apiRoot}`
-  return `${scheme}://${window.location.host}${base}/platform/webssh/ws`
+  const apiUrl = new URL(apiRoot, window.location.origin)
+  const scheme = apiUrl.protocol === 'https:' ? 'wss' : 'ws'
+  const basePath = apiUrl.pathname.replace(/\/$/, '')
+  const wsPath = `${basePath}/platform/webssh/ws`
+  return `${scheme}://${apiUrl.host}${wsPath}`
 }
 
 export default function PlatformWebSshPage() {
