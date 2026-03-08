@@ -116,6 +116,26 @@ async def webssh_proxy(websocket: WebSocket):
                 rows = int(payload.get("rows") or 30)
                 process.change_terminal_size(cols, rows)
 
+    async def create_interactive_process() -> asyncssh.SSHClientProcess:
+        assert client is not None
+        launch_candidates: list[dict] = [
+            {"term_type": "xterm-256color", "term_size": (120, 30)},
+            {"command": "/bin/bash -li", "term_type": "xterm-256color", "term_size": (120, 30)},
+            {"command": "/bin/sh -i", "term_type": "xterm-256color", "term_size": (120, 30)},
+        ]
+
+        for options in launch_candidates:
+            candidate = await client.create_process(**options)
+            try:
+                await asyncio.wait_for(candidate.wait_closed(), timeout=0.25)
+            except asyncio.TimeoutError:
+                return candidate
+
+            with suppress(Exception):
+                candidate.close()
+
+        raise RuntimeError("远端会话启动后立即结束，请确认账号有可用的交互式 shell。")
+
     try:
         known_hosts_path = str(Path(settings.WEBSSH_KNOWN_HOSTS_FILE).expanduser())
         if not Path(known_hosts_path).is_file():
@@ -141,7 +161,7 @@ async def webssh_proxy(websocket: WebSocket):
             connect_kwargs["client_keys"] = [asyncssh.import_private_key(str(private_key), passphrase=passphrase or None)]
 
         client = await asyncssh.connect(**connect_kwargs)
-        process = await client.create_process(term_type="xterm-256color", term_size=(120, 30))
+        process = await create_interactive_process()
 
         await _send_json(websocket, {"type": "connected"})
 
@@ -166,7 +186,7 @@ async def webssh_proxy(websocket: WebSocket):
         with suppress(Exception):
             await asyncio.gather(*pending, stdout_task, stderr_task, return_exceptions=True)
 
-    except (asyncssh.Error, OSError, ValueError) as exc:
+    except (asyncssh.Error, OSError, ValueError, RuntimeError) as exc:
         await _send_json(websocket, {"type": "error", "message": f"SSH 连接失败：{exc}"})
     except WebSocketDisconnect:
         pass
