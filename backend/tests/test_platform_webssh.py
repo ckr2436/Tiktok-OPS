@@ -194,3 +194,71 @@ def test_webssh_reports_error_when_all_shell_attempts_exit_immediately(monkeypat
             payload = json.loads(ws.receive_text())
             assert payload["type"] == "error"
             assert "立即结束" in payload["message"]
+
+
+def test_webssh_requires_password_when_password_auth_selected(monkeypatch, tmp_path):
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "WEBSSH_KNOWN_HOSTS_FILE", str(known_hosts))
+
+    monkeypatch.setattr(router_webssh, "_load_platform_admin", lambda _db, _ws: object())
+
+    app = FastAPI()
+    app.include_router(router_webssh.router)
+
+    with TestClient(app) as client:
+        with client.websocket_connect(f"{settings.API_PREFIX}/platform/webssh/ws") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "host": "127.0.0.1",
+                        "port": 22,
+                        "username": "root",
+                        "authMethod": "password",
+                    }
+                )
+            )
+
+            payload = json.loads(ws.receive_text())
+            assert payload["type"] == "error"
+            assert "请输入密码" in payload["message"]
+
+
+def test_webssh_uses_only_password_auth_when_requested(monkeypatch, tmp_path):
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "WEBSSH_KNOWN_HOSTS_FILE", str(known_hosts))
+
+    fake_process = _FakeProcess()
+    captured_kwargs: dict = {}
+
+    async def _fake_connect(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _FakeClient(fake_process)
+
+    monkeypatch.setattr(router_webssh, "_load_platform_admin", lambda _db, _ws: object())
+    monkeypatch.setattr(router_webssh.asyncssh, "connect", _fake_connect)
+
+    app = FastAPI()
+    app.include_router(router_webssh.router)
+
+    with TestClient(app) as client:
+        with client.websocket_connect(f"{settings.API_PREFIX}/platform/webssh/ws") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "host": "127.0.0.1",
+                        "port": 22,
+                        "username": "root",
+                        "password": "secret",
+                        "authMethod": "password",
+                    }
+                )
+            )
+
+            payload = json.loads(ws.receive_text())
+            assert payload["type"] == "connected"
+
+    assert captured_kwargs["preferred_auth"] == "password"
+    assert captured_kwargs["client_keys"] == []
+    assert captured_kwargs["password"] == "secret"

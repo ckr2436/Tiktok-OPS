@@ -65,9 +65,15 @@ async def webssh_proxy(websocket: WebSocket):
         password = init.get("password")
         private_key = init.get("privateKey")
         passphrase = init.get("passphrase")
+        auth_method = str(init.get("authMethod") or "").strip() or ("password" if password else "privateKey")
         port = int(init.get("port") or 22)
     except Exception:
         await _send_json(websocket, {"type": "error", "message": "连接参数格式错误。"})
+        await websocket.close(code=1003)
+        return
+
+    if auth_method not in {"password", "privateKey"}:
+        await _send_json(websocket, {"type": "error", "message": "认证方式无效。"})
         await websocket.close(code=1003)
         return
 
@@ -76,8 +82,13 @@ async def webssh_proxy(websocket: WebSocket):
         await websocket.close(code=1003)
         return
 
-    if (not password) and (not private_key):
-        await _send_json(websocket, {"type": "error", "message": "请至少提供密码或私钥。"})
+    if auth_method == "password" and not password:
+        await _send_json(websocket, {"type": "error", "message": "请选择密码认证后，请输入密码。"})
+        await websocket.close(code=1003)
+        return
+
+    if auth_method == "privateKey" and not private_key:
+        await _send_json(websocket, {"type": "error", "message": "请选择私钥认证后，请粘贴私钥。"})
         await websocket.close(code=1003)
         return
 
@@ -154,11 +165,15 @@ async def webssh_proxy(websocket: WebSocket):
             "port": port,
             "username": username,
             "known_hosts": known_hosts_path,
+            "keepalive_interval": 30,
         }
-        if password:
+        if auth_method == "password":
             connect_kwargs["password"] = str(password)
-        if private_key:
+            connect_kwargs["preferred_auth"] = "password"
+            connect_kwargs["client_keys"] = []
+        if auth_method == "privateKey":
             connect_kwargs["client_keys"] = [asyncssh.import_private_key(str(private_key), passphrase=passphrase or None)]
+            connect_kwargs["preferred_auth"] = "publickey"
 
         client = await asyncssh.connect(**connect_kwargs)
         process = await create_interactive_process()
