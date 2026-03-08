@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from pathlib import Path
 
 import asyncssh
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -113,11 +114,23 @@ async def webssh_proxy(websocket: WebSocket):
                 process.change_terminal_size(cols, rows)
 
     try:
+        known_hosts_path = str(Path(settings.WEBSSH_KNOWN_HOSTS_FILE).expanduser())
+        if not Path(known_hosts_path).is_file():
+            await _send_json(
+                websocket,
+                {
+                    "type": "error",
+                    "message": "WebSSH 服务器配置错误：未找到 SSH known_hosts 文件，请联系管理员。",
+                },
+            )
+            await websocket.close(code=1011)
+            return
+
         connect_kwargs: dict = {
             "host": host,
             "port": port,
             "username": username,
-            "known_hosts": None,
+            "known_hosts": known_hosts_path,
         }
         if password:
             connect_kwargs["password"] = str(password)

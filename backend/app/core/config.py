@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     # 安全 / 密码
     # =========================
     PBKDF2_ITERATIONS: int = 240_000
+    WEBSSH_KNOWN_HOSTS_FILE: str = "~/.ssh/known_hosts"
 
     # =========================
     # Admin Docs
@@ -248,4 +249,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
