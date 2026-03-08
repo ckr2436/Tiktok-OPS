@@ -104,7 +104,10 @@ async def webssh_proxy(websocket: WebSocket):
         assert process is not None
         while True:
             message = await websocket.receive_text()
-            payload = json.loads(message)
+            try:
+                payload = json.loads(message)
+            except json.JSONDecodeError:
+                continue
             msg_type = payload.get("type")
             if msg_type == "input":
                 process.stdin.write(str(payload.get("data") or ""))
@@ -142,18 +145,26 @@ async def webssh_proxy(websocket: WebSocket):
 
         await _send_json(websocket, {"type": "connected"})
 
-        tasks = [
-            asyncio.create_task(stream_stdout()),
-            asyncio.create_task(stream_stderr()),
-            asyncio.create_task(read_client_input()),
-        ]
+        stdout_task = asyncio.create_task(stream_stdout())
+        stderr_task = asyncio.create_task(stream_stderr())
+        input_task = asyncio.create_task(read_client_input())
+        process_wait_task = asyncio.create_task(process.wait_closed())
 
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            [input_task, process_wait_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
         for task in done:
             with suppress(Exception):
                 task.result()
+
         for task in pending:
             task.cancel()
+        for task in (stdout_task, stderr_task):
+            task.cancel()
+
+        with suppress(Exception):
+            await asyncio.gather(*pending, stdout_task, stderr_task, return_exceptions=True)
 
     except (asyncssh.Error, OSError, ValueError) as exc:
         await _send_json(websocket, {"type": "error", "message": f"SSH 连接失败：{exc}"})
