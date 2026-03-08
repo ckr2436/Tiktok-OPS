@@ -24,6 +24,7 @@ export default function PlatformWebSshPage() {
     password: '',
     privateKey: '',
     passphrase: '',
+    authMethod: 'password',
   })
 
   const wsUrl = useMemo(() => buildWebSocketUrl(), [])
@@ -79,6 +80,7 @@ export default function PlatformWebSshPage() {
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
     setStatus('连接中…')
+    term.writeln('\r\n[INFO] 正在建立 SSH 连接...')
 
     ws.onopen = () => {
       ws.send(JSON.stringify(form))
@@ -116,14 +118,33 @@ export default function PlatformWebSshPage() {
         <input className="input" placeholder="SSH Host" value={form.host} onChange={(e) => setField('host', e.target.value)} />
         <input className="input" placeholder="Port" type="number" value={form.port} onChange={(e) => setField('port', Number(e.target.value || 22))} />
         <input className="input" placeholder="Username" value={form.username} onChange={(e) => setField('username', e.target.value)} />
-        <input className="input" placeholder="Password（可选）" type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} />
-        <input className="input" placeholder="私钥 Passphrase（可选）" type="password" value={form.passphrase} onChange={(e) => setField('passphrase', e.target.value)} />
+        <select className="input" value={form.authMethod} onChange={(e) => setField('authMethod', e.target.value)}>
+          <option value="password">密码认证</option>
+          <option value="privateKey">私钥认证</option>
+        </select>
+        <input
+          className="input"
+          placeholder={form.authMethod === 'password' ? 'Password（必填）' : 'Password（未使用）'}
+          type="password"
+          disabled={form.authMethod !== 'password'}
+          value={form.password}
+          onChange={(e) => setField('password', e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder={form.authMethod === 'privateKey' ? '私钥 Passphrase（可选）' : '私钥 Passphrase（未使用）'}
+          type="password"
+          disabled={form.authMethod !== 'privateKey'}
+          value={form.passphrase}
+          onChange={(e) => setField('passphrase', e.target.value)}
+        />
       </div>
 
       <textarea
         className="input"
         rows={6}
-        placeholder="粘贴 SSH 私钥（可选）"
+        placeholder={form.authMethod === 'privateKey' ? '粘贴 SSH 私钥（必填）' : '粘贴 SSH 私钥（未使用）'}
+        disabled={form.authMethod !== 'privateKey'}
         value={form.privateKey}
         onChange={(e) => setField('privateKey', e.target.value)}
       />
