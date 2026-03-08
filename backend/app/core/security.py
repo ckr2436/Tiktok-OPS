@@ -108,8 +108,7 @@ def clear_session(resp: Response) -> None:
     )
 
 
-def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
-    raw = req.cookies.get(settings.COOKIE_NAME)
+def read_session_from_cookie(raw: str | None) -> Optional[Dict[str, Any]]:
     if not raw or "." not in raw:
         return None
     p64, sig = raw.split(".", 1)
@@ -122,6 +121,10 @@ def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
         return payload
     except Exception:
         return None
+
+
+def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
+    return read_session_from_cookie(req.cookies.get(settings.COOKIE_NAME))
 
 
 def _clean_ip(value: str | None) -> str | None:
