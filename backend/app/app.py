@@ -27,6 +27,7 @@ from app.features.platform.router_gmvmax_monitoring_strategies import (
 from app.features.platform.kie_ai.routes import router as platform_kie_ai_router
 from app.features.platform.router_email import router as platform_email_router
 from app.features.platform.router_yt_dlp_cookies import router as platform_yt_dlp_cookies_router
+from app.features.platform.router_webssh import router as platform_webssh_router
 
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_kie_ai_router)
     app.include_router(platform_email_router)
     app.include_router(platform_yt_dlp_cookies_router)
+    app.include_router(platform_webssh_router)
 
     # Tenant routes
     app.include_router(tenant_users_router)
