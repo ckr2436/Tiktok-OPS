@@ -71,7 +71,6 @@ export default function PlatformWebShellPage() {
     term.writeln('\r\n[INFO] 正在启动服务器 WebShell...')
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ shell: '/bin/bash -li' }))
       ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
     }
 
