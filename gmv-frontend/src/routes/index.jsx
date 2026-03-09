@@ -39,7 +39,7 @@ import EmailServerSettings from '../features/platform/email/pages/EmailServerSet
 import PlatformKieKeyPage from '../features/platform/kie_ai/pages/PlatformKieKeyPage.jsx';
 // 平台 - yt-dlp Cookies 管理
 import YtDlpCookiesPage from '../features/platform/yt_dlp_cookies/pages/YtDlpCookiesPage.jsx';
-import PlatformWebSshPage from '../features/platform/webssh/pages/PlatformWebSshPage.jsx';
+import PlatformWebShellPage from '../features/platform/webshell/pages/PlatformWebShellPage.jsx';
 
 // 公司域：成员
 import UserList from '../features/tenants/users/pages/UserList.jsx';
@@ -103,7 +103,7 @@ const router = createBrowserRouter([
               { path: 'kie-ai', element: <PlatformKieKeyPage /> },
               // ★ 新增：平台 - yt-dlp Cookies 管理
               { path: 'yt-dlp-cookies', element: <YtDlpCookiesPage /> },
-              { path: 'webssh', element: <PlatformWebSshPage /> },
+              { path: 'webshell', element: <PlatformWebShellPage /> },
             ],
           },
 
