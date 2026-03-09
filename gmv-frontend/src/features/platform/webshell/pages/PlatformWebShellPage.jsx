@@ -4,12 +4,17 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { apiRoot } from '@/core/config.js'
 
-function buildWebSocketUrl() {
+function buildWebSocketUrlCandidates() {
   const apiUrl = new URL(apiRoot, window.location.origin)
   const scheme = apiUrl.protocol === 'https:' ? 'wss' : 'ws'
   const basePath = apiUrl.pathname.replace(/\/$/, '')
-  const wsPath = `${basePath}/platform/webshell/ws`
-  return `${scheme}://${apiUrl.host}${wsPath}`
+  const paths = [
+    `${basePath}/platform/webshell/ws`,
+    '/api/v1/platform/webshell/ws',
+    '/api/platform/webshell/ws',
+  ]
+
+  return [...new Set(paths)].map((path) => `${scheme}://${apiUrl.host}${path}`)
 }
 
 export default function PlatformWebShellPage() {
@@ -17,7 +22,7 @@ export default function PlatformWebShellPage() {
   const xtermRef = useRef(null)
   const wsRef = useRef(null)
   const [status, setStatus] = useState('未连接')
-  const wsUrl = useMemo(() => buildWebSocketUrl(), [])
+  const wsUrlCandidates = useMemo(() => buildWebSocketUrlCandidates(), [])
 
   useEffect(() => {
     const term = new Terminal({
@@ -65,31 +70,78 @@ export default function PlatformWebShellPage() {
     const term = xtermRef.current
     if (!term) return
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
     setStatus('连接中…')
     term.writeln('\r\n[INFO] 正在启动服务器 WebShell...')
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-    }
+    let connected = false
+    let attemptIndex = 0
 
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data)
-      if (payload.type === 'connected') {
-        setStatus('已连接')
-      } else if (payload.type === 'error') {
+    const connectWithCandidate = () => {
+      if (attemptIndex >= wsUrlCandidates.length) {
         setStatus('连接失败')
-        term.writeln(`\r\n[ERROR] ${payload.message}`)
-      } else if (payload.type === 'data') {
-        term.write(payload.data)
+        term.writeln('\r\n[ERROR] 所有 WebSocket 地址均连接失败，请检查反向代理 Upgrade 与路径重写。')
+        return
+      }
+
+      const wsUrl = wsUrlCandidates[attemptIndex]
+      attemptIndex += 1
+      term.writeln(`\r\n[INFO] 正在尝试连接：${wsUrl}`)
+
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+      }
+
+      ws.onmessage = (event) => {
+        let payload
+        try {
+          payload = JSON.parse(event.data)
+        } catch {
+          term.writeln('\r\n[ERROR] 收到无法解析的服务端消息。')
+          return
+        }
+
+        if (payload.type === 'connected') {
+          connected = true
+          setStatus('已连接')
+        } else if (payload.type === 'error') {
+          setStatus('连接失败')
+          term.writeln(`\r\n[ERROR] ${payload.message}`)
+        } else if (payload.type === 'data') {
+          term.write(payload.data)
+        }
+      }
+
+      ws.onerror = () => {
+        if (!connected) {
+          term.writeln('\r\n[WARN] WebSocket 握手或网络异常，准备尝试下一个候选地址。')
+        } else {
+          setStatus('连接错误')
+          term.writeln('\r\n[ERROR] WebSocket 网络异常。')
+        }
+      }
+
+      ws.onclose = (event) => {
+        const reason = event.reason ? `，原因：${event.reason}` : ''
+        term.writeln(`\r\n[INFO] WebShell 会话已结束（code=${event.code}${reason}）。`)
+
+        if (!connected && (event.code === 1006 || event.code === 1002 || event.code === 1005)) {
+          connectWithCandidate()
+          return
+        }
+
+        setStatus('已断开')
+        if (event.code === 1008) {
+          term.writeln('\r\n[ERROR] 权限不足：仅平台管理员可访问 WebShell。')
+        } else if (event.code === 1006) {
+          term.writeln('\r\n[ERROR] 连接异常中断：可能是路径不存在、代理未转发 Upgrade 或网络中断。')
+        }
       }
     }
 
-    ws.onclose = () => {
-      setStatus('已断开')
-      term.writeln('\r\n[INFO] WebShell 会话已结束。')
-    }
+    connectWithCandidate()
   }
 
   const disconnect = () => {
