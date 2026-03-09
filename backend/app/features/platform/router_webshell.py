@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import json
+import logging
 import os
 import pty
 import shlex
@@ -10,7 +11,8 @@ import struct
 import termios
 from contextlib import suppress
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -22,6 +24,13 @@ router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/webshell",
     tags=["Platform / WebShell"],
 )
+
+legacy_router = APIRouter(
+    prefix="/api/platform/webshell",
+    tags=["Platform / WebShell"],
+)
+
+logger = logging.getLogger(__name__)
 
 
 async def _send_json(websocket: WebSocket, payload: dict) -> None:
@@ -44,9 +53,22 @@ def _load_platform_admin(db: Session, websocket: WebSocket) -> User | None:
     return user
 
 
-@router.websocket("/ws")
-async def webshell_proxy(websocket: WebSocket):
+async def _webshell_proxy_impl(websocket: WebSocket):
+    logger.info(
+        "WebShell WS incoming connection: path=%s query=%s client=%s headers=%s",
+        websocket.url.path,
+        websocket.url.query,
+        websocket.client,
+        {
+            "origin": websocket.headers.get("origin"),
+            "host": websocket.headers.get("host"),
+            "upgrade": websocket.headers.get("upgrade"),
+            "connection": websocket.headers.get("connection"),
+            "user-agent": websocket.headers.get("user-agent"),
+        },
+    )
     await websocket.accept()
+    logger.info("WebShell WS handshake accepted: path=%s", websocket.url.path)
 
     db = SessionLocal()
     user = _load_platform_admin(db, websocket)
@@ -54,6 +76,7 @@ async def webshell_proxy(websocket: WebSocket):
 
     if not user:
         await _send_json(websocket, {"type": "error", "message": "仅平台管理员可访问 WebShell。"})
+        logger.warning("WebShell WS rejected by auth: path=%s", websocket.url.path)
         await websocket.close(code=1008)
         return
 
@@ -116,6 +139,7 @@ async def webshell_proxy(websocket: WebSocket):
         os.close(slave_fd)
 
         await _send_json(websocket, {"type": "connected"})
+        logger.info("WebShell session started for user_id=%s", getattr(user, "id", None))
 
         output_task = asyncio.create_task(stream_output())
         input_task = asyncio.create_task(read_client_input())
@@ -133,9 +157,10 @@ async def webshell_proxy(websocket: WebSocket):
             await asyncio.gather(*pending, output_task, return_exceptions=True)
 
     except (OSError, ValueError, RuntimeError) as exc:
+        logger.exception("WebShell startup failed: %s", exc)
         await _send_json(websocket, {"type": "error", "message": f"WebShell 启动失败：{exc}"})
     except WebSocketDisconnect:
-        pass
+        logger.info("WebShell WS disconnected by client: path=%s", websocket.url.path)
     finally:
         if process is not None and process.returncode is None:
             with suppress(Exception):
@@ -146,3 +171,37 @@ async def webshell_proxy(websocket: WebSocket):
                 os.close(master_fd)
         with suppress(Exception):
             await websocket.close()
+        logger.info(
+            "WebShell WS closed: path=%s process_returncode=%s",
+            websocket.url.path,
+            None if process is None else process.returncode,
+        )
+
+
+def _upgrade_hint_detail(path: str) -> dict:
+    return {
+        "message": "该接口仅支持 WebSocket 握手，请检查反向代理是否正确转发 Upgrade 头。",
+        "expected_path": path,
+        "required_headers": ["Upgrade: websocket", "Connection: upgrade"],
+    }
+
+
+@router.websocket("/ws")
+async def webshell_proxy(websocket: WebSocket):
+    await _webshell_proxy_impl(websocket)
+
+
+@legacy_router.websocket("/ws")
+async def legacy_webshell_proxy(websocket: WebSocket):
+    logger.warning("WebShell WS legacy path hit: %s", websocket.url.path)
+    await _webshell_proxy_impl(websocket)
+
+
+@router.get("/ws")
+async def webshell_ws_upgrade_hint() -> JSONResponse:
+    raise HTTPException(status_code=426, detail=_upgrade_hint_detail(f"{settings.API_PREFIX}/platform/webshell/ws"))
+
+
+@legacy_router.get("/ws")
+async def legacy_webshell_ws_upgrade_hint() -> JSONResponse:
+    raise HTTPException(status_code=426, detail=_upgrade_hint_detail("/api/platform/webshell/ws"))
