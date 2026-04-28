@@ -51,7 +51,7 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin 
             <Th w={120}>站点</Th>
             <Th w={200}>备注名</Th>
             <Th w={120}>状态</Th>
-            <Th w={200}>最近登录时间</Th>
+            <Th w={200}>最近保存时间</Th>
             <Th w={200}>过期时间</Th>
             <Th w={200}>更新时间</Th>
             <Th>操作</Th>
@@ -84,7 +84,7 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin 
                 <Td>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn ghost" onClick={() => onRefreshLogin?.(item)}>
-                      刷新登录
+                      更新 Cookies
                     </button>
                     <button
                       className="btn ghost"
