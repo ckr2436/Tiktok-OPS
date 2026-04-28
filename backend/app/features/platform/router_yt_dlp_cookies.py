@@ -85,6 +85,7 @@ class LoginSessionOut(BaseModel):
     qrcode_image_base64: Optional[str] = None
     account: Optional[LoginSessionAccount] = None
     error_msg: Optional[str] = None
+    debug_logs: list[dict] = Field(default_factory=list)
 
 
 def _serialize_login_session(state, include_qr: bool = False) -> LoginSessionOut:
@@ -101,6 +102,7 @@ def _serialize_login_session(state, include_qr: bool = False) -> LoginSessionOut
         "status": state.status,
         "account": account_obj,
         "error_msg": state.error_msg,
+        "debug_logs": getattr(state, "debug_logs", None) or [],
     }
     if include_qr and getattr(state, "qrcode_image_base64", None):
         payload["qrcode_image_base64"] = state.qrcode_image_base64
