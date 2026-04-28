@@ -23,6 +23,29 @@ function StatusBadge({ status }) {
   )
 }
 
+function DebugPanel({ logs = [] }) {
+  if (!logs.length) return null
+  const latest = logs.slice(-30)
+  return (
+    <details open style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--panel-2)' }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 700 }}>调试输出（实时）</summary>
+      <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 12, lineHeight: 1.6 }}>
+        {latest.map((log, index) => (
+          <div key={`${log.time || index}-${index}`} style={{ borderTop: index ? '1px solid var(--border)' : 'none', padding: '6px 0' }}>
+            <div>
+              <strong>{log.time || '-'}</strong> · <span>{log.event || '-'}</span>
+            </div>
+            <div>{log.message || ''}</div>
+            {log.data && (
+              <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', color: 'var(--muted)' }}>{JSON.stringify(log.data, null, 2)}</pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export default function LoginModal({
   open,
   defaultSite = 'tiktok',
@@ -75,6 +98,7 @@ export default function LoginModal({
             ...(prev || {}),
             status: 'expired',
             error_msg: prev?.error_msg || '登录超时，请重新扫码登录。',
+            debug_logs: prev?.debug_logs || data.debug_logs || [],
           }))
           setPollError('登录超时，请重新扫码登录。')
         }
@@ -93,7 +117,7 @@ export default function LoginModal({
           setPollError(msg)
         }
       }
-    }, 2500)
+    }, 2000)
 
     return () => {
       clearPollTimer()
@@ -112,13 +136,14 @@ export default function LoginModal({
     const timer = setTimeout(() => {
       onSuccess?.(session)
       onClose?.()
-    }, 800)
+    }, 1200)
     return () => clearTimeout(timer)
   }, [open, session, onClose, onSuccess])
 
   const status = session?.status || 'form'
   const qrcode = session?.qrcode_image_base64
   const account = session?.account
+  const debugLogs = session?.debug_logs || []
 
   const handleClose = () => {
     clearPollTimer()
@@ -243,6 +268,8 @@ export default function LoginModal({
                 {account.last_login_at ? ` ${new Date(account.last_login_at).toLocaleString()}` : ' 刚刚'}
               </div>
             )}
+
+            <DebugPanel logs={debugLogs} />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
               <button className="btn ghost" onClick={handleClose}>
