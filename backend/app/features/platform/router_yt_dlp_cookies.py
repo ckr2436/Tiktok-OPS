@@ -1,25 +1,21 @@
 from __future__ import annotations
 
+import json
 import logging
-import time
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import require_platform_admin
 from app.core.errors import APIError
 from app.data.db import get_db
-from app.services import video_site_cookies, video_site_login_sessions
-from app.services.yt_dlp_login_sessions import (
-    LoginSessionSetupError,
-    manager as login_session_manager,
-)
+from app.services import video_site_cookies
 
-logger = logging.getLogger("gmv.ytdlp.login")
+logger = logging.getLogger("gmv.ytdlp.cookies")
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/yt-dlp",
@@ -42,10 +38,39 @@ class VideoSiteCookieOut(BaseModel):
 class VideoSiteCookieCreate(BaseModel):
     site: str = Field(description="Site identifier, e.g. tiktok/douyin/youtube")
     label: str = Field(min_length=1, max_length=128)
-    cookies_json: str = Field(description="Raw Playwright cookies JSON")
+    cookies_json: str = Field(description="Playwright / browser extension exported cookies JSON array")
     is_active: bool = True
     expires_at: Optional[datetime] = None
     extra: Optional[dict] = None
+
+    @field_validator("site")
+    @classmethod
+    def validate_site(cls, value: str) -> str:
+        site = value.lower().strip()
+        if site not in video_site_cookies.SUPPORTED_SITES:
+            raise ValueError(f"Unsupported site: {site}")
+        return site
+
+    @field_validator("cookies_json")
+    @classmethod
+    def validate_cookies_json(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("cookies_json cannot be empty")
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("cookies_json must be a valid JSON array exported from browser cookies") from exc
+        if not isinstance(parsed, list) or not parsed:
+            raise ValueError("cookies_json must be a non-empty JSON array")
+        for item in parsed:
+            if not isinstance(item, dict):
+                raise ValueError("each cookie must be an object")
+            if not item.get("name") or item.get("value") is None:
+                raise ValueError("each cookie must include name and value")
+            if not item.get("domain"):
+                raise ValueError("each cookie must include domain")
+        return json.dumps(parsed, ensure_ascii=False)
 
 
 class VideoSiteCookieActivation(BaseModel):
@@ -65,50 +90,6 @@ def _serialize(record) -> VideoSiteCookieOut:
     )
 
 
-class LoginSessionCreate(BaseModel):
-    site: str = Field(description="Site identifier, e.g. tiktok/douyin/youtube")
-    label: str = Field(min_length=1, max_length=128)
-
-
-class LoginSessionAccount(BaseModel):
-    id: str
-    site: str
-    label: str
-    last_login_at: Optional[datetime] = None
-    is_active: bool
-
-
-class LoginSessionOut(BaseModel):
-    login_session_id: str
-    site: str
-    status: str
-    qrcode_image_base64: Optional[str] = None
-    account: Optional[LoginSessionAccount] = None
-    error_msg: Optional[str] = None
-    debug_logs: list[dict] = Field(default_factory=list)
-
-
-def _serialize_login_session(state, include_qr: bool = False) -> LoginSessionOut:
-    account = state.account
-    account_obj = None
-    if account:
-        account_obj = LoginSessionAccount(**account)
-
-    login_session_id = getattr(state, "login_session_id", None) or getattr(state, "id", None)
-
-    payload = {
-        "login_session_id": login_session_id,
-        "site": state.site,
-        "status": state.status,
-        "account": account_obj,
-        "error_msg": state.error_msg,
-        "debug_logs": getattr(state, "debug_logs", None) or [],
-    }
-    if include_qr and getattr(state, "qrcode_image_base64", None):
-        payload["qrcode_image_base64"] = state.qrcode_image_base64
-    return LoginSessionOut(**payload)
-
-
 @router.get("/cookies", response_model=list[VideoSiteCookieOut])
 def list_site_cookies(site: Optional[str] = None, db: Session = Depends(get_db)):
     records = video_site_cookies.list_cookies(db, site=site)
@@ -120,7 +101,7 @@ def create_site_cookies(payload: VideoSiteCookieCreate, db: Session = Depends(ge
     record = video_site_cookies.upsert_video_site_cookies(
         db,
         site=payload.site,
-        label=payload.label,
+        label=payload.label.strip(),
         cookies_json=payload.cookies_json,
         is_active=payload.is_active,
         expires_at=payload.expires_at,
@@ -135,58 +116,3 @@ def patch_site_cookie(cookie_id: str, payload: VideoSiteCookieActivation, db: Se
     if not record:
         raise APIError("NOT_FOUND", "Cookies record not found", 404)
     return _serialize(record)
-
-
-@router.post("/login-sessions", response_model=LoginSessionOut)
-async def create_login_session(payload: LoginSessionCreate):
-    start = time.monotonic()
-    status_str = "exception"
-    logger.info(
-        "yt-dlp login-session start site=%s label=%s", payload.site, payload.label
-    )
-    try:
-        site = payload.site.lower()
-        if site not in video_site_cookies.SUPPORTED_SITES:
-            status_str = "failed"
-            raise APIError("INVALID_SITE", f"Unsupported site: {site}", 400)
-
-        try:
-            session = await login_session_manager.create_session(site, payload.label)
-            status_str = "success"
-        except LoginSessionSetupError as exc:
-            status_str = "failed"
-            logger.exception(
-                "yt-dlp login-session failed site=%s label=%s", site, payload.label
-            )
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-        return _serialize_login_session(session, include_qr=True)
-    except HTTPException:
-        raise
-    except APIError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.exception(
-            "yt-dlp login-session unexpected error site=%s label=%s: %s",
-            payload.site,
-            payload.label,
-            exc,
-        )
-        raise HTTPException(status_code=500, detail="Failed to create login session")
-    finally:
-        elapsed = (time.monotonic() - start) * 1000
-        logger.info(
-            "yt-dlp login-session finish site=%s label=%s status=%s elapsed_ms=%.1f",
-            payload.site,
-            payload.label,
-            status_str,
-            elapsed,
-        )
-
-
-@router.get("/login-sessions/{login_session_id}", response_model=LoginSessionOut)
-async def get_login_session(login_session_id: str, db: Session = Depends(get_db)):
-    session = video_site_login_sessions.get_login_session(db, login_session_id)
-    if not session or (session.expires_at and session.expires_at < datetime.utcnow()):
-        raise APIError("NOT_FOUND", "Login session not found or expired.", 404)
-    include_qr = session.status in {"qrcode_ready", "waiting_scan", "waiting_confirm"}
-    return _serialize_login_session(session, include_qr=include_qr)
