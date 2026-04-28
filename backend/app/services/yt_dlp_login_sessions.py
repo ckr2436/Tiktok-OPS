@@ -33,7 +33,14 @@ LOGIN_URLS: Dict[str, str] = {
 }
 
 SESSION_COOKIE_NAMES: Dict[str, set[str]] = {
-    "tiktok": {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "ssid_ucp"},
+    "tiktok": {
+        "sessionid",
+        "sessionid_ss",
+        "sid_tt",
+        "sid_guard",
+        "ssid_ucp",
+        "sid_ucp_v1",
+    },
     "douyin": {"sessionid", "sessionid_ss", "passport_csrf_token"},
     "youtube": {"SAPISID", "SSID", "SID", "__Secure-1PSID", "__Secure-3PSID"},
 }
@@ -48,6 +55,8 @@ LOGIN_TIMEOUT = timedelta(minutes=3)
 LOGIN_SESSION_TTL = video_site_login_sessions.DEFAULT_LOGIN_SESSION_TTL
 POLL_INTERVAL = 2.0
 LOGIN_WAITING_STATUS = "waiting_scan"
+NAVIGATION_TIMEOUT_MS = 25_000
+QR_WAIT_TIMEOUT_MS = 18_000
 
 
 def _earliest_expiry(cookies: list[dict[str, Any]]) -> datetime | None:
@@ -200,16 +209,21 @@ class YtDlpLoginSessionManager:
 
     async def _prepare_page(self, site: str) -> tuple[Browser, BrowserContext, Page, str, Any]:
         playwright = await async_playwright().start()
-        browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
         context = await browser.new_context(viewport={"width": 1280, "height": 720})
         page = await context.new_page()
+        page.set_default_timeout(10_000)
+        page.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
         try:
             if site == "tiktok":
                 qr_image = await self._prepare_tiktok_login(page)
             else:
                 try:
                     await page.goto(
-                        LOGIN_URLS[site], wait_until="networkidle", timeout=20000
+                        LOGIN_URLS[site], wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
                     )
                 except PlaywrightTimeoutError as exc:  # noqa: PERF203
                     raise LoginFlowError(
@@ -228,7 +242,7 @@ class YtDlpLoginSessionManager:
     async def _prepare_tiktok_login(self, page: Page) -> str:
         try:
             response = await page.goto(
-                LOGIN_URLS["tiktok"], wait_until="networkidle", timeout=20000
+                LOGIN_URLS["tiktok"], wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
             )
         except PlaywrightTimeoutError as exc:  # noqa: PERF203
             raise LoginFlowError(
@@ -266,17 +280,26 @@ class YtDlpLoginSessionManager:
                 logger.warning("qr flow setup failed for %s: %s", site, exc)
 
     async def _tiktok_qr_flow(self, page: Page) -> None:
-        candidates = [
-            page.get_by_role("button", name=re.compile("QR code", re.IGNORECASE)),
-            page.get_by_text(re.compile("Use QR code", re.IGNORECASE)),
-            page.get_by_text(re.compile("使用二维码登录")),
-            page.get_by_text(re.compile("扫码登录")),
+        # TikTok 登录页经常 AB 测试，中英文按钮、role、data-e2e 都可能变化。
+        # 先判断二维码是否已在页面上，再尝试点击各类“二维码登录”入口。
+        if await self._has_tiktok_qr_element(page):
+            return
+
+        locator_candidates = [
+            page.get_by_role("button", name=re.compile("(QR code|Log in with QR|Use QR)", re.IGNORECASE)),
+            page.get_by_text(re.compile("(QR code|Log in with QR|Use QR)", re.IGNORECASE)),
+            page.get_by_text(re.compile("(二维码|扫码)")),
+            page.locator("button:has-text('QR')"),
+            page.locator("div[role='button']:has-text('QR')"),
+            page.locator("[data-e2e*='qr']"),
         ]
 
-        for locator in candidates:
+        for locator in locator_candidates:
             try:
-                await locator.click(timeout=3000)
-                return
+                await locator.first.click(timeout=3000)
+                await page.wait_for_timeout(800)
+                if await self._has_tiktok_qr_element(page):
+                    return
             except Exception:
                 continue
 
@@ -284,17 +307,39 @@ class YtDlpLoginSessionManager:
             "TikTok login page did not expose any QR-code login button", status_code=502
         )
 
+    async def _has_tiktok_qr_element(self, page: Page) -> bool:
+        selectors = [
+            "canvas[data-e2e='qr-code']",
+            "[data-e2e='qr-code'] canvas",
+            "[data-e2e*='qr'] canvas",
+            "img[alt*='QR']",
+            "img[src^='data:image']",
+            "canvas",
+        ]
+        for selector in selectors:
+            try:
+                if await page.locator(selector).first.is_visible(timeout=600):
+                    return True
+            except Exception:
+                continue
+        return False
+
     async def _wait_for_tiktok_qr(self, page: Page):
         locators = [
             page.locator("canvas[data-e2e='qr-code']"),
+            page.locator("[data-e2e='qr-code'] canvas"),
+            page.locator("[data-e2e*='qr'] canvas"),
             page.locator("img[alt*='QR']"),
-            page.locator("div[data-e2e='qr-code'] canvas"),
+            page.locator("img[src^='data:image']"),
+            page.locator("canvas"),
         ]
         for locator in locators:
             try:
-                await locator.wait_for(timeout=15000)
-                return locator
-            except Error:
+                first = locator.first
+                await first.wait_for(timeout=QR_WAIT_TIMEOUT_MS)
+                if await first.is_visible(timeout=1000):
+                    return first
+            except Exception:
                 continue
         return None
 
@@ -349,12 +394,12 @@ class YtDlpLoginSessionManager:
                     continue
                 cookies = await session._context.cookies()
                 logged_in = self._is_logged_in(session.site, cookies)
-                tiktok_logged_in = False
                 if not logged_in and session.site == "tiktok":
-                    tiktok_logged_in = await self._tiktok_logged_in(session)
-                    logged_in = tiktok_logged_in
+                    logged_in = await self._tiktok_logged_in(session)
 
                 if logged_in:
+                    # 页面 DOM 先变化时，之前读取的 cookies 可能还是旧值，这里成功前再取一次。
+                    cookies = await session._context.cookies()
                     await self._handle_success(session, cookies)
                     return
             self._persist_session_state(
@@ -383,21 +428,24 @@ class YtDlpLoginSessionManager:
             try:
                 await page.wait_for_selector(selector, timeout=1000)
                 return True
-            except Error:
+            except Exception:
                 continue
         try:
-            has_cookie = await page.evaluate(
-                "() => document.cookie && /sessionid|sid_tt/.test(document.cookie)",
-                timeout=500,
+            # Playwright Page.evaluate 不支持 timeout 参数；用 asyncio.wait_for 控制超时。
+            has_cookie = await asyncio.wait_for(
+                page.evaluate("() => document.cookie && /sessionid|sid_tt/.test(document.cookie)"),
+                timeout=0.5,
             )
             return bool(has_cookie)
-        except Error:
+        except Exception:
             return False
 
     def _is_logged_in(self, site: str, cookies: list[dict[str, Any]]) -> bool:
         target_names = SESSION_COOKIE_NAMES.get(site, set())
+        target_names_lower = {name.lower() for name in target_names}
         for cookie in cookies:
-            if cookie.get("name") in target_names:
+            name = str(cookie.get("name") or "")
+            if name in target_names or name.lower() in target_names_lower:
                 return True
         return False
 
