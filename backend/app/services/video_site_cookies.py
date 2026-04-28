@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Iterable, Optional
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.data.models import VideoSiteCookies
@@ -76,10 +76,18 @@ def toggle_cookie(db: Session, cookie_id: str, is_active: bool) -> Optional[Vide
 
 
 def get_active_site_cookies(db: Session, site: str) -> Optional[VideoSiteCookies]:
+    # MySQL does not support ``ORDER BY ... NULLS LAST`` on common production
+    # versions. Use a portable CASE expression so rows with last_login_at are
+    # ordered first, then newest login time, then newest update time.
+    null_rank = case((VideoSiteCookies.last_login_at.is_(None), 1), else_=0)
     stmt = (
         select(VideoSiteCookies)
         .where(VideoSiteCookies.site == site.lower(), VideoSiteCookies.is_active.is_(True))
-        .order_by(VideoSiteCookies.last_login_at.desc().nullslast(), VideoSiteCookies.updated_at.desc())
+        .order_by(
+            null_rank.asc(),
+            VideoSiteCookies.last_login_at.desc(),
+            VideoSiteCookies.updated_at.desc(),
+        )
         .limit(1)
     )
     return db.execute(stmt).scalar_one_or_none()
