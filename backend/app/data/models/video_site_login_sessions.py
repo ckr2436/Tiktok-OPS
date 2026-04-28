@@ -20,6 +20,7 @@ class VideoSiteLoginSession(Base):
     qrcode_image_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
     account: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    debug_logs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6), server_default=text("CURRENT_TIMESTAMP(6)"), nullable=False
