@@ -64,6 +64,7 @@ LOGIN_WAITING_STATUS = "waiting_scan"
 NAVIGATION_TIMEOUT_MS = 25_000
 QR_WAIT_TIMEOUT_MS = 18_000
 MAX_DEBUG_LOGS = 80
+SNAPSHOT_INTERVAL_SECONDS = 8
 
 
 def _utc_ts() -> str:
@@ -101,6 +102,13 @@ def _dedupe_cookies(cookies: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _safe_cookie_names(cookies: list[dict[str, Any]]) -> list[str]:
     names = sorted({str(cookie.get("name") or "") for cookie in cookies if cookie.get("name")})
     return names[:80]
+
+
+def _clip_text(text: str | None, limit: int = 500) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    return cleaned[:limit]
 
 
 class LoginFlowError(Exception):
@@ -359,8 +367,10 @@ class YtDlpLoginSessionManager:
         self._debug(session, "poll_start", "开始轮询登录状态。", data={"timeout_seconds": int(LOGIN_TIMEOUT.total_seconds())})
         try:
             last_phase = None
+            last_snapshot_at: datetime | None = None
             while datetime.utcnow() < deadline:
                 await asyncio.sleep(POLL_INTERVAL)
+                now = datetime.utcnow()
                 if not session._context:
                     self._debug(session, "missing_context", "浏览器上下文不存在，跳过本轮。")
                     continue
@@ -370,8 +380,14 @@ class YtDlpLoginSessionManager:
                 if session.site == "tiktok":
                     phase = await self._get_tiktok_login_phase(session, cookies)
                     if phase != last_phase:
-                        self._debug(session, "phase_change", f"登录阶段变更为 {phase}", data={"url": self._safe_page_url(session), "cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies)})
+                        self._debug(session, "phase_change", f"登录阶段变更为 {phase}", data={"url": self._safe_page_url(session), "cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies), "body_text": await self._safe_body_text(session)})
                         last_phase = phase
+                        last_snapshot_at = now
+                    elif phase in {"waiting_scan", "waiting_confirm"} and (
+                        last_snapshot_at is None or (now - last_snapshot_at).total_seconds() >= SNAPSHOT_INTERVAL_SECONDS
+                    ):
+                        self._debug(session, "phase_snapshot", f"仍处于 {phase}，继续等待。", data={"url": self._safe_page_url(session), "cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies), "body_text": await self._safe_body_text(session)})
+                        last_snapshot_at = now
                     if phase == "waiting_confirm" and session.status != "waiting_confirm":
                         self._persist_session_state(session, status="waiting_confirm")
                     if phase == "success":
@@ -380,12 +396,12 @@ class YtDlpLoginSessionManager:
                     self._debug(session, "poll", "轮询登录状态。", data={"cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies)})
 
                 if logged_in:
-                    self._debug(session, "login_detected", "检测到登录成功信号，准备重新读取 cookies。", data={"cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies)})
+                    self._debug(session, "login_detected", "检测到登录成功信号，准备重新读取 cookies。", data={"cookie_count": len(cookies), "cookie_names": _safe_cookie_names(cookies), "url": self._safe_page_url(session)})
                     await asyncio.sleep(1.0)
                     cookies = await self._collect_site_cookies(session)
                     await self._handle_success(session, cookies)
                     return
-            self._debug(session, "expired", "等待登录超时。")
+            self._debug(session, "expired", "等待登录超时。", data={"url": self._safe_page_url(session), "body_text": await self._safe_body_text(session)})
             self._persist_session_state(session, status="expired", error_msg=f"Timed out waiting for {session.site} login")
         except Exception as exc:
             logger.exception("login session failed: %s", exc)
@@ -401,6 +417,15 @@ class YtDlpLoginSessionManager:
             return session._page.url if session._page else None
         except Exception:
             return None
+
+    async def _safe_body_text(self, session: LoginSessionState) -> str:
+        try:
+            if not session._page:
+                return ""
+            text = await asyncio.wait_for(session._page.locator("body").inner_text(timeout=1200), timeout=1.5)
+            return _clip_text(text)
+        except Exception:
+            return ""
 
     async def _collect_site_cookies(self, session: LoginSessionState) -> list[dict[str, Any]]:
         if not session._context:
