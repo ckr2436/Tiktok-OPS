@@ -24,6 +24,18 @@ def _use_ssl(url: str | None) -> bool:
         return False
 
 
+def _dedupe_names(names: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        item = str(name or "").strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
 # 兼容两种环境变量命名
 BROKER_URL = (
     getattr(settings, "CELERY_BROKER_URL", None)
@@ -76,10 +88,21 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
             except Exception:
                 names = [default_q]
 
-    # 统一 direct 交换器；并强制把 gmvmax 队列加上（防止忘配 .env）
-    for required in ("gmvmax", "gmvmax_sync"):
-        if required not in names:
-            names.append(required)
+    # 业务队列显式声明为 durable direct queue。
+    # 生产不依赖 Celery 自动创建未知队列，避免路由/监听不一致。
+    required_queues = [
+        default_q,
+        "gmv.tasks.events",
+        "gmv.tasks.maintenance",
+        "gmv.tasks.kie_ai",
+        "gmvmax",
+        "gmvmax_sync",
+    ]
+    whisper_q = getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None)
+    if whisper_q:
+        required_queues.append(str(whisper_q))
+
+    names = _dedupe_names([*names, *required_queues])
 
     exch = Exchange("gmv.celery", type="direct", durable=True)
     qs = [Queue(n, exchange=exch, routing_key=n, durable=True) for n in names]
@@ -87,6 +110,10 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
 
 
 default_queue_name, queue_objs = _load_queues()
+WHISPER_TASK_QUEUE = (
+    getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None)
+    or default_queue_name
+)
 
 celery_app.conf.update(
     task_serializer="json",
@@ -105,6 +132,13 @@ celery_app.conf.update(
     task_soft_time_limit=int(getattr(settings, "CELERY_TASK_SOFT_TIME_LIMIT", 60 * 25)),  # 25 min
     result_expires=int(getattr(settings, "CELERY_RESULT_EXPIRES", 60 * 60 * 24 * 3)),  # 3 days
 
+    # RabbitMQ 4.x 生产建议：业务队列使用 durable queue；关闭 Celery remote-control/pidbox，
+    # 避免 Celery 控制通道声明 transient non-exclusive queue 触发 broker 拒绝。
+    worker_enable_remote_control=bool(getattr(settings, "CELERY_WORKER_ENABLE_REMOTE_CONTROL", False)),
+    worker_send_task_events=bool(getattr(settings, "CELERY_WORKER_SEND_TASK_EVENTS", False)),
+    task_send_sent_event=bool(getattr(settings, "CELERY_TASK_SEND_SENT_EVENT", False)),
+    task_create_missing_queues=bool(getattr(settings, "CELERY_TASK_CREATE_MISSING_QUEUES", False)),
+
     # 队列
     task_default_queue=default_queue_name,
     task_default_exchange="gmv.celery",
@@ -112,8 +146,11 @@ celery_app.conf.update(
     task_queues=queue_objs,
 )
 
-# 路由双保险：所有 gmvmax.* 任务默认进 gmvmax 队列
+# 明确路由，避免重任务落入 default 队列。
 celery_app.conf.task_routes = {
+    "openai_whisper.*": {"queue": WHISPER_TASK_QUEUE},
+    "kie_ai.sora2.*": {"queue": "gmv.tasks.kie_ai"},
+    "ttb.sync.*": {"queue": "gmv.tasks.events"},
     "gmvmax.*": {"queue": "gmvmax"},
 }
 celery_app.conf.task_routes.update(
@@ -130,6 +167,7 @@ beat_schedule.setdefault(
     {
         "task": "gmvmax.creative_heating_cycle",
         "schedule": int(getattr(settings, "GMVMAX_HEATING_CYCLE_INTERVAL", 15 * 60)),
+        "options": {"queue": "gmvmax"},
     },
 )
 beat_schedule.setdefault(
