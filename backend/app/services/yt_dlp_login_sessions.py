@@ -30,6 +30,11 @@ LOGIN_URLS: Dict[str, str] = {
     "douyin": "https://www.douyin.com/passport/login/qr",
     "youtube": "https://accounts.google.com/ServiceLogin?service=youtube",
 }
+REALISTIC_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/123.0.0.0 Safari/537.36"
+)
 SESSION_COOKIE_NAMES: Dict[str, set[str]] = {
     "tiktok": {
         "sessionid",
@@ -242,8 +247,33 @@ class YtDlpLoginSessionManager:
 
     async def _prepare_page(self, site: str) -> tuple[Browser, BrowserContext, Page, str, Any]:
         playwright = await async_playwright().start()
-        browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = await browser.new_context(viewport={"width": 1280, "height": 720})
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--lang=en-US,en;q=0.9",
+            ],
+        )
+        context = await browser.new_context(
+            viewport={"width": 1365, "height": 768},
+            user_agent=REALISTIC_USER_AGENT,
+            locale="en-US",
+            timezone_id="America/Los_Angeles",
+            device_scale_factor=1,
+            is_mobile=False,
+            has_touch=False,
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        await context.add_init_script(
+            """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+window.chrome = window.chrome || { runtime: {} };
+"""
+        )
         page = await context.new_page()
         page.set_default_timeout(10_000)
         page.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
@@ -473,22 +503,30 @@ class YtDlpLoginSessionManager:
         return False
 
     async def _tiktok_waiting_confirm_signal(self, page: Page) -> bool:
-        patterns = [r"confirm.*(phone|device|login)", r"scanned", r"approve", r"确认.*登录", r"已扫码", r"请在.*确认", r"手机.*确认"]
         try:
             body_text = await asyncio.wait_for(page.locator("body").inner_text(timeout=1200), timeout=1.5)
         except Exception:
             body_text = ""
-        if body_text:
-            for pattern in patterns:
-                if re.search(pattern, body_text, re.IGNORECASE):
-                    return True
-        for selector in ["text=/Confirm/i", "text=/Scanned/i", "text=/Approve/i", "text=/确认/", "text=/已扫码/"]:
-            try:
-                if await page.locator(selector).first.is_visible(timeout=500):
-                    return True
-            except Exception:
-                continue
-        return False
+        if not body_text:
+            return False
+        lower = body_text.lower()
+        exact_waiting_phrases = [
+            "you scanned the qr code",
+            "scanned successfully",
+            "scan successful",
+            "request sent",
+            "open the tiktok app to confirm",
+            "confirm on your mobile device",
+            "confirm on your phone",
+            "approve login",
+            "check your phone",
+            "已扫码",
+            "扫描成功",
+            "请在手机上确认",
+            "请在 app 中确认",
+            "请在 tiktok app 中确认",
+        ]
+        return any(phrase in lower for phrase in exact_waiting_phrases)
 
     def _is_logged_in(self, site: str, cookies: list[dict[str, Any]]) -> bool:
         target_names = SESSION_COOKIE_NAMES.get(site, set())
