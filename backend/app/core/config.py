@@ -165,8 +165,20 @@ class Settings(BaseSettings):
     CELERY_TASK_ACKS_LATE: bool = True
     CELERY_TASK_REJECT_ON_WORKER_LOST: bool = True
     CELERY_WORKER_CONCURRENCY: int = 4
+    CELERY_WORKER_PREFETCH: int = 1
     CELERY_BEAT_ENABLE: bool = True
     CELERY_DEFAULT_QUEUE: Optional[str] = None
+    CELERY_TASK_TRACK_STARTED: bool = True
+    CELERY_TASK_HARD_TIME_LIMIT: int = 60 * 30
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 60 * 25
+    CELERY_RESULT_EXPIRES: int = 60 * 60 * 24 * 3
+
+    # RabbitMQ 4.x 生产建议：业务队列使用 durable queue；关闭 Celery remote-control/pidbox，
+    # 避免 Celery 控制通道声明 transient non-exclusive queue 触发 broker 拒绝。
+    CELERY_WORKER_ENABLE_REMOTE_CONTROL: bool = False
+    CELERY_WORKER_SEND_TASK_EVENTS: bool = False
+    CELERY_TASK_SEND_SENT_EVENT: bool = False
+    CELERY_TASK_CREATE_MISSING_QUEUES: bool = False
 
     # DB 调度器的刷新周期 & 业务侧可用的最小粒度（供调度路由/校验使用）
     CELERY_BEAT_DB_REFRESH_SECS: int = 15
