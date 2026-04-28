@@ -40,6 +40,11 @@ SESSION_COOKIE_NAMES: Dict[str, set[str]] = {
         "sid_guard",
         "ssid_ucp",
         "sid_ucp_v1",
+        "uid_tt",
+        "uid_tt_ss",
+        "multi_sids",
+        "passport_auth_status",
+        "passport_auth_status_ss",
     },
     "douyin": {"sessionid", "sessionid_ss", "passport_csrf_token"},
     "youtube": {"SAPISID", "SSID", "SID", "__Secure-1PSID", "__Secure-3PSID"},
@@ -49,6 +54,21 @@ DOMAIN_FILTERS: Dict[str, str] = {
     "tiktok": "tiktok.com",
     "douyin": "douyin.com",
     "youtube": "youtube.com",
+}
+
+COOKIE_URLS: Dict[str, list[str]] = {
+    "tiktok": [
+        "https://www.tiktok.com/",
+        "https://m.tiktok.com/",
+        "https://tiktok.com/",
+    ],
+    "douyin": ["https://www.douyin.com/", "https://douyin.com/"],
+    "youtube": [
+        "https://www.youtube.com/",
+        "https://youtube.com/",
+        "https://accounts.google.com/",
+        "https://google.com/",
+    ],
 }
 
 LOGIN_TIMEOUT = timedelta(minutes=3)
@@ -65,12 +85,30 @@ def _earliest_expiry(cookies: list[dict[str, Any]]) -> datetime | None:
         if not cookie.get("expires"):
             continue
         try:
-            expiries.append(float(cookie["expires"]))
+            expires = float(cookie["expires"])
+            if expires > 0:
+                expiries.append(expires)
         except (TypeError, ValueError):
             continue
     if not expiries:
         return None
     return datetime.utcfromtimestamp(min(expiries))
+
+
+def _dedupe_cookies(cookies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str]] = set()
+    result: list[dict[str, Any]] = []
+    for cookie in cookies:
+        key = (
+            str(cookie.get("name") or ""),
+            str(cookie.get("domain") or ""),
+            str(cookie.get("path") or ""),
+        )
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        result.append(cookie)
+    return result
 
 
 class LoginFlowError(Exception):
@@ -392,16 +430,23 @@ class YtDlpLoginSessionManager:
                 await asyncio.sleep(POLL_INTERVAL)
                 if not session._context:
                     continue
-                cookies = await session._context.cookies()
+
+                cookies = await self._collect_site_cookies(session)
                 logged_in = self._is_logged_in(session.site, cookies)
-                if not logged_in and session.site == "tiktok":
-                    logged_in = await self._tiktok_logged_in(session)
+
+                if session.site == "tiktok":
+                    phase = await self._get_tiktok_login_phase(session, cookies)
+                    if phase == "waiting_confirm" and session.status != "waiting_confirm":
+                        self._persist_session_state(session, status="waiting_confirm")
+                    if phase == "success":
+                        logged_in = True
 
                 if logged_in:
-                    # 页面 DOM 先变化时，之前读取的 cookies 可能还是旧值，这里成功前再取一次。
-                    cookies = await session._context.cookies()
+                    await asyncio.sleep(1.0)
+                    cookies = await self._collect_site_cookies(session)
                     await self._handle_success(session, cookies)
                     return
+
             self._persist_session_state(
                 session,
                 status="expired",
@@ -415,37 +460,118 @@ class YtDlpLoginSessionManager:
             async with self._lock:
                 self._sessions.pop(session.login_session_id, None)
 
-    async def _tiktok_logged_in(self, session: LoginSessionState) -> bool:
+    async def _collect_site_cookies(self, session: LoginSessionState) -> list[dict[str, Any]]:
+        if not session._context:
+            return []
+
+        cookies: list[dict[str, Any]] = []
+        try:
+            cookies.extend(await session._context.cookies())
+        except Exception:
+            pass
+
+        urls = COOKIE_URLS.get(session.site) or []
+        if urls:
+            try:
+                cookies.extend(await session._context.cookies(urls))
+            except Exception:
+                pass
+
+        domain_part = DOMAIN_FILTERS.get(session.site, "")
+        filtered = [cookie for cookie in cookies if domain_part in (cookie.get("domain") or "")]
+        return _dedupe_cookies(filtered)
+
+    async def _get_tiktok_login_phase(self, session: LoginSessionState, cookies: list[dict[str, Any]]) -> str:
         page = session._page
         if not page:
-            return False
+            return session.status
+
+        if self._is_logged_in("tiktok", cookies):
+            return "success"
+
+        try:
+            url = page.url or ""
+            if "tiktok.com" in url and "/login" not in url and "/signup" not in url:
+                return "success"
+        except Exception:
+            pass
+
+        if await self._tiktok_page_logged_in_signal(page):
+            return "success"
+
+        if await self._tiktok_waiting_confirm_signal(page):
+            return "waiting_confirm"
+
+        return "waiting_scan"
+
+    async def _tiktok_page_logged_in_signal(self, page: Page) -> bool:
         selectors = [
             "[data-e2e='nav-profile']",
             "[data-e2e='profile-icon']",
+            "[data-e2e='nav-user-profile']",
             "a[href^='/@'] img",
+            "a[data-e2e='nav-profile']",
         ]
         for selector in selectors:
             try:
-                await page.wait_for_selector(selector, timeout=1000)
+                await page.wait_for_selector(selector, timeout=700)
                 return True
             except Exception:
                 continue
+        return False
+
+    async def _tiktok_waiting_confirm_signal(self, page: Page) -> bool:
+        patterns = [
+            r"confirm.*(phone|device|login)",
+            r"scanned",
+            r"approve",
+            r"确认.*登录",
+            r"已扫码",
+            r"请在.*确认",
+            r"手机.*确认",
+        ]
         try:
-            # Playwright Page.evaluate 不支持 timeout 参数；用 asyncio.wait_for 控制超时。
-            has_cookie = await asyncio.wait_for(
-                page.evaluate("() => document.cookie && /sessionid|sid_tt/.test(document.cookie)"),
-                timeout=0.5,
+            body_text = await asyncio.wait_for(
+                page.locator("body").inner_text(timeout=1200),
+                timeout=1.5,
             )
-            return bool(has_cookie)
         except Exception:
-            return False
+            body_text = ""
+
+        if body_text:
+            for pattern in patterns:
+                if re.search(pattern, body_text, re.IGNORECASE):
+                    return True
+
+        selector_candidates = [
+            "text=/Confirm/i",
+            "text=/Scanned/i",
+            "text=/Approve/i",
+            "text=/确认/",
+            "text=/已扫码/",
+        ]
+        for selector in selector_candidates:
+            try:
+                if await page.locator(selector).first.is_visible(timeout=500):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _is_logged_in(self, site: str, cookies: list[dict[str, Any]]) -> bool:
         target_names = SESSION_COOKIE_NAMES.get(site, set())
         target_names_lower = {name.lower() for name in target_names}
         for cookie in cookies:
             name = str(cookie.get("name") or "")
-            if name in target_names or name.lower() in target_names_lower:
+            name_lower = name.lower()
+            if name in target_names or name_lower in target_names_lower:
+                return True
+            if site == "tiktok" and (
+                name_lower.startswith("sessionid")
+                or name_lower.startswith("sid_")
+                or name_lower.startswith("uid_tt")
+                or name_lower in {"multi_sids", "passport_auth_status", "passport_auth_status_ss"}
+            ):
                 return True
         return False
 
@@ -455,6 +581,15 @@ class YtDlpLoginSessionManager:
             for cookie in cookies
             if DOMAIN_FILTERS.get(session.site, "") in (cookie.get("domain") or "")
         ]
+        filtered = _dedupe_cookies(filtered)
+        if not filtered:
+            self._persist_session_state(
+                session,
+                status="failed",
+                error_msg="Login confirmed but no site cookies were captured. Please regenerate QR code and try again.",
+            )
+            return
+
         expires_at = _earliest_expiry(filtered)
         try:
             with SessionLocal() as db:
