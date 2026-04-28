@@ -32,7 +32,9 @@ export default function TenantList() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
 
-  const deleteMutation = useMutation((id) => deleteCompany(id))
+  const deleteMutation = useMutation({
+    mutationFn: (id) => deleteCompany(id),
+  })
 
   async function onDelete(ws) {
     if (!isPlatformOwner) return
@@ -92,7 +94,7 @@ export default function TenantList() {
                 <Td>
                   <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
                     {isPlatformOwner && ws.company_code !== '0000' && (
-                      <button className="btn" style={{background:'#ef4444'}} onClick={() => onDelete(ws)}>删除</button>
+                      <button className="btn" style={{background:'#ef4444'}} onClick={() => onDelete(ws)} disabled={deleteMutation.isPending}>删除</button>
                     )}
                   </div>
                 </Td>
