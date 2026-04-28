@@ -7,18 +7,13 @@ export async function listCookies(site) {
   return res?.data ?? []
 }
 
+export async function saveCookies(payload) {
+  const res = await http.post(`${base}/cookies`, payload)
+  return res?.data ?? res
+}
+
 export async function updateCookieActivation(id, isActive) {
   const res = await http.patch(`${base}/cookies/${id}`, { is_active: !!isActive })
-  return res?.data ?? res
-}
-
-export async function createLoginSession(payload) {
-  const res = await http.post(`${base}/login-sessions`, payload, { timeout: 60000 })
-  return res?.data ?? res
-}
-
-export async function getLoginSession(sessionId) {
-  const res = await http.get(`${base}/login-sessions/${sessionId}`)
   return res?.data ?? res
 }
 
@@ -34,9 +29,8 @@ export function siteLabel(site) {
 
 export default {
   listCookies,
+  saveCookies,
   updateCookieActivation,
-  createLoginSession,
-  getLoginSession,
   siteLabel,
   SITE_OPTIONS,
 }
