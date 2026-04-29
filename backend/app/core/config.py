@@ -153,13 +153,11 @@ class Settings(BaseSettings):
     # =========================
     # Celery（与 .env 对齐）
     # =========================
-    # 统一：Broker 用 RabbitMQ，Result Backend 用 Redis
     CELERY_BROKER_URL: str = "amqp://guest:guest@127.0.0.1:5672/%2F"
-    CELERY_RESULT_BACKEND: Optional[str] = None  # 若为空，启动时在 app/celery_app.py 会回退到 REDIS_URL
-    # 兼容旧名（有些代码用 BACKEND_URL）
+    CELERY_RESULT_BACKEND: Optional[str] = None
     CELERY_BACKEND_URL: Optional[str] = None
 
-    CELERY_TIMEZONE: str = "UTC"  # 你在 .env 里是 Asia/Shanghai，会覆盖这里
+    CELERY_TIMEZONE: str = "UTC"
     CELERY_TASK_DEFAULT_QUEUE: str = "gmv.tasks.default"
     CELERY_TASK_QUEUES: Any = ["gmv.tasks.default", "gmv.tasks.events", "gmv.tasks.maintenance"]
     CELERY_TASK_ACKS_LATE: bool = True
@@ -173,14 +171,11 @@ class Settings(BaseSettings):
     CELERY_TASK_SOFT_TIME_LIMIT: int = 60 * 25
     CELERY_RESULT_EXPIRES: int = 60 * 60 * 24 * 3
 
-    # RabbitMQ 4.x 生产建议：业务队列使用 durable queue；关闭 Celery remote-control/pidbox，
-    # 避免 Celery 控制通道声明 transient non-exclusive queue 触发 broker 拒绝。
     CELERY_WORKER_ENABLE_REMOTE_CONTROL: bool = False
     CELERY_WORKER_SEND_TASK_EVENTS: bool = False
     CELERY_TASK_SEND_SENT_EVENT: bool = False
     CELERY_TASK_CREATE_MISSING_QUEUES: bool = False
 
-    # DB 调度器的刷新周期 & 业务侧可用的最小粒度（供调度路由/校验使用）
     CELERY_BEAT_DB_REFRESH_SECS: int = 15
     SCHEDULE_MIN_INTERVAL_SECONDS: int = 60
 
@@ -208,6 +203,15 @@ class Settings(BaseSettings):
     OPENAI_WHISPER_STORAGE_DIR: str = "/data/gmv_ops/openai_whisper"
     OPENAI_WHISPER_TASK_QUEUE: Optional[str] = None
 
+    # Production lifecycle policy for generated video/subtitle artifacts.
+    OPENAI_WHISPER_FAILED_RETENTION_DAYS: int = 7
+    OPENAI_WHISPER_SUCCESS_RETENTION_DAYS: int = 90
+    OPENAI_WHISPER_LARGE_ARTIFACT_RETENTION_DAYS: int = 30
+    OPENAI_WHISPER_UPLOAD_RETENTION_HOURS: int = 24
+    OPENAI_WHISPER_STALE_ACTIVE_HOURS: int = 24
+    OPENAI_WHISPER_CLEANUP_BATCH_SIZE: int = 500
+    OPENAI_WHISPER_MANUAL_DELETE_ACTIVE_ALLOWED: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -215,7 +219,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ---------- 校正器 ----------
     @field_validator("OAUTH_SESSION_TTL_SECONDS", mode="before")
     @classmethod
     def _coerce_ttl(cls, v: Any) -> _TTLSeconds:
