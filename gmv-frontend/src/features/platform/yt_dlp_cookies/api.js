@@ -17,6 +17,11 @@ export async function updateCookieActivation(id, isActive) {
   return res?.data ?? res
 }
 
+export async function deleteCookie(id) {
+  const res = await http.delete(`${base}/cookies/${id}`)
+  return res?.data ?? res
+}
+
 export const SITE_OPTIONS = [
   { value: 'tiktok', label: 'TikTok' },
   { value: 'douyin', label: '抖音' },
@@ -31,6 +36,7 @@ export default {
   listCookies,
   saveCookies,
   updateCookieActivation,
+  deleteCookie,
   siteLabel,
   SITE_OPTIONS,
 }
