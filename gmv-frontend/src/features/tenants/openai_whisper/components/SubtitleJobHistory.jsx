@@ -8,6 +8,8 @@ function formatDate(value) {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
+const ACTIVE_STATUSES = new Set(['pending', 'processing'])
+
 const ACTION_BUTTON = {
   border: '1px solid #d1d5db',
   background: '#f3f4f6',
@@ -119,8 +121,9 @@ export default function SubtitleJobHistory({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {jobs.map((job) => {
             const isActive = job.job_id === selectedJobId
-            const isActiveStatus = ['pending', 'processing'].includes(String(job.status || '').toLowerCase())
+            const isActiveStatus = ACTIVE_STATUSES.has(String(job.status || '').toLowerCase())
             const isDeleting = deletingJobId === job.job_id
+            const deleteLabel = isActiveStatus ? '强制删除' : '删除'
             return (
               <div
                 key={job.job_id}
@@ -164,21 +167,21 @@ export default function SubtitleJobHistory({
                   <StatusBadge status={job.status} />
                   <button
                     type="button"
-                    onClick={() => onDelete?.(job)}
-                    disabled={busy || isActiveStatus}
-                    title={isActiveStatus ? '任务处理中，完成后可删除' : '删除该任务'}
+                    onClick={() => onDelete?.(job, { force: isActiveStatus })}
+                    disabled={busy}
+                    title={isActiveStatus ? '任务卡在处理中时可强制删除记录和文件' : '删除该任务'}
                     style={{
                       border: '1px solid #fecaca',
-                      background: '#fff1f2',
-                      color: '#e11d48',
+                      background: isActiveStatus ? '#fff7ed' : '#fff1f2',
+                      color: isActiveStatus ? '#c2410c' : '#e11d48',
                       borderRadius: 999,
                       padding: '5px 10px',
                       fontSize: 12,
-                      cursor: busy || isActiveStatus ? 'not-allowed' : 'pointer',
-                      opacity: busy || isActiveStatus ? 0.55 : 1,
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                      opacity: busy ? 0.55 : 1,
                     }}
                   >
-                    {isDeleting ? '删除中…' : '删除'}
+                    {isDeleting ? '删除中…' : deleteLabel}
                   </button>
                 </div>
               </div>
