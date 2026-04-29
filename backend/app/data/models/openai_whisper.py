@@ -35,7 +35,7 @@ class OpenAIWhisperJob(Base):
         nullable=True,
         index=True,
     )
-    filename: Mapped[str | None] = mapped_column(String(255), default=None)
+    filename: Mapped[str | None] = mapped_column(String(1024), default=None)
     file_size: Mapped[int | None] = mapped_column(UBigInt, default=None)
     content_type: Mapped[str | None] = mapped_column(String(128), default=None)
     video_path: Mapped[str | None] = mapped_column(String(1024), default=None)
