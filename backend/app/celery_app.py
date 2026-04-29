@@ -229,6 +229,9 @@ import app.gmvmax.tasks_sync  # noqa: F401
 
 try:
     import app.features.tenants.openai_whisper.tasks  # noqa: F401
+    from app.features.tenants.openai_whisper import runtime_patches as openai_whisper_runtime_patches
+
+    openai_whisper_runtime_patches.apply()
 except ModuleNotFoundError as exc:
     if exc.name == "yt_dlp":
         logging.getLogger(__name__).warning("skip registering Whisper tasks: missing optional dependency %s", exc.name)
