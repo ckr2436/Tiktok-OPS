@@ -42,10 +42,10 @@ function ActiveBadge({ active }) {
   )
 }
 
-export default function CookiesTable({ items, loading, onToggle, onRefreshLogin }) {
+export default function CookiesTable({ items, loading, onToggle, onRefreshLogin, onDelete, deletingId }) {
   return (
     <div className="table-wrap" style={{ border: '1px solid var(--border)', borderRadius: 12 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
         <thead style={{ background: 'var(--panel-2)' }}>
           <tr>
             <Th w={120}>站点</Th>
@@ -71,32 +71,49 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin 
               </td>
             </tr>
           ) : (
-            items.map((item) => (
-              <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
-                <Td>{siteLabel(item.site)}</Td>
-                <Td>{item.label || <span className="small-muted">（未设置）</span>}</Td>
-                <Td>
-                  <ActiveBadge active={!!item.is_active} />
-                </Td>
-                <Td>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : '—'}</Td>
-                <Td>{item.expires_at ? new Date(item.expires_at).toLocaleString() : '—'}</Td>
-                <Td>{item.updated_at ? new Date(item.updated_at).toLocaleString() : '—'}</Td>
-                <Td>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button className="btn ghost" onClick={() => onRefreshLogin?.(item)}>
-                      更新 Cookies
-                    </button>
-                    <button
-                      className="btn ghost"
-                      onClick={() => onToggle?.(item, !item.is_active)}
-                      style={{ minWidth: 88 }}
-                    >
-                      {item.is_active ? '禁用' : '启用'}
-                    </button>
-                  </div>
-                </Td>
-              </tr>
-            ))
+            items.map((item) => {
+              const deleting = deletingId === item.id
+              return (
+                <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <Td>{siteLabel(item.site)}</Td>
+                  <Td>{item.label || <span className="small-muted">（未设置）</span>}</Td>
+                  <Td>
+                    <ActiveBadge active={!!item.is_active} />
+                  </Td>
+                  <Td>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : '—'}</Td>
+                  <Td>{item.expires_at ? new Date(item.expires_at).toLocaleString() : '—'}</Td>
+                  <Td>{item.updated_at ? new Date(item.updated_at).toLocaleString() : '—'}</Td>
+                  <Td>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn ghost" onClick={() => onRefreshLogin?.(item)} disabled={deleting}>
+                        更新 Cookies
+                      </button>
+                      <button
+                        className="btn ghost"
+                        onClick={() => onToggle?.(item, !item.is_active)}
+                        disabled={deleting}
+                        style={{ minWidth: 88 }}
+                      >
+                        {item.is_active ? '禁用' : '启用'}
+                      </button>
+                      <button
+                        className="btn ghost"
+                        onClick={() => onDelete?.(item)}
+                        disabled={deleting}
+                        style={{
+                          minWidth: 88,
+                          borderColor: '#fecaca',
+                          background: '#fff1f2',
+                          color: '#dc2626',
+                        }}
+                      >
+                        {deleting ? '删除中…' : '删除'}
+                      </button>
+                    </div>
+                  </Td>
+                </tr>
+              )
+            })
           )}
         </tbody>
       </table>
