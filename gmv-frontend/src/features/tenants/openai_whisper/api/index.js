@@ -42,7 +42,6 @@ export async function createSubtitleJob(wid, payload, options = {}) {
   if (options.timeout !== undefined) {
     config.timeout = options.timeout
   } else if (payload.file) {
-    // 文件直传场景体积较大，15s 的默认超时会导致请求在浏览器端被中断
     config.timeout = 10 * 60 * 1000
   }
 
@@ -83,6 +82,23 @@ export async function fetchSubtitleJobs(wid, options = {}) {
   const query = params.toString()
   const res = await http.get(`${basePath(wid)}/jobs${query ? `?${query}` : ''}`)
   return res.data?.jobs ?? []
+}
+
+export async function deleteSubtitleJob(wid, jobId, options = {}) {
+  const params = new URLSearchParams()
+  if (options.force) params.set('force', 'true')
+  const query = params.toString()
+  const res = await http.delete(`${basePath(wid)}/jobs/${encodeURIComponent(jobId)}${query ? `?${query}` : ''}`)
+  return res.data
+}
+
+export async function clearSubtitleJobs(wid, options = {}) {
+  const params = new URLSearchParams()
+  params.set('scope', options.scope || 'terminal')
+  if (options.force) params.set('force', 'true')
+  if (options.limit) params.set('limit', String(options.limit))
+  const res = await http.delete(`${basePath(wid)}/jobs?${params.toString()}`)
+  return res.data
 }
 
 export function buildSubtitleDownloadUrl(wid, jobId, variant = 'source') {
