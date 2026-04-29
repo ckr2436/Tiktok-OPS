@@ -8,14 +8,27 @@ function formatDate(value) {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
+const ACTION_BUTTON = {
+  border: '1px solid #d1d5db',
+  background: '#f3f4f6',
+  borderRadius: 999,
+  padding: '6px 14px',
+  fontSize: 13,
+}
+
 export default function SubtitleJobHistory({
   jobs = [],
   selectedJobId,
   onSelect,
   onRefresh,
+  onDelete,
+  onClear,
   loading = false,
+  deletingJobId = '',
+  clearing = false,
   errorMessage = '',
 }) {
+  const busy = loading || clearing || !!deletingJobId
   return (
     <div
       style={{
@@ -28,26 +41,52 @@ export default function SubtitleJobHistory({
         gap: 12,
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <div>
           <div style={{ fontWeight: 600 }}>历史任务</div>
           <div style={{ fontSize: 12, color: '#6b7280' }}>最近的识别任务记录，可随时查看状态与结果。</div>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          style={{
-            border: '1px solid #d1d5db',
-            background: '#f3f4f6',
-            borderRadius: 999,
-            padding: '6px 14px',
-            fontSize: 13,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading ? '刷新中…' : '刷新'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={busy}
+            style={{
+              ...ACTION_BUTTON,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {loading ? '刷新中…' : '刷新'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onClear?.('failed')}
+            disabled={busy || jobs.length === 0}
+            style={{
+              ...ACTION_BUTTON,
+              background: '#fff7ed',
+              borderColor: '#fed7aa',
+              color: '#c2410c',
+              cursor: busy || jobs.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            清空失败
+          </button>
+          <button
+            type="button"
+            onClick={() => onClear?.('terminal')}
+            disabled={busy || jobs.length === 0}
+            style={{
+              ...ACTION_BUTTON,
+              background: '#fef2f2',
+              borderColor: '#fecaca',
+              color: '#dc2626',
+              cursor: busy || jobs.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            清空已完成
+          </button>
+        </div>
       </div>
       {errorMessage ? (
         <div
@@ -80,11 +119,11 @@ export default function SubtitleJobHistory({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {jobs.map((job) => {
             const isActive = job.job_id === selectedJobId
+            const isActiveStatus = ['pending', 'processing'].includes(String(job.status || '').toLowerCase())
+            const isDeleting = deletingJobId === job.job_id
             return (
-              <button
+              <div
                 key={job.job_id}
-                type="button"
-                onClick={() => onSelect?.(job)}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -94,25 +133,55 @@ export default function SubtitleJobHistory({
                   borderRadius: 12,
                   padding: 12,
                   background: isActive ? '#eef2ff' : '#fff',
-                  cursor: 'pointer',
-                  textAlign: 'left',
                   gap: 12,
                 }}
               >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{job.filename || job.job_id}</div>
+                <button
+                  type="button"
+                  onClick={() => onSelect?.(job)}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    padding: 0,
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {job.filename || job.job_id}
+                  </div>
                   <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
                     {job.source_language ? job.source_language.toUpperCase() : '自动检测'}
-                    {job.translate && job.translation_language
-                      ? ` → ${job.translation_language.toUpperCase()}`
-                      : ''}
+                    {job.translate && job.translation_language ? ` → ${job.translation_language.toUpperCase()}` : ''}
                   </div>
                   <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
                     创建时间：{formatDate(job.created_at) || '未知'}
                   </div>
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <StatusBadge status={job.status} />
+                  <button
+                    type="button"
+                    onClick={() => onDelete?.(job)}
+                    disabled={busy || isActiveStatus}
+                    title={isActiveStatus ? '任务处理中，完成后可删除' : '删除该任务'}
+                    style={{
+                      border: '1px solid #fecaca',
+                      background: '#fff1f2',
+                      color: '#e11d48',
+                      borderRadius: 999,
+                      padding: '5px 10px',
+                      fontSize: 12,
+                      cursor: busy || isActiveStatus ? 'not-allowed' : 'pointer',
+                      opacity: busy || isActiveStatus ? 0.55 : 1,
+                    }}
+                  >
+                    {isDeleting ? '删除中…' : '删除'}
+                  </button>
                 </div>
-                <StatusBadge status={job.status} />
-              </button>
+              </div>
             )
           })}
         </div>
