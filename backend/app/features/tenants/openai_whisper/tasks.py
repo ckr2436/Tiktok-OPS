@@ -29,6 +29,12 @@ WHISPER_TASK_QUEUE = (
     or getattr(settings, "CELERY_TASK_DEFAULT_QUEUE", "gmv.tasks.default")
 )
 ALLOWED_CONTACT_INTERVALS = {0.5, 1.0, 1.5, 2.0}
+DEFAULT_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+SESSION_COOKIE_FALLBACK_TTL_SECONDS = 30 * 24 * 3600
 
 
 class DownloadRequiresAuthError(RuntimeError):
@@ -54,12 +60,58 @@ def _pick_entry(info: dict) -> dict:
 
 def _is_authentication_required(error: Exception) -> bool:
     message = str(error).lower()
-    markers = ["log in", "login", "sign in", "cookies", "authentication", "private"]
+    markers = [
+        "log in",
+        "login",
+        "sign in",
+        "cookies",
+        "authentication",
+        "private",
+        "fresh cookies",
+    ]
     return any(marker in message for marker in markers)
 
 
-def _probe_downloadable(share_url: str, cookiefile_path: str | None = None) -> Tuple[dict, str]:
-    options = {"quiet": True, "skip_download": True, "noplaylist": True}
+def _detect_site_from_url(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or parsed.path).lower()
+    except Exception:
+        return None
+    if any(token in host for token in ("douyin.com", "iesdouyin.com", "amemv.com", "snssdk.com")):
+        return "douyin"
+    if "tiktok.com" in host:
+        return "tiktok"
+    if "youtube.com" in host or "youtu.be" in host:
+        return "youtube"
+    return None
+
+
+def _site_headers(site: str | None) -> dict[str, str]:
+    headers = {
+        "User-Agent": DEFAULT_BROWSER_USER_AGENT,
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    if site == "douyin":
+        headers["Referer"] = "https://www.douyin.com/"
+        headers["Origin"] = "https://www.douyin.com"
+    elif site == "tiktok":
+        headers["Referer"] = "https://www.tiktok.com/"
+        headers["Origin"] = "https://www.tiktok.com"
+    elif site == "youtube":
+        headers["Referer"] = "https://www.youtube.com/"
+        headers["Origin"] = "https://www.youtube.com"
+    return headers
+
+
+def _probe_downloadable(share_url: str, cookiefile_path: str | None = None, site: str | None = None) -> Tuple[dict, str]:
+    site = site or _detect_site_from_url(share_url)
+    options = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "http_headers": _site_headers(site),
+    }
     if cookiefile_path:
         options["cookiefile"] = cookiefile_path
     try:
@@ -85,7 +137,8 @@ def _probe_downloadable(share_url: str, cookiefile_path: str | None = None) -> T
 
 
 def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video_path: Path | None, *, cookiefile_path: str | None) -> Tuple[Path, str, str | None]:
-    entry, ext = _probe_downloadable(share_url, cookiefile_path)
+    site = _detect_site_from_url(share_url)
+    entry, ext = _probe_downloadable(share_url, cookiefile_path, site=site)
     directory = storage.job_dir(workspace_id, job_id)
     filename = entry.get("title") or entry.get("id") or "shared-video"
 
@@ -103,6 +156,7 @@ def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video
         "noplaylist": True,
         "merge_output_format": ext,
         "nopart": True,
+        "http_headers": _site_headers(site),
     }
     if cookiefile_path:
         options["cookiefile"] = cookiefile_path
@@ -127,7 +181,7 @@ def _format_timestamp_ms(seconds: float) -> str:
     hours, remainder = divmod(total_ms, 3_600_000)
     minutes, remainder = divmod(remainder, 60_000)
     secs, millis = divmod(remainder, 1_000)
-    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+    return f"{hours:02}:{minutes:02},{millis:03}" if hours == -1 else f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
 def _segments_to_srt(segments: Iterable[dict]) -> str:
@@ -170,19 +224,19 @@ def _mark_download_status(db: SessionLocal, *, workspace_id: int, job_id: str, s
     return metadata
 
 
-def _detect_site_from_url(url: str) -> str | None:
+def _cookie_expiry(item: dict) -> int:
+    expires_raw = item.get("expires") or item.get("expirationDate") or item.get("expiry")
     try:
-        parsed = urlparse(url)
-        host = (parsed.netloc or parsed.path).lower()
-    except Exception:
-        return None
-    if "douyin.com" in host:
-        return "douyin"
-    if "tiktok.com" in host:
-        return "tiktok"
-    if "youtube.com" in host or "youtu.be" in host:
-        return "youtube"
-    return None
+        expires = int(float(expires_raw)) if expires_raw is not None else 0
+    except Exception:  # noqa: BLE001
+        expires = 0
+    # Browser exporters often mark important Douyin cookies as session cookies.
+    # Writing them as epoch 0 can make cookie loaders treat them as expired, so
+    # use a local future timestamp. This does not extend server-side validity;
+    # it only prevents the Netscape file reader from dropping the row.
+    if expires <= 0:
+        expires = int(time.time()) + SESSION_COOKIE_FALLBACK_TTL_SECONDS
+    return expires
 
 
 def _write_temp_cookiefile(cookies_json: str, site: str, job_id: str) -> str | None:
@@ -192,6 +246,7 @@ def _write_temp_cookiefile(cookies_json: str, site: str, job_id: str) -> str | N
         logger.warning("Failed to parse cookies JSON for %s: %s", site, exc)
         return None
     if not cookies:
+        logger.warning("No cookies found for site", extra={"site": site, "job_id": job_id})
         return None
 
     tmp_dir = Path(tempfile.gettempdir())
@@ -199,29 +254,53 @@ def _write_temp_cookiefile(cookies_json: str, site: str, job_id: str) -> str | N
     cookie_path = tmp_dir / f"yt_dlp_cookies_{site}_{job_id}.txt"
 
     lines = ["# Netscape HTTP Cookie File"]
+    written_names: list[str] = []
+    skipped = 0
     for item in cookies:
-        name = item.get("name")
-        if not name:
+        if not isinstance(item, dict):
+            skipped += 1
             continue
-        value = item.get("value") or ""
-        domain = item.get("domain") or item.get("host") or ""
-        include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
-        path_value = item.get("path") or "/"
+        name = str(item.get("name") or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        value = str(item.get("value") or "")
+        domain = str(item.get("domain") or item.get("host") or "").strip()
+        if not domain:
+            skipped += 1
+            continue
+        path_value = str(item.get("path") or "/")
+        host_only = bool(item.get("hostOnly"))
+        include_subdomains = "FALSE" if host_only else ("TRUE" if domain.startswith(".") else "FALSE")
         secure = "TRUE" if item.get("secure") else "FALSE"
-        expires_raw = item.get("expires") or item.get("expirationDate")
-        try:
-            expires = int(expires_raw) if expires_raw is not None else 0
-        except Exception:  # noqa: BLE001
-            expires = 0
+        expires = _cookie_expiry(item)
         lines.append("\t".join([domain, include_subdomains, path_value, secure, str(expires), name, value]))
+        written_names.append(name)
 
-    cookie_path.write_text("\n".join(lines), encoding="utf-8")
+    if not written_names:
+        logger.warning("No valid cookies were written", extra={"site": site, "job_id": job_id, "skipped": skipped})
+        return None
+
+    cookie_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    key_names = [name for name in written_names if name.lower() in {"sessionid", "sessionid_ss", "sid_guard", "sid_tt", "ttwid", "msToken".lower(), "odin_tt", "passport_csrf_token"}]
+    logger.info(
+        "yt-dlp cookiefile prepared",
+        extra={
+            "site": site,
+            "job_id": job_id,
+            "path": str(cookie_path),
+            "written_count": len(written_names),
+            "skipped_count": skipped,
+            "key_cookie_names": sorted(set(key_names)),
+        },
+    )
     return str(cookie_path)
 
 
 def _load_cookiefile_for_share(share_url: str, job_id: str) -> str | None:
     site = _detect_site_from_url(share_url)
     if not site:
+        logger.info("No matching cookie site for share URL", extra={"job_id": job_id, "share_url_host": urlparse(share_url).netloc if share_url else None})
         return None
     db = SessionLocal()
     try:
@@ -229,7 +308,9 @@ def _load_cookiefile_for_share(share_url: str, job_id: str) -> str | None:
     finally:
         db.close()
     if not record or not record.cookies_json:
+        logger.warning("No active cookies configured for share URL", extra={"site": site, "job_id": job_id})
         return None
+    logger.info("active site cookies loaded", extra={"site": site, "job_id": job_id, "cookie_id": record.id, "label": record.label})
     return _write_temp_cookiefile(record.cookies_json, site, job_id)
 
 
@@ -255,10 +336,14 @@ def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> t
             db.commit()
             return metadata, video_path, None
         except DownloadRequiresAuthError as exc:
-            message = "该分享视频需要登录授权才能下载，请登录后重新复制可访问的链接。"
+            site = _detect_site_from_url(share_url)
+            if site == "douyin":
+                message = "该抖音分享视频仍被平台判定需要新鲜 Cookies。请在同一浏览器打开这条视频并确认能播放，然后重新导出完整 douyin.com Cookies 后再试。"
+            else:
+                message = "该分享视频需要登录授权才能下载，请登录后重新复制可访问的链接。"
             _mark_download_status(db, workspace_id=workspace_id, job_id=job_id, status="failed", message=message)
             db.commit()
-            logger.warning("whisper download requires auth", extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)})
+            logger.warning("whisper download requires auth", extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc), "site": site})
             return None, None, message
         except Exception as exc:  # noqa: BLE001
             message = "视频下载失败，请稍后重试或更换链接。"
