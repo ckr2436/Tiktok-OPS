@@ -71,7 +71,17 @@ def toggle_cookie(db: Session, cookie_id: str, is_active: bool) -> Optional[Vide
     if not existing:
         return None
     existing.is_active = is_active
+    existing.updated_at = datetime.utcnow()
     db.add(existing)
+    return existing
+
+
+def delete_cookie(db: Session, cookie_id: str) -> Optional[VideoSiteCookies]:
+    stmt = select(VideoSiteCookies).where(VideoSiteCookies.id == cookie_id)
+    existing = db.execute(stmt).scalar_one_or_none()
+    if not existing:
+        return None
+    db.delete(existing)
     return existing
 
 
