@@ -51,6 +51,16 @@ def _ensure_dir(path: Path) -> Path:
     return path
 
 
+def _safe_child_path(base: Path, candidate: Path) -> Path | None:
+    try:
+        base_resolved = base.resolve()
+        candidate_resolved = candidate.resolve()
+        candidate_resolved.relative_to(base_resolved)
+        return candidate_resolved
+    except Exception:
+        return None
+
+
 def workspace_dir(workspace_id: int) -> Path:
     return _ensure_dir(BASE_DIR / f"workspace_{workspace_id}")
 
@@ -119,6 +129,32 @@ def load_upload_metadata(workspace_id: int, upload_id: str) -> Dict[str, Any]:
 def delete_upload(workspace_id: int, upload_id: str) -> None:
     directory = uploads_dir(workspace_id) / upload_id
     shutil.rmtree(directory, ignore_errors=True)
+
+
+def delete_uploads_older_than(workspace_id: int | None, cutoff_ts: float, *, limit: int = 500) -> int:
+    roots = []
+    if workspace_id is not None:
+        roots.append(BASE_DIR / f"workspace_{workspace_id}" / "uploads")
+    else:
+        roots.extend(BASE_DIR.glob("workspace_*/uploads"))
+
+    removed = 0
+    for root in roots:
+        if not root.exists() or removed >= limit:
+            continue
+        for child in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime if p.exists() else 0):
+            if removed >= limit:
+                break
+            try:
+                if child.stat().st_mtime >= cutoff_ts:
+                    continue
+                safe = _safe_child_path(root, child)
+                if safe:
+                    shutil.rmtree(safe, ignore_errors=True)
+                    removed += 1
+            except FileNotFoundError:
+                continue
+    return removed
 
 
 def _atomic_update(path: Path, updater: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:
@@ -201,6 +237,58 @@ def resolve_contact_sheet_path(workspace_id: int, job_id: str) -> Path:
     if not path.exists():
         raise FileNotFoundError(path)
     return path
+
+
+def delete_job_files(workspace_id: int, job_id: str) -> bool:
+    base = workspace_dir(workspace_id)
+    directory = base / job_id
+    safe = _safe_child_path(base, directory)
+    if not safe or not safe.exists():
+        return False
+    shutil.rmtree(safe, ignore_errors=True)
+    return True
+
+
+def purge_large_artifacts(workspace_id: int, job_id: str) -> list[str]:
+    base = workspace_dir(workspace_id)
+    directory = base / job_id
+    safe_dir = _safe_child_path(base, directory)
+    if not safe_dir or not safe_dir.exists():
+        return []
+
+    removed: list[str] = []
+    keep_names = {"job.json", "result.json", "source.srt", "translation.srt"}
+    for child in safe_dir.iterdir():
+        try:
+            if child.name in keep_names:
+                continue
+            safe = _safe_child_path(safe_dir, child)
+            if not safe:
+                continue
+            if safe.is_dir():
+                shutil.rmtree(safe, ignore_errors=True)
+            else:
+                safe.unlink(missing_ok=True)
+            removed.append(child.name)
+        except FileNotFoundError:
+            continue
+    if removed:
+        try:
+            update_metadata(
+                workspace_id,
+                job_id,
+                lambda meta: {
+                    **meta,
+                    "video_path": None,
+                    "download_url": None,
+                    "contact_sheet_url": None,
+                    "large_artifacts_purged_at": _utc_now(),
+                    "large_artifacts_purged": True,
+                },
+            )
+        except Exception:
+            pass
+    return removed
 
 
 def _ensure_status_defaults(meta: Dict[str, Any]) -> Dict[str, Any]:
