@@ -268,19 +268,20 @@ export default function SubtitleRecognitionPage() {
   )
 
   const handleDeleteJob = useCallback(
-    async (jobItem) => {
+    async (jobItem, options = {}) => {
       if (!jobItem?.job_id || deletingJobId) return
       const active = ['pending', 'processing'].includes(String(jobItem.status || '').toLowerCase())
-      if (active) {
-        setHistoryError('任务仍在处理中，完成或失败后再删除。')
-        return
-      }
-      const ok = window.confirm(`确定删除任务「${jobItem.filename || jobItem.job_id}」吗？\n该操作会删除数据库记录和对应生成文件，无法恢复。`)
+      const force = !!options.force || active
+      const ok = window.confirm(
+        force
+          ? `确定强制删除任务「${jobItem.filename || jobItem.job_id}」吗？\n该任务当前仍显示处理中。强制删除会移除数据库记录和已生成文件，但不能中断可能已经开始的后台下载进程。`
+          : `确定删除任务「${jobItem.filename || jobItem.job_id}」吗？\n该操作会删除数据库记录和对应生成文件，无法恢复。`,
+      )
       if (!ok) return
       try {
         setDeletingJobId(jobItem.job_id)
         setHistoryError('')
-        await deleteSubtitleJob(wid, jobItem.job_id)
+        await deleteSubtitleJob(wid, jobItem.job_id, { force })
         setJobHistory((prev) => prev.filter((item) => item.job_id !== jobItem.job_id))
         if (selectedJobId === jobItem.job_id) {
           stopPolling()
