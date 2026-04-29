@@ -212,6 +212,21 @@ class Settings(BaseSettings):
     OPENAI_WHISPER_CLEANUP_BATCH_SIZE: int = 500
     OPENAI_WHISPER_MANUAL_DELETE_ACTIVE_ALLOWED: bool = False
 
+    # =========================
+    # Hermes Agent / AI Growth tools
+    # =========================
+    HERMES_AGENT_ENABLED: bool = False
+    HERMES_AGENT_BASE_URL: str = "http://127.0.0.1:8642/v1"
+    HERMES_AGENT_API_KEY: str = ""
+    HERMES_AGENT_MODEL: str = "gmv-ops-hermes"
+    HERMES_AGENT_TIMEOUT_SECONDS: float = 120.0
+    HERMES_AGENT_TASK_QUEUE: str = "gmv.tasks.hermes_agent"
+    HERMES_AGENT_ALLOW_MEMBER: bool = True
+    HERMES_AGENT_REQUIRE_EXPLICIT_PERMISSION: bool = False
+    HERMES_AGENT_MAX_INPUT_CHARS: int = 30000
+    HERMES_AGENT_MAX_RESULT_CHARS: int = 200000
+    HERMES_AGENT_RUN_SYNC_TIMEOUT_SECONDS: float = 120.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
