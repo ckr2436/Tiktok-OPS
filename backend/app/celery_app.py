@@ -86,6 +86,7 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
         "gmv.tasks.events",
         "gmv.tasks.maintenance",
         "gmv.tasks.kie_ai",
+        getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent"),
         "gmvmax",
         "gmvmax_sync",
     ]
@@ -101,6 +102,7 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
 
 default_queue_name, queue_objs = _load_queues()
 WHISPER_TASK_QUEUE = getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None) or default_queue_name
+HERMES_AGENT_TASK_QUEUE = getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent")
 
 celery_app.conf.update(
     task_serializer="json",
@@ -129,6 +131,7 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "openai_whisper.*": {"queue": WHISPER_TASK_QUEUE},
     "kie_ai.sora2.*": {"queue": "gmv.tasks.kie_ai"},
+    "hermes_agent.*": {"queue": HERMES_AGENT_TASK_QUEUE},
     "ttb.sync.*": {"queue": "gmv.tasks.events"},
     "gmvmax.*": {"queue": "gmvmax"},
 }
@@ -225,6 +228,7 @@ import app.tasks.oauth_tasks  # noqa: F401
 import app.tasks.ttb_sync_tasks  # noqa: F401
 import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
 import app.tasks.ttb_gmvmax_tasks  # noqa: F401
+import app.tasks.hermes_agent.tasks  # noqa: F401
 import app.gmvmax.tasks_sync  # noqa: F401
 
 try:
