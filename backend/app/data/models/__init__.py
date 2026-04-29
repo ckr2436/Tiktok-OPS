@@ -88,6 +88,12 @@ from .gmvmax_campaign_snapshots import (
     GmvmaxLiveCampaignSnapshotRow,
 )
 from .openai_whisper import OpenAIWhisperJob
+from .hermes_agent import (
+    UserFeaturePermission,
+    HermesAgentConversation,
+    HermesAgentMessage,
+    HermesAgentRun,
+)
 from .email_settings import PlatformEmailSetting, MailSendMode, MailEncryption
 from .video_site_cookies import VideoSiteCookies
 from .video_site_login_sessions import VideoSiteLoginSession
@@ -169,6 +175,10 @@ __all__ = [
     "GmvmaxLiveCampaignSnapshotBatch",
     "GmvmaxLiveCampaignSnapshotRow",
     "OpenAIWhisperJob",
+    "UserFeaturePermission",
+    "HermesAgentConversation",
+    "HermesAgentMessage",
+    "HermesAgentRun",
     "VideoSiteCookies",
     "VideoSiteLoginSession",
     "PlatformEmailSetting",
