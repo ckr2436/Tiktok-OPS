@@ -10,6 +10,7 @@ from typing import Dict, Optional
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.errors import APIError
 
 from . import repository, storage
@@ -24,6 +25,8 @@ from .schemas import (
 )
 
 ALLOWED_CONTACT_INTERVALS = {0.5, 1.0, 1.5, 2.0}
+TERMINAL_STATUSES = {"success", "failed"}
+ACTIVE_STATUSES = {"pending", "processing"}
 
 
 async def _save_upload_file(dest: Path, upload: UploadFile) -> None:
@@ -176,7 +179,7 @@ async def create_job(
             raise APIError("CONTACT_INTERVAL_REQUIRED", "请选择抽帧间隔。", 422)
         try:
             interval_value = round(float(contact_interval), 2)
-        except (TypeError, ValueError) as exc:  # noqa: PERF203
+        except (TypeError, ValueError) as exc:
             raise APIError("INVALID_CONTACT_INTERVAL", "抽帧间隔格式不正确。", 422) from exc
         if interval_value not in ALLOWED_CONTACT_INTERVALS:
             raise APIError("INVALID_CONTACT_INTERVAL", "抽帧间隔仅支持 0.5/1/1.5/2 秒。", 422)
@@ -261,12 +264,9 @@ async def create_job(
     storage.write_metadata(workspace_id, job_id, metadata)
     job_row = repository.create_job(db, metadata)
     db.flush()
-    # Make the job visible to other transactions (Celery workers) before
-    # dispatching the asynchronous task. Otherwise the worker may start
-    # immediately, fail to find the DB row, and never update its status.
     db.commit()
 
-    from . import tasks as whisper_tasks  # Lazy import to avoid circular refs
+    from . import tasks as whisper_tasks
 
     failure_message = "暂时无法提交识别任务，请稍后重试。"
 
@@ -369,6 +369,50 @@ def list_jobs(workspace_id: int, limit: int, db: Session) -> TranscriptionJobLis
     )
 
 
+def delete_job(workspace_id: int, job_id: str, db: Session, *, force: bool = False) -> dict:
+    row = repository.get_job(db, workspace_id, job_id)
+    if not row:
+        raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
+    if row.status in ACTIVE_STATUSES and not (force or settings.OPENAI_WHISPER_MANUAL_DELETE_ACTIVE_ALLOWED):
+        raise APIError("JOB_ACTIVE", "任务仍在处理中，请等待完成后再删除。", 409)
+
+    storage.delete_job_files(workspace_id, job_id)
+    repository.delete_job(db, workspace_id, job_id)
+    db.commit()
+    return {"deleted": 1, "job_id": job_id}
+
+
+def clear_jobs(workspace_id: int, db: Session, *, scope: str = "terminal", force: bool = False, limit: int = 500) -> dict:
+    scope = (scope or "terminal").lower()
+    include_active = bool(force and scope == "all")
+    if scope not in {"terminal", "failed", "success", "all"}:
+        raise APIError("INVALID_SCOPE", "scope must be terminal, failed, success, or all.", 422)
+
+    rows = repository.list_jobs_for_workspace(
+        db,
+        workspace_id,
+        include_active=include_active,
+        limit=max(1, min(int(limit or 500), 1000)),
+    )
+    selected = []
+    for row in rows:
+        if scope == "failed" and row.status != "failed":
+            continue
+        if scope == "success" and row.status != "success":
+            continue
+        if scope == "terminal" and row.status not in TERMINAL_STATUSES:
+            continue
+        if scope == "all" and row.status in ACTIVE_STATUSES and not include_active:
+            continue
+        selected.append(row)
+
+    for row in selected:
+        storage.delete_job_files(row.workspace_id, row.job_id)
+    deleted = repository.delete_jobs_by_ids(db, [row.job_id for row in selected])
+    db.commit()
+    return {"deleted": deleted, "scope": scope}
+
+
 def build_download(workspace_id: int, job_id: str, variant: str) -> Path:
     if variant not in {"source", "translation"}:
         raise APIError("INVALID_VARIANT", "variant must be source or translation", 422)
@@ -394,8 +438,7 @@ def build_video_download(workspace_id: int, job_id: str) -> tuple[Path, str, str
     raw_video_path = metadata.get("video_path")
     path = Path(str(raw_video_path)) if raw_video_path else None
     if not path or not path.exists():
-        raise APIError("VIDEO_NOT_READY", "视频尚未下载完成，请稍后再试。", 404)
+        raise APIError("VIDEO_NOT_READY", "视频尚未下载完成或已被自动清理。", 404)
     filename = metadata.get("filename") or f"{job_id}.mp4"
     content_type = metadata.get("content_type") or "application/octet-stream"
     return path, filename, content_type
-
