@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import CookiesTable from '../components/CookiesTable.jsx'
 import LoginModal from '../components/LoginModal.jsx'
-import { SITE_OPTIONS, listCookies, updateCookieActivation } from '../api.js'
+import { SITE_OPTIONS, deleteCookie, listCookies, updateCookieActivation } from '../api.js'
 
 const ALL_SITE = 'all'
 
@@ -53,6 +53,7 @@ export default function YtDlpCookiesPage() {
   const [siteFilter, setSiteFilter] = useState(ALL_SITE)
   const [modalOpen, setModalOpen] = useState(false)
   const [prefill, setPrefill] = useState({ site: SITE_OPTIONS[0].value, label: '' })
+  const [deletingId, setDeletingId] = useState('')
   const [toast, showToast] = useToast()
 
   const cookiesQuery = useQuery({
@@ -67,6 +68,11 @@ export default function YtDlpCookiesPage() {
   const toggleMutation = useMutation({
     mutationKey: ['platform', 'yt-dlp', 'cookies', 'toggle'],
     mutationFn: ({ id, isActive }) => updateCookieActivation(id, isActive),
+  })
+
+  const deleteMutation = useMutation({
+    mutationKey: ['platform', 'yt-dlp', 'cookies', 'delete'],
+    mutationFn: (id) => deleteCookie(id),
   })
 
   const refreshList = async () => {
@@ -86,6 +92,25 @@ export default function YtDlpCookiesPage() {
     } catch (err) {
       const msg = err?.message || '更新状态失败，请稍后再试。'
       window.alert(msg)
+    }
+  }
+
+  const handleDelete = async (item) => {
+    if (!item?.id || deletingId) return
+    const ok = window.confirm(
+      `确定删除「${item.label || item.site || item.id}」这条 Cookies 吗？\n删除后，系统将无法再使用这条 Cookies 下载对应平台的视频。`,
+    )
+    if (!ok) return
+    setDeletingId(item.id)
+    try {
+      await deleteMutation.mutateAsync(item.id)
+      await refreshList()
+      showToast('Cookies 已删除', 'success')
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.error_msg || err?.message || '删除失败，请稍后再试。'
+      window.alert(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setDeletingId('')
     }
   }
 
@@ -122,6 +147,8 @@ export default function YtDlpCookiesPage() {
         loading={loading}
         onToggle={handleToggle}
         onRefreshLogin={handleRefreshLogin}
+        onDelete={handleDelete}
+        deletingId={deletingId}
       />
 
       <LoginModal
