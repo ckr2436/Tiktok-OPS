@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/v1/tenants/{workspace_id}/openai-whisper", tags=
 
 @router.get("/languages", response_model=LanguageListResponse)
 def list_languages(workspace_id: int, _: SessionUser = Depends(require_tenant_member)):
-    del workspace_id  # workspace_scope already enforced by dependency
+    del workspace_id
     return service.get_languages()
 
 
@@ -86,6 +86,18 @@ def list_jobs(
     return service.list_jobs(workspace_id, limit, db)
 
 
+@router.delete("/jobs")
+def clear_jobs(
+    workspace_id: int,
+    scope: str = Query("terminal", pattern="^(terminal|failed|success|all)$"),
+    force: bool = Query(False),
+    limit: int = Query(500, ge=1, le=1000),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    return service.clear_jobs(workspace_id, db, scope=scope, force=force, limit=limit)
+
+
 @router.get("/jobs/{job_id}", response_model=TranscriptionJobStatusResponse)
 def get_job_status(
     workspace_id: int,
@@ -94,6 +106,17 @@ def get_job_status(
     db: Session = Depends(get_db),
 ):
     return service.get_job(workspace_id, job_id, db)
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(
+    workspace_id: int,
+    job_id: str,
+    force: bool = Query(False),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+):
+    return service.delete_job(workspace_id, job_id, db, force=force)
 
 
 @router.get("/jobs/{job_id}/subtitles")
