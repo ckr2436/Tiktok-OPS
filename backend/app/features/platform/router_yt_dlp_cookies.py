@@ -35,6 +35,11 @@ class VideoSiteCookieOut(BaseModel):
     updated_at: datetime
 
 
+class VideoSiteCookieDeleteOut(BaseModel):
+    deleted: bool
+    id: str
+
+
 class VideoSiteCookieCreate(BaseModel):
     site: str = Field(description="Site identifier, e.g. tiktok/douyin/youtube")
     label: str = Field(min_length=1, max_length=128)
@@ -63,14 +68,43 @@ class VideoSiteCookieCreate(BaseModel):
             raise ValueError("cookies_json must be a valid JSON array exported from browser cookies") from exc
         if not isinstance(parsed, list) or not parsed:
             raise ValueError("cookies_json must be a non-empty JSON array")
+
+        normalized: list[dict] = []
+        skipped_empty_name = 0
         for item in parsed:
             if not isinstance(item, dict):
                 raise ValueError("each cookie must be an object")
-            if not item.get("name") or item.get("value") is None:
-                raise ValueError("each cookie must include name and value")
-            if not item.get("domain"):
+
+            name = item.get("name")
+            name = name.strip() if isinstance(name, str) else name
+
+            # Some Chrome cookie exporters include pseudo rows with an empty name,
+            # for example {"name": "", "value": "douyin.com"}. They are not valid
+            # Netscape cookie entries and yt-dlp cannot use them, so ignore them.
+            if not name:
+                skipped_empty_name += 1
+                continue
+
+            if item.get("value") is None:
+                raise ValueError("each cookie must include value")
+            domain = item.get("domain")
+            domain = domain.strip() if isinstance(domain, str) else domain
+            if not domain:
                 raise ValueError("each cookie must include domain")
-        return json.dumps(parsed, ensure_ascii=False)
+
+            normalized_item = dict(item)
+            normalized_item["name"] = str(name)
+            normalized_item["value"] = str(item.get("value"))
+            normalized_item["domain"] = str(domain)
+            normalized_item["path"] = normalized_item.get("path") or "/"
+            normalized.append(normalized_item)
+
+        if not normalized:
+            raise ValueError("cookies_json has no valid cookie rows after filtering empty-name entries")
+
+        if skipped_empty_name:
+            logger.info("ignored empty-name cookie rows", extra={"skipped": skipped_empty_name})
+        return json.dumps(normalized, ensure_ascii=False)
 
 
 class VideoSiteCookieActivation(BaseModel):
@@ -116,3 +150,11 @@ def patch_site_cookie(cookie_id: str, payload: VideoSiteCookieActivation, db: Se
     if not record:
         raise APIError("NOT_FOUND", "Cookies record not found", 404)
     return _serialize(record)
+
+
+@router.delete("/cookies/{cookie_id}", response_model=VideoSiteCookieDeleteOut)
+def delete_site_cookie(cookie_id: str, db: Session = Depends(get_db)):
+    record = video_site_cookies.delete_cookie(db, cookie_id)
+    if not record:
+        raise APIError("NOT_FOUND", "Cookies record not found", 404)
+    return VideoSiteCookieDeleteOut(deleted=True, id=cookie_id)
