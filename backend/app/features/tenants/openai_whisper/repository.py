@@ -4,10 +4,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-from sqlalchemy import select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.data.models.openai_whisper import OpenAIWhisperJob
+
+TERMINAL_STATUSES = {"success", "failed"}
+ACTIVE_STATUSES = {"pending", "processing"}
 
 
 def _utcnow() -> datetime:
@@ -227,6 +230,19 @@ def update_contact_sheet_status(
     return job
 
 
+def clear_large_artifact_refs(db: Session, workspace_id: int, job_id: str) -> Optional[OpenAIWhisperJob]:
+    job = _ensure_job(db, workspace_id, job_id)
+    if not job:
+        return None
+    job.video_path = None
+    job.file_size = None
+    job.download_url = None
+    job.contact_sheet_url = None
+    job.updated_at = _utcnow()
+    db.add(job)
+    return job
+
+
 def list_jobs(db: Session, workspace_id: int, limit: int) -> Iterable[OpenAIWhisperJob]:
     stmt = (
         select(OpenAIWhisperJob)
@@ -235,6 +251,87 @@ def list_jobs(db: Session, workspace_id: int, limit: int) -> Iterable[OpenAIWhis
         .limit(limit)
     )
     return db.execute(stmt).scalars().all()
+
+
+def list_jobs_for_workspace(
+    db: Session,
+    workspace_id: int,
+    *,
+    include_active: bool = False,
+    limit: int | None = None,
+) -> list[OpenAIWhisperJob]:
+    stmt = select(OpenAIWhisperJob).where(OpenAIWhisperJob.workspace_id == int(workspace_id))
+    if not include_active:
+        stmt = stmt.where(OpenAIWhisperJob.status.in_(TERMINAL_STATUSES))
+    stmt = stmt.order_by(OpenAIWhisperJob.created_at.desc(), OpenAIWhisperJob.id.desc())
+    if limit:
+        stmt = stmt.limit(limit)
+    return list(db.execute(stmt).scalars().all())
+
+
+def list_stale_active_jobs(db: Session, *, cutoff: datetime, limit: int) -> list[OpenAIWhisperJob]:
+    stmt = (
+        select(OpenAIWhisperJob)
+        .where(OpenAIWhisperJob.status.in_(ACTIVE_STATUSES), OpenAIWhisperJob.updated_at < cutoff)
+        .order_by(OpenAIWhisperJob.updated_at.asc(), OpenAIWhisperJob.id.asc())
+        .limit(limit)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def list_jobs_for_large_artifact_cleanup(db: Session, *, cutoff: datetime, limit: int) -> list[OpenAIWhisperJob]:
+    stmt = (
+        select(OpenAIWhisperJob)
+        .where(
+            OpenAIWhisperJob.status == "success",
+            OpenAIWhisperJob.updated_at < cutoff,
+            or_(
+                OpenAIWhisperJob.video_path.is_not(None),
+                OpenAIWhisperJob.download_url.is_not(None),
+                OpenAIWhisperJob.contact_sheet_url.is_not(None),
+            ),
+        )
+        .order_by(OpenAIWhisperJob.updated_at.asc(), OpenAIWhisperJob.id.asc())
+        .limit(limit)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def list_expired_terminal_jobs(
+    db: Session,
+    *,
+    success_cutoff: datetime,
+    failed_cutoff: datetime,
+    limit: int,
+) -> list[OpenAIWhisperJob]:
+    stmt = (
+        select(OpenAIWhisperJob)
+        .where(
+            or_(
+                and_(OpenAIWhisperJob.status == "success", OpenAIWhisperJob.updated_at < success_cutoff),
+                and_(OpenAIWhisperJob.status == "failed", OpenAIWhisperJob.updated_at < failed_cutoff),
+            )
+        )
+        .order_by(OpenAIWhisperJob.updated_at.asc(), OpenAIWhisperJob.id.asc())
+        .limit(limit)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def delete_job(db: Session, workspace_id: int, job_id: str) -> OpenAIWhisperJob | None:
+    job = _ensure_job(db, workspace_id, job_id)
+    if not job:
+        return None
+    db.delete(job)
+    return job
+
+
+def delete_jobs_by_ids(db: Session, job_ids: list[str]) -> int:
+    if not job_ids:
+        return 0
+    stmt = delete(OpenAIWhisperJob).where(OpenAIWhisperJob.job_id.in_(job_ids))
+    result = db.execute(stmt)
+    return int(result.rowcount or 0)
 
 
 def ensure_aware(dt: datetime | None) -> datetime | None:
