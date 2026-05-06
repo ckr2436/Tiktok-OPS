@@ -6,6 +6,18 @@ import { apiRoot } from '@/core/config.js'
 
 const MAX_INPUT_BUFFERED_AMOUNT = 1024 * 1024
 const OUTPUT_FLUSH_INTERVAL_MS = 16
+const CTRL_C = '\x03'
+const HERMES_BOOTSTRAP_SCRIPT = `mkdir -p "$HOME/.hermes"
+chmod 700 "$HOME/.hermes"
+
+# Replace the values below with your real Hermes configuration.
+cat > "$HOME/.hermes/.env" <<'EOF'
+# HERMES_API_KEY=replace_me
+# HERMES_MODEL=replace_me
+EOF
+
+chmod 600 "$HOME/.hermes/.env"
+ls -la "$HOME/.hermes"`
 
 function buildWebSocketUrlCandidates() {
   const apiUrl = new URL(apiRoot, window.location.origin)
@@ -25,6 +37,18 @@ function normalizeTerminalInput(data) {
   // xterm/browser Enter is usually CR. Normalize it before sending to the PTY
   // so production shells do not render Enter as ^M.
   return String(data).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function normalizeCommandText(data) {
+  const normalized = normalizeTerminalInput(data).trimEnd()
+  if (!normalized) return ''
+  return `${normalized}\n`
+}
+
+function wrapAsBashScript(script) {
+  const normalized = normalizeTerminalInput(script).trimEnd()
+  if (!normalized) return ''
+  return `bash <<'GMV_WEBSHELL_SCRIPT'\nset -euo pipefail\n${normalized}\nGMV_WEBSHELL_SCRIPT\n`
 }
 
 function clampSize(cols, rows) {
@@ -47,6 +71,7 @@ export default function PlatformWebShellPage() {
   const connectedRef = useRef(false)
   const manuallyClosedRef = useRef(false)
   const [status, setStatus] = useState('未连接')
+  const [commandText, setCommandText] = useState('')
   const wsUrlCandidates = useMemo(() => buildWebSocketUrlCandidates(), [])
 
   const flushOutput = (force = false) => {
@@ -78,6 +103,22 @@ export default function PlatformWebShellPage() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
     ws.send(JSON.stringify(payload))
     return true
+  }
+
+  const sendRawInput = (data) => {
+    if (!data) return false
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setStatus('未连接')
+      const term = xtermRef.current
+      if (term) term.writeln('\r\n[WARN] WebShell 未连接，无法发送命令。')
+      return false
+    }
+    if (ws.bufferedAmount > MAX_INPUT_BUFFERED_AMOUNT) {
+      setStatus('网络拥塞')
+      return false
+    }
+    return sendJson({ type: 'input', data })
   }
 
   const sendResize = () => {
@@ -115,21 +156,15 @@ export default function PlatformWebShellPage() {
     fitAddon.fit()
     term.writeln('欢迎使用平台 WebShell，连接后可直接管理平台服务器。')
     term.writeln('提示：生产环境会记录 WebShell 会话审计，请谨慎操作。')
+    term.writeln('提示：遇到 ~、Ctrl+C 或多行命令输入异常时，请使用下方“安全命令输入”。')
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
     const onResize = () => scheduleResize()
 
     const dataDisposable = term.onData((rawData) => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      if (ws.bufferedAmount > MAX_INPUT_BUFFERED_AMOUNT) {
-        setStatus('网络拥塞')
-        return
-      }
-
       const data = normalizeTerminalInput(rawData)
-      if (data) sendJson({ type: 'input', data })
+      if (data) sendRawInput(data)
     })
 
     const resizeDisposable = typeof term.onResize === 'function'
@@ -267,18 +302,63 @@ export default function PlatformWebShellPage() {
     setStatus('已断开')
   }
 
+  const interrupt = () => {
+    sendRawInput(CTRL_C)
+  }
+
+  const runCommand = () => {
+    const payload = normalizeCommandText(commandText)
+    if (sendRawInput(payload)) setCommandText('')
+  }
+
+  const runAsScript = () => {
+    const payload = wrapAsBashScript(commandText)
+    if (sendRawInput(payload)) setCommandText('')
+  }
+
   return (
     <div className="card card--elevated" style={{ display: 'grid', gap: 16 }}>
       <h2>平台 WebShell</h2>
       <p className="small-muted">仅平台管理员可访问，可直接在平台页面管理当前服务器。</p>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn" onClick={connect}>连接服务器</button>
         <button className="btn ghost" onClick={disconnect}>断开</button>
+        <button className="btn ghost" onClick={interrupt}>发送 Ctrl+C</button>
         <span className="small-muted">状态：{status}</span>
       </div>
 
-      <div ref={terminalRef} style={{ width: '100%', height: 560, borderRadius: 8, overflow: 'hidden' }} />
+      <div ref={terminalRef} style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden' }} />
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <strong>安全命令输入</strong>
+          <span className="small-muted">绕过 xterm 键盘映射，适合 ~、Ctrl+C 后恢复、多行脚本、写入 .env。</span>
+        </div>
+        <textarea
+          value={commandText}
+          onChange={(event) => setCommandText(event.target.value)}
+          placeholder={'例如：mkdir -p "$HOME/.hermes"\ncat > "$HOME/.hermes/.env" <<\'EOF\'\nKEY=value\nEOF'}
+          spellCheck={false}
+          style={{
+            width: '100%',
+            minHeight: 120,
+            boxSizing: 'border-box',
+            resize: 'vertical',
+            borderRadius: 8,
+            border: '1px solid var(--border-color, #d9d9d9)',
+            padding: 12,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: 13,
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={runCommand}>发送命令</button>
+          <button className="btn ghost" onClick={runAsScript}>作为 bash 脚本执行</button>
+          <button className="btn ghost" onClick={() => setCommandText(HERMES_BOOTSTRAP_SCRIPT)}>填入 Hermes 初始化模板</button>
+          <button className="btn ghost" onClick={() => setCommandText('')}>清空输入框</button>
+        </div>
+      </div>
     </div>
   )
 }
