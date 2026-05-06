@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { useAppSelector } from '../../../../app/hooks.js'
 import FormField from '../../../../components/ui/FormField.jsx'
-import { fetchHermesPermissions, postHermesAgent } from '../api.js'
+import { fetchHermesCapabilities, postHermesAgent } from '../api.js'
 
 
 function buildHermesPayload(form, fields, pageTitle) {
@@ -27,6 +28,7 @@ function buildHermesPayload(form, fields, pageTitle) {
 
 export default function HermesAgentPage({ title, description, endpoint, permissionKey, fields }) {
   const { wid } = useParams()
+  const session = useAppSelector((s) => s.session.data)
   const [form, setForm] = useState(() =>
     Object.fromEntries(fields.map((field) => [field.name, field.defaultValue || ''])),
   )
@@ -41,10 +43,15 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
     async function loadPermissions() {
       setPermissionLoading(true)
       try {
-        const perms = await fetchHermesPermissions(wid)
-        const canUse = perms.includes('hermes_agent.use')
-        const canVisitCurrent = perms.includes(permissionKey)
-        if (mounted) setHasPermission(canUse && canVisitCurrent)
+        const capabilities = await fetchHermesCapabilities(wid)
+        const perms = session?.permissions || session?.perms || []
+        const hasSessionPerms = Array.isArray(perms) && perms.length > 0
+        const canUseFromSession = !hasSessionPerms || perms.includes('hermes_agent.use')
+        const canVisitFromSession = !hasSessionPerms || perms.includes(permissionKey)
+        const canUseByBackendDefault = capabilities?.require_explicit_permission === false
+        const isFeatureEnabled = capabilities?.enabled !== false
+        const canUseAsMember = capabilities?.allow_member !== false
+        if (mounted) setHasPermission(isFeatureEnabled && canUseAsMember && (canUseByBackendDefault || (canUseFromSession && canVisitFromSession)))
       } catch (err) {
         console.error('load hermes permissions failed', err)
         if (mounted) {
