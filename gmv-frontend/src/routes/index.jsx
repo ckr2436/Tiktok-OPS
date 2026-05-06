@@ -62,6 +62,10 @@ const GmvMaxCampaignDetailPage = lazy(() =>
 // 租户 - KIE Sora2 页面 + Whisper 工具
 import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
 import SubtitleRecognitionPage from '../features/tenants/openai_whisper/pages/SubtitleRecognitionPage.jsx';
+import SeoPage from '../features/tenants/hermes_agent/pages/SeoPage.jsx';
+import GeoPage from '../features/tenants/hermes_agent/pages/GeoPage.jsx';
+import VideoAnalysisPage from '../features/tenants/hermes_agent/pages/VideoAnalysisPage.jsx';
+import ScriptPage from '../features/tenants/hermes_agent/pages/ScriptPage.jsx';
 
 const router = createBrowserRouter([
   // 登录页
@@ -181,6 +185,40 @@ const router = createBrowserRouter([
             element: (
               <TenantGuard>
                 <Sora2ImageToVideoPage />
+              </TenantGuard>
+            ),
+          },
+
+
+          {
+            path: 'tenants/:wid/hermes-agent/seo',
+            element: (
+              <TenantGuard>
+                <SeoPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/hermes-agent/geo',
+            element: (
+              <TenantGuard>
+                <GeoPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/hermes-agent/video-analysis',
+            element: (
+              <TenantGuard>
+                <VideoAnalysisPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/hermes-agent/script',
+            element: (
+              <TenantGuard>
+                <ScriptPage />
               </TenantGuard>
             ),
           },

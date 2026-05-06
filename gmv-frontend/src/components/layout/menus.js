@@ -3,6 +3,14 @@
 import { parseBoolLike } from '../../utils/booleans.js'
 
 // 判断公司管理员
+
+function hasHermesPermission(session, key) {
+  const perms = session?.permissions || session?.perms || [];
+  if (!Array.isArray(perms) || perms.length === 0) return true;
+  if (!perms.includes('hermes_agent.use')) return false;
+  return perms.includes(key);
+}
+
 function isCompanyAdmin(session) {
   const role = (session?.role || '').toLowerCase();
   return role === 'owner' || role === 'admin';
@@ -64,6 +72,17 @@ export function buildMenus(session) {
           { to: `/tenants/${wsId}/kie-ai/sora2`,    label: 'Sora2 视频' },
         ],
       },
+
+      {
+        title: 'Hermes 助手',
+        items: [
+          ...(hasHermesPermission(session, 'hermes_agent.seo') ? [{ to: `/tenants/${wsId}/hermes-agent/seo`, label: '品牌 SEO 助手' }] : []),
+          ...(hasHermesPermission(session, 'hermes_agent.geo') ? [{ to: `/tenants/${wsId}/hermes-agent/geo`, label: 'GEO / AI 搜索优化助手' }] : []),
+          ...(hasHermesPermission(session, 'hermes_agent.video_analysis') ? [{ to: `/tenants/${wsId}/hermes-agent/video-analysis`, label: '短视频拆解助手' }] : []),
+          ...(hasHermesPermission(session, 'hermes_agent.script') ? [{ to: `/tenants/${wsId}/hermes-agent/script`, label: '短视频脚本助手' }] : []),
+        ],
+      },
+
       {
         title: '常用工具',
         items: [
@@ -84,6 +103,17 @@ export function buildMenus(session) {
         { to: `/tenants/${wsId}/kie-ai/sora2`, label: 'KIE Sora2 视频' },
       ],
     },
+
+    {
+      title: 'Hermes 助手',
+      items: [
+        ...(hasHermesPermission(session, 'hermes_agent.seo') ? [{ to: `/tenants/${wsId}/hermes-agent/seo`, label: '品牌 SEO 助手' }] : []),
+        ...(hasHermesPermission(session, 'hermes_agent.geo') ? [{ to: `/tenants/${wsId}/hermes-agent/geo`, label: 'GEO / AI 搜索优化助手' }] : []),
+        ...(hasHermesPermission(session, 'hermes_agent.video_analysis') ? [{ to: `/tenants/${wsId}/hermes-agent/video-analysis`, label: '短视频拆解助手' }] : []),
+        ...(hasHermesPermission(session, 'hermes_agent.script') ? [{ to: `/tenants/${wsId}/hermes-agent/script`, label: '短视频脚本助手' }] : []),
+      ],
+    },
+
     {
       title: '常用工具',
       items: [
