@@ -7,7 +7,16 @@ function basePath(wid) {
 
 export async function fetchHermesPermissions(wid) {
   const res = await http.get(`${basePath(wid)}/permissions`)
-  return res.data?.permissions || res.data || []
+  const data = res.data
+
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.permissions)) return data.permissions
+  if (Array.isArray(data?.items)) {
+    return data.items
+      .filter((item) => item?.is_enabled !== false && typeof item?.feature_key === 'string')
+      .map((item) => item.feature_key)
+  }
+  return []
 }
 
 export async function postHermesAgent(wid, endpoint, payload) {

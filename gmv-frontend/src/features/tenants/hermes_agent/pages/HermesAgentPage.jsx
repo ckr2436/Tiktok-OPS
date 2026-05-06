@@ -3,6 +3,28 @@ import { useParams } from 'react-router-dom'
 import FormField from '../../../../components/ui/FormField.jsx'
 import { fetchHermesPermissions, postHermesAgent } from '../api.js'
 
+
+function buildHermesPayload(form, fields, pageTitle) {
+  const cleanedEntries = fields
+    .map((field) => {
+      const rawValue = form[field.name]
+      const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue
+      return [field, value]
+    })
+    .filter(([, value]) => value !== '' && value != null)
+
+  const inputJson = Object.fromEntries(cleanedEntries.map(([field, value]) => [field.name, value]))
+  const input = cleanedEntries
+    .map(([field, value]) => `${field.label || field.name}: ${value}`)
+    .join('\n')
+
+  return {
+    title: pageTitle,
+    input: input || null,
+    input_json: Object.keys(inputJson).length ? inputJson : null,
+  }
+}
+
 export default function HermesAgentPage({ title, description, endpoint, permissionKey, fields }) {
   const { wid } = useParams()
   const [form, setForm] = useState(() =>
@@ -45,9 +67,7 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
     setError('')
     setResult(null)
     try {
-      const payload = Object.fromEntries(
-        Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]),
-      )
+      const payload = buildHermesPayload(form, fields, title)
       const response = await postHermesAgent(wid, endpoint, payload)
       setResult(response)
     } catch (err) {
