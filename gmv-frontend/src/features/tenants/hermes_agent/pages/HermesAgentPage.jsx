@@ -50,7 +50,9 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
         const canVisitFromSession = !hasSessionPerms || perms.includes(permissionKey)
         const canUseByBackendDefault = capabilities?.require_explicit_permission === false
         const isFeatureEnabled = capabilities?.enabled !== false
-        const canUseAsMember = capabilities?.allow_member !== false
+        const role = (session?.role || '').toLowerCase()
+        const isTenantAdmin = role === 'owner' || role === 'admin'
+        const canUseAsMember = isTenantAdmin || capabilities?.allow_member !== false
         if (mounted) setHasPermission(isFeatureEnabled && canUseAsMember && (canUseByBackendDefault || (canUseFromSession && canVisitFromSession)))
       } catch (err) {
         console.error('load hermes permissions failed', err)
