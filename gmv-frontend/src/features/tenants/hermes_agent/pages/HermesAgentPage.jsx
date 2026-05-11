@@ -61,12 +61,13 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
         const hasSessionPerms = Array.isArray(perms) && perms.length > 0
         const canUseFromSession = !hasSessionPerms || perms.includes('hermes_agent.use')
         const canVisitFromSession = !hasSessionPerms || perms.includes(permissionKey)
-        const canUseByBackendDefault = capabilities?.require_explicit_permission === false
+        const requiresExplicitPermission = capabilities?.require_explicit_permission === true
+        const allowedBySessionPermission = !requiresExplicitPermission || (canUseFromSession && canVisitFromSession)
         const isFeatureEnabled = capabilities?.enabled !== false
         const role = String(session?.role || '').toLowerCase()
         const isTenantAdmin = role === 'owner' || role === 'admin'
-        const canUseAsMember = isTenantAdmin || capabilities?.allow_member !== false
-        const allowed = isFeatureEnabled && canUseAsMember && (canUseByBackendDefault || (canUseFromSession && canVisitFromSession))
+        const memberAccessEnabled = capabilities?.allow_member !== false
+        const allowed = isFeatureEnabled && (isTenantAdmin || (memberAccessEnabled && allowedBySessionPermission))
 
         if (mounted) setHasPermission(allowed)
       } catch (err) {
