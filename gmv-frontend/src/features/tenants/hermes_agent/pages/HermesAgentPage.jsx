@@ -35,9 +35,12 @@ function getMissingRequiredFields(form, fields) {
   })
 }
 
+function taskTypeFromEndpoint(endpoint) {
+  return String(endpoint || 'general').replace(/-/g, '_')
+}
+
 export default function HermesAgentPage({ title, description, endpoint, permissionKey, fields }) {
   const { wid } = useParams()
-  const session = useAppSelector((s) => s.session.data)
   const sessionChecked = useAppSelector((s) => s.session.checked)
   const [form, setForm] = useState(() =>
     Object.fromEntries(fields.map((field) => [field.name, field.defaultValue || ''])),
@@ -65,18 +68,9 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
       setPermissionError('')
 
       try {
-        const capabilities = await fetchHermesCapabilities(wid)
-        const perms = session?.permissions || session?.perms || []
-        const hasSessionPerms = Array.isArray(perms) && perms.length > 0
-        const hasGeneralHermesPermission = hasSessionPerms && perms.includes('hermes_agent.use')
-        const hasPageHermesPermission = hasSessionPerms && perms.includes(permissionKey)
-        const requiresExplicitPermission = capabilities?.require_explicit_permission === true
-        const allowedBySessionPermission = !requiresExplicitPermission || !hasSessionPerms || hasGeneralHermesPermission || hasPageHermesPermission
+        const capabilities = await fetchHermesCapabilities(wid, taskTypeFromEndpoint(endpoint))
         const isFeatureEnabled = capabilities?.enabled !== false
-        const role = String(session?.role || '').toLowerCase()
-        const isTenantAdmin = role === 'owner' || role === 'admin'
-        const memberAccessEnabled = capabilities?.allow_member !== false
-        const allowed = isFeatureEnabled && (isTenantAdmin || (memberAccessEnabled && allowedBySessionPermission))
+        const allowed = isFeatureEnabled && capabilities?.can_use_task === true
 
         if (mounted) setHasPermission(allowed)
       } catch (err) {
@@ -95,7 +89,7 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
     return () => {
       mounted = false
     }
-  }, [wid, permissionKey, session, sessionChecked])
+  }, [wid, endpoint, permissionKey, sessionChecked])
 
   const controlsDisabled = permissionLoading || !hasPermission || loading
 
