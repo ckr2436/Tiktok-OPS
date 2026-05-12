@@ -13,6 +13,7 @@ class HermesCapabilitiesResponse(BaseModel):
     max_input_chars: int
     allow_member: bool
     require_explicit_permission: bool
+    can_use_task: bool | None = None
 
 
 class HermesRunRequest(BaseModel):
