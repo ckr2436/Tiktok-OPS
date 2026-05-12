@@ -7,8 +7,13 @@ import { parseBoolLike } from '../../utils/booleans.js'
 function hasHermesPermission(session, key) {
   const perms = session?.permissions || session?.perms || [];
   if (!Array.isArray(perms) || perms.length === 0) return true;
-  if (!perms.includes('hermes_agent.use')) return false;
-  return perms.includes(key);
+  if (perms.includes('hermes_agent.use') || perms.includes(key)) return true;
+
+  // The menu does not have access to backend Hermes capability flags. Avoid hiding
+  // Hermes entry points for deployments where members are allowed by default and
+  // sessions also contain unrelated non-Hermes permissions; the page and API still
+  // perform the authoritative permission checks.
+  return !perms.some((perm) => typeof perm === 'string' && perm.startsWith('hermes_agent.'));
 }
 
 function isCompanyAdmin(session) {
