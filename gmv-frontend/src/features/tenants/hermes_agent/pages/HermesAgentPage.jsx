@@ -26,6 +26,15 @@ function buildHermesPayload(form, fields, pageTitle) {
   }
 }
 
+function getMissingRequiredFields(form, fields) {
+  return fields.filter((field) => {
+    if (!field.required) return false
+    const value = form[field.name]
+    if (typeof value === 'string') return value.trim() === ''
+    return value == null || value === ''
+  })
+}
+
 export default function HermesAgentPage({ title, description, endpoint, permissionKey, fields }) {
   const { wid } = useParams()
   const session = useAppSelector((s) => s.session.data)
@@ -59,10 +68,10 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
         const capabilities = await fetchHermesCapabilities(wid)
         const perms = session?.permissions || session?.perms || []
         const hasSessionPerms = Array.isArray(perms) && perms.length > 0
-        const canUseFromSession = !hasSessionPerms || perms.includes('hermes_agent.use')
-        const canVisitFromSession = !hasSessionPerms || perms.includes(permissionKey)
+        const hasGeneralHermesPermission = hasSessionPerms && perms.includes('hermes_agent.use')
+        const hasPageHermesPermission = hasSessionPerms && perms.includes(permissionKey)
         const requiresExplicitPermission = capabilities?.require_explicit_permission === true
-        const allowedBySessionPermission = !requiresExplicitPermission || (canUseFromSession && canVisitFromSession)
+        const allowedBySessionPermission = !requiresExplicitPermission || !hasSessionPerms || hasGeneralHermesPermission || hasPageHermesPermission
         const isFeatureEnabled = capabilities?.enabled !== false
         const role = String(session?.role || '').toLowerCase()
         const isTenantAdmin = role === 'owner' || role === 'admin'
@@ -93,6 +102,13 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
   async function handleSubmit(event) {
     event.preventDefault()
     if (permissionLoading || !hasPermission) return
+
+    const missingRequiredFields = getMissingRequiredFields(form, fields)
+    if (missingRequiredFields.length > 0) {
+      setRequestError(`请填写必填项：${missingRequiredFields.map((field) => field.label || field.name).join('、')}`)
+      setResult(null)
+      return
+    }
 
     setLoading(true)
     setRequestError('')
@@ -126,6 +142,7 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
               rows={field.rows || 3}
               value={form[field.name] || ''}
               placeholder={field.placeholder || ''}
+              required={Boolean(field.required)}
               onChange={(e) => setForm((prev) => ({ ...prev, [field.name]: e.target.value }))}
               disabled={controlsDisabled}
             />
