@@ -5,8 +5,9 @@ function basePath(wid) {
   return `/tenants/${encodeURIComponent(wid)}/hermes-agent`
 }
 
-export async function fetchHermesCapabilities(wid) {
-  const res = await http.get(`${basePath(wid)}/capabilities`)
+export async function fetchHermesCapabilities(wid, taskType = 'general') {
+  const params = taskType ? { task_type: taskType } : undefined
+  const res = await http.get(`${basePath(wid)}/capabilities`, { params })
   return res.data || {}
 }
 
