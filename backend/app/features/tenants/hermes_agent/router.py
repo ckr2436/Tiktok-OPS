@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import SessionUser, require_tenant_admin, require_tenant_member
+from app.core.errors import APIError
 from app.data.db import get_db
 from app.services.audit import log_event
 from app.services.hermes_agent import repository
@@ -46,8 +47,17 @@ def _run_out(run) -> HermesRunResponse:
 @router.get("/capabilities", response_model=HermesCapabilitiesResponse)
 def capabilities(
     workspace_id: int,
-    _: SessionUser = Depends(require_tenant_member),
+    task_type: str | None = Query(default="general", max_length=64),
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
+    normalized_task_type = normalize_task_type(task_type)
+    can_use_task = True
+    try:
+        ensure_user_can_use_task(db, workspace_id=workspace_id, me=me, task_type=normalized_task_type)
+    except APIError:
+        can_use_task = False
+
     return HermesCapabilitiesResponse(
         enabled=bool(settings.HERMES_AGENT_ENABLED),
         model=settings.HERMES_AGENT_MODEL,
@@ -55,6 +65,7 @@ def capabilities(
         max_input_chars=int(settings.HERMES_AGENT_MAX_INPUT_CHARS),
         allow_member=bool(settings.HERMES_AGENT_ALLOW_MEMBER),
         require_explicit_permission=bool(settings.HERMES_AGENT_REQUIRE_EXPLICIT_PERMISSION),
+        can_use_task=can_use_task,
     )
 
 
