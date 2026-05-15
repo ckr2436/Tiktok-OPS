@@ -61,6 +61,58 @@ function clampSize(cols, rows) {
   }
 }
 
+function terminalKeyToBytes(event) {
+  if (event.isComposing) return null
+
+  const key = event.key
+  const lowerKey = typeof key === 'string' ? key.toLowerCase() : ''
+
+  // Let browser paste shortcuts fire the paste event. The paste handler below
+  // sends clipboard text to the PTY.
+  if ((event.ctrlKey || event.metaKey) && lowerKey === 'v') return null
+  if (event.metaKey) return null
+
+  if (event.ctrlKey && !event.altKey) {
+    if (lowerKey.length === 1 && lowerKey >= 'a' && lowerKey <= 'z') {
+      return String.fromCharCode(lowerKey.charCodeAt(0) - 96)
+    }
+    if (key === '[') return '\x1b'
+    if (key === ']') return '\x1d'
+    if (key === '\\') return '\x1c'
+    if (key === '^') return '\x1e'
+    if (key === '_') return '\x1f'
+  }
+
+  const specialKeys = {
+    Enter: '\r',
+    Escape: '\x1b',
+    Backspace: '\x7f',
+    Tab: '\t',
+    ArrowUp: '\x1b[A',
+    ArrowDown: '\x1b[B',
+    ArrowRight: '\x1b[C',
+    ArrowLeft: '\x1b[D',
+    Insert: '\x1b[2~',
+    Delete: '\x1b[3~',
+    Home: '\x1b[H',
+    End: '\x1b[F',
+    PageUp: '\x1b[5~',
+    PageDown: '\x1b[6~',
+  }
+
+  if (specialKeys[key]) return specialKeys[key]
+  if (event.altKey && key.length === 1) return `\x1b${key}`
+  if (!event.ctrlKey && !event.altKey && key.length === 1) return key
+  return null
+}
+
+function normalizePastedText(text) {
+  if (!text) return ''
+  // Browser clipboard text may use CRLF. For terminal paste, CR is the most
+  // compatible Enter byte for shells and TUI apps.
+  return String(text).replace(/\r\n/g, '\r').replace(/\n/g, '\r')
+}
+
 export default function PlatformWebShellPage() {
   const terminalRef = useRef(null)
   const xtermRef = useRef(null)
@@ -76,12 +128,21 @@ export default function PlatformWebShellPage() {
   const wsUrlCandidates = useMemo(() => buildWebSocketUrlCandidates(), [])
 
   const focusTerminal = () => {
+    const node = terminalRef.current
     const term = xtermRef.current
-    if (!term) return
-    try {
-      term.focus()
-    } catch {
-      // ignored
+    if (node && typeof node.focus === 'function') {
+      try {
+        node.focus({ preventScroll: true })
+      } catch {
+        node.focus()
+      }
+    }
+    if (term) {
+      try {
+        term.focus()
+      } catch {
+        // ignored
+      }
     }
   }
 
@@ -153,6 +214,23 @@ export default function PlatformWebShellPage() {
     resizeTimerRef.current = window.setTimeout(sendResize, 120)
   }
 
+  const handleTerminalKeyDown = (event) => {
+    const data = terminalKeyToBytes(event)
+    if (!data) return
+    event.preventDefault()
+    event.stopPropagation()
+    sendRawInput(data)
+  }
+
+  const handleTerminalPaste = (event) => {
+    const text = event.clipboardData?.getData('text') || ''
+    const data = normalizePastedText(text)
+    if (!data) return
+    event.preventDefault()
+    event.stopPropagation()
+    sendRawInput(data)
+  }
+
   useEffect(() => {
     const term = new Terminal({
       cursorBlink: true,
@@ -174,13 +252,10 @@ export default function PlatformWebShellPage() {
 
     const onResize = () => scheduleResize()
 
-    const dataDisposable = term.onData((rawData) => {
-      // Important: interactive xterm data must be passed through unchanged.
-      // Vim/nano/top rely on raw terminal control bytes. CR/LF normalization is
-      // only safe for the textarea command sender, not for terminal keyboard input.
-      if (rawData) sendRawInput(rawData)
-    })
-
+    // We intentionally do not rely on term.onData for keyboard input. In some
+    // browser/layout/IME combinations the xterm helper textarea loses focus
+    // after buttons or vim screen switches. The terminal wrapper captures
+    // keydown/paste and sends exact PTY bytes instead.
     const resizeDisposable = typeof term.onResize === 'function'
       ? term.onResize(() => scheduleResize())
       : null
@@ -189,7 +264,6 @@ export default function PlatformWebShellPage() {
 
     return () => {
       manuallyClosedRef.current = true
-      dataDisposable.dispose()
       if (resizeDisposable) resizeDisposable.dispose()
       window.removeEventListener('resize', onResize)
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current)
@@ -352,8 +426,20 @@ export default function PlatformWebShellPage() {
 
       <div
         ref={terminalRef}
+        tabIndex={0}
+        role="application"
+        aria-label="WebShell terminal"
         onMouseDown={() => window.setTimeout(focusTerminal, 0)}
-        style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden' }}
+        onClick={() => window.setTimeout(focusTerminal, 0)}
+        onKeyDownCapture={handleTerminalKeyDown}
+        onPasteCapture={handleTerminalPaste}
+        style={{
+          width: '100%',
+          height: 520,
+          borderRadius: 8,
+          overflow: 'hidden',
+          outline: 'none',
+        }}
       />
 
       <div style={{ display: 'grid', gap: 8 }}>
