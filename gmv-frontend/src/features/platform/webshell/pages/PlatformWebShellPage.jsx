@@ -34,8 +34,9 @@ function buildWebSocketUrlCandidates() {
 
 function normalizeTerminalInput(data) {
   if (!data) return ''
-  // xterm/browser Enter is usually CR. Normalize it before sending to the PTY
-  // so production shells do not render Enter as ^M.
+  // Only use this for non-interactive command textarea content. Do not use it
+  // for xterm onData(), otherwise full-screen TUI apps such as vim lose their
+  // raw terminal input semantics.
   return String(data).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
@@ -73,6 +74,16 @@ export default function PlatformWebShellPage() {
   const [status, setStatus] = useState('未连接')
   const [commandText, setCommandText] = useState('')
   const wsUrlCandidates = useMemo(() => buildWebSocketUrlCandidates(), [])
+
+  const focusTerminal = () => {
+    const term = xtermRef.current
+    if (!term) return
+    try {
+      term.focus()
+    } catch {
+      // ignored
+    }
+  }
 
   const flushOutput = (force = false) => {
     if (outputFlushTimerRef.current) {
@@ -157,14 +168,17 @@ export default function PlatformWebShellPage() {
     term.writeln('欢迎使用平台 WebShell，连接后可直接管理平台服务器。')
     term.writeln('提示：生产环境会记录 WebShell 会话审计，请谨慎操作。')
     term.writeln('提示：遇到 ~、Ctrl+C 或多行命令输入异常时，请使用下方“安全命令输入”。')
+    term.writeln('提示：进入 vim/nano/top 后，请点击黑色终端区域，确保光标焦点在终端内。')
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
     const onResize = () => scheduleResize()
 
     const dataDisposable = term.onData((rawData) => {
-      const data = normalizeTerminalInput(rawData)
-      if (data) sendRawInput(data)
+      // Important: interactive xterm data must be passed through unchanged.
+      // Vim/nano/top rely on raw terminal control bytes. CR/LF normalization is
+      // only safe for the textarea command sender, not for terminal keyboard input.
+      if (rawData) sendRawInput(rawData)
     })
 
     const resizeDisposable = typeof term.onResize === 'function'
@@ -245,6 +259,7 @@ export default function PlatformWebShellPage() {
           connectedRef.current = true
           setStatus('已连接')
           scheduleResize()
+          window.setTimeout(focusTerminal, 0)
         } else if (payload.type === 'error') {
           setStatus('连接失败')
           queueOutput(`\r\n\x1b[31m[ERROR] ${payload.message || 'WebShell error'}\x1b[0m\r\n`)
@@ -304,16 +319,23 @@ export default function PlatformWebShellPage() {
 
   const interrupt = () => {
     sendRawInput(CTRL_C)
+    window.setTimeout(focusTerminal, 0)
   }
 
   const runCommand = () => {
     const payload = normalizeCommandText(commandText)
-    if (sendRawInput(payload)) setCommandText('')
+    if (sendRawInput(payload)) {
+      setCommandText('')
+      window.setTimeout(focusTerminal, 0)
+    }
   }
 
   const runAsScript = () => {
     const payload = wrapAsBashScript(commandText)
-    if (sendRawInput(payload)) setCommandText('')
+    if (sendRawInput(payload)) {
+      setCommandText('')
+      window.setTimeout(focusTerminal, 0)
+    }
   }
 
   return (
@@ -328,12 +350,16 @@ export default function PlatformWebShellPage() {
         <span className="small-muted">状态：{status}</span>
       </div>
 
-      <div ref={terminalRef} style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden' }} />
+      <div
+        ref={terminalRef}
+        onMouseDown={() => window.setTimeout(focusTerminal, 0)}
+        style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden' }}
+      />
 
       <div style={{ display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <strong>安全命令输入</strong>
-          <span className="small-muted">绕过 xterm 键盘映射，适合 ~、Ctrl+C 后恢复、多行脚本、写入 .env。</span>
+          <span className="small-muted">绕过键盘映射，适合 ~、Ctrl+C 后恢复、多行脚本、写入 .env；vim/nano 请回到上方终端区域操作。</span>
         </div>
         <textarea
           value={commandText}
