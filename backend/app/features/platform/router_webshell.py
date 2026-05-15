@@ -176,15 +176,25 @@ def _origin_allowed(websocket: WebSocket) -> bool:
 
 
 def _normalise_terminal_input(data: str) -> str:
-    """
-    Browser/xterm Enter is usually CR ("\r").  Some shells display a bare CR as ^M
-    when the child process is not in the exact line discipline expected by the
-    browser.  Normalize CR/CRLF to LF before writing to the PTY to keep Enter
-    behavior consistent in production reverse-proxy/WebSocket stacks.
-    """
+    """Normalize textarea/script command input only. Do not use for PTY raw input."""
     if not data:
         return ""
     return data.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _coerce_raw_terminal_input(value: Any) -> str:
+    """
+    Keep xterm interactive input byte-for-byte at the string layer.
+
+    Full-screen TUI apps such as vim, nano, less and top switch the terminal to
+    raw mode and rely on exact bytes for Esc, Ctrl sequences, arrows, Enter and
+    printable characters.  CR/LF normalization here breaks those apps.  Any
+    normalization must happen only in the non-interactive command textarea on
+    the frontend before the payload is sent.
+    """
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _clamp_resize(cols: Any, rows: Any) -> tuple[int, int]:
@@ -273,11 +283,7 @@ def _webshell_cwd() -> str:
 
 
 def _spawn_pty(argv: list[str], *, cwd: str, env: dict[str, str]) -> tuple[int, int]:
-    """
-    Use forkpty instead of subprocess+openpty. forkpty gives the child a real
-    controlling TTY, which fixes common shell line-discipline issues such as
-    Enter appearing as ^M and broken echo under reverse-proxied WebSockets.
-    """
+    """Spawn the shell in a real controlling PTY for interactive terminal apps."""
     pid, master_fd = os.forkpty()
     if pid == 0:  # child
         try:
@@ -541,8 +547,8 @@ async def _webshell_proxy_impl(websocket: WebSocket) -> None:
 
                 msg_type = payload.get("type")
                 if msg_type == "input":
-                    data = _normalise_terminal_input(str(payload.get("data") or ""))
-                    if not data:
+                    data = _coerce_raw_terminal_input(payload.get("data"))
+                    if data == "":
                         continue
                     encoded = data.encode("utf-8", errors="ignore")
                     if len(encoded) > max_input_bytes:
