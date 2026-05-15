@@ -7,17 +7,9 @@ import { apiRoot } from '@/core/config.js'
 const MAX_INPUT_BUFFERED_AMOUNT = 1024 * 1024
 const OUTPUT_FLUSH_INTERVAL_MS = 16
 const CTRL_C = '\x03'
-const HERMES_BOOTSTRAP_SCRIPT = `mkdir -p "$HOME/.hermes"
-chmod 700 "$HOME/.hermes"
-
-# Replace the values below with your real Hermes configuration.
-cat > "$HOME/.hermes/.env" <<'EOF'
-# HERMES_API_KEY=replace_me
-# HERMES_MODEL=replace_me
-EOF
-
-chmod 600 "$HOME/.hermes/.env"
-ls -la "$HOME/.hermes"`
+const SAFE_COMMAND_TEMPLATE = `pwd
+whoami
+printf 'UNDER_SCORE_TEST=%s\n' ok`
 
 function buildWebSocketUrlCandidates() {
   const apiUrl = new URL(apiRoot, window.location.origin)
@@ -32,22 +24,19 @@ function buildWebSocketUrlCandidates() {
   return [...new Set(paths)].map((path) => `${scheme}://${apiUrl.host}${path}`)
 }
 
-function normalizeTerminalInput(data) {
+function normalizeCommandInput(data) {
   if (!data) return ''
-  // Only use this for non-interactive command textarea content. Do not use it
-  // for xterm onData(), otherwise full-screen TUI apps such as vim lose their
-  // raw terminal input semantics.
   return String(data).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
 function normalizeCommandText(data) {
-  const normalized = normalizeTerminalInput(data).trimEnd()
+  const normalized = normalizeCommandInput(data).trimEnd()
   if (!normalized) return ''
   return `${normalized}\n`
 }
 
 function wrapAsBashScript(script) {
-  const normalized = normalizeTerminalInput(script).trimEnd()
+  const normalized = normalizeCommandInput(script).trimEnd()
   if (!normalized) return ''
   return `bash <<'GMV_WEBSHELL_SCRIPT'\nset -euo pipefail\n${normalized}\nGMV_WEBSHELL_SCRIPT\n`
 }
@@ -61,17 +50,22 @@ function clampSize(cols, rows) {
   }
 }
 
+function encodeInputBase64(data) {
+  if (!data) return ''
+  const bytes = new TextEncoder().encode(String(data))
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index])
+  }
+  return window.btoa(binary)
+}
+
 function terminalKeyToBytes(event) {
   if (event.isComposing) return null
-
   const key = event.key
   const lowerKey = typeof key === 'string' ? key.toLowerCase() : ''
-
-  // Let browser paste shortcuts fire the paste event. The paste handler below
-  // sends clipboard text to the PTY.
   if ((event.ctrlKey || event.metaKey) && lowerKey === 'v') return null
   if (event.metaKey) return null
-
   if (event.ctrlKey && !event.altKey) {
     if (lowerKey.length === 1 && lowerKey >= 'a' && lowerKey <= 'z') {
       return String.fromCharCode(lowerKey.charCodeAt(0) - 96)
@@ -82,7 +76,6 @@ function terminalKeyToBytes(event) {
     if (key === '^') return '\x1e'
     if (key === '_') return '\x1f'
   }
-
   const specialKeys = {
     Enter: '\r',
     Escape: '\x1b',
@@ -99,7 +92,6 @@ function terminalKeyToBytes(event) {
     PageUp: '\x1b[5~',
     PageDown: '\x1b[6~',
   }
-
   if (specialKeys[key]) return specialKeys[key]
   if (event.altKey && key.length === 1) return `\x1b${key}`
   if (!event.ctrlKey && !event.altKey && key.length === 1) return key
@@ -108,8 +100,6 @@ function terminalKeyToBytes(event) {
 
 function normalizePastedText(text) {
   if (!text) return ''
-  // Browser clipboard text may use CRLF. For terminal paste, CR is the most
-  // compatible Enter byte for shells and TUI apps.
   return String(text).replace(/\r\n/g, '\r').replace(/\n/g, '\r')
 }
 
@@ -151,11 +141,9 @@ export default function PlatformWebShellPage() {
       window.clearTimeout(outputFlushTimerRef.current)
       outputFlushTimerRef.current = null
     }
-
     const term = xtermRef.current
     const chunk = outputBufferRef.current
     if (!term || (!chunk && !force)) return
-
     outputBufferRef.current = ''
     if (chunk) term.write(chunk)
   }
@@ -164,10 +152,7 @@ export default function PlatformWebShellPage() {
     if (!data) return
     outputBufferRef.current += String(data)
     if (outputFlushTimerRef.current) return
-
-    outputFlushTimerRef.current = window.setTimeout(() => {
-      flushOutput(false)
-    }, OUTPUT_FLUSH_INTERVAL_MS)
+    outputFlushTimerRef.current = window.setTimeout(() => flushOutput(false), OUTPUT_FLUSH_INTERVAL_MS)
   }
 
   const sendJson = (payload) => {
@@ -190,21 +175,21 @@ export default function PlatformWebShellPage() {
       setStatus('网络拥塞')
       return false
     }
-    return sendJson({ type: 'input', data })
+    const dataB64 = encodeInputBase64(data)
+    if (!dataB64) return false
+    return sendJson({ type: 'input_b64', data_b64: dataB64 })
   }
 
   const sendResize = () => {
     const term = xtermRef.current
     if (!term) return
-
     if (fitAddonRef.current) {
       try {
         fitAddonRef.current.fit()
       } catch {
-        // xterm can throw while the container is hidden; still send last size.
+        // xterm can throw while the container is hidden.
       }
     }
-
     const size = clampSize(term.cols, term.rows)
     sendJson({ type: 'resize', ...size })
   }
@@ -244,24 +229,13 @@ export default function PlatformWebShellPage() {
     term.open(terminalRef.current)
     fitAddon.fit()
     term.writeln('欢迎使用平台 WebShell，连接后可直接管理平台服务器。')
-    term.writeln('提示：生产环境会记录 WebShell 会话审计，请谨慎操作。')
-    term.writeln('提示：遇到 ~、Ctrl+C 或多行命令输入异常时，请使用下方“安全命令输入”。')
+    term.writeln('提示：输入已经改为 base64 字节传输，用于避免下划线和控制字符被改写。')
     term.writeln('提示：进入 vim/nano/top 后，请点击黑色终端区域，确保光标焦点在终端内。')
     xtermRef.current = term
     fitAddonRef.current = fitAddon
-
     const onResize = () => scheduleResize()
-
-    // We intentionally do not rely on term.onData for keyboard input. In some
-    // browser/layout/IME combinations the xterm helper textarea loses focus
-    // after buttons or vim screen switches. The terminal wrapper captures
-    // keydown/paste and sends exact PTY bytes instead.
-    const resizeDisposable = typeof term.onResize === 'function'
-      ? term.onResize(() => scheduleResize())
-      : null
-
+    const resizeDisposable = typeof term.onResize === 'function' ? term.onResize(() => scheduleResize()) : null
     window.addEventListener('resize', onResize)
-
     return () => {
       manuallyClosedRef.current = true
       if (resizeDisposable) resizeDisposable.dispose()
@@ -284,42 +258,29 @@ export default function PlatformWebShellPage() {
       sendJson({ type: 'close' })
       wsRef.current.close()
     }
-
     const term = xtermRef.current
     if (!term) return
-
     manuallyClosedRef.current = false
     connectedRef.current = false
     setStatus('连接中…')
     term.writeln('\r\n[INFO] 正在启动服务器 WebShell...')
-
     let attemptIndex = 0
-
     const connectWithCandidate = () => {
       if (manuallyClosedRef.current) return
-
       if (attemptIndex >= wsUrlCandidates.length) {
         setStatus('连接失败')
         term.writeln('\r\n[ERROR] 所有 WebSocket 地址均连接失败，请检查反向代理 Upgrade 与路径重写。')
         return
       }
-
       const wsUrl = wsUrlCandidates[attemptIndex]
       attemptIndex += 1
       term.writeln(`\r\n[INFO] 正在尝试连接：${wsUrl}`)
-
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
-
       ws.onopen = () => {
         const size = clampSize(term.cols, term.rows)
-        ws.send(JSON.stringify({
-          type: 'init',
-          shell: '/bin/bash -li',
-          ...size,
-        }))
+        ws.send(JSON.stringify({ type: 'init', shell: '/bin/bash -li', ...size }))
       }
-
       ws.onmessage = (event) => {
         let payload
         try {
@@ -328,7 +289,6 @@ export default function PlatformWebShellPage() {
           term.writeln('\r\n[ERROR] 收到无法解析的服务端消息。')
           return
         }
-
         if (payload.type === 'connected') {
           connectedRef.current = true
           setStatus('已连接')
@@ -347,7 +307,6 @@ export default function PlatformWebShellPage() {
           setStatus('已断开')
         }
       }
-
       ws.onerror = () => {
         if (!connectedRef.current) {
           term.writeln('\r\n[WARN] WebSocket 握手或网络异常，准备尝试下一个候选地址。')
@@ -356,36 +315,29 @@ export default function PlatformWebShellPage() {
           term.writeln('\r\n[ERROR] WebSocket 网络异常。')
         }
       }
-
       ws.onclose = (event) => {
         flushOutput(true)
         const reason = event.reason ? `，原因：${event.reason}` : ''
         term.writeln(`\r\n[INFO] WebShell 会话已结束（code=${event.code}${reason}）。`)
-
         if (!manuallyClosedRef.current && !connectedRef.current && (event.code === 1006 || event.code === 1002 || event.code === 1005)) {
           connectWithCandidate()
           return
         }
-
         if (event.code === 1008) {
           term.writeln('\r\n[ERROR] 权限不足或安全策略拒绝：请确认已登录平台管理员账号，并检查 WEBSHELL_ENABLED / Origin / 会话上限。')
         } else if (event.code === 1006) {
           term.writeln('\r\n[ERROR] 连接异常中断：可能是路径不存在、代理未转发 Upgrade 或网络中断。')
         }
-
         connectedRef.current = false
         setStatus('已断开')
       }
     }
-
     connectWithCandidate()
   }
 
   const disconnect = () => {
     manuallyClosedRef.current = true
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      sendJson({ type: 'close' })
-    }
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) sendJson({ type: 'close' })
     if (wsRef.current) wsRef.current.close()
     connectedRef.current = false
     setStatus('已断开')
@@ -416,14 +368,12 @@ export default function PlatformWebShellPage() {
     <div className="card card--elevated" style={{ display: 'grid', gap: 16 }}>
       <h2>平台 WebShell</h2>
       <p className="small-muted">仅平台管理员可访问，可直接在平台页面管理当前服务器。</p>
-
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn" onClick={connect}>连接服务器</button>
         <button className="btn ghost" onClick={disconnect}>断开</button>
         <button className="btn ghost" onClick={interrupt}>发送 Ctrl+C</button>
         <span className="small-muted">状态：{status}</span>
       </div>
-
       <div
         ref={terminalRef}
         tabIndex={0}
@@ -433,24 +383,17 @@ export default function PlatformWebShellPage() {
         onClick={() => window.setTimeout(focusTerminal, 0)}
         onKeyDownCapture={handleTerminalKeyDown}
         onPasteCapture={handleTerminalPaste}
-        style={{
-          width: '100%',
-          height: 520,
-          borderRadius: 8,
-          overflow: 'hidden',
-          outline: 'none',
-        }}
+        style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden', outline: 'none' }}
       />
-
       <div style={{ display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <strong>安全命令输入</strong>
-          <span className="small-muted">绕过键盘映射，适合 ~、Ctrl+C 后恢复、多行脚本、写入 .env；vim/nano 请回到上方终端区域操作。</span>
+          <span className="small-muted">命令会以 base64 字节传输，适合下划线、~、Ctrl+C 后恢复、多行脚本。</span>
         </div>
         <textarea
           value={commandText}
           onChange={(event) => setCommandText(event.target.value)}
-          placeholder={'例如：mkdir -p "$HOME/.hermes"\ncat > "$HOME/.hermes/.env" <<\'EOF\'\nKEY=value\nEOF'}
+          placeholder={'例如：printf \'UNDER_SCORE_TEST=%s\\n\' ok'}
           spellCheck={false}
           style={{
             width: '100%',
@@ -467,7 +410,7 @@ export default function PlatformWebShellPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn" onClick={runCommand}>发送命令</button>
           <button className="btn ghost" onClick={runAsScript}>作为 bash 脚本执行</button>
-          <button className="btn ghost" onClick={() => setCommandText(HERMES_BOOTSTRAP_SCRIPT)}>填入 Hermes 初始化模板</button>
+          <button className="btn ghost" onClick={() => setCommandText(SAFE_COMMAND_TEMPLATE)}>填入测试模板</button>
           <button className="btn ghost" onClick={() => setCommandText('')}>清空输入框</button>
         </div>
       </div>
