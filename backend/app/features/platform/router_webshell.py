@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import errno
 import fcntl
 import json
@@ -184,17 +186,37 @@ def _normalise_terminal_input(data: str) -> str:
 
 def _coerce_raw_terminal_input(value: Any) -> str:
     """
-    Keep xterm interactive input byte-for-byte at the string layer.
-
-    Full-screen TUI apps such as vim, nano, less and top switch the terminal to
-    raw mode and rely on exact bytes for Esc, Ctrl sequences, arrows, Enter and
-    printable characters.  CR/LF normalization here breaks those apps.  Any
-    normalization must happen only in the non-interactive command textarea on
-    the frontend before the payload is sent.
+    Backward-compatible legacy string input. New frontend uses input_b64 so
+    underscores, control bytes and IME-sensitive characters bypass text-layer
+    rewriting entirely.
     """
     if value is None:
         return ""
     return str(value)
+
+
+def _decode_terminal_input_bytes(payload: dict[str, Any]) -> bytes:
+    """
+    Decode terminal input from the WebSocket payload.
+
+    Prefer base64 byte transport. It prevents characters such as underscore and
+    raw terminal control bytes from being changed by browser, IME, JSON/string,
+    middleware, or logging layers before reaching the PTY. Keep legacy `input`
+    support only for older cached frontend bundles.
+    """
+    if payload.get("type") == "input_b64":
+        raw_b64 = str(payload.get("data_b64") or "")
+        if not raw_b64:
+            return b""
+        try:
+            return base64.b64decode(raw_b64.encode("ascii"), validate=True)
+        except (binascii.Error, UnicodeEncodeError) as exc:
+            raise ValueError("input_b64 payload is not valid base64") from exc
+
+    data = _coerce_raw_terminal_input(payload.get("data"))
+    if data == "":
+        return b""
+    return data.encode("utf-8", errors="ignore")
 
 
 def _clamp_resize(cols: Any, rows: Any) -> tuple[int, int]:
@@ -365,6 +387,8 @@ def _write_audit(action: str, websocket: WebSocket, user: User | None, details: 
 async def _audit(action: str, websocket: WebSocket, user: User | None, details: dict[str, Any]) -> None:
     safe_details = dict(details)
     safe_details.pop("input", None)
+    safe_details.pop("data", None)
+    safe_details.pop("data_b64", None)
     await asyncio.to_thread(_write_audit, action, websocket, user, safe_details)
 
 
@@ -383,7 +407,6 @@ async def _receive_init(websocket: WebSocket) -> dict[str, Any]:
 
     if not isinstance(payload, dict):
         return {}
-    # Backward compatible: old frontend sent {"shell": "..."} without type.
     if payload.get("type") in {None, "init"} or "shell" in payload:
         return payload
     return {}
@@ -546,11 +569,14 @@ async def _webshell_proxy_impl(websocket: WebSocket) -> None:
                     continue
 
                 msg_type = payload.get("type")
-                if msg_type == "input":
-                    data = _coerce_raw_terminal_input(payload.get("data"))
-                    if data == "":
+                if msg_type in {"input", "input_b64"}:
+                    try:
+                        encoded = _decode_terminal_input_bytes(payload)
+                    except ValueError:
+                        logger.warning("Invalid WebShell input payload: session_id=%s type=%s", session_id, msg_type)
                         continue
-                    encoded = data.encode("utf-8", errors="ignore")
+                    if not encoded:
+                        continue
                     if len(encoded) > max_input_bytes:
                         close_reason = "input_too_large"
                         await _safe_send_json(websocket, {"type": "error", "message": "单次输入过大，WebShell 已断开。"})
