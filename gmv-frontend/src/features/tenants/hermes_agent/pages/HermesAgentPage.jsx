@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks.js'
 import FormField from '../../../../components/ui/FormField.jsx'
-import { fetchHermesCapabilities, postHermesAgent } from '../api.js'
+import { fetchHermesCapabilities, fetchHermesRun, postHermesAgent } from '../api.js'
+
+const POLL_INTERVAL_MS = 2000
+const POLL_TIMEOUT_MS = 180000
 
 
 function buildHermesPayload(form, fields, pageTitle) {
@@ -49,6 +52,7 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
   const [requestError, setRequestError] = useState('')
   const [permissionError, setPermissionError] = useState('')
   const [result, setResult] = useState(null)
+  const [runId, setRunId] = useState('')
   const [permissionLoading, setPermissionLoading] = useState(true)
   const [hasPermission, setHasPermission] = useState(false)
 
@@ -107,10 +111,30 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
     setLoading(true)
     setRequestError('')
     setResult(null)
+    setRunId('')
     try {
       const payload = buildHermesPayload(form, fields, title)
-      const response = await postHermesAgent(wid, endpoint, payload)
-      setResult(response)
+      const createdRun = await postHermesAgent(wid, endpoint, payload)
+      setRunId(createdRun?.run_id || '')
+
+      const startedAt = Date.now()
+      let latestRun = createdRun
+
+      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+        const status = String(latestRun?.status || '').toLowerCase()
+        if (status === 'success') {
+          setResult(latestRun)
+          return
+        }
+        if (status === 'failed') {
+          throw new Error(latestRun?.error_message || '生成失败，请稍后重试。')
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+        latestRun = await fetchHermesRun(wid, createdRun?.run_id)
+      }
+
+      throw new Error('生成任务仍在处理中，请稍后到运行记录查看结果。')
     } catch (err) {
       console.error(`call hermes-agent ${endpoint} failed`, err)
       setRequestError(err?.message || '请求失败，请稍后再试。')
@@ -142,8 +166,9 @@ export default function HermesAgentPage({ title, description, endpoint, permissi
             />
           </FormField>
         ))}
-        <div><button className="btn" type="submit" disabled={controlsDisabled}>{loading ? '生成中…' : permissionLoading ? '校验权限中…' : '开始生成'}</button></div>
+        <div><button className="btn" type="submit" disabled={controlsDisabled}>{loading ? '任务执行中…' : permissionLoading ? '校验权限中…' : '开始生成'}</button></div>
       </form>
+      {loading && runId ? <div className="muted">任务已提交（Run ID: {runId}），正在轮询结果…</div> : null}
       {requestError ? <div className="alert error">{requestError}</div> : null}
       {result ? <div className="card" style={{ background: 'var(--panel-2)' }}><h3 style={{ marginTop: 0 }}>结果</h3><pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{JSON.stringify(result, null, 2)}</pre></div> : null}
     </div>

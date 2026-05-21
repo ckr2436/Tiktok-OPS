@@ -12,6 +12,15 @@ export async function fetchHermesCapabilities(wid, taskType = 'general') {
 }
 
 export async function postHermesAgent(wid, endpoint, payload) {
-  const res = await http.post(`${basePath(wid)}/${endpoint}`, payload)
+  const res = await http.post(`${basePath(wid)}/${endpoint}`, {
+    ...payload,
+    async_mode: true,
+  })
   return res.data
+}
+
+export async function fetchHermesRun(wid, runId) {
+  if (!runId) throw new Error('run_id is required')
+  const res = await http.get(`${basePath(wid)}/runs/${encodeURIComponent(runId)}`)
+  return res.data || {}
 }
