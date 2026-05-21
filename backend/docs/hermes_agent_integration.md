@@ -88,6 +88,61 @@ Async Hermes requests use task name:
 hermes_agent.run
 ```
 
+### Production deployment checklist (systemd)
+
+If you run GMV Ops with systemd, deploy Hermes async queue with a **dedicated worker**:
+
+1) Create service file `/etc/systemd/system/gmv-celery-hermes.service`:
+
+```ini
+[Unit]
+Description=GMV Celery Worker (Hermes queue)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/gmv/GMV-OPS/backend
+EnvironmentFile=/opt/gmv/GMV-OPS/backend/.env
+ExecStart=/opt/gmv/GMV-OPS/backend/.venv/bin/celery -A app.celery_app.celery_app worker -Q gmv.tasks.hermes_agent -n hermes@%%H --loglevel=INFO --concurrency=2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2) Reload + start + enable:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now gmv-celery-hermes.service
+```
+
+3) Verify queue worker is online:
+
+```bash
+sudo systemctl status gmv-celery-hermes.service --no-pager
+sudo journalctl -u gmv-celery-hermes.service -n 100 --no-pager
+```
+
+You can also run repository smoke-check script:
+
+```bash
+cd backend
+bash scripts/hermes_async_smoke_check.sh
+```
+
+4) Optional: keep your default worker, but ensure it also consumes default queue(s):
+
+```bash
+celery -A app.celery_app.celery_app worker -Q gmv.tasks.default,gmv.tasks.events --loglevel=INFO
+```
+
+> Why dedicated worker: Hermes jobs are usually longer-running AI tasks; isolating queue
+> prevents long jobs from starving short/default jobs.
+
 ## API surface
 
 All APIs require the existing GMV Ops cookie session and tenant membership.
