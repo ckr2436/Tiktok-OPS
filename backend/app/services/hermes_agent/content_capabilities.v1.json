@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "capabilities": [
+    {
+      "capability": "truth.normalize",
+      "input_contract": "ProjectInputs",
+      "output_contract": "TruthPacket",
+      "policy": {
+        "media_spend": false,
+        "may_invent_facts": false
+      }
+    },
+    {
+      "capability": "series.slate",
+      "input_contract": "DirectorSeriesBrief",
+      "output_contract": "SeriesSlate",
+      "policy": {
+        "media_spend": false,
+        "cross_variant_diversity_required": true
+      }
+    },
+    {
+      "capability": "copy.write",
+      "input_contract": "VideoProgramSpec",
+      "output_contract": "ScriptPackage",
+      "policy": {
+        "media_spend": false,
+        "complete_script_before_media": true
+      }
+    },
+    {
+      "capability": "copy.review",
+      "input_contract": "ScriptPackage",
+      "output_contract": "IndependentCopyCriticVerdict",
+      "policy": {
+        "media_spend": false,
+        "independent_runtime_required": true
+      }
+    },
+    {
+      "capability": "visual.plan",
+      "input_contract": "DirectedContentArtifact",
+      "output_contract": "VisualProgram",
+      "policy": {
+        "media_spend": false,
+        "preserve_script_line_ids": true
+      }
+    },
+    {
+      "capability": "visual.reference.generate",
+      "input_contract": "VisualProgram",
+      "output_contract": "ReferenceAssetSet",
+      "policy": {
+        "media_spend": true,
+        "product_anchor_authoritative": true
+      }
+    },
+    {
+      "capability": "audio.design",
+      "input_contract": "DirectedContentArtifact",
+      "output_contract": "AudioProgram",
+      "policy": {
+        "media_spend": false,
+        "supports_no_dialogue": true
+      }
+    },
+    {
+      "capability": "copy.delivery.plan",
+      "input_contract": "DirectedContentArtifact",
+      "output_contract": "CopyDeliveryProgram",
+      "policy": {
+        "media_spend": false,
+        "lossless_script_line_coverage": true,
+        "critical_display_copy_is_local": true
+      }
+    },
+    {
+      "capability": "production.plan.review",
+      "input_contract": "DirectedProductionPlan",
+      "output_contract": "IndependentProductionPlanCriticVerdict",
+      "policy": {
+        "media_spend": false,
+        "independent_runtime_required": true,
+        "cannot_rewrite_approved_copy": true
+      }
+    },
+    {
+      "capability": "video.segment.generate",
+      "input_contract": "SegmentProductionPacket",
+      "output_contract": "GeneratedVideoSegment",
+      "policy": {
+        "media_spend": true,
+        "lossless_script_allocation": true
+      }
+    },
+    {
+      "capability": "edit.assemble",
+      "input_contract": "GeneratedVideoSegmentSet",
+      "output_contract": "CompletedVideo",
+      "policy": {
+        "media_spend": false,
+        "wait_for_required_dependencies": true
+      }
+    },
+    {
+      "capability": "publish.guide",
+      "input_contract": "CompletedVideo",
+      "output_contract": "PublishGuide",
+      "policy": {
+        "media_spend": false,
+        "one_guide_per_completed_video": true
+      }
+    }
+  ]
+}

@@ -115,6 +115,26 @@ class RedisDistributedLock:
     def lost(self) -> bool:
         return self._lost
 
+    def verify_ownership(self) -> bool:
+        """Synchronously prove ownership before a protected mutation/commit."""
+
+        with self._lock:
+            if not self._acquired or self._lost:
+                return False
+        try:
+            current = self._redis.get(self.key)
+            owned = current == _b(self.owner_token)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "redis lock ownership verification failed",
+                extra={"key": self.key},
+            )
+            owned = False
+        if not owned:
+            with self._lock:
+                self._lost = True
+        return owned
+
     def acquire(self, *, timeout: float = 0.0, retry_interval: float = 0.1) -> bool:
         """获取锁；成功则启动心跳线程。"""
         value = _b(self.owner_token)
@@ -165,6 +185,13 @@ class RedisDistributedLock:
                         return
                 except Exception:  # noqa: BLE001
                     logger.exception("redis lock heartbeat failed", extra={"key": self.key})
+                    # A heartbeat transport error means ownership can no
+                    # longer be proven. The Redis TTL may expire and another
+                    # worker may acquire the same key while this process is
+                    # still running, so continuing as owner is unsafe.
+                    with self._lock:
+                        self._lost = True
+                    return
 
         self._stop_event = threading.Event()
         self._heartbeat_thread = threading.Thread(target=_loop, daemon=True)
@@ -202,4 +229,3 @@ class RedisDistributedLock:
             t.join(timeout=2.0)
         with self._lock:
             self._heartbeat_thread = None
-

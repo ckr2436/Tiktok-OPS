@@ -67,9 +67,8 @@ def list_provider_accounts(
 ) -> common.ProviderAccountListResponse:
     """List the account bindings for a specific provider.
 
-    This endpoint validates the provider name, loads all OAuth accounts for
-    the workspace and triggers an automatic meta backfill if the account
-    appears to be missing data.
+    This endpoint is deliberately read-only.  Initial or manual metadata
+    synchronization is handled by the explicit binding/sync endpoints.
     """
     # Validate that the provider is supported.  The returned value is
     # normalized to the canonical provider key but is not used further here.
@@ -82,10 +81,6 @@ def list_provider_accounts(
         .limit(page_size)
         .all()
     )
-    # Ensure meta data has been seeded for each account; this may enqueue
-    # background sync jobs for newly authorized accounts.
-    for row in rows:
-        common._ensure_account_meta_seeded(db, workspace_id=workspace_id, account=row)
     items = [common._serialize_account_summary(row) for row in rows]
     return common.ProviderAccountListResponse(items=items, page=page, page_size=page_size, total=total)
 

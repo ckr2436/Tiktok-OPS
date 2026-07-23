@@ -1,3 +1,4 @@
+import logging
 import sys
 import types
 
@@ -15,6 +16,8 @@ sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
 _dummy_transformers = types.ModuleType("transformers")
+_dummy_transformers.AutoModelForSeq2SeqLM = object
+_dummy_transformers.AutoTokenizer = object
 _dummy_transformers.MarianMTModel = object
 _dummy_transformers.MarianTokenizer = object
 
@@ -41,8 +44,10 @@ from app.features.tenants.openai_whisper import transcriber  # noqa: E402  - stu
 
 def test_ensure_ffmpeg_available_when_present(monkeypatch, caplog):
     monkeypatch.setattr(transcriber.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(transcriber.logger, "disabled", False)
+    monkeypatch.setattr(transcriber.logger, "propagate", True)
 
-    with caplog.at_level("INFO"):
+    with caplog.at_level(logging.INFO, logger=transcriber.logger.name):
         transcriber.ensure_ffmpeg_available()
 
     assert "ffmpeg binary found" in " ".join(caplog.messages)
@@ -50,8 +55,10 @@ def test_ensure_ffmpeg_available_when_present(monkeypatch, caplog):
 
 def test_ensure_ffmpeg_available_missing(monkeypatch, caplog):
     monkeypatch.setattr(transcriber.shutil, "which", lambda _: None)
+    monkeypatch.setattr(transcriber.logger, "disabled", False)
+    monkeypatch.setattr(transcriber.logger, "propagate", True)
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level(logging.ERROR, logger=transcriber.logger.name):
         with pytest.raises(FileNotFoundError):
             transcriber.ensure_ffmpeg_available()
 
@@ -79,4 +86,3 @@ def test_translate_segments_same_language_short_circuits(monkeypatch):
         {"index": 0, "start": 0.0, "end": 1.0, "text": "Hello"},
         {"index": 1, "start": 1.0, "end": 2.0, "text": "World"},
     ]
-

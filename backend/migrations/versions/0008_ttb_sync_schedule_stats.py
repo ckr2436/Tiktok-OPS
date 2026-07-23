@@ -106,7 +106,11 @@ def downgrade() -> None:
 
     # drop column if exists
     if _has_column(bind, "schedule_runs", "stats_json"):
-        op.drop_column("schedule_runs", "stats_json")
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("schedule_runs", recreate="always") as batch_op:
+                batch_op.drop_column("stats_json")
+        else:
+            op.drop_column("schedule_runs", "stats_json")
 
     # remove seeded tasks
     meta = sa.MetaData()
@@ -114,4 +118,3 @@ def downgrade() -> None:
     names = ("ttb.sync.all", "ttb.sync.products", "ttb.sync.shops", "ttb.sync.advertisers", "ttb.sync.bc")
     del_q = task_catalog.delete().where(task_catalog.c.task_name.in_(names))
     bind.execute(del_q)
-

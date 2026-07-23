@@ -16,9 +16,10 @@ export async function listProviderApps() {
   // 统一整理字段，确保前端渲染不因后端微调而崩
   return (raw || []).map(it => ({
     id: Number(it?.id),
-    provider: String(it?.provider ?? 'tiktok-business'),
+    provider: String(it?.provider ?? 'tiktok_business'),
     name: String(it?.name ?? ''),
-    client_id: String(it?.client_id ?? ''), // ★ 新字段名
+    client_id: String(it?.client_id ?? ''),
+    service_id: it?.service_id ? String(it.service_id) : null,
     redirect_uri: String(it?.redirect_uri ?? ''),
     is_enabled: !!it?.is_enabled,
     client_secret_key_version: Number(it?.client_secret_key_version ?? 0),
@@ -30,12 +31,13 @@ export async function listProviderApps() {
 // 后端同一路由 upsert（创建时必须带 client_secret；更新允许 client_secret 为空/null）
 export async function upsertProviderApp(payload) {
   const body = {
-    provider: 'tiktok-business',
+    provider: String(payload.provider || 'tiktok_business').trim().replace('-', '_'),
     name: String(payload.name || '').trim(),
     client_id: String(payload.client_id || '').trim(),
     client_secret: payload.client_secret !== undefined
       ? trimOrNull(payload.client_secret)
       : null, // 编辑时可显式传 null 表示不变
+    service_id: trimOrNull(payload.service_id),
     redirect_uri: String(payload.redirect_uri || '').trim(),
     is_enabled: !!payload.is_enabled,
   }
@@ -55,8 +57,13 @@ export async function upsertProviderApp(payload) {
   return res?.data ?? res
 }
 
+export async function deleteProviderApp(id) {
+  const res = await http.delete(`/platform/oauth/provider-apps/${Number(id)}`)
+  return res?.data ?? res
+}
+
 export default {
   listProviderApps,
   upsertProviderApp,
+  deleteProviderApp,
 }
-

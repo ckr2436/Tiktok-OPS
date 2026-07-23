@@ -62,7 +62,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 | `gmv_max_store_list` | `GET /gmv_max/store/list/` | `GMVMaxStoreListRequest` | `GMVMaxStoreListData` |
 | `gmv_max_store_shop_ad_usage_check` | `GET /gmv_max/store/shop_ad_usage_check/` | `GMVMaxStoreAdUsageCheckRequest` | `GMVMaxStoreAdUsageCheckData` |
 | `gmv_max_occupied_custom_shop_ads_list` | `GET /gmv_max/occupied_custom_shop_ads/list/` | `GMVMaxOccupiedCustomShopAdsListRequest` | `GMVMaxOccupiedListData` |
-| `gmv_max_video_get` / `gmv_max_custom_anchor_video_list_get` | `GET /gmv_max/video/get/`, `GET /gmv_max/custom_anchor_video_list/get/` | `GMVMaxVideoGetRequest` / `GMVMaxCustomAnchorVideoListGetRequest` | `GMVMaxVideoListData` / `GMVMaxCustomAnchorVideoListData` |
+| `gmv_max_video_get` / `gmv_max_creation_custom_anchor_video_list_get` | `GET /gmv_max/video/get/`, `POST /gmv_max/creation/custom_anchor_video_list/get/` | `GMVMaxVideoGetRequest` / `GMVMaxCreationCustomAnchorVideoListGetRequest` | `GMVMaxVideoListData` / `GMVMaxCreationCustomAnchorVideoListGetData` |
 | `gmv_max_exclusive_authorization_get/create` | `GET /gmv_max/exclusive_authorization/get/`, `POST /gmv_max/exclusive_authorization/create/` | `GMVMaxExclusiveAuthorizationGetRequest` / `GMVMaxExclusiveAuthorizationCreateRequest` | `GMVMaxExclusiveAuthorizationData` |
 | `gmv_max_bid_recommend` | `GET /gmv_max/bid/recommend/` | `GMVMaxBidRecommendRequest` | `GMVMaxBidRecommendation` |
 | `gmv_max_report_get` | `GET /gmv_max/report/get/` | `GMVMaxReportGetRequest` | `GMVMaxReportData` |
@@ -113,7 +113,7 @@ Processing follows a layered path: **FastAPI router → Pydantic schemas → ser
 | `GET /gmv_max/identity/get/` | `gmv_max_identity_get` | Precheck identity listing | `POST /gmvmax/precheck` | `gmvmax.precheck` | none (response only) |
 | `GET /gmv_max/occupied_custom_shop_ads/list/` | `gmv_max_occupied_custom_shop_ads_list` | Precheck occupancy | `POST /gmvmax/precheck` | `gmvmax.precheck` | none (response only) |
 | `GET /gmv_max/exclusive_authorization/get/` / `POST /gmv_max/exclusive_authorization/create/` | `gmv_max_exclusive_authorization_get/create` | Binding discovery and persistence | `POST /gmvmax/binding/auto`, `POST /gmvmax/rebind_auto` | — | `TTBAdvertiserStoreLink` (binding hints), binding config tables |
-| `GET /gmv_max/video/get/`, `GET /gmv_max/custom_anchor_video_list/get/` | `gmv_max_video_get`, `gmv_max_custom_anchor_video_list_get` | Campaign creation helpers | Used indirectly in creation flows if video anchors requested | — | `TTBGmvMaxCampaign` raw_json context |
+| `GET /gmv_max/video/get/`, `POST /gmv_max/creation/custom_anchor_video_list/get/` | `gmv_max_video_get`, `gmv_max_creation_custom_anchor_video_list_get` | Campaign creation helpers | Used indirectly in creation flows if video anchors requested | — | `TTBGmvMaxCampaign` raw_json context |
 | `GET /gmv_max/store/ad` usage check (shop_ad_usage_check) & `GET /gmv_max/store/list/` | `gmv_max_store_ad_usage_check`, `gmv_max_store_list` | Binding discovery | `POST /gmvmax/binding/auto` | `gmvmax.precheck` | `TTBAdvertiserStoreLink` |
 
 ## 4. Flow diagrams for key use cases

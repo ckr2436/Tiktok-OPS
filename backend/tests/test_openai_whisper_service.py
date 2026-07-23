@@ -1,4 +1,5 @@
 import asyncio
+import importlib.machinery
 import io
 import types
 import sys
@@ -20,6 +21,7 @@ sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
 _dummy_yt_dlp = types.ModuleType("yt_dlp")
+_dummy_yt_dlp.__spec__ = importlib.machinery.ModuleSpec("yt_dlp", loader=None)
 
 
 class _FakeYoutubeDL:

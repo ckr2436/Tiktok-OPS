@@ -4,14 +4,15 @@ import pytest
 from app.features.tenants.ttb.gmv_max import service
 from app.features.tenants.ttb.gmv_max.schemas import GMVMaxPrecheckRequest
 from app.providers.tiktok_business.gmvmax_client import (
-    GMVMaxCustomAnchorVideo,
     GMVMaxIdentity,
     GMVMaxIdentityInfo,
     GMVMaxOccupiedAd,
     GMVMaxOccupiedListData,
+    GMVMaxBidRecommendation,
     GMVMaxStoreAdUsageCheckData,
     GMVMaxVideo,
     GMVMaxVideoInfo,
+    PageInfo,
 )
 
 
@@ -39,6 +40,7 @@ class FakeGMVClient:
         identities=None,
         videos=None,
         anchors=None,
+        recommend=None,
     ):
         self._store_list = store_list or []
         self._usage = usage
@@ -46,6 +48,7 @@ class FakeGMVClient:
         self._identities = identities or []
         self._videos = videos or []
         self._anchors = anchors or []
+        self._recommend = recommend or {}
         self.calls = types.SimpleNamespace(
             store_list=0,
             usage=0,
@@ -53,7 +56,9 @@ class FakeGMVClient:
             identities=0,
             videos=0,
             anchors=0,
+            recommend=0,
         )
+        self.occupancy_requests = []
 
     async def gmv_max_store_list(self, request):  # noqa: ANN001
         self.calls.store_list += 1
@@ -66,6 +71,7 @@ class FakeGMVClient:
     async def gmv_max_occupied_custom_shop_ads_list(self, request):  # noqa: ANN001
         self.calls.occupancy += 1
         self.last_occupancy_request = request
+        self.occupancy_requests.append(request)
         return _Resp(self._occupancy, request_id="occupancy")
 
     async def gmv_max_identity_get(self, request):  # noqa: ANN001
@@ -74,13 +80,27 @@ class FakeGMVClient:
 
     async def gmv_max_video_get(self, request):  # noqa: ANN001
         self.calls.videos += 1
-        return _Resp(types.SimpleNamespace(list=self._videos), request_id="video")
+        return _Resp(
+            types.SimpleNamespace(
+                item_list=self._videos,
+                page_info=PageInfo(page=request.page, page_size=50, total_page=1),
+            ),
+            request_id="video",
+        )
 
-    async def gmv_max_custom_anchor_video_list_get(self, request):  # noqa: ANN001
+    async def gmv_max_creation_custom_anchor_video_list_get(self, request):  # noqa: ANN001
         self.calls.anchors += 1
         return _Resp(
-            types.SimpleNamespace(custom_anchor_video_list=self._anchors), request_id="anchor"
+            types.SimpleNamespace(
+                item_list=self._anchors,
+                page_info=PageInfo(page=request.page, page_size=50, total_page=1),
+            ),
+            request_id="anchor",
         )
+
+    async def gmv_max_bid_recommend(self, request):  # noqa: ANN001
+        self.calls.recommend += 1
+        return _Resp(GMVMaxBidRecommendation(**self._recommend), request_id="recommend")
 
     async def aclose(self):  # noqa: D401
         """No-op close."""
@@ -88,19 +108,14 @@ class FakeGMVClient:
 
 
 class FakeTTBClient:
-    def __init__(self, products=None, recommend=None):
+    def __init__(self, products=None):
         self._products = products or []
-        self._recommend = recommend or {}
-        self.calls = types.SimpleNamespace(iter_products=0, recommend=0)
+        self.calls = types.SimpleNamespace(iter_products=0)
 
     async def iter_products(self, **kwargs):  # noqa: ANN001
         self.calls.iter_products += 1
         for product in self._products:
             yield product
-
-    async def recommend_gmvmax_bid(self, **kwargs):  # noqa: ANN001
-        self.calls.recommend += 1
-        return dict(self._recommend)
 
     async def aclose(self):  # noqa: D401
         """No-op close."""
@@ -129,16 +144,21 @@ async def test_precheck_basic_flow(monkeypatch):
         ),
     ]
     videos = [GMVMaxVideo(item_id="vid_item", video_info=GMVMaxVideoInfo(video_id="v1", preview_url="p"))]
-    anchors = [GMVMaxCustomAnchorVideo(custom_anchor_video_id="c1", video_info=GMVMaxVideoInfo(video_id="av1"))]
+    anchors = [GMVMaxVideo(item_id="c1", video_info=GMVMaxVideoInfo(video_id="av1"))]
     products = [
         {"status": "AVAILABLE", "item_group_id": "g1", "gmv_max_ads_status": "UNOCCUPIED"},
         {"status": "AVAILABLE", "item_group_id": "g2", "gmv_max_ads_status": "OCCUPIED"},
     ]
 
     gmv_client = FakeGMVClient(
-        store_list=[store_entry], usage=usage, identities=identities, videos=videos, anchors=anchors
+        store_list=[store_entry],
+        usage=usage,
+        identities=identities,
+        videos=videos,
+        anchors=anchors,
+        recommend={"roas_bid": 1.5, "budget": 100},
     )
-    ttb_client = FakeTTBClient(products=products, recommend={"roas_bid": 1.5, "budget": 100})
+    ttb_client = FakeTTBClient(products=products)
 
     payload = GMVMaxPrecheckRequest(
         store_id="1",
@@ -190,6 +210,7 @@ async def test_precheck_needs_exclusive_auth(monkeypatch):
         store_id="1",
         store_authorized_bc_id="bc",
         advertiser_id="adv",
+        item_group_ids=["g1"],
     )
 
     result = await service.gmvmax_precheck(
@@ -225,6 +246,7 @@ async def test_precheck_occupied_shop_ads(monkeypatch):
         store_id="1",
         store_authorized_bc_id="bc",
         advertiser_id="adv",
+        item_group_ids=["g1"],
     )
 
     result = await service.gmvmax_precheck(
@@ -294,7 +316,7 @@ async def test_precheck_short_circuits_when_store_unavailable(monkeypatch):
     assert gmv_client.calls.videos == 0
     assert gmv_client.calls.anchors == 0
     assert ttb_client.calls.iter_products == 0
-    assert ttb_client.calls.recommend == 0
+    assert gmv_client.calls.recommend == 0
 
 
 async def test_precheck_short_circuits_when_store_disabled(monkeypatch):
@@ -333,7 +355,7 @@ async def test_precheck_short_circuits_when_store_disabled(monkeypatch):
     assert gmv_client.calls.videos == 0
     assert gmv_client.calls.anchors == 0
     assert ttb_client.calls.iter_products == 0
-    assert ttb_client.calls.recommend == 0
+    assert gmv_client.calls.recommend == 0
 
 
 async def test_precheck_occupancy_request_only_spu_ids(monkeypatch):
@@ -365,7 +387,7 @@ async def test_precheck_occupancy_request_only_spu_ids(monkeypatch):
         ttb_client=ttb_client,
     )
 
-    req = getattr(gmv_client, "last_occupancy_request", None)
-    assert req is not None
-    assert getattr(req, "occupied_asset_type", None) == "SPU"
-    assert getattr(req, "asset_ids", None) == ["spu1", "spu2"]
+    requests = getattr(gmv_client, "occupancy_requests", [])
+    assert len(requests) == 2
+    assert all(getattr(req, "occupied_asset_type", None) == "SPU" for req in requests)
+    assert [getattr(req, "asset_ids", None) for req in requests] == [["spu1"], ["spu2"]]

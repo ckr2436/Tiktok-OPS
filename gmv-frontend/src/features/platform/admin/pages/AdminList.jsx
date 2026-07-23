@@ -34,8 +34,10 @@ export default function AdminList() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
 
-  const deleteMutation = useMutation((id) => deletePlatformAdmin(id))
-  const updateDisplayNameMutation = useMutation(({ id, displayName }) => updatePlatformAdminDisplayName(id, displayName))
+  const deleteMutation = useMutation({ mutationFn: (id) => deletePlatformAdmin(id) })
+  const updateDisplayNameMutation = useMutation({
+    mutationFn: ({ id, displayName }) => updatePlatformAdminDisplayName(id, displayName),
+  })
 
   async function onDelete(r) {
     if (!isOwner) return
@@ -154,4 +156,3 @@ function RoleBadge({role}) {
     </span>
   )
 }
-

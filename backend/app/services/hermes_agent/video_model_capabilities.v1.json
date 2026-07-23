@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "models": [
+    {
+      "model_id": "omni_flash",
+      "aliases": [
+        "gemini_omni_flash_preview"
+      ],
+      "label": "Omni Flash",
+      "provider": "bandianwa",
+      "provider_key": "bandianwa",
+      "task_model": "omni_flash",
+      "reference_image_minimum": 3,
+      "reference_image_default": 7,
+      "reference_image_maximum": 7,
+      "reference_video_maximum": 1,
+      "segment_duration_minimum_seconds": 10,
+      "segment_duration_maximum_seconds": 10,
+      "allowed_segment_durations_seconds": [
+        10
+      ],
+      "recommended_project_variant_parallelism": 2,
+      "maximum_project_variant_parallelism": 4,
+      "allows_human_face_references": true,
+      "hard_rules": [
+        "Every segment must receive character, scene, and key-action anchors in that order where distinct images are available.",
+        "In the final provider prompt, refer to files strictly by local multipart order as @image1, @image2, @image3, and so on.",
+        "Keep each segment within the selected reference image limit.",
+        "A reference video may be used only as motion, camera, rhythm, or composition guidance; do not copy its identity, text, watermark, or branding."
+      ]
+    },
+    {
+      "model_id": "seedance_2_0_mini",
+      "aliases": [
+        "seedance_2_0",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao_seedance_2_0_mini_260615"
+      ],
+      "label": "Seedance 2.0 Mini",
+      "provider": "volcengine",
+      "provider_key": "volcengine",
+      "task_model": "doubao-seedance-2-0-mini-260615",
+      "reference_image_minimum": 1,
+      "reference_image_default": 9,
+      "reference_image_maximum": 9,
+      "reference_video_maximum": 1,
+      "segment_duration_minimum_seconds": 1,
+      "segment_duration_maximum_seconds": 15,
+      "allowed_segment_durations_seconds": [],
+      "recommended_project_variant_parallelism": 2,
+      "maximum_project_variant_parallelism": 4,
+      "allows_human_face_references": false,
+      "hard_rules": [
+        "Do not create or request reference images with visible real or fictional human faces.",
+        "Reference images should be product, package, ingredient, prop, room layout, hands-only, or face-hidden body/action anchors.",
+        "People may appear in the written video prompt, but their faces must be controlled by text, not by uploaded reference images.",
+        "Do not ask the art model to make face-locked character portraits, selfie references, or actor identity reference images.",
+        "Keep each segment within the selected reference image limit.",
+        "A reference video may be used only as motion, camera, rhythm, or composition guidance; do not copy its identity, text, watermark, or branding."
+      ]
+    },
+    {
+      "model_id": "gemini_omni_flash",
+      "aliases": [
+        "google_omni_flash",
+        "google_gemini_omni"
+      ],
+      "label": "Google Gemini Omni Flash",
+      "provider": "google_gemini",
+      "provider_key": "google-gemini",
+      "task_model": "gemini-omni-flash-preview",
+      "reference_image_minimum": 1,
+      "reference_image_default": 7,
+      "reference_image_maximum": 7,
+      "reference_video_maximum": 1,
+      "segment_duration_minimum_seconds": 1,
+      "segment_duration_maximum_seconds": 10,
+      "allowed_segment_durations_seconds": [],
+      "recommended_project_variant_parallelism": 2,
+      "maximum_project_variant_parallelism": 4,
+      "allows_human_face_references": true,
+      "hard_rules": [
+        "Use prompt tags <FIRST_FRAME> and <IMAGE_REF_N> to bind image roles; reference image numbering starts at 0.",
+        "Use no more than seven reference images per segment.",
+        "The official video-reference API shape accepts short video inputs, but model handling is currently unreliable; use a reference video only as optional motion guidance.",
+        "Gemini Omni has no stable public seconds or resolution request field; enforce duration, language, pacing, CTA, and scene continuity directly in the prompt."
+      ]
+    }
+  ]
+}

@@ -5,6 +5,18 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+*.bak
+*.bak.*
+*.bak-*
+*.tmp
+*.old
+*.orig
+*.rej
+*~
+/frontend.bak*/
+/backups/
+/=
+/backend/=
 
 # ---- Python ----
 __pycache__/
@@ -23,6 +35,7 @@ ENV/
 .coverage.*
 htmlcov/
 .cache/
+test_platform.db
 
 # ---- FastAPI / Alembic / Logs ----
 *.log
@@ -69,4 +82,14 @@ gmv-frontend/.vite/
 # 你的要求：但忽略 gmv-frontend 的 pnpm-lock.yaml（覆盖上面的放行）
 /gmv-frontend/pnpm-lock.yaml
 
+# ---- Local operations / recovery artifacts ----
+/.codex-backups/
+/backend/.codex-staging/
+/backend/var/
+/frontend.pre-*/
+/tmp/
+/gmv.db
+
+# Historical local API extracts are duplicated under apps/.  The maintained,
+# reviewable reference set lives in /api_details.
 apps/

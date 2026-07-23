@@ -23,6 +23,16 @@ def _to_decimal(value: Any) -> Optional[Decimal]:
         return None
 
 
+def _payload_value(payload: dict[str, Any], *keys: str) -> Any:
+    balance_info = payload.get("balance_info")
+    for key in keys:
+        if payload.get(key) is not None:
+            return payload.get(key)
+        if isinstance(balance_info, dict) and balance_info.get(key) is not None:
+            return balance_info.get(key)
+    return None
+
+
 def select_latest_balance(
     db: Session, *, workspace_id: int, auth_id: int, advertiser_id: str
 ) -> TTBAdvertiserBalance | None:
@@ -52,6 +62,11 @@ async def fetch_advertiser_balance(
         bc_id=str(bc_id),
         advertiser_ids=[advertiser_id],
         page_size=1,
+        fields=[
+            "budget_remaining",
+            "budget_amount_restriction",
+            "balance_info",
+        ],
     )
     if not balances:
         return None
@@ -75,18 +90,26 @@ def upsert_advertiser_balance(
         )
 
     row.currency = payload.get("currency") or row.currency
-    balance_value = payload.get("balance")
+    balance_value = _payload_value(payload, "balance", "account_balance", "valid_account_balance")
     row.account_balance = _to_decimal(
-        payload.get("account_balance") or payload.get("valid_account_balance") or balance_value
+        _payload_value(payload, "account_balance", "valid_account_balance") or balance_value
     )
-    row.valid_account_balance = _to_decimal(payload.get("valid_account_balance"))
+    row.valid_account_balance = _to_decimal(_payload_value(payload, "valid_account_balance"))
     row.cash_balance = _to_decimal(
-        payload.get("cash_balance") or payload.get("valid_cash_balance") or balance_value
+        _payload_value(payload, "cash_balance", "valid_cash_balance") or balance_value
     )
-    row.valid_cash_balance = _to_decimal(payload.get("valid_cash_balance") or balance_value)
-    # 官方 API 暂不提供信用额度相关字段，仅同步现金余额
-    row.credit_balance = None
-    row.valid_credit_balance = None
+    row.valid_cash_balance = _to_decimal(_payload_value(payload, "valid_cash_balance") or balance_value)
+    row.credit_balance = _to_decimal(_payload_value(payload, "credit_balance"))
+    row.valid_credit_balance = _to_decimal(_payload_value(payload, "valid_credit_balance"))
+    budget_mode = str(_payload_value(payload, "budget_mode") or "").upper()
+    budget_value = _to_decimal(_payload_value(payload, "budget"))
+    budget_cost_value = _to_decimal(_payload_value(payload, "budget_cost"))
+    budget_remaining_value = _to_decimal(_payload_value(payload, "budget_remaining"))
+    if budget_mode == "UNLIMITED" and (budget_value in (None, Decimal("0"))) and (
+        budget_cost_value in (None, Decimal("0"))
+    ):
+        budget_remaining_value = None
+    row.budget_remaining = budget_remaining_value
     row.fetched_at = datetime.now(timezone.utc)
     row.raw_json = payload
     db.add(row)
@@ -128,6 +151,7 @@ async def sync_advertiser_balance(
             "status": "success",
             "currency": row.currency,
             "cash_balance": float(row.cash_balance) if row.cash_balance is not None else None,
+            "budget_remaining": float(row.budget_remaining) if row.budget_remaining is not None else None,
             "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,
         }
     finally:

@@ -1,14 +1,18 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { startGmvMaxSync } from "../api/gmvMaxApi.js";
+import { syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { composeMetricsQueryBaseKey } from "./gmvMaxQueries.js";
 import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
 import { useGmvTaskPolling } from "./useGmvTaskPolling.js";
 
 function createSyncError(message) {
-  return new Error(message || "GMV Max 数据同步失败，请稍后重试。");
+  const resolved =
+    typeof message === "string"
+      ? message
+      : message?.message || message?.detail?.message;
+  return new Error(resolved || "GMV Max 数据同步失败，请稍后重试。");
 }
 
 export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId }) {
@@ -19,23 +23,15 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
 
   const buildPayload = useCallback(
     (payload = {}) => {
-      const normalizedCampaignIds = [];
-      if (payload.campaign_ids) {
-        normalizedCampaignIds.push(
-          ...payload.campaign_ids
-            .map((value) => (value === undefined || value === null ? "" : String(value)))
-            .filter(Boolean),
-        );
-      }
-      if (campaignId) {
-        normalizedCampaignIds.push(String(campaignId));
-      }
+      const normalizedCampaignId =
+        campaignId === undefined || campaignId === null ? "" : String(campaignId).trim();
 
       return {
         start_date: payload.start_date || payload.startDate || null,
         end_date: payload.end_date || payload.endDate || null,
         levels: payload.levels || ["CAMPAIGN", "PRODUCT", "CREATIVE"],
-        campaign_ids: normalizedCampaignIds.length ? normalizedCampaignIds : undefined,
+        campaign_ids: normalizedCampaignId ? [normalizedCampaignId] : undefined,
+        item_group_ids: payload.item_group_ids || payload.itemGroupIds || undefined,
       };
     },
     [campaignId],
@@ -63,7 +59,14 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
   }, []);
 
   const syncMutation = useMutation({
-    mutationFn: (payload) => startGmvMaxSync(workspaceId, provider, authId, buildPayload(payload)),
+    mutationFn: (payload) =>
+      syncGmvMaxMetrics(
+        workspaceId,
+        provider,
+        authId,
+        campaignId,
+        buildPayload(payload),
+      ),
     onMutate: () => {
       setTaskError(null);
       setTask(null);
@@ -119,6 +122,17 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     return Boolean(currentTaskId && isActiveTaskState(state));
   }, [currentTaskId, polledTask?.state, syncMutation.isPending, task?.state]);
 
+  const activeTask = polledTask || task;
+  const syncMessage = useMemo(() => {
+    const progressMessage = activeTask?.progress?.message;
+    if (progressMessage) return progressMessage;
+    const state = normalizeTaskState(activeTask?.state);
+    if (state === "PENDING") return "同步任务排队中…";
+    if (state === "RETRY") return "同步暂时中断，系统正在自动重试…";
+    if (state === "STARTED") return "正在同步当前系列报表…";
+    return syncMutation.isPending ? "正在创建同步任务…" : "";
+  }, [activeTask, syncMutation.isPending]);
+
   const startSync = useCallback(
     (payload) => {
       if (syncMutation.isPending || isSyncing) return;
@@ -143,6 +157,7 @@ export function useGmvMaxMetricsSync({ workspaceId, provider, authId, campaignId
     isPolling: Boolean(currentTaskId && isPolling),
     syncState: polledTask?.state || task?.state || (syncMutation.isPending ? "PENDING" : undefined),
     syncError: taskError || syncMutation.error,
-    task: polledTask || task,
+    syncMessage,
+    task: activeTask,
   };
 }

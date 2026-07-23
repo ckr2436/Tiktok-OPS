@@ -353,6 +353,12 @@ def _serialize_error(stage: str, exc: Exception) -> Dict[str, Any]:
     }
 
 
+def _completion_status(errors: List[Dict[str, Any]]) -> str:
+    """Never advertise a provider result containing errors as fully successful."""
+
+    return "partial" if errors else "success"
+
+
 def _envelope_to_dict(envelope: ProviderEnvelope) -> Dict[str, Any]:
     return {
         "envelope_version": envelope.version,
@@ -643,8 +649,9 @@ def _execute_task(
 
         # --- 完成与审计 ---
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
-        status = "success"
+        status = _completion_status(errors)
         processed_payload = processed or _build_processed_stats([])
+        first_error = errors[0] if errors else {}
         _finish_run(
             run,
             status=status,
@@ -652,6 +659,8 @@ def _execute_task(
             retries=self.request.retries,
             processed=processed_payload,
             errors=errors,
+            error_code=str(first_error.get("code") or "") or None,
+            error_message=str(first_error.get("message") or "") or None,
         )
         if expected_scope == "products":
             _record_products_summary(
@@ -669,12 +678,14 @@ def _execute_task(
             schedule_run_id=run.id if run else envelope.meta.run_id,
             details={"processed": processed, "errors": errors},
         )
-        context_logger.info(
-            "ttb sync completed",
-            extra={"status": status},
-        )
+        log_completion = context_logger.warning if errors else context_logger.info
+        log_completion("ttb sync completed", extra={"status": status})
         db.commit()
-        return {"status": status, "processed": processed, "errors": errors}
+        return {
+            "status": status,
+            "processed": processed_payload,
+            "errors": errors,
+        }
     except Exception as exc:
         db.rollback()
         duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
@@ -844,4 +855,3 @@ def task_sync_all(
         run_id=run_id,
         idempotency_key=idempotency_key,
     )
-

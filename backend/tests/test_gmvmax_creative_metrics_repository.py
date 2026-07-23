@@ -1,44 +1,34 @@
+from __future__ import annotations
+
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-import sqlalchemy as sa
-from sqlalchemy import event
-
+from app.data.models.gmv_restructured import GmvCreativeMetrics10Min
+from app.data.models.gmvmax_creative_metrics import (
+    GmvmaxProductCreativeMetricsDaily,
+)
+from app.data.models.gmvmax_sync_state import GmvCreative10MinBatchManifest
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
-from app.data.models.ttb_gmvmax import TTBGmvMaxCreativeMetric
+from app.data.models.ttb_entities import TTBAdvertiser
 from app.data.models.workspaces import Workspace
 from app.data.repositories.tiktok_business.gmvmax_creative_metrics import (
-    get_latest_metrics_for_creative,
     get_recent_creative_metrics,
-    list_creative_metrics,
-    upsert_creative_metrics,
 )
 
 
 _PROVIDER = "tiktok-business"
 _CAMPAIGN_ID = "cmp-100"
 _CREATIVE_ID = "cr-1"
-_CREATIVE_METRIC_ID_SEQ = 1
+_ADVERTISER_ID = "adv-1"
+_STORE_ID = "store-1"
+_ITEM_GROUP_ID = "spu-1"
 
 
-@event.listens_for(TTBGmvMaxCreativeMetric, "before_insert")
-def _assign_creative_metric_id(mapper, connection, target) -> None:  # pragma: no cover - sqlite helper
-    global _CREATIVE_METRIC_ID_SEQ
-    if target.id is not None:
-        return
-    target.id = _CREATIVE_METRIC_ID_SEQ
-    _CREATIVE_METRIC_ID_SEQ += 1
-
-
-def _setup_workspace_and_account(db_session):
-    global _CREATIVE_METRIC_ID_SEQ
-    _CREATIVE_METRIC_ID_SEQ = 1
+def _setup_scope(db_session, *, timezone_name: str = "UTC") -> tuple[int, int]:
     workspace = Workspace(id=1, name="Tenant", company_code="0001")
     db_session.add(workspace)
-    db_session.flush()
-
     provider_app = OAuthProviderApp(
         id=1,
         provider=_PROVIDER,
@@ -48,8 +38,6 @@ def _setup_workspace_and_account(db_session):
         redirect_uri="https://example.com/callback",
     )
     db_session.add(provider_app)
-    db_session.flush()
-
     account = OAuthAccountTTB(
         id=1,
         workspace_id=workspace.id,
@@ -60,243 +48,374 @@ def _setup_workspace_and_account(db_session):
     )
     db_session.add(account)
     db_session.flush()
-
+    db_session.add(
+        TTBAdvertiser(
+            workspace_id=workspace.id,
+            auth_id=account.id,
+            advertiser_id=_ADVERTISER_ID,
+            timezone=timezone_name,
+            display_timezone=timezone_name,
+        )
+    )
+    db_session.flush()
     return workspace.id, account.id
 
 
-def test_upsert_creative_metrics_insert_and_update(db_session):
-    workspace_id, auth_id = _setup_workspace_and_account(db_session)
-    stat_day = datetime(2024, 1, 15, 0, 0, 0)
-
-    first_metrics = {
-        "creative_name": "Alpha",
-        "impressions": 1200,
-        "clicks": 45,
-        "cost": 123.45,
-        "ad_click_rate": 0.0375,
-    }
-    row = asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id=_CREATIVE_ID,
-            stat_time_day=stat_day,
-            metrics=first_metrics,
-        )
-    )
-    assert row.impressions == 1200
-    assert row.creative_name == "Alpha"
-    assert row.raw_metrics == first_metrics
-
-    updated_metrics = {
-        "creative_name": "Alpha",
-        "impressions": 1300,
-        "clicks": 60,
-        "gross_revenue": 456.78,
-        "ad_conversion_rate": 0.023,
-    }
-    row_updated = asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id=_CREATIVE_ID,
-            stat_time_day=stat_day,
-            metrics=updated_metrics,
-        )
-    )
-    assert row_updated is row
-    assert row_updated.impressions == 1300
-    assert row_updated.clicks == 60
-    assert row_updated.gross_revenue == 456.78
-    assert row_updated.ad_conversion_rate == 0.023
-    assert row_updated.raw_metrics == updated_metrics
-
-
-@pytest.mark.parametrize("status_key", ["creative_status", "creative_delivery_status"])
-def test_upsert_creative_metrics_creative_status(db_session, status_key):
-    workspace_id, auth_id = _setup_workspace_and_account(db_session)
-    stat_day = datetime(2024, 1, 20, 0, 0, 0)
-
-    metrics = {status_key: "DELIVERING"}
-    row = asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id=_CREATIVE_ID,
-            stat_time_day=stat_day,
-            metrics=metrics,
-        )
+def _daily(
+    *,
+    workspace_id: int,
+    auth_id: int,
+    stat_day: date,
+    item_group_id: str = _ITEM_GROUP_ID,
+    creative_id: str = _CREATIVE_ID,
+    advertiser_id: str = _ADVERTISER_ID,
+    store_id: str = _STORE_ID,
+    source_observed_at: datetime | None,
+    clicks: int,
+    impressions: int,
+    cost_cents: int,
+    revenue_cents: int,
+    orders: int,
+) -> GmvmaxProductCreativeMetricsDaily:
+    return GmvmaxProductCreativeMetricsDaily(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        store_id=store_id,
+        campaign_id=_CAMPAIGN_ID,
+        item_group_id=item_group_id,
+        creative_id=creative_id,
+        stat_time_day=stat_day,
+        creative_delivery_status="DELIVERING",
+        clicks=clicks,
+        impressions=impressions,
+        cost_cents=cost_cents,
+        gross_revenue_cents=revenue_cents,
+        orders=orders,
+        source_observed_at=source_observed_at,
+        ingested_at=source_observed_at,
+        is_final=False,
     )
 
-    assert row.creative_status == "DELIVERING"
 
-
-def test_list_and_latest_creative_metrics_filters(db_session):
-    workspace_id, auth_id = _setup_workspace_and_account(db_session)
-    base_day = datetime(2024, 1, 1)
-
-    metrics = {
-        "impressions": 100,
-        "clicks": 10,
-    }
-    other_metrics = {"impressions": 200, "clicks": 20}
-
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-1",
-            stat_time_day=base_day,
-            metrics=metrics,
-        )
+def _snapshot(
+    *,
+    workspace_id: int,
+    auth_id: int,
+    stat_day: date,
+    snapshot_at: datetime,
+    item_group_id: str = _ITEM_GROUP_ID,
+    creative_id: str = _CREATIVE_ID,
+    advertiser_id: str = _ADVERTISER_ID,
+    store_id: str = _STORE_ID,
+    clicks: int,
+    impressions: int,
+    cost_cents: int,
+    revenue_cents: int,
+    orders: int,
+) -> GmvCreativeMetrics10Min:
+    return GmvCreativeMetrics10Min(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        store_id=store_id,
+        campaign_id=_CAMPAIGN_ID,
+        item_group_id=item_group_id,
+        creative_id=creative_id,
+        stat_time_day=stat_day,
+        snapshot_at=snapshot_at,
+        creative_status="DELIVERING",
+        clicks=clicks,
+        impressions=impressions,
+        cost_cents=cost_cents,
+        gross_revenue_cents=revenue_cents,
+        orders=orders,
+        source_observed_at=snapshot_at,
+        ingested_at=snapshot_at,
+        is_final=False,
     )
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-1",
-            stat_time_day=base_day + timedelta(days=1),
-            metrics=other_metrics,
-        )
+
+
+def _snapshot_manifest(
+    *,
+    workspace_id: int,
+    auth_id: int,
+    stat_day: date,
+    snapshot_at: datetime,
+    row_count: int,
+) -> GmvCreative10MinBatchManifest:
+    return GmvCreative10MinBatchManifest(
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=_ADVERTISER_ID,
+        store_id=_STORE_ID,
+        campaign_id=_CAMPAIGN_ID,
+        stat_time_day=stat_day,
+        snapshot_at=snapshot_at,
+        complete=True,
+        row_count=row_count,
+        source_observed_at=snapshot_at,
     )
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id="cmp-200",
-            creative_id="cr-2",
-            stat_time_day=base_day,
-            metrics=metrics,
-        )
+
+
+def test_recent_metrics_uses_only_official_historical_daily_and_exact_item_scope(
+    db_session,
+):
+    workspace_id, auth_id = _setup_scope(db_session)
+    now = datetime(2026, 7, 17, 16, tzinfo=timezone.utc)
+    observed = datetime(2026, 7, 17, 12)
+    db_session.add_all(
+        [
+            _daily(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 15),
+                source_observed_at=observed,
+                clicks=10,
+                impressions=100,
+                cost_cents=1000,
+                revenue_cents=2500,
+                orders=2,
+            ),
+            _daily(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 16),
+                source_observed_at=observed,
+                clicks=20,
+                impressions=200,
+                cost_cents=2000,
+                revenue_cents=5000,
+                orders=3,
+            ),
+            # A row without source provenance is a legacy/derived fact and is
+            # never authoritative for heating.
+            _daily(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 16),
+                creative_id="legacy",
+                source_observed_at=None,
+                clicks=999,
+                impressions=999,
+                cost_cents=99999,
+                revenue_cents=0,
+                orders=0,
+            ),
+            # Same creative in another product must not leak into this result.
+            _daily(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 16),
+                item_group_id="spu-other",
+                source_observed_at=observed,
+                clicks=777,
+                impressions=777,
+                cost_cents=77777,
+                revenue_cents=0,
+                orders=0,
+            ),
+            _snapshot(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 15, 50),
+                clicks=5,
+                impressions=50,
+                cost_cents=500,
+                revenue_cents=1000,
+                orders=1,
+            ),
+            _snapshot_manifest(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 15, 50),
+                row_count=1,
+            ),
+        ]
     )
+    db_session.flush()
 
     result = asyncio.run(
-        list_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_ids=["cr-1"],
-            date_from=base_day,
-            date_to=base_day + timedelta(days=1),
-        )
-    )
-    assert [row.stat_time_day for row in result] == [
-        base_day + timedelta(days=1),
-        base_day,
-    ]
-
-    latest = asyncio.run(
-        get_latest_metrics_for_creative(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-1",
-        )
-    )
-    assert latest is not None
-    assert latest.stat_time_day == base_day + timedelta(days=1)
-    assert latest.clicks == 20
-
-
-def test_get_recent_creative_metrics_window(db_session):
-    workspace_id, auth_id = _setup_workspace_and_account(db_session)
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-1",
-            stat_time_day=today,
-            metrics={
-                "clicks": 15,
-                "ad_click_rate": 0.03,
-                "gross_revenue": 120.5,
-                "cost": 50.0,
-                "orders": 3,
-                "roi": 2.4,
-                "creative_status": "DELIVERING",
-            },
-        )
-    )
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-1",
-            stat_time_day=today - timedelta(days=2),
-            metrics={"clicks": 25, "ad_click_rate": 0.05, "gross_revenue": 80.0},
-        )
-    )
-    asyncio.run(
-        upsert_creative_metrics(
-            db_session,
-            workspace_id=workspace_id,
-            provider=_PROVIDER,
-            auth_id=auth_id,
-            campaign_id=_CAMPAIGN_ID,
-            creative_id="cr-2",
-            stat_time_day=today,
-            metrics={"clicks": 5, "ad_click_rate": 0.04},
-        )
-    )
-
-    recent_short = asyncio.run(
         get_recent_creative_metrics(
             db_session,
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            store_id=_STORE_ID,
             campaign_id=_CAMPAIGN_ID,
+            item_group_id=_ITEM_GROUP_ID,
+            window_minutes=3 * 24 * 60,
+            creative_ids=[_CREATIVE_ID, "legacy"],
+            now=now,
+        )
+    )
+
+    assert set(result) == {_CREATIVE_ID}
+    metric = result[_CREATIVE_ID]
+    assert metric.item_group_id == _ITEM_GROUP_ID
+    assert metric.clicks == 35
+    assert metric.cost == 35
+    assert metric.gross_revenue == 85
+    assert metric.orders == 6
+    assert metric.roi == pytest.approx(85 / 35)
+    assert metric.ad_click_rate == pytest.approx(35 / 350)
+
+
+def test_intraday_metrics_are_window_delta_not_daily_cumulative(db_session):
+    workspace_id, auth_id = _setup_scope(db_session)
+    now = datetime(2026, 7, 17, 16, tzinfo=timezone.utc)
+    db_session.add_all(
+        [
+            _snapshot(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 14, 50),
+                clicks=100,
+                impressions=1000,
+                cost_cents=10000,
+                revenue_cents=20000,
+                orders=10,
+            ),
+            _snapshot(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 15, 50),
+                clicks=115,
+                impressions=1120,
+                cost_cents=11200,
+                revenue_cents=23600,
+                orders=12,
+            ),
+            _snapshot(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 15, 50),
+                item_group_id="spu-other",
+                clicks=999,
+                impressions=999,
+                cost_cents=99999,
+                revenue_cents=0,
+                orders=0,
+            ),
+            _snapshot_manifest(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 14, 50),
+                row_count=1,
+            ),
+            _snapshot_manifest(
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                stat_day=date(2026, 7, 17),
+                snapshot_at=datetime(2026, 7, 17, 15, 50),
+                row_count=2,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    metric = asyncio.run(
+        get_recent_creative_metrics(
+            db_session,
+            workspace_id=workspace_id,
+            provider=_PROVIDER,
+            auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            store_id=_STORE_ID,
+            campaign_id=_CAMPAIGN_ID,
+            item_group_id=_ITEM_GROUP_ID,
             window_minutes=60,
-            creative_ids=["cr-1", "cr-2"],
+            creative_ids=[_CREATIVE_ID],
+            now=now,
+        )
+    )[_CREATIVE_ID]
+
+    assert metric.clicks == 15
+    assert metric.cost == 12
+    assert metric.gross_revenue == 36
+    assert metric.orders == 2
+    assert metric.roi == 3
+    assert metric.ad_click_rate == pytest.approx(15 / 120)
+
+
+def test_single_intraday_snapshot_is_not_misreported_as_window_performance(
+    db_session,
+):
+    workspace_id, auth_id = _setup_scope(db_session)
+    now = datetime(2026, 7, 17, 16, tzinfo=timezone.utc)
+    db_session.add(
+        _snapshot(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            stat_day=date(2026, 7, 17),
+            snapshot_at=datetime(2026, 7, 17, 15, 50),
+            clicks=100,
+            impressions=1000,
+            cost_cents=10000,
+            revenue_cents=20000,
+            orders=10,
         )
     )
-    assert "cr-1" in recent_short and "cr-2" in recent_short
-    assert recent_short["cr-1"].clicks == 15
-    assert recent_short["cr-2"].clicks == 5
-    assert recent_short["cr-1"].cost == 50.0
-    assert recent_short["cr-1"].orders == 3
-    assert recent_short["cr-1"].roi == 2.4
-    assert recent_short["cr-1"].creative_status == "DELIVERING"
+    db_session.add(
+        _snapshot_manifest(
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            stat_day=date(2026, 7, 17),
+            snapshot_at=datetime(2026, 7, 17, 15, 50),
+            row_count=1,
+        )
+    )
+    db_session.flush()
 
-    recent_long = asyncio.run(
+    result = asyncio.run(
         get_recent_creative_metrics(
             db_session,
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            store_id=_STORE_ID,
             campaign_id=_CAMPAIGN_ID,
-            window_minutes=60 * 72,
-            creative_ids=["cr-1"],
+            item_group_id=_ITEM_GROUP_ID,
+            window_minutes=60,
+            creative_ids=[_CREATIVE_ID],
+            now=now,
         )
     )
-    assert recent_long["cr-1"].clicks == 40
-    assert recent_long["cr-1"].orders == 3
+    assert result == {}
+
+
+def test_creative_metrics_require_complete_supported_scope(db_session):
+    workspace_id, auth_id = _setup_scope(db_session)
+    common = {
+        "workspace_id": workspace_id,
+        "auth_id": auth_id,
+        "advertiser_id": _ADVERTISER_ID,
+        "store_id": _STORE_ID,
+        "campaign_id": _CAMPAIGN_ID,
+        "item_group_id": _ITEM_GROUP_ID,
+        "window_minutes": 60,
+    }
+    with pytest.raises(ValueError, match="unsupported"):
+        asyncio.run(
+            get_recent_creative_metrics(
+                db_session,
+                provider="other",
+                **common,
+            )
+        )
+    with pytest.raises(ValueError, match="complete"):
+        asyncio.run(
+            get_recent_creative_metrics(
+                db_session,
+                provider=_PROVIDER,
+                **{**common, "item_group_id": ""},
+            )
+        )

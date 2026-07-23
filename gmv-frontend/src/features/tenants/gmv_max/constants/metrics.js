@@ -10,6 +10,4 @@ export const GMV_MAX_LEVELS_REQUIRING_CAMPAIGN = new Set([
   GmvMaxMetricsLevel.CREATIVE,
 ]);
 
-export const GMV_MAX_LEVELS_REQUIRING_ITEM_GROUP = new Set([
-  GmvMaxMetricsLevel.CREATIVE,
-]);
+export const GMV_MAX_LEVELS_REQUIRING_ITEM_GROUP = new Set([]);

@@ -3,9 +3,8 @@ import { isCanceledRequest } from '../../../../lib/http.js';
 import {
   applyGmvMaxAction,
   createGmvMaxCampaign,
-  listGmvMaxCampaignCreatives,
+  listGmvMaxCreativeAssets,
   listGmvMaxCreativeHeating,
-  listGmvMaxCreativeMetrics,
   getGmvMaxCampaign,
   getGmvMaxConfig,
   getGmvMaxMetrics,
@@ -37,6 +36,7 @@ import {
   updateGmvMaxConfig,
   updateGmvMaxCampaign,
   updateGmvMaxStrategy,
+  listGmvMaxHermesDailyReports,
   normalizeIdList,
 } from '../api/gmvMaxApi.js';
 import { GmvMaxMetricsLevel } from '../constants/metrics.js';
@@ -98,7 +98,7 @@ export function useProvidersQuery(workspaceId, options = {}) {
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('providers', workspaceId),
-    queryFn: () => listProviders(workspaceId),
+    queryFn: ({ signal }) => listProviders(workspaceId, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId), enabled),
     ...rest,
   });
@@ -108,7 +108,7 @@ export function useAccountsQuery(workspaceId, provider, params = {}, options = {
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('accounts', workspaceId, provider, params),
-    queryFn: () => listAccounts(workspaceId, provider, params),
+    queryFn: ({ signal }) => listAccounts(workspaceId, provider, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider), enabled),
     ...rest,
   });
@@ -118,7 +118,7 @@ export function useBusinessCentersQuery(workspaceId, provider, authId, params = 
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('business-centers', workspaceId, provider, authId, params),
-    queryFn: () => listBusinessCenters(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => listBusinessCenters(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -128,7 +128,7 @@ export function useAdvertisersQuery(workspaceId, provider, authId, params = {}, 
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('advertisers', workspaceId, provider, authId, params),
-    queryFn: () => listAdvertisers(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => listAdvertisers(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -138,7 +138,7 @@ export function useStoresQuery(workspaceId, provider, authId, params = {}, optio
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('stores', workspaceId, provider, authId, params),
-    queryFn: () => listStores(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => listStores(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -148,7 +148,7 @@ export function useProductsQuery(workspaceId, provider, authId, params = {}, opt
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('products', workspaceId, provider, authId, params),
-    queryFn: () => listProducts(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => listProducts(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -158,7 +158,7 @@ export function useGmvMaxIdentitiesQuery(workspaceId, provider, authId, params =
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('identities', workspaceId, provider, authId, params),
-    queryFn: () => getGmvMaxIdentities(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => getGmvMaxIdentities(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -182,7 +182,7 @@ export function useGmvMaxOptionsQuery(workspaceId, provider, authId, params = {}
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('options', workspaceId, provider, authId, params),
-    queryFn: () => getGmvMaxOptions(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => getGmvMaxOptions(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -192,7 +192,7 @@ export function useGmvMaxConfigQuery(workspaceId, provider, authId, options = {}
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('config', workspaceId, provider, authId),
-    queryFn: () => getGmvMaxConfig(workspaceId, provider, authId),
+    queryFn: ({ signal }) => getGmvMaxConfig(workspaceId, provider, authId, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -202,8 +202,26 @@ export function useGmvMaxCampaignsQuery(workspaceId, provider, authId, params = 
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('campaigns', workspaceId, provider, authId, params),
-    queryFn: () => listGmvMaxCampaigns(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) => listGmvMaxCampaigns(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
+    ...rest,
+  });
+}
+
+export function useGmvMaxHermesDailyReportsQuery(
+  workspaceId,
+  provider,
+  authId,
+  params = {},
+  options = {},
+) {
+  const { enabled, ...rest } = options;
+  return useQuery({
+    queryKey: composeKey('hermes-daily-reports', workspaceId, provider, authId, params),
+    queryFn: ({ signal }) =>
+      listGmvMaxHermesDailyReports(workspaceId, provider, authId, params, { signal }),
+    enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
+    staleTime: 60 * 1000,
     ...rest,
   });
 }
@@ -212,7 +230,8 @@ export function useGmvMaxBindingStatusQuery(workspaceId, provider, authId, param
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('binding-status', workspaceId, provider, authId, params),
-    queryFn: () => getGmvMaxBindingStatus(workspaceId, provider, authId, params),
+    queryFn: ({ signal }) =>
+      getGmvMaxBindingStatus(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });
@@ -222,7 +241,8 @@ export function useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('campaign', workspaceId, provider, authId, campaignId),
-    queryFn: () => getGmvMaxCampaign(workspaceId, provider, authId, campaignId),
+    queryFn: ({ signal }) =>
+      getGmvMaxCampaign(workspaceId, provider, authId, campaignId, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     ...rest,
   });
@@ -234,7 +254,8 @@ export function useGmvMaxMetricsQuery(workspaceId, provider, authId, campaignId,
   const allowsCampaignless = normalizedLevel === GmvMaxMetricsLevel.OVERVIEW;
   return useQuery({
     queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
-    queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params),
+    queryFn: ({ signal }) =>
+      getGmvMaxMetrics(workspaceId, provider, authId, campaignId, params, { signal }),
     enabled: resolveEnabled(
       Boolean(workspaceId && provider && authId && (campaignId || allowsCampaignless)),
       enabled,
@@ -253,7 +274,8 @@ export function useGmvMaxStrategyQuery(workspaceId, provider, authId, campaignId
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('strategy', workspaceId, provider, authId, campaignId),
-    queryFn: () => getGmvMaxStrategy(workspaceId, provider, authId, campaignId),
+    queryFn: ({ signal }) =>
+      getGmvMaxStrategy(workspaceId, provider, authId, campaignId, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     ...rest,
   });
@@ -263,13 +285,14 @@ export function useGmvMaxActionLogsQuery(workspaceId, provider, authId, campaign
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('action-logs', workspaceId, provider, authId, campaignId, params),
-    queryFn: () => listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params),
+    queryFn: ({ signal }) =>
+      listGmvMaxActionLogs(workspaceId, provider, authId, campaignId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     ...rest,
   });
 }
 
-export function useGmvMaxCampaignCreativesQuery(
+export function useGmvMaxCreativeAssetsQuery(
   workspaceId,
   provider,
   authId,
@@ -277,11 +300,15 @@ export function useGmvMaxCampaignCreativesQuery(
   params = {},
   options = {},
 ) {
-  const { enabled, ...rest } = options;
+  const { enabled, refetchInterval, ...rest } = options;
   return useQuery({
-    queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
-    queryFn: () => listGmvMaxCampaignCreatives(workspaceId, provider, authId, campaignId, params),
+    queryKey: composeKey('creative-assets', workspaceId, provider, authId, campaignId, params),
+    queryFn: ({ signal }) =>
+      listGmvMaxCreativeAssets(workspaceId, provider, authId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
+    staleTime: 30 * 1000,
+    refetchInterval,
+    refetchOnWindowFocus: false,
     ...rest,
   });
 }
@@ -307,29 +334,6 @@ export function useSyncAdvertiserBalanceMutation(workspaceId, provider, authId, 
   });
 }
 
-export function useGmvMaxCreativeMetricsQuery(
-  workspaceId,
-  provider,
-  authId,
-  campaignId,
-  params = {},
-  options = {},
-) {
-  const { enabled, refetchInterval, onError, ...rest } = options;
-  return useQuery({
-    queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, params),
-    queryFn: () => listGmvMaxCreativeMetrics(workspaceId, provider, authId, campaignId, params),
-    enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
-    refetchInterval,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    staleTime: 30 * 1000,
-    onError: ignoreCanceledOnError(onError),
-    ...rest,
-  });
-}
-
 export function useGmvMaxCreativeHeatingQuery(
   workspaceId,
   provider,
@@ -341,7 +345,8 @@ export function useGmvMaxCreativeHeatingQuery(
   const { enabled, refetchInterval, onError, ...rest } = options;
   return useQuery({
     queryKey: composeKey('creative-heating', workspaceId, provider, authId, campaignId, params),
-    queryFn: () => listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params),
+    queryFn: ({ signal }) =>
+      listGmvMaxCreativeHeating(workspaceId, provider, authId, campaignId, params, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId && campaignId), enabled),
     refetchInterval,
     onError: ignoreCanceledOnError(onError),
@@ -360,7 +365,7 @@ export function useGmvMaxSyncIntervalQuery(workspaceId, provider, authId, option
   const { enabled, ...rest } = options;
   return useQuery({
     queryKey: composeKey('sync-interval', workspaceId, provider, authId),
-    queryFn: () => getGmvMaxSyncInterval(workspaceId, provider, authId),
+    queryFn: ({ signal }) => getGmvMaxSyncInterval(workspaceId, provider, authId, { signal }),
     enabled: resolveEnabled(Boolean(workspaceId && provider && authId), enabled),
     ...rest,
   });

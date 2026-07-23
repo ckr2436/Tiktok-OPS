@@ -52,9 +52,9 @@ class KieApiKey(Base):
         server_default=text("'kie-ai'"),
     )
 
-    # 加密后的 api_key（目前是明文占位，将来接入 KMS 时只改加解密逻辑）
+    # Fernet-encrypted API key. The prefix identifies the key format/version.
     api_key_ciphertext: Mapped[str] = mapped_column(
-        String(512),
+        String(2048),
         nullable=False,
     )
 
@@ -71,10 +71,44 @@ class KieApiKey(Base):
         server_default=text("0"),
     )
 
+    # Capabilities granted to this key, for example ["video:omni_flash"].
+    # NULL is retained for backward compatibility and is interpreted from the
+    # provider's default capabilities by the routing service.
+    scopes_json: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+
+    # Per-model routing priorities. Lower values are preferred. Keeping the
+    # value on the key allows multiple accounts from one provider to act as
+    # independent production routes.
+    model_priorities_json: Mapped[dict[str, int] | None] = mapped_column(JSON, default=None)
+
     created_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         server_default=text("CURRENT_TIMESTAMP(6)"),
         nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+
+
+class AiProviderModelSetting(Base):
+    """Platform-wide switch for one provider/model route."""
+
+    __tablename__ = "ai_provider_model_settings"
+    __table_args__ = (
+        UniqueConstraint("provider_key", "model_id", name="uk_ai_provider_model_setting"),
+        Index("idx_ai_provider_model_enabled", "model_id", "is_enabled"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    provider_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), server_default=text("CURRENT_TIMESTAMP(6)"), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
@@ -93,6 +127,13 @@ class KieTask(Base):
     __table_args__ = (
         UniqueConstraint("task_id", name="uk_kie_task_task_id"),
         Index("idx_kie_task_ws", "workspace_id"),
+        Index("idx_kie_task_ws_user", "workspace_id", "created_by_user_id"),
+        Index("idx_kie_task_ws_id", "workspace_id", "id"),
+        Index("idx_kie_task_ws_user_id", "workspace_id", "created_by_user_id", "id"),
+        Index("idx_kie_task_ws_model_id", "workspace_id", "model", "id"),
+        Index("idx_kie_task_ws_user_model_id", "workspace_id", "created_by_user_id", "model", "id"),
+        Index("idx_kie_task_ws_state_model_id", "workspace_id", "state", "model", "id"),
+        Index("idx_kie_task_ws_user_state_model_id", "workspace_id", "created_by_user_id", "state", "model", "id"),
         Index("idx_kie_task_key", "key_id"),
         Index("idx_kie_task_state", "state"),
     )
@@ -120,6 +161,9 @@ class KieTask(Base):
         ),
         nullable=False,
     )
+
+    # 发起任务的用户；用于同一租户下的历史记录隔离。
+    created_by_user_id: Mapped[int | None] = mapped_column(UBigInt, default=None)
 
     # model 名，比如 sora-2-image-to-video
     model: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -249,5 +293,4 @@ class KieFile(Base):
     )
 
 
-__all__ = ["KieApiKey", "KieTask", "KieFile"]
-
+__all__ = ["KieApiKey", "AiProviderModelSetting", "KieTask", "KieFile"]

@@ -21,6 +21,8 @@ import {
   updateMonitoringStrategy,
 } from '../service.js'
 
+const PAGE_SIZE = 50
+
 function formatDate(value) {
   if (!value) return '-'
   try {
@@ -411,6 +413,7 @@ export default function MonitoringStrategiesPage() {
     category: '',
     task_name: '',
   })
+  const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [toast, setToast] = useState('')
@@ -423,7 +426,7 @@ export default function MonitoringStrategiesPage() {
   }, [filters.category])
 
   const queryParams = useMemo(() => {
-    const params = { limit: 50, offset: 0 }
+    const params = { page, page_size: PAGE_SIZE }
     if (filters.workspace_id) params.workspace_id = Number(filters.workspace_id)
     if (filters.auth_id) params.auth_id = Number(filters.auth_id)
     if (filters.store_id) params.store_id = filters.store_id
@@ -434,12 +437,12 @@ export default function MonitoringStrategiesPage() {
     if (filters.category) params.category = filters.category
     if (filters.task_name) params.task_name = filters.task_name
     return params
-  }, [filters])
+  }, [filters, page])
 
   const strategiesQuery = useQuery({
     queryKey: ['platform', 'gmvmax', 'monitoring-strategies', queryParams],
     queryFn: () => listMonitoringStrategies(queryParams),
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   })
 
   const invalidateList = () => queryClient.invalidateQueries({ queryKey: ['platform', 'gmvmax', 'monitoring-strategies'] })
@@ -485,8 +488,17 @@ export default function MonitoringStrategiesPage() {
 
   const rows = strategiesQuery.data?.items ?? []
   const total = strategiesQuery.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const loading = strategiesQuery.isLoading
   const saving = createMutation.isLoading || updateMutation.isLoading
+  const updateFilters = (patch) => {
+    setPage(1)
+    setFilters((current) => ({ ...current, ...patch }))
+  }
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages))
+  }, [totalPages])
 
   return (
     <div className="card card--elevated">
@@ -504,22 +516,22 @@ export default function MonitoringStrategiesPage() {
       <div className="card" style={{marginBottom:12}}>
         <div className="form-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:12}}>
           <FormField label="workspace_id">
-            <input className="input" value={filters.workspace_id} onChange={(e) => setFilters({ ...filters, workspace_id: e.target.value })} placeholder="全部" />
+            <input className="input" value={filters.workspace_id} onChange={(e) => updateFilters({ workspace_id: e.target.value })} placeholder="全部" />
           </FormField>
           <FormField label="auth_id">
-            <input className="input" value={filters.auth_id} onChange={(e) => setFilters({ ...filters, auth_id: e.target.value })} placeholder="全部" />
+            <input className="input" value={filters.auth_id} onChange={(e) => updateFilters({ auth_id: e.target.value })} placeholder="全部" />
           </FormField>
           <FormField label="store_id">
-            <input className="input" value={filters.store_id} onChange={(e) => setFilters({ ...filters, store_id: e.target.value })} placeholder="全部" />
+            <input className="input" value={filters.store_id} onChange={(e) => updateFilters({ store_id: e.target.value })} placeholder="全部" />
           </FormField>
           <FormField label="promotion_type">
-            <select className="input" value={filters.promotion_type} onChange={(e) => setFilters({ ...filters, promotion_type: e.target.value })}>
+            <select className="input" value={filters.promotion_type} onChange={(e) => updateFilters({ promotion_type: e.target.value })}>
               <option value="">全部</option>
               {PROMOTION_TYPES.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </FormField>
           <FormField label="level">
-            <select className="input" value={filters.level} onChange={(e) => setFilters({ ...filters, level: e.target.value })}>
+            <select className="input" value={filters.level} onChange={(e) => updateFilters({ level: e.target.value })}>
               <option value="">全部</option>
               {MONITORING_STRATEGY_LEVELS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
             </select>
@@ -528,7 +540,7 @@ export default function MonitoringStrategiesPage() {
             <select
               className="input"
               value={filters.category}
-              onChange={(e) => setFilters({ ...filters, category: e.target.value, task_name: '' })}
+              onChange={(e) => updateFilters({ category: e.target.value, task_name: '' })}
             >
               <option value="">全部</option>
               {STRATEGY_CATEGORIES.map((opt) => (
@@ -540,7 +552,7 @@ export default function MonitoringStrategiesPage() {
             <select
               className="input"
               value={filters.task_name}
-              onChange={(e) => setFilters({ ...filters, task_name: e.target.value })}
+              onChange={(e) => updateFilters({ task_name: e.target.value })}
               disabled={!filters.category && filters.task_name === '' && !taskFilterOptions.length}
             >
               <option value="">全部</option>
@@ -550,7 +562,7 @@ export default function MonitoringStrategiesPage() {
             </select>
           </FormField>
           <FormField label="enabled">
-            <select className="input" value={filters.enabled} onChange={(e) => setFilters({ ...filters, enabled: e.target.value })}>
+            <select className="input" value={filters.enabled} onChange={(e) => updateFilters({ enabled: e.target.value })}>
               <option value="">全部</option>
               <option value="true">仅启用</option>
               <option value="false">仅停用</option>
@@ -644,7 +656,28 @@ export default function MonitoringStrategiesPage() {
         </table>
       </div>
 
-      <div style={{marginTop:12, color:'var(--muted)'}}>共 {total} 条记录</div>
+      <div style={{marginTop:12, color:'var(--muted)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
+        <span>共 {total} 条记录</span>
+        <nav aria-label="策略列表分页" style={{display:'flex', alignItems:'center', gap:8}}>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={page <= 1 || strategiesQuery.isFetching}
+          >
+            上一页
+          </button>
+          <span>第 {page} / {totalPages} 页</span>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages || strategiesQuery.isFetching}
+          >
+            下一页
+          </button>
+        </nav>
+      </div>
 
       <StrategyFormModal
         open={showForm}

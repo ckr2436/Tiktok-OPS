@@ -7,12 +7,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from app.providers.tiktok_business.gmvmax_client import (
     CampaignStatusUpdateRequest,
     GMVMaxBidRecommendRequest,
-    GMVMaxCampaignActionApplyBody,
-    GMVMaxCampaignActionApplyRequest,
     GMVMaxCampaignCreateBody,
     GMVMaxCampaignCreateRequest,
     GMVMaxCampaignFiltering,
@@ -20,7 +19,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignInfoRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
-    GMVMaxCustomAnchorVideoListGetRequest,
+    GMVMaxCreationCustomAnchorVideoListGetRequest,
     GMVMaxExclusiveAuthorizationCreateRequest,
     GMVMaxExclusiveAuthorizationGetRequest,
     GMVMaxIdentityGetRequest,
@@ -37,6 +36,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxSessionSettings,
     GMVMaxSessionUpdateBody,
     GMVMaxSessionUpdateRequest,
+    GMVMaxStoreAdUsageCheckRequest,
     GMVMaxVideoGetRequest,
     build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
@@ -82,9 +82,60 @@ def _extract_query(url: str) -> Dict[str, Any]:
     return {key: values if len(values) > 1 else values[0] for key, values in parse_qs(parsed.query).items()}
 
 
-def _assert_headers(headers: Mapping[str, str]) -> None:
+def _assert_headers(headers: Mapping[str, str], *, method: str) -> None:
     assert headers["Access-Token"] == "token"
-    assert headers["Content-Type"].startswith("application/json")
+    if method == "POST":
+        assert headers["Content-Type"].startswith("application/json")
+    else:
+        # TikTok's GET endpoint contracts only require Access-Token.  httpx
+        # correctly omits an entity Content-Type when no request body exists.
+        assert "Content-Type" not in headers
+
+
+def _official_create_body(**updates: Any) -> GMVMaxCampaignCreateBody:
+    payload: dict[str, Any] = {
+        "request_id": "123456789",
+        "store_id": "s",
+        "store_authorized_bc_id": "bc",
+        "shopping_ads_type": "PRODUCT",
+        "optimization_goal": "VALUE",
+        "deep_bid_type": "VO_MIN_ROAS",
+        "campaign_name": "name",
+        "budget": 100.0,
+        "roas_bid": 1.5,
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-07-18 00:00:00",
+        "product_video_specific_type": "AUTO_SELECTION",
+    }
+    payload.update(updates)
+    return GMVMaxCampaignCreateBody(**payload)
+
+
+def test_store_usage_request_rejects_nonofficial_bc_parameter() -> None:
+    with pytest.raises(ValidationError):
+        GMVMaxStoreAdUsageCheckRequest(
+            advertiser_id="1",
+            store_id="shop",
+            store_authorized_bc_id="must-not-be-sent",
+        )
+
+
+def test_bid_recommendation_enforces_official_conditional_scope() -> None:
+    with pytest.raises(ValidationError):
+        GMVMaxBidRecommendRequest(
+            advertiser_id="1",
+            store_id="shop",
+            shopping_ads_type="LIVE",
+            optimization_goal="VALUE",
+        )
+    with pytest.raises(ValidationError):
+        GMVMaxBidRecommendRequest(
+            advertiser_id="1",
+            store_id="shop",
+            shopping_ads_type="PRODUCT",
+            optimization_goal="VALUE",
+            identity_id="live-only",
+        )
 
 
 def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Mapping[str, Any]) -> Any:
@@ -101,7 +152,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
         )
         assert request.method == expected_method
         assert urlparse(str(request.url)).path.endswith(expected_path)
-        _assert_headers(request.headers)
+        _assert_headers(request.headers, method=expected_method)
         return httpx.Response(200, json=response_body)
 
     return handler, recorded
@@ -140,12 +191,14 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 ),
             ),
             "gmv_max_campaign_get",
-            "/open_api/v1.3/gmv_max/campaign/get/",
-            {
-                "advertiser_id": "456",
-                "store_ids": json.dumps(["store-123"], ensure_ascii=False),
-                "filtering": json.dumps(
-                    {"gmv_max_promotion_types": ["PRODUCT_GMV_MAX"]},
+                "/open_api/v1.3/gmv_max/campaign/get/",
+                {
+                    "advertiser_id": "456",
+                    "filtering": json.dumps(
+                        {
+                            "gmv_max_promotion_types": ["PRODUCT_GMV_MAX"],
+                            "store_ids": ["store-123"],
+                        },
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -160,12 +213,14 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 ),
             ),
             "gmv_max_campaign_get",
-            "/open_api/v1.3/gmv_max/campaign/get/",
-            {
-                "advertiser_id": "789",
-                "store_ids": json.dumps(["one", "two"], ensure_ascii=False),
-                "filtering": json.dumps(
-                    {"gmv_max_promotion_types": ["LIVE_GMV_MAX"]},
+                "/open_api/v1.3/gmv_max/campaign/get/",
+                {
+                    "advertiser_id": "789",
+                    "filtering": json.dumps(
+                        {
+                            "gmv_max_promotion_types": ["LIVE_GMV_MAX"],
+                            "store_ids": ["one", "two"],
+                        },
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -178,10 +233,22 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
             {"advertiser_id": "123", "campaign_id": "c1"},
         ),
         (
-            GMVMaxSessionListRequest(advertiser_id="1", campaign_id="2", page=2),
+            GMVMaxSessionListRequest(advertiser_id="1", campaign_id="2"),
             "gmv_max_session_list",
             "/open_api/v1.3/campaign/gmv_max/session/list/",
-            {"advertiser_id": "1", "campaign_id": "2", "page": "2"},
+            {"advertiser_id": "1", "campaign_id": "2"},
+        ),
+        (
+            GMVMaxStoreAdUsageCheckRequest(
+                advertiser_id="1",
+                store_id="shop",
+            ),
+            "gmv_max_store_shop_ad_usage_check",
+            "/open_api/v1.3/gmv_max/store/shop_ad_usage_check/",
+            {
+                "advertiser_id": "1",
+                "store_id": "shop",
+            },
         ),
         (
             GMVMaxIdentityGetRequest(
@@ -204,7 +271,7 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "advertiser_id": "1",
                 "store_id": "shop",
                 "occupied_asset_type": "SPU",
-                "asset_ids": "spu1",
+                "asset_ids": json.dumps(["spu1"], ensure_ascii=False),
             },
         ),
         (
@@ -221,17 +288,9 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "advertiser_id": "1",
                 "store_id": "shop",
                 "store_authorized_bc_id": "bc",
-                "spu_id_list": "spu1",
+                "spu_id_list": json.dumps(["spu1"], ensure_ascii=False),
                 "page": "1",
             },
-        ),
-        (
-            GMVMaxCustomAnchorVideoListGetRequest(
-                advertiser_id="1", campaign_id="cmp", page_size=10
-            ),
-            "gmv_max_custom_anchor_video_list_get",
-            "/open_api/v1.3/gmv_max/custom_anchor_video_list/get/",
-            {"advertiser_id": "1", "campaign_id": "cmp", "page_size": "10"},
         ),
         (
             GMVMaxExclusiveAuthorizationGetRequest(
@@ -256,7 +315,41 @@ def _wrap_handler(expected_method: str, expected_path: str, *, response_body: Ma
                 "store_id": "s",
                 "shopping_ads_type": "PRODUCT",
                 "optimization_goal": "VALUE",
-                "item_group_ids": "ig",
+                "item_group_ids": json.dumps(["ig"], ensure_ascii=False),
+            },
+        ),
+        (
+            GMVMaxBidRecommendRequest(
+                advertiser_id="1",
+                store_id="s",
+                shopping_ads_type="PRODUCT",
+                optimization_goal="VALUE",
+            ),
+            "gmv_max_bid_recommend",
+            "/open_api/v1.3/gmv_max/bid/recommend/",
+            {
+                "advertiser_id": "1",
+                "store_id": "s",
+                "shopping_ads_type": "PRODUCT",
+                "optimization_goal": "VALUE",
+            },
+        ),
+        (
+            GMVMaxBidRecommendRequest(
+                advertiser_id="1",
+                store_id="s",
+                shopping_ads_type="LIVE",
+                optimization_goal="VALUE",
+                identity_id="identity-1",
+            ),
+            "gmv_max_bid_recommend",
+            "/open_api/v1.3/gmv_max/bid/recommend/",
+            {
+                "advertiser_id": "1",
+                "store_id": "s",
+                "shopping_ads_type": "LIVE",
+                "optimization_goal": "VALUE",
+                "identity_id": "identity-1",
             },
         ),
         (
@@ -344,7 +437,31 @@ async def test_gmvmax_campaign_report_uses_get_endpoint():
     assert json.loads(query["dimensions"]) == ["campaign_id", "stat_time_day"]
     assert json.loads(query["metrics"]) == ["cost"]
     filtering = json.loads(query["filtering"])
-    assert filtering["gmv_max_promotion_types"] == ["PRODUCT_GMV_MAX"]
+    assert filtering["gmv_max_promotion_types"] == ["PRODUCT"]
+
+
+@pytest.mark.anyio
+async def test_gmvmax_campaign_create_never_retries_an_ambiguous_transport_error():
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("remote outcome is unknown", request=request)
+
+    client = await _build_client(handler)
+    request = GMVMaxCampaignCreateRequest(
+        advertiser_id="1",
+        body=_official_create_body(
+            campaign_name="one-logical-create",
+        ),
+    )
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.gmv_max_campaign_create(request)
+    await client.aclose()
+
+    assert attempts == 1
 
 
 def test_build_report_request_strips_sentinel_campaign_ids():
@@ -376,6 +493,66 @@ def test_build_report_request_rejects_only_sentinel_ids():
         )
 
 
+def test_report_request_enforces_official_hourly_window() -> None:
+    with pytest.raises(ValidationError):
+        GMVMaxReportGetRequest(
+            advertiser_id="1",
+            store_ids=["shop"],
+            start_date="2026-07-17",
+            end_date="2026-07-18",
+            metrics=["cost"],
+            dimensions=["campaign_id", "stat_time_hour"],
+        )
+
+
+def test_campaign_update_rejects_nonofficial_start_time() -> None:
+    with pytest.raises(ValidationError):
+        GMVMaxCampaignUpdateBody(
+            campaign_id="campaign",
+            schedule_start_time="2026-07-18 00:00:00",
+        )
+
+
+def test_session_update_requires_official_session_object() -> None:
+    with pytest.raises(ValidationError):
+        GMVMaxSessionUpdateBody(
+            campaign_id="campaign",
+            session_id="session",
+            store_id="shop",
+        )
+
+
+@pytest.mark.parametrize(
+    "dataset,item_group_ids,room_ids",
+    [
+        (GMVMaxDataset.PRODUCT_PRODUCT, None, None),
+        (GMVMaxDataset.PRODUCT_DURATION, ["item"], None),
+        (GMVMaxDataset.LIVE_LIVESTREAM, None, None),
+        (GMVMaxDataset.LIVE_DURATION, None, ["room"]),
+    ],
+)
+def test_non_campaign_report_datasets_omit_promotion_type_filter(
+    dataset,
+    item_group_ids,
+    room_ids,
+):
+    request = build_gmv_max_report_request(
+        dataset=dataset,
+        advertiser_id="adv",
+        store_ids=["store"],
+        start_date="2024-01-01",
+        end_date="2024-01-02",
+        metrics=["cost"],
+        campaign_ids=["campaign"],
+        item_group_ids=item_group_ids,
+        room_ids=room_ids,
+    )
+
+    assert request.gmv_max_promotion_types is None
+    assert request.filtering is not None
+    assert request.filtering.gmv_max_promotion_types is None
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "request_obj, method_name, expected_path, expected_query, expected_body",
@@ -383,23 +560,26 @@ def test_build_report_request_rejects_only_sentinel_ids():
         (
             GMVMaxCampaignCreateRequest(
                 advertiser_id="1",
-                body=GMVMaxCampaignCreateBody(
-                    store_id="s",
-                    shopping_ads_type="PRODUCT",
-                    optimization_goal="VALUE",
-                    campaign_name="name",
-                ),
+                body=_official_create_body(),
             ),
             "gmv_max_campaign_create",
             "/open_api/v1.3/campaign/gmv_max/create/",
             {"advertiser_id": "1"},
-            {
-                "advertiser_id": "1",
-                "store_id": "s",
-                "shopping_ads_type": "PRODUCT",
-                "optimization_goal": "VALUE",
-                "campaign_name": "name",
-            },
+                {
+                    "advertiser_id": "1",
+                    "request_id": "123456789",
+                    "store_id": "s",
+                    "store_authorized_bc_id": "bc",
+                    "shopping_ads_type": "PRODUCT",
+                    "optimization_goal": "VALUE",
+                    "deep_bid_type": "VO_MIN_ROAS",
+                    "campaign_name": "name",
+                    "budget": 100.0,
+                    "roas_bid": 1.5,
+                    "schedule_type": "SCHEDULE_FROM_NOW",
+                    "schedule_start_time": "2026-07-18 00:00:00",
+                    "product_video_specific_type": "AUTO_SELECTION",
+                },
         ),
         (
             GMVMaxCampaignUpdateRequest(
@@ -427,30 +607,16 @@ def test_build_report_request_rejects_only_sentinel_ids():
             },
         ),
         (
-            GMVMaxCampaignActionApplyRequest(
-                advertiser_id="1",
-                body=GMVMaxCampaignActionApplyBody(
-                    campaign_id="c", action_type="PAUSE", target_daily_budget=50.0
-                ),
-            ),
-            "gmv_max_campaign_action_apply",
-            "/open_api/v1.3/campaign/gmv_max/action/apply/",
-            {"advertiser_id": "1"},
-            {
-                "advertiser_id": "1",
-                "campaign_id": "c",
-                "action_type": "PAUSE",
-                "target_daily_budget": 50.0,
-            },
-        ),
-        (
             GMVMaxSessionCreateRequest(
                 advertiser_id="1",
                 body=GMVMaxSessionCreateBody(
                     campaign_id="c",
                     store_id="s",
-                    session=GMVMaxSessionSettings(budget=10.0),
-                    product_list=[],
+                    session=GMVMaxSessionSettings(
+                        bid_type="NO_BID",
+                        product_list=[{"spu_id": "spu"}],
+                        budget=10.0,
+                    ),
                 ),
             ),
             "gmv_max_session_create",
@@ -460,8 +626,11 @@ def test_build_report_request_rejects_only_sentinel_ids():
                 "advertiser_id": "1",
                 "campaign_id": "c",
                 "store_id": "s",
-                "session": {"budget": 10.0},
-                "product_list": [],
+                "session": {
+                    "bid_type": "NO_BID",
+                    "product_list": [{"spu_id": "spu"}],
+                    "budget": 10.0,
+                },
             },
         ),
         (
@@ -470,6 +639,7 @@ def test_build_report_request_rejects_only_sentinel_ids():
                 body=GMVMaxSessionUpdateBody(
                     campaign_id="c",
                     session_id="sid",
+                    store_id="s",
                     session=GMVMaxSessionSettings(schedule_type="SCHEDULE_FROM_NOW"),
                 ),
             ),
@@ -480,6 +650,7 @@ def test_build_report_request_rejects_only_sentinel_ids():
                 "advertiser_id": "1",
                 "campaign_id": "c",
                 "session_id": "sid",
+                "store_id": "s",
                 "session": {"schedule_type": "SCHEDULE_FROM_NOW"},
             },
         ),
@@ -494,6 +665,32 @@ def test_build_report_request_rejects_only_sentinel_ids():
                 "advertiser_id": "1",
                 "store_id": "s",
                 "store_authorized_bc_id": "bc",
+            },
+        ),
+        (
+            GMVMaxCreationCustomAnchorVideoListGetRequest(
+                advertiser_id="1",
+                store_id="s",
+                store_authorized_bc_id="bc",
+                identity_list=[
+                    {"identity_id": "identity", "identity_type": "TT_USER"}
+                ],
+                page=2,
+                page_size=50,
+            ),
+            "gmv_max_creation_custom_anchor_video_list_get",
+            "/open_api/v1.3/gmv_max/creation/custom_anchor_video_list/get/",
+            {},
+            {
+                "advertiser_id": "1",
+                "store_id": "s",
+                "store_authorized_bc_id": "bc",
+                "creative_source": "CUSTOMIZED",
+                "identity_list": [
+                    {"identity_id": "identity", "identity_type": "TT_USER"}
+                ],
+                "page": 2,
+                "page_size": 50,
             },
         ),
     ],
@@ -512,8 +709,7 @@ async def test_gmvmax_client_post_requests(
     await client.aclose()
     assert response.code == 0
     qs = _extract_query(recorded[0].url)
-    for key, value in expected_query.items():
-        assert qs[key] == value
+    assert qs == expected_query
     body = json.loads(recorded[0].body.decode()) if recorded[0].body else {}
     for key, value in expected_body.items():
         assert body[key] == value
@@ -537,19 +733,17 @@ async def test_gmvmax_client_post_requests(
         (
             GMVMaxCampaignCreateRequest(
                 advertiser_id="1",
-                body=GMVMaxCampaignCreateBody(
-                    store_id="s",
-                    shopping_ads_type="PRODUCT",
-                    optimization_goal="VALUE",
-                    campaign_name="name",
-                ),
+                body=_official_create_body(),
             ),
             "gmv_max_campaign_create",
         ),
         (
             GMVMaxCampaignUpdateRequest(
                 advertiser_id="1",
-                body=GMVMaxCampaignUpdateBody(campaign_id="c"),
+                body=GMVMaxCampaignUpdateBody(
+                    campaign_id="c",
+                    campaign_name="updated",
+                ),
             ),
             "gmv_max_campaign_update",
         ),
@@ -559,8 +753,11 @@ async def test_gmvmax_client_post_requests(
                 body=GMVMaxSessionCreateBody(
                     campaign_id="c",
                     store_id="s",
-                    session=GMVMaxSessionSettings(budget=10.0),
-                    product_list=[],
+                    session=GMVMaxSessionSettings(
+                        bid_type="NO_BID",
+                        product_list=[{"spu_id": "spu"}],
+                        budget=10.0,
+                    ),
                 ),
             ),
             "gmv_max_session_create",
@@ -568,7 +765,12 @@ async def test_gmvmax_client_post_requests(
         (
             GMVMaxSessionUpdateRequest(
                 advertiser_id="1",
-                body=GMVMaxSessionUpdateBody(campaign_id="c", session_id="sid"),
+                body=GMVMaxSessionUpdateBody(
+                    campaign_id="c",
+                    session_id="sid",
+                    store_id="s",
+                    session=GMVMaxSessionSettings(budget=10.0),
+                ),
             ),
             "gmv_max_session_update",
         ),
@@ -593,10 +795,6 @@ async def test_gmvmax_client_post_requests(
                 advertiser_id="1", store_id="s", store_authorized_bc_id="bc"
             ),
             "gmv_max_video_get",
-        ),
-        (
-            GMVMaxCustomAnchorVideoListGetRequest(advertiser_id="1"),
-            "gmv_max_custom_anchor_video_list_get",
         ),
         (
             GMVMaxExclusiveAuthorizationGetRequest(

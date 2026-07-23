@@ -516,6 +516,10 @@ export default function PlatformPolicies() {
     }),
   })
   const policies = policiesQuery.data?.items ?? []
+  const obsoletePolicies = policies.filter((policy) => (
+    policy.is_enabled
+    && (policy.domains || []).some((domain) => String(domain).toLowerCase().includes('drafyn'))
+  ))
   const total = policiesQuery.data?.total ?? 0
   const loading = policiesQuery.isLoading
   const errorMessage = policiesQuery.error?.message || ''
@@ -549,12 +553,16 @@ export default function PlatformPolicies() {
 
   const invalidatePolicies = () => queryClient.invalidateQueries({ queryKey: ['platform', 'policies'] })
 
-  const upsertPolicyMutation = useMutation(({ id, payload }) => (
-    id ? updatePolicy(id, payload) : createPolicy(payload)
-  ))
-  const togglePolicyMutation = useMutation(({ id, next }) => togglePolicy(id, next))
-  const deletePolicyMutation = useMutation((id) => deletePolicy(id))
-  const dryRunMutation = useMutation(({ id, payload }) => dryRunPolicy(id, payload))
+  const upsertPolicyMutation = useMutation({
+    mutationFn: ({ id, payload }) => (id ? updatePolicy(id, payload) : createPolicy(payload)),
+  })
+  const togglePolicyMutation = useMutation({
+    mutationFn: ({ id, next }) => togglePolicy(id, next),
+  })
+  const deletePolicyMutation = useMutation({ mutationFn: (id) => deletePolicy(id) })
+  const dryRunMutation = useMutation({
+    mutationFn: ({ id, payload }) => dryRunPolicy(id, payload),
+  })
 
   const handleSubmit = async (payload) => {
     if (modalState.policy) {
@@ -607,13 +615,23 @@ export default function PlatformPolicies() {
     <div className="card card--elevated" style={{ padding: 16 }}>
       <header className="page-header">
         <div>
-          <h3>平台策略管理</h3>
-          <p className="small-muted">配置白名单 / 黑名单、业务范围以及限流，所有操作将记录审计日志。</p>
+          <h3>全局 API 护栏</h3>
+          <p className="small-muted">平台管理员统一维护提供方访问范围与运行限制，租户不可自定义。</p>
         </div>
         <button className="btn" onClick={openCreateModal}>
           新建策略
         </button>
       </header>
+
+      <div className="alert" style={{ marginBottom: 12 }}>
+        当前客户端默认速率由运行环境控制。这里仅用于高级访问控制；未填写限流值的策略不会改变 QPS。
+      </div>
+
+      {obsoletePolicies.length ? (
+        <div className="alert alert--error" role="alert" style={{ marginBottom: 12 }}>
+          检测到 {obsoletePolicies.length} 条旧 Drafyn 域名规则。当前 TikTok 同步不携带域名，规则不会命中，请归档处理。
+        </div>
+      ) : null}
 
       <section className="filters">
         <label className="input-group">

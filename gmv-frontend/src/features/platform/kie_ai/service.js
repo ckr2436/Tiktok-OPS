@@ -1,14 +1,70 @@
-// src/features/platform/kie_ai/service.js
 import http from '../../../core/httpClient.js'
 
-/**
- * 平台侧 KIE API key 管理相关 API 封装
- */
-const base = '/platform/kie-ai'
+const base = '/platform/api-keys'
 
-async function listKeys() {
-  const res = await http.get(`${base}/keys`)
+async function listKeys(params = {}) {
+  const res = await http.get(`${base}/keys`, { params })
   return res.data || []
+}
+
+async function listModels() {
+  const res = await http.get(`${base}/models`)
+  return res.data || []
+}
+
+async function listProviders() {
+  const res = await http.get(`${base}/providers`)
+  return res.data || []
+}
+
+async function listProviderModels() {
+  const res = await http.get(`${base}/provider-models`)
+  return res.data || []
+}
+
+async function getRoutingOverview(params = {}) {
+  const res = await http.get(`${base}/routing-overview`, { params })
+  return res.data || {}
+}
+
+async function listCatalogModels(params = {}) {
+  const res = await http.get(`${base}/catalog-models`, { params })
+  return res.data || { items: [], page: 1, page_size: 50, total: 0 }
+}
+
+async function listRoutes(params = {}) {
+  const res = await http.get(`${base}/routes`, { params })
+  return res.data || { items: [], page: 1, page_size: 50, total: 0 }
+}
+
+async function discoverKey(id) {
+  const res = await http.post(`${base}/keys/${id}/discover`)
+  return res.data
+}
+
+async function discoverAll() {
+  const res = await http.post(`${base}/discover-all`)
+  return res.data
+}
+
+async function updateRoute(id, payload) {
+  const res = await http.patch(`${base}/routes/${id}`, payload)
+  return res.data
+}
+
+async function probeRoute(id, payload = {}) {
+  const res = await http.post(`${base}/routes/${id}/probe`, payload)
+  return res.data
+}
+
+async function resetRouteCircuit(id) {
+  const res = await http.post(`${base}/routes/${id}/reset-circuit`)
+  return res.data
+}
+
+async function updateProviderModel(providerKey, modelId, payload) {
+  const res = await http.patch(`${base}/provider-models/${providerKey}/${modelId}`, payload)
+  return res.data
 }
 
 async function createKey(payload) {
@@ -26,39 +82,21 @@ async function deactivateKey(id) {
   return res.data
 }
 
-/**
- * 查询指定 Key 的当前余额（credits）
- * 后端会实时调用 KIE /api/v1/chat/credit
- */
-async function getKeyCredit(id) {
-  const res = await http.get(`${base}/keys/${id}/credit`)
-  return res.data
-}
-
-/**
- * 查询“默认 Key”的当前余额（credits）
- */
-async function getDefaultKeyCredit() {
-  const res = await http.get(`${base}/keys/default/credit`)
-  return res.data
-}
-
-/**
- * 可选：一次性刷新全部 key 的余额（目前前端没用到，留作扩展）
- */
-async function refreshKeyCredit(id) {
-  return getKeyCredit(id)
-}
-
-const kiePlatformApi = {
+export default {
   listKeys,
+  listModels,
+  listProviders,
+  listProviderModels,
+  getRoutingOverview,
+  listCatalogModels,
+  listRoutes,
+  discoverKey,
+  discoverAll,
+  updateRoute,
+  probeRoute,
+  resetRouteCircuit,
+  updateProviderModel,
   createKey,
   updateKey,
   deactivateKey,
-  getKeyCredit,
-  getDefaultKeyCredit,
-  refreshKeyCredit,
 }
-
-export default kiePlatformApi
-

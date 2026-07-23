@@ -20,3 +20,20 @@ def test_campaign_action_request_accepts_aliases() -> None:
 def test_campaign_action_request_rejects_unknown() -> None:
     with pytest.raises(ValidationError):
         CampaignActionRequest(type="launch", payload={})
+
+
+def test_campaign_action_response_allows_durable_queued_pause() -> None:
+    from app.features.tenants.ttb.gmv_max.schemas import CampaignActionResponse
+
+    response = CampaignActionResponse(type="pause", status="queued")
+    assert response.status == "queued"
+
+
+def test_campaign_action_request_accepts_atomic_strategy_shutdown() -> None:
+    request = CampaignActionRequest(
+        type="pause",
+        disable_strategy=True,
+    )
+
+    assert request.type == "pause"
+    assert request.disable_strategy is True

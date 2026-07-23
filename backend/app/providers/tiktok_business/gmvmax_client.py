@@ -6,19 +6,47 @@ request/response models aligned with the official API surface.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar
-from datetime import datetime
+import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+)
+from datetime import date, datetime
 
 import json
-from enum import Enum
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from enum import Enum
 
 from app.services import ttb_api as _ttb_api
 from app.services.ttb_api import TTBApiClient
+
+
+_TIKTOK_ROAS_QUANT = Decimal("0.1")
+
+
+def _normalize_tiktok_roas_bid(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        normalized = Decimal(str(value)).quantize(_TIKTOK_ROAS_QUANT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("roas_bid must be a positive number with at most one decimal place") from exc
+    if normalized <= 0:
+        raise ValueError("roas_bid must be greater than zero")
+    return float(normalized)
 
 
 class PageInfo(BaseModel):
@@ -92,6 +120,16 @@ class PromotionDaysSetting(BaseModel):
 
     is_enabled: Optional[bool] = None
     auto_schedule_enabled: Optional[bool] = None
+    custom_schedule_list: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        max_length=50,
+    )
+    budget_increase_percentage: Optional[int] = Field(
+        default=None,
+        ge=50,
+        le=300,
+    )
+    increase_limit: Optional[int] = Field(default=None, ge=1, le=10)
 
     model_config = ConfigDict(extra="allow")
 
@@ -101,8 +139,13 @@ class GMVMaxIdentityInfo(BaseModel):
 
     identity_id: Optional[str] = None
     identity_type: Optional[str] = None
+    identity_authorized_bc_id: Optional[str] = None
+    identity_authorized_shop_id: Optional[str] = None
+    store_id: Optional[str] = None
     user_name: Optional[str] = None
     profile_image: Optional[str] = None
+    product_gmv_max_available: Optional[bool] = None
+    live_gmv_max_available: Optional[bool] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -147,6 +190,9 @@ class GMVMaxCampaignInfoData(BaseModel):
 class GMVMaxSessionSettings(BaseModel):
     """Core session level settings for creative boost / max delivery."""
 
+    bid_type: Optional[str] = None
+    product_list: Optional[List[Dict[str, Any]]] = None
+    item_id: Optional[str] = None
     budget: Optional[float] = None
     schedule_type: Optional[str] = None
     schedule_start_time: Optional[str] = None
@@ -185,8 +231,45 @@ class GMVMaxSession(BaseModel):
 class GMVMaxSessionListData(BaseModel):
     """Payload returned by ``campaign/gmv_max/session/list``."""
 
+    session_list: List[GMVMaxSession] = Field(default_factory=list)
     list: List[GMVMaxSession] = Field(default_factory=list)
-    page_info: Optional[PageInfo] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_session_list(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        payload = dict(value)
+        official_sessions = payload.get("session_list")
+        legacy_sessions = payload.get("list")
+        if official_sessions is None and legacy_sessions is not None:
+            payload["session_list"] = legacy_sessions
+        elif legacy_sessions is None and official_sessions is not None:
+            payload["list"] = official_sessions
+        return payload
+
+    model_config = ConfigDict(extra="allow")
+
+
+def gmv_max_session_entries(data: Any) -> list[GMVMaxSession]:
+    """Read official ``session_list`` while remaining compatible with old payloads."""
+
+    if data is None:
+        return []
+    values = getattr(data, "session_list", None)
+    if values is None and isinstance(data, Mapping):
+        values = data.get("session_list")
+    if values is None:
+        values = getattr(data, "list", None)
+    if values is None and isinstance(data, Mapping):
+        values = data.get("list")
+    return [GMVMaxSession.model_validate(item) for item in (values or [])]
+
+
+class GMVMaxSessionMutationData(BaseModel):
+    """Payload returned by create/update/delete session endpoints."""
+
+    session_id: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -300,8 +383,8 @@ GMVMAX_CREATIVE_METRICS = list(
 
 GMVMAX_DIMENSIONS_BY_LEVEL = {
     "campaign": ["campaign_id", "stat_time_day"],
-    "product": ["campaign_id", "item_group_id", "stat_time_day"],
-    "creative": ["campaign_id", "item_group_id", "item_id"],
+    "product": ["item_group_id", "stat_time_day"],
+    "creative": ["campaign_id", "item_group_id", "item_id", "stat_time_day"],
 }
 
 GMVMAX_METRICS_BY_LEVEL = {
@@ -337,6 +420,10 @@ class GMVMaxOccupiedAd(BaseModel):
     adgroup_id: Optional[str] = None
     ad_id: Optional[str] = None
     create_time: Optional[str] = None
+    # Local reconciliation context. The official occupancy response does not
+    # echo the queried asset, so the batching helper attaches it explicitly.
+    asset_id: Optional[str] = None
+    item_group_id: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -353,6 +440,8 @@ class GMVMaxVideo(BaseModel):
     """Entry returned by ``gmv_max/video/get``."""
 
     item_id: Optional[str] = None
+    text: Optional[str] = None
+    title: Optional[str] = None
     spu_id_list: Optional[List[str]] = None
     identity_info: Optional[GMVMaxIdentityInfo] = None
     video_info: Optional[GMVMaxVideoInfo] = None
@@ -364,29 +453,149 @@ class GMVMaxVideoListData(BaseModel):
     """Payload for video listing endpoints."""
 
     video_list: List[GMVMaxVideo] = Field(default_factory=list)
+    item_list: List[GMVMaxVideo] = Field(default_factory=list)
     page_info: Optional[PageInfo] = None
 
     model_config = ConfigDict(extra="allow")
 
 
-class GMVMaxCustomAnchorVideo(BaseModel):
-    """Customized anchor video record."""
+class TikTokAdVideoUploadRequest(BaseModel):
+    """Request for ``file/video/ad/upload`` using a publicly reachable URL."""
 
-    item_id: Optional[str] = None
-    identity_info: Optional[GMVMaxIdentityInfo] = None
-    spu_id_list: Optional[List[str]] = None
-    video_info: Optional[GMVMaxVideoInfo] = None
+    advertiser_id: str
+    file_name: Optional[str] = None
+    video_url: str
+    upload_type: str = "UPLOAD_BY_URL"
+    flaw_detect: Optional[bool] = None
+    auto_fix_enabled: Optional[bool] = None
+    auto_bind_enabled: Optional[bool] = None
 
     model_config = ConfigDict(extra="allow")
 
 
-class GMVMaxCustomAnchorVideoListData(BaseModel):
-    """Response body for ``gmv_max/custom_anchor_video_list/get``."""
+class TikTokAdVideoMaterial(BaseModel):
+    """Video material returned by TikTok Ads Manager video APIs."""
 
-    custom_anchor_video_list: List[GMVMaxCustomAnchorVideo] = Field(default_factory=list)
+    video_id: Optional[str] = None
+    material_id: Optional[str] = None
+    file_name: Optional[str] = None
+    preview_url: Optional[str] = None
+    video_cover_url: Optional[str] = None
+    cover_url: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[float] = None
+    format: Optional[str] = None
+    size: Optional[int] = None
+    create_time: Optional[str] = None
+    modify_time: Optional[str] = None
+    source: Optional[str] = None
+    material_source: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TikTokAdVideoUploadData(BaseModel):
+    """Response data for ``file/video/ad/upload``.
+
+    The official endpoint may return ``data`` as a one-element array, so the
+    client normalizes that array into ``list`` for typed downstream handling.
+    """
+
+    list: List[TikTokAdVideoMaterial] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TikTokAdVideoSearchRequest(BaseModel):
+    advertiser_id: str
+    filtering: Optional[Dict[str, Any]] = None
+    page: Optional[int] = None
+    page_size: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TikTokAdVideoSearchData(BaseModel):
+    list: List[TikTokAdVideoMaterial] = Field(default_factory=list)
+    # ``list`` is now a class-local FieldInfo, so it cannot be reused as the
+    # default factory for the following field.
+    videos: List[TikTokAdVideoMaterial] = Field(default_factory=lambda: [])
     page_info: Optional[PageInfo] = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class TikTokAccountVideoPublishRequest(BaseModel):
+    """Publish a video post through an authorized TikTok account token."""
+
+    business_id: str
+    video_url: str
+    custom_thumbnail_url: Optional[str] = None
+    post_info: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TikTokAccountVideoPublishData(BaseModel):
+    share_id: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TikTokAccountPublishStatusRequest(BaseModel):
+    business_id: str
+    publish_id: str
+
+
+class TikTokAccountPublishStatusData(BaseModel):
+    status: Optional[str] = None
+    post_ids: List[str] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxShopCustomAnchorCreateRequest(BaseModel):
+    advertiser_id: str
+    store_id: str
+    store_authorized_bc_id: str
+    custom_anchor_video_list: List[Dict[str, Any]]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxShopCustomAnchorCreateData(BaseModel):
+    failure_list: List[Dict[str, Any]] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCreationCustomAnchorVideoListGetRequest(BaseModel):
+    """Official request for listing customized TikTok posts for a shop."""
+
+    advertiser_id: str
+    store_id: str
+    store_authorized_bc_id: str
+    creative_source: Literal["CUSTOMIZED"] = "CUSTOMIZED"
+    spu_id_list: Optional[List[str]] = Field(default=None, max_length=50)
+    identity_list: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        max_length=20,
+    )
+    need_auth_code_video: Optional[bool] = None
+    keyword: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_type: Optional[str] = None
+    campaign_id: Optional[str] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=50)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GMVMaxCreationCustomAnchorVideoListGetData(GMVMaxVideoListData):
+    """Official ``item_list`` plus ``page_info`` response payload."""
 
 
 class GMVMaxExclusiveAuthorizationData(BaseModel):
@@ -425,7 +634,20 @@ class GMVMaxReportData(BaseModel):
 
     list: List[GMVMaxReportEntry] = Field(default_factory=list)
     page_info: Optional[PageInfo] = None
+    total_metrics: Optional[Dict[str, Any]] = None
     summary: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_total_metrics(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        payload = dict(value)
+        if payload.get("total_metrics") is None and payload.get("summary") is not None:
+            payload["total_metrics"] = payload["summary"]
+        elif payload.get("summary") is None and payload.get("total_metrics") is not None:
+            payload["summary"] = payload["total_metrics"]
+        return payload
 
     model_config = ConfigDict(extra="allow")
 
@@ -437,8 +659,8 @@ class GMVMaxCampaignFiltering(BaseModel):
     """Filtering block accepted by campaign list/report endpoints."""
 
     gmv_max_promotion_types: List[str]
-    store_ids: Optional[List[str]] = None
-    campaign_ids: Optional[List[str]] = None
+    store_ids: Optional[List[str]] = Field(default=None, max_length=10)
+    campaign_ids: Optional[List[str]] = Field(default=None, max_length=100)
     campaign_name: Optional[str] = None
     primary_status: Optional[str] = None
     creation_filter_start_time: Optional[str] = None
@@ -451,8 +673,8 @@ class GMVMaxCampaignGetRequest(BaseModel):
     advertiser_id: str
     filtering: GMVMaxCampaignFiltering
     fields: Optional[List[str]] = None
-    page: Optional[int] = None
-    page_size: Optional[int] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=100)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -477,14 +699,75 @@ class GMVMaxCampaignCreateBody(BaseModel):
     schedule_start_time: Optional[str] = None
     schedule_end_time: Optional[str] = None
     product_specific_type: Optional[str] = None
-    item_group_ids: Optional[List[str]] = None
-    identity_list: Optional[List[GMVMaxIdentityInfo]] = None
+    # Official /campaign/gmv_max/create/ contract: at most 50 product SPUs.
+    item_group_ids: Optional[List[str]] = Field(default=None, max_length=50)
+    # Official Product GMV Max create contract allows 0-20 identities.
+    identity_list: Optional[List[GMVMaxIdentityInfo]] = Field(
+        default=None,
+        max_length=20,
+    )
     product_video_specific_type: Optional[str] = None
     affiliate_posts_enabled: Optional[bool] = None
     custom_anchor_video_list: Optional[List[Dict[str, Any]]] = None
-    item_list: Optional[List[Dict[str, Any]]] = None
+    item_list: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=50)
+
+    _normalize_roas = field_validator("roas_bid", mode="before")(_normalize_tiktok_roas_bid)
 
     model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCampaignCreateWireBody(GMVMaxCampaignCreateBody):
+    """Official create payload after local defaults/authorization are resolved."""
+
+    request_id: str
+    store_authorized_bc_id: str
+    shopping_ads_type: Literal["PRODUCT", "LIVE"]
+    optimization_goal: Literal["VALUE"]
+    deep_bid_type: Literal["VO_MIN_ROAS"]
+    budget: float = Field(gt=0)
+    roas_bid: float
+    schedule_type: Literal["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]
+    schedule_start_time: str
+
+    @field_validator("request_id")
+    @classmethod
+    def _validate_request_id(cls, value: str) -> str:
+        normalized = str(value).strip()
+        if not normalized.isdigit() or int(normalized) > 2**63 - 1:
+            raise ValueError("request_id must be a string representation of a 64-bit integer")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_official_conditionals(self) -> "GMVMaxCampaignCreateWireBody":
+        if self.schedule_type == "SCHEDULE_START_END":
+            if not str(self.schedule_end_time or "").strip():
+                raise ValueError("schedule_end_time is required for SCHEDULE_START_END")
+        elif self.schedule_end_time is not None:
+            raise ValueError("schedule_end_time is invalid for SCHEDULE_FROM_NOW")
+
+        if self.shopping_ads_type == "PRODUCT":
+            if self.product_video_specific_type not in {
+                "AUTO_SELECTION",
+                "CUSTOM_SELECTION",
+            }:
+                raise ValueError("product_video_specific_type is required for PRODUCT")
+            if (
+                self.product_specific_type == "CUSTOMIZED_PRODUCTS"
+                and not self.item_group_ids
+            ):
+                raise ValueError(
+                    "item_group_ids is required for CUSTOMIZED_PRODUCTS"
+                )
+            if self.product_video_specific_type == "CUSTOM_SELECTION" and not self.item_list:
+                raise ValueError("item_list is required for CUSTOM_SELECTION")
+        else:
+            if not self.identity_list or len(self.identity_list) != 1:
+                raise ValueError("LIVE campaigns require exactly one identity")
+            if self.product_video_specific_type is not None:
+                raise ValueError("product_video_specific_type is invalid for LIVE")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxCampaignCreateRequest(BaseModel):
@@ -498,16 +781,37 @@ class GMVMaxCampaignUpdateBody(BaseModel):
     budget: Optional[float] = None
     roas_bid: Optional[float] = None
     schedule_type: Optional[str] = None
-    schedule_start_time: Optional[str] = None
     schedule_end_time: Optional[str] = None
     promotion_days: Optional[PromotionDaysSetting] = None
+    auto_budget: Optional[Dict[str, Any]] = None
+    auto_budget_enabled: Optional[bool] = None
+    item_group_ids: Optional[List[str]] = Field(default=None, max_length=50)
+    affiliate_posts_enabled: Optional[bool] = None
+    item_list: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=50)
+    custom_anchor_video_list: Optional[List[Dict[str, Any]]] = None
 
-    model_config = ConfigDict(extra="allow")
+    _normalize_roas = field_validator("roas_bid", mode="before")(_normalize_tiktok_roas_bid)
+
+    @model_validator(mode="after")
+    def _validate_update_fields(self) -> "GMVMaxCampaignUpdateBody":
+        payload = self.model_dump(exclude_none=True)
+        if set(payload) == {"campaign_id"}:
+            raise ValueError("at least one campaign update field is required")
+        if (
+            self.schedule_type == "SCHEDULE_START_END"
+            and not str(self.schedule_end_time or "").strip()
+        ):
+            raise ValueError("schedule_end_time is required for SCHEDULE_START_END")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxCampaignUpdateRequest(BaseModel):
     advertiser_id: str
     body: GMVMaxCampaignUpdateBody
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class CampaignStatusUpdateRequest(BaseModel):
@@ -519,63 +823,100 @@ class CampaignStatusUpdateRequest(BaseModel):
     postback_window_mode: Optional[str] = None
 
 
-class GMVMaxCampaignActionApplyBody(BaseModel):
-    campaign_id: str
-    action_type: str
-    creative_id: Optional[str] = None
-    mode: Optional[str] = None
-    target_daily_budget: Optional[float] = None
-    budget_delta: Optional[float] = None
-    currency: Optional[str] = None
-    max_duration_minutes: Optional[int] = None
+class GMVMaxCreativeStatusUpdateItem(BaseModel):
+    item_id: str
+    spu_id_list: Optional[List[str]] = None
 
     model_config = ConfigDict(extra="allow")
 
 
-class GMVMaxCampaignActionApplyRequest(BaseModel):
+class GMVMaxCreativeStatusUpdateBody(BaseModel):
+    """Body for TikTok's GMV Max creative remove/add-back endpoint."""
+
+    campaign_id: str
+    # Official endpoint accepts 400 posts per request (10,000 per campaign).
+    item_list: List[GMVMaxCreativeStatusUpdateItem] = Field(
+        default_factory=list,
+        min_length=1,
+        max_length=400,
+    )
+    action: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GMVMaxCreativeStatusUpdateRequest(BaseModel):
     advertiser_id: str
-    body: GMVMaxCampaignActionApplyBody
+    body: GMVMaxCreativeStatusUpdateBody
 
 
-class GMVMaxCampaignActionApplyData(BaseModel):
+class GMVMaxCreativeStatusUpdateData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
 class GMVMaxSessionCreateBody(BaseModel):
     campaign_id: str
     store_id: str
-    bid_type: Optional[str] = None
     session: GMVMaxSessionSettings
-    product_list: List[GMVMaxSessionProduct]
 
-    model_config = ConfigDict(extra="allow")
+    @model_validator(mode="after")
+    def _validate_create_session(self) -> "GMVMaxSessionCreateBody":
+        if not str(self.session.bid_type or "").strip():
+            raise ValueError("session.bid_type is required")
+        if not self.session.product_list:
+            raise ValueError("session.product_list is required")
+        if self.session.budget is None or float(self.session.budget) <= 0:
+            raise ValueError("session.budget must be greater than zero")
+        if (
+            self.session.schedule_type == "SCHEDULE_START_END"
+            and not str(self.session.schedule_end_time or "").strip()
+        ):
+            raise ValueError("session.schedule_end_time is required for SCHEDULE_START_END")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxSessionCreateRequest(BaseModel):
     advertiser_id: str
     body: GMVMaxSessionCreateBody
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class GMVMaxSessionUpdateBody(BaseModel):
     campaign_id: str
     session_id: str
-    store_id: Optional[str] = None
-    session: Optional[GMVMaxSessionSettings] = None
-    product_list: Optional[List[GMVMaxSessionProduct]] = None
+    store_id: str
+    session: GMVMaxSessionSettings
 
-    model_config = ConfigDict(extra="allow")
+    @model_validator(mode="after")
+    def _validate_update_session(self) -> "GMVMaxSessionUpdateBody":
+        payload = self.session.model_dump(exclude_none=True)
+        if not payload:
+            raise ValueError("session must contain at least one update")
+        if (
+            self.session.schedule_type == "SCHEDULE_START_END"
+            and not str(self.session.schedule_end_time or "").strip()
+        ):
+            raise ValueError("session.schedule_end_time is required for SCHEDULE_START_END")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxSessionUpdateRequest(BaseModel):
     advertiser_id: str
     body: GMVMaxSessionUpdateBody
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class GMVMaxSessionListRequest(BaseModel):
     advertiser_id: str
     campaign_id: str
-    page: Optional[int] = None
-    page_size: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxIdentityGetRequest(BaseModel):
@@ -586,58 +927,57 @@ class GMVMaxIdentityGetRequest(BaseModel):
 
 class GMVMaxStoreListRequest(BaseModel):
     advertiser_id: str
-    page: Optional[int] = None
-    page_size: Optional[int] = None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxStoreAdUsageCheckRequest(BaseModel):
     advertiser_id: str
     store_id: str
-    store_authorized_bc_id: Optional[str] = None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxOccupiedCustomShopAdsListRequest(BaseModel):
     advertiser_id: str
     store_id: str
-    occupied_asset_type: str
-    asset_ids: List[str]
+    occupied_asset_type: Literal[
+        "IDENTITY_TT_USER",
+        "IDENTITY_BC_AUTH_TT",
+        "IDENTITY_TTS_TT",
+        "SPU",
+    ]
+    asset_ids: List[str] = Field(min_length=1, max_length=1)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxVideoGetRequest(BaseModel):
     advertiser_id: str
     store_id: str
     store_authorized_bc_id: str
-    spu_id_list: Optional[List[str]] = None
+    spu_id_list: Optional[List[str]] = Field(default=None, max_length=50)
+    identity_list: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        max_length=20,
+    )
+    need_auth_code_video: Optional[bool] = None
     custom_posts_eligible: Optional[bool] = None
     sort_field: Optional[str] = None
-    sort_order: Optional[str] = None
-    page: Optional[int] = None
-    page_size: Optional[int] = None
+    sort_type: Optional[str] = None
+    keyword: Optional[str] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=50)
 
-    model_config = ConfigDict(extra="allow")
+    @model_validator(mode="after")
+    def _validate_custom_post_spu_limit(self) -> "GMVMaxVideoGetRequest":
+        if self.custom_posts_eligible is True and len(self.spu_id_list or []) > 1:
+            raise ValueError(
+                "spu_id_list supports at most one ID when custom_posts_eligible is true"
+            )
+        return self
 
-
-class GMVMaxCustomAnchorVideoQuery(BaseModel):
-    item_id: Optional[str] = None
-    spu_id_list: Optional[List[str]] = None
-    identity_info: Optional[GMVMaxIdentityInfo] = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-class GMVMaxCustomAnchorVideoListGetRequest(BaseModel):
-    advertiser_id: str
-    campaign_id: Optional[str] = None
-    campaign_custom_anchor_video_id: Optional[str] = None
-    custom_anchor_video_list: Optional[List[GMVMaxCustomAnchorVideoQuery]] = None
-    page: Optional[int] = None
-    page_size: Optional[int] = None
-
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxExclusiveAuthorizationGetRequest(BaseModel):
@@ -655,25 +995,38 @@ class GMVMaxExclusiveAuthorizationCreateRequest(BaseModel):
 class GMVMaxBidRecommendRequest(BaseModel):
     advertiser_id: str
     store_id: str
-    shopping_ads_type: str
-    optimization_goal: str
-    item_group_ids: Sequence[str]
+    shopping_ads_type: Literal["PRODUCT", "LIVE"]
+    optimization_goal: Literal["VALUE"]
+    item_group_ids: Optional[Sequence[str]] = Field(default=None, max_length=50)
     identity_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_scope(self) -> "GMVMaxBidRecommendRequest":
+        if self.shopping_ads_type == "LIVE":
+            if not str(self.identity_id or "").strip():
+                raise ValueError("identity_id is required when shopping_ads_type is LIVE")
+            if self.item_group_ids:
+                raise ValueError("item_group_ids is only valid for PRODUCT")
+        elif self.identity_id is not None:
+            raise ValueError("identity_id is only valid for LIVE")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxReportFiltering(BaseModel):
     """Filtering block for GMV Max reports (campaign/product/creative/room/session)."""
 
     gmv_max_promotion_types: Optional[List[str]] = None
-    store_ids: Optional[List[str]] = None
-    campaign_ids: Optional[List[str]] = None
-    item_group_ids: Optional[List[str]] = None
+    store_ids: Optional[List[str]] = Field(default=None, max_length=1)
+    campaign_ids: Optional[List[str]] = Field(default=None, max_length=100)
+    item_group_ids: Optional[List[str]] = Field(default=None, max_length=100)
     creative_types: Optional[List[str]] = None
     creative_delivery_statuses: Optional[List[str]] = None
-    room_ids: Optional[List[str]] = None
+    room_ids: Optional[List[str]] = Field(default=None, max_length=100)
     search_word: Optional[str] = None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxReportTimeRange(BaseModel):
@@ -687,28 +1040,47 @@ class GMVMaxReportGetRequest(BaseModel):
     """Request model for TikTok GET /gmv_max/report/get/."""
 
     advertiser_id: str
-    store_ids: Sequence[str]
+    store_ids: Sequence[str] = Field(min_length=1, max_length=1)
     start_date: str
     end_date: str
-    metrics: Sequence[str]
-    dimensions: Sequence[str]
+    metrics: Sequence[str] = Field(min_length=1)
+    dimensions: Sequence[str] = Field(min_length=1)
     gmv_max_promotion_types: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
     campaign_name: Optional[str] = None
     campaign_statuses: Optional[Sequence[str]] = None
-    item_group_ids: Optional[Sequence[str]] = None
+    item_group_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
     creative_types: Optional[Sequence[str]] = None
     creative_delivery_statuses: Optional[Sequence[str]] = None
-    room_ids: Optional[Sequence[str]] = None
+    room_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
     search_word: Optional[str] = None
     enable_total_metrics: Optional[bool] = None
     filtering: Optional[GMVMaxReportFiltering] = None
-    page: Optional[int] = None
-    page_size: Optional[int] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=1000)
     sort_field: Optional[str] = None
     sort_type: Optional[str] = None
 
-    model_config = ConfigDict(extra="allow")
+    @model_validator(mode="after")
+    def _validate_official_date_window(self) -> "GMVMaxReportGetRequest":
+        try:
+            start = date.fromisoformat(self.start_date)
+            end = date.fromisoformat(self.end_date)
+        except ValueError as exc:
+            raise ValueError("start_date and end_date must use YYYY-MM-DD") from exc
+        if start > end:
+            raise ValueError("start_date must not be after end_date")
+        inclusive_days = (end - start).days + 1
+        dimension_set = {str(value) for value in self.dimensions}
+        if "stat_time_hour" in dimension_set and inclusive_days > 1:
+            raise ValueError("hourly GMV Max reports support one advertiser day")
+        if "stat_time_day" in dimension_set and inclusive_days > 30:
+            raise ValueError("daily GMV Max reports support at most 30 days")
+        if not dimension_set.intersection({"stat_time_day", "stat_time_hour"}) and inclusive_days > 365:
+            raise ValueError("aggregate GMV Max reports support at most 365 days")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GMVMaxBaseReportRequest(BaseModel):
@@ -723,36 +1095,36 @@ class GMVMaxBaseReportRequest(BaseModel):
     time_granularity: Optional[str] = None
     time_dimension: Optional[str] = None
     filtering: Optional[GMVMaxReportFiltering] = None
-    page: Optional[int] = None
-    page_size: Optional[int] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    page_size: Optional[int] = Field(default=None, ge=1, le=1000)
     cursor: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class GMVMaxCampaignReportRequest(GMVMaxBaseReportRequest):
-    campaign_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
 
 
 class GMVMaxProductReportRequest(GMVMaxBaseReportRequest):
     product_ids: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
 
 
 class GMVMaxCreativeReportRequest(GMVMaxBaseReportRequest):
     creative_ids: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
     product_ids: Optional[Sequence[str]] = None
 
 
 class GMVMaxRoomReportRequest(GMVMaxBaseReportRequest):
-    room_ids: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
+    room_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
 
 
 class GMVMaxSessionReportRequest(GMVMaxBaseReportRequest):
     session_ids: Optional[Sequence[str]] = None
-    campaign_ids: Optional[Sequence[str]] = None
+    campaign_ids: Optional[Sequence[str]] = Field(default=None, max_length=100)
 
 
 # ------------------------- Dataset typing & builder for report -------------------------
@@ -795,21 +1167,24 @@ _GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
     },
     # Product GMV Max, product-level（官方：campaign_ids Required）
     GMVMaxDataset.PRODUCT_PRODUCT: {
-        "promotion_types": ["PRODUCT"],
-        "dimensions": ["campaign_id", "item_group_id", "stat_time_day"],
+        # Official product-level examples accept campaign_ids only.
+        # gmv_max_promotion_types is a campaign-level report filter and the
+        # endpoint rejects it here with code 40002.
+        "promotion_types": None,
+        "dimensions": ["item_group_id", "stat_time_day"],
         "require_all_of": ("campaign_ids",),
         "require_any_of": (),
     },
     # Product GMV Max, creative-level（campaign_ids + item_group_ids Required）
     GMVMaxDataset.CREATIVE: {
         "promotion_types": None,  # 创意层禁止 gmv_max_promotion_types 过滤
-        "dimensions": ["campaign_id", "item_group_id", "item_id"],
+        "dimensions": ["campaign_id", "item_group_id", "item_id", "stat_time_day"],
         "require_all_of": ("campaign_ids", "item_group_ids"),
         "require_any_of": (),
     },
     # Product GMV Max, duration-level（campaign_ids + item_group_ids Required）
     GMVMaxDataset.PRODUCT_DURATION: {
-        "promotion_types": ["PRODUCT"],
+        "promotion_types": None,
         "dimensions": ["duration"],
         "require_all_of": ("campaign_ids", "item_group_ids"),
         "require_any_of": (),
@@ -823,14 +1198,14 @@ _GMV_MAX_DATASET_CONFIG: Dict[GMVMaxDataset, Dict[str, Any]] = {
     },
     # LIVE GMV Max, livestream-level（campaign_ids Required）
     GMVMaxDataset.LIVE_LIVESTREAM: {
-        "promotion_types": ["LIVE"],
+        "promotion_types": None,
         "dimensions": ["room_id", "stat_time_day"],
         "require_all_of": ("campaign_ids",),
         "require_any_of": (),
     },
     # LIVE GMV Max, duration-level（campaign_ids + room_ids Required）
     GMVMaxDataset.LIVE_DURATION: {
-        "promotion_types": ["LIVE"],
+        "promotion_types": None,
         "dimensions": ["duration"],
         "require_all_of": ("campaign_ids", "room_ids"),
         "require_any_of": (),
@@ -1067,6 +1442,24 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         data_model = data_type.model_validate(data_payload)
         return GMVMaxResponse[T](code=code, message=str(message), request_id=request_id, data=data_model)
 
+    def _parse_response_normalized(
+        self,
+        payload: Mapping[str, Any],
+        data_type: Type[T],
+        *,
+        list_key: str = "list",
+    ) -> GMVMaxResponse[T]:
+        data_payload = payload.get("data") or {}
+        if isinstance(data_payload, list):
+            normalized_payload: Mapping[str, Any] = {list_key: data_payload}
+        elif isinstance(data_payload, Mapping):
+            normalized_payload = data_payload
+        else:
+            normalized_payload = {}
+        normalized = dict(payload)
+        normalized["data"] = normalized_payload
+        return self._parse_response(normalized, data_type)
+
     async def gmv_max_campaign_get(
         self, request: GMVMaxCampaignGetRequest
     ) -> GMVMaxResponse[GMVMaxCampaignListData]:
@@ -1085,15 +1478,20 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             filtering_payload = None
             normalized_store_ids = []
 
-        # TikTok expects store_ids as a top-level JSON array instead of inside the
-        # filtering object. Preserve compatibility by accepting store_ids from
-        # either location but always emit a single normalized payload.
+        # Campaign/get keeps store_ids inside its sole filtering JSON object.
         normalized_store_ids.extend(_coerce_store_ids(params.pop("store_ids", None)))
         if normalized_store_ids:
             unique_ids = list(dict.fromkeys(normalized_store_ids))
-            params["store_ids"] = json.dumps(unique_ids, ensure_ascii=False)
-        elif filtering_payload is not None:
-            filtering_payload.pop("store_ids", None)
+            if filtering_payload is None:
+                filtering_payload = {}
+                params["filtering"] = filtering_payload
+            filtering_payload["store_ids"] = unique_ids
+
+        if isinstance(params.get("fields"), list):
+            params["fields"] = json.dumps(
+                [str(field) for field in params["fields"]],
+                ensure_ascii=False,
+            )
 
         _ttb_api._ensure_gmvmax_campaign_filters(params, promotion_type_format="campaign")
         cleaned = _ttb_api._clean_params_map(params)
@@ -1113,9 +1511,15 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxCampaignInfoData]:
         """Wrapper for TikTok POST /campaign/gmv_max/create/ to create campaigns."""
         params = {"advertiser_id": request.advertiser_id}
-        body = request.body.model_dump(exclude_none=True)
+        wire_body = GMVMaxCampaignCreateWireBody.model_validate(
+            request.body.model_dump(exclude_none=True)
+        )
+        body = wire_body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
-        payload = await self._request_json(
+        # Campaign creation is non-idempotent outside TikTok's short
+        # request_id window. Never inherit the generic transport/5xx retry
+        # policy here: an ambiguous result must be reconciled with read APIs.
+        payload = await self._request_json_once(
             "POST",
             "/campaign/gmv_max/create/",
             params=_ttb_api._clean_params_map(params),
@@ -1157,24 +1561,33 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
         return self._parse_response(payload, CampaignStatusUpdateData)
 
-    async def gmv_max_campaign_action_apply(
-        self, request: GMVMaxCampaignActionApplyRequest
-    ) -> GMVMaxResponse[GMVMaxCampaignActionApplyData]:
-        """Wrapper for TikTok POST /campaign/gmv_max/action/apply/ (e.g., BOOST_CREATIVE)."""
+    async def gmv_max_creative_status_update(
+        self, request: GMVMaxCreativeStatusUpdateRequest
+    ) -> GMVMaxResponse[GMVMaxCreativeStatusUpdateData]:
+        """Wrapper for TikTok's GMV Max creative remove/add-back endpoint.
+
+        The official docs page is "Remove or add back GMV Max creatives".
+        Keep the path centralized and configurable because TikTok has been
+        rolling GMV Max docs faster than their public SDK generation.
+        """
+        endpoint = os.getenv(
+            "TTB_GMVMAX_CREATIVE_STATUS_UPDATE_PATH",
+            "/campaign/gmv_max/creative/update/",
+        )
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
         body["advertiser_id"] = request.advertiser_id
         payload = await self._request_json(
             "POST",
-            "/campaign/gmv_max/action/apply/",
+            endpoint,
             params=_ttb_api._clean_params_map(params),
             json_body=_ttb_api._remove_none(body),
         )
-        return self._parse_response(payload, GMVMaxCampaignActionApplyData)
+        return self._parse_response(payload, GMVMaxCreativeStatusUpdateData)
 
     async def gmv_max_session_create(
         self, request: GMVMaxSessionCreateRequest
-    ) -> GMVMaxResponse[GMVMaxSessionListData]:
+    ) -> GMVMaxResponse[GMVMaxSessionMutationData]:
         """Wrapper for TikTok POST /campaign/gmv_max/session/create/."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
@@ -1185,11 +1598,11 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             params=_ttb_api._clean_params_map(params),
             json_body=_ttb_api._remove_none(body),
         )
-        return self._parse_response(payload, GMVMaxSessionListData)
+        return self._parse_response(payload, GMVMaxSessionMutationData)
 
     async def gmv_max_session_update(
         self, request: GMVMaxSessionUpdateRequest
-    ) -> GMVMaxResponse[GMVMaxSessionListData]:
+    ) -> GMVMaxResponse[GMVMaxSessionMutationData]:
         """Wrapper for TikTok POST /campaign/gmv_max/session/update/."""
         params = {"advertiser_id": request.advertiser_id}
         body = request.body.model_dump(exclude_none=True)
@@ -1200,7 +1613,23 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             params=_ttb_api._clean_params_map(params),
             json_body=_ttb_api._remove_none(body),
         )
-        return self._parse_response(payload, GMVMaxSessionListData)
+        return self._parse_response(payload, GMVMaxSessionMutationData)
+
+    async def gmv_max_session_delete(
+        self, *, advertiser_id: str, session_id: str
+    ) -> GMVMaxResponse[GMVMaxSessionMutationData]:
+        """Wrapper for TikTok POST /campaign/gmv_max/session/delete/."""
+        body = {
+            "advertiser_id": str(advertiser_id),
+            "session_id": str(session_id),
+        }
+        payload = await self._request_json(
+            "POST",
+            "/campaign/gmv_max/session/delete/",
+            params=_ttb_api._clean_params_map({"advertiser_id": str(advertiser_id)}),
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(payload, GMVMaxSessionMutationData)
 
     async def gmv_max_session_list(
         self, request: GMVMaxSessionListRequest
@@ -1253,8 +1682,13 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_occupied_custom_shop_ads_list(
         self, request: GMVMaxOccupiedCustomShopAdsListRequest
     ) -> GMVMaxResponse[GMVMaxOccupiedListData]:
-        """Wrapper for TikTok GET /gmv_max/occupied_custom_shop_ads/list/."""
+        """Wrapper for the one-asset official occupancy endpoint."""
+
         params = request.model_dump(exclude_none=True)
+        params["asset_ids"] = json.dumps(
+            [str(request.asset_ids[0])],
+            ensure_ascii=False,
+        )
         payload = await self._request_json(
             "GET",
             "/gmv_max/occupied_custom_shop_ads/list/",
@@ -1267,6 +1701,10 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxVideoListData]:
         """Wrapper for TikTok GET /gmv_max/video/get/."""
         params = request.model_dump(exclude_none=True)
+        if isinstance(params.get("spu_id_list"), list):
+            params["spu_id_list"] = json.dumps([str(item) for item in params["spu_id_list"]], ensure_ascii=False)
+        if isinstance(params.get("identity_list"), list):
+            params["identity_list"] = json.dumps(params["identity_list"], ensure_ascii=False)
         payload = await self._request_json(
             "GET",
             "/gmv_max/video/get/",
@@ -1274,17 +1712,102 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
         return self._parse_response(payload, GMVMaxVideoListData)
 
-    async def gmv_max_custom_anchor_video_list_get(
-        self, request: GMVMaxCustomAnchorVideoListGetRequest
-    ) -> GMVMaxResponse[GMVMaxCustomAnchorVideoListData]:
-        """Wrapper for TikTok GET /gmv_max/custom_anchor_video_list/get/."""
-        params = request.model_dump(exclude_none=True)
+    async def file_video_ad_upload_by_url(
+        self, request: TikTokAdVideoUploadRequest
+    ) -> GMVMaxResponse[TikTokAdVideoUploadData]:
+        """Wrapper for TikTok POST /file/video/ad/upload/ with UPLOAD_BY_URL.
+
+        This uploads a video to the ad account's video material library and
+        returns a ``video_id``. Product GMV Max still requires a TikTok post
+        ``item_id`` from GMV Max video/customized-post endpoints before the
+        video can be manually selected in ``/campaign/gmv_max/create/``.
+        """
+        body = request.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
+        body["upload_type"] = request.upload_type or "UPLOAD_BY_URL"
+        payload = await self._request_json(
+            "POST",
+            "/file/video/ad/upload/",
+            params=_ttb_api._clean_params_map({"advertiser_id": request.advertiser_id}),
+            multipart_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response_normalized(payload, TikTokAdVideoUploadData)
+
+    async def business_video_publish(
+        self, request: TikTokAccountVideoPublishRequest
+    ) -> GMVMaxResponse[TikTokAccountVideoPublishData]:
+        """Publish an owned-account TikTok post via ``/business/video/publish/``."""
+
+        body = request.model_dump(exclude_none=True)
+        payload = await self._request_json(
+            "POST",
+            "/business/video/publish/",
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(payload, TikTokAccountVideoPublishData)
+
+    async def business_publish_status(
+        self, request: TikTokAccountPublishStatusRequest
+    ) -> GMVMaxResponse[TikTokAccountPublishStatusData]:
+        """Poll an owned-account publish task via ``/business/publish/status/``."""
+
         payload = await self._request_json(
             "GET",
-            "/gmv_max/custom_anchor_video_list/get/",
+            "/business/publish/status/",
+            params=_ttb_api._clean_params_map(request.model_dump(exclude_none=True)),
+        )
+        return self._parse_response(payload, TikTokAccountPublishStatusData)
+
+    async def file_video_ad_search(
+        self, request: TikTokAdVideoSearchRequest
+    ) -> GMVMaxResponse[TikTokAdVideoSearchData]:
+        """Wrapper for TikTok GET /file/video/ad/search/."""
+        params = request.model_dump(exclude_none=True)
+        filtering = params.get("filtering")
+        if isinstance(filtering, Mapping):
+            params["filtering"] = json.dumps(filtering, ensure_ascii=False)
+        for key in ("video_ids", "material_ids", "video_material_sources"):
+            if isinstance(params.get(key), list):
+                params[key] = json.dumps(
+                    [str(item) for item in params[key]],
+                    ensure_ascii=False,
+                )
+        payload = await self._request_json(
+            "GET",
+            "/file/video/ad/search/",
             params=_ttb_api._clean_params_map(params),
         )
-        return self._parse_response(payload, GMVMaxCustomAnchorVideoListData)
+        return self._parse_response(payload, TikTokAdVideoSearchData)
+
+    async def gmv_max_shop_custom_anchor_create(
+        self, request: GMVMaxShopCustomAnchorCreateRequest
+    ) -> GMVMaxResponse[GMVMaxShopCustomAnchorCreateData]:
+        """Wrapper for POST /gmv_max/creation/custom_anchor_video_list/create/."""
+        body = request.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
+        payload = await self._request_json(
+            "POST",
+            "/gmv_max/creation/custom_anchor_video_list/create/",
+            params=_ttb_api._clean_params_map({"advertiser_id": request.advertiser_id}),
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(payload, GMVMaxShopCustomAnchorCreateData)
+
+    async def gmv_max_creation_custom_anchor_video_list_get(
+        self, request: GMVMaxCreationCustomAnchorVideoListGetRequest
+    ) -> GMVMaxResponse[GMVMaxCreationCustomAnchorVideoListGetData]:
+        """Wrapper for POST /gmv_max/creation/custom_anchor_video_list/get/."""
+        body = request.model_dump(exclude_none=True)
+        body["advertiser_id"] = request.advertiser_id
+        payload = await self._request_json(
+            "POST",
+            "/gmv_max/creation/custom_anchor_video_list/get/",
+            json_body=_ttb_api._remove_none(body),
+        )
+        return self._parse_response(
+            payload,
+            GMVMaxCreationCustomAnchorVideoListGetData,
+        )
 
     async def gmv_max_exclusive_authorization_get(
         self, request: GMVMaxExclusiveAuthorizationGetRequest
@@ -1321,7 +1844,13 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     ) -> GMVMaxResponse[GMVMaxBidRecommendation]:
         """Wrapper for TikTok GET /gmv_max/bid/recommend/ to preview strategy suggestions."""
         params = request.model_dump(exclude_none=True)
-        params["item_group_ids"] = [str(item) for item in request.item_group_ids]
+        # TikTok v1.3 expects query-array fields as JSON text. Sending repeated
+        # query keys is parsed as a scalar and returns code 40002.
+        if request.item_group_ids is not None:
+            params["item_group_ids"] = json.dumps(
+                [str(item) for item in request.item_group_ids],
+                ensure_ascii=False,
+            )
         payload = await self._request_json(
             "GET",
             "/gmv_max/bid/recommend/",
@@ -1348,12 +1877,6 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     def _build_report_get_params(
         self, request: GMVMaxReportGetRequest, *, inject_promotion_types: bool = True
     ) -> Dict[str, Any]:
-        def _encode_seq(values: Sequence[Any] | None) -> str | None:
-            if values is None:
-                return None
-            normalized = [str(item) for item in values if item is not None]
-            return json.dumps(normalized, ensure_ascii=False)
-
         store_ids = [str(store) for store in request.store_ids]
         params: Dict[str, Any] = {
             "advertiser_id": request.advertiser_id,
@@ -1364,6 +1887,13 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             "dimensions": json.dumps(list(request.dimensions), ensure_ascii=False),
         }
 
+        filtering_payload = (
+            request.filtering.model_dump(exclude_none=True)
+            if request.filtering is not None
+            else {}
+        )
+        filtering_payload.pop("store_ids", None)
+        filtering_payload.pop("store_id", None)
         optional_arrays = {
             "gmv_max_promotion_types": request.gmv_max_promotion_types,
             "campaign_ids": request.campaign_ids,
@@ -1374,20 +1904,17 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             "room_ids": request.room_ids,
         }
         for key, values in optional_arrays.items():
-            encoded = _encode_seq(values)
-            if encoded is not None:
-                params[key] = encoded
+            if values is not None:
+                filtering_payload[key] = [str(item) for item in values]
 
         if request.campaign_name is not None:
-            params["campaign_name"] = request.campaign_name
+            filtering_payload["campaign_name"] = request.campaign_name
         if request.search_word is not None:
-            params["search_word"] = request.search_word
+            filtering_payload["search_word"] = request.search_word
         if request.enable_total_metrics is not None:
             params["enable_total_metrics"] = bool(request.enable_total_metrics)
-        if request.filtering is not None:
-            params["filtering"] = json.dumps(
-                request.filtering.model_dump(exclude_none=True), ensure_ascii=False
-            )
+        if filtering_payload:
+            params["filtering"] = filtering_payload
         for key in ("page", "page_size", "sort_field", "sort_type"):
             value = getattr(request, key)
             if value is not None:
@@ -1396,6 +1923,12 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         if inject_promotion_types:
             _ttb_api._ensure_gmvmax_campaign_filters(
                 params, promotion_type_format="report"
+            )
+        elif isinstance(params.get("filtering"), Mapping):
+            params["filtering"] = json.dumps(
+                params["filtering"],
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         return params
 
@@ -1498,7 +2031,6 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         )
 
         filtering_model = GMVMaxReportFiltering(
-            store_ids=store_ids,
             campaign_ids=campaign_ids,
             item_group_ids=item_group_ids,
             creative_types=legacy_filtering.pop("creative_types", None),
@@ -1551,54 +2083,17 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
     async def gmv_max_report_get(
         self, request: GMVMaxReportGetRequest, *, inject_promotion_types: bool = True
     ) -> GMVMaxResponse[GMVMaxReportData]:
-        """Wrapper for TikTok GET /gmv_max/report/get/ to fetch GMV Max metrics."""
+        """Fetch exactly one report page.
 
-        aggregated_entries: list[GMVMaxReportEntry] = []
-        summary: Dict[str, Any] | None = None
-        merged_page_info: PageInfo | None = None
-        page_value = request.page or 1
-        page_size_value = request.page_size or 200
+        Pagination belongs to the report synchronization services. Keeping the
+        client page-scoped prevents nested pagination (N + N-1 + ... requests)
+        when a caller already iterates over ``page_info``.
+        """
 
-        while True:
-            request.page = page_value
-            request.page_size = page_size_value
-            params = self._build_report_get_params(
-                request, inject_promotion_types=inject_promotion_types
-            )
-            response = await self._gmv_max_report_get(params)
-            aggregated_entries.extend(response.data.list)
-            if summary is None:
-                summary = response.data.summary
-            merged_page_info = response.data.page_info or merged_page_info
-
-            page_info = response.data.page_info
-            has_more = bool(
-                getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
-            ) if page_info else False
-            total_page = getattr(page_info, "total_page", None) if page_info else None
-            if has_more:
-                page_value += 1
-                continue
-            try:
-                total_page_int = int(total_page) if total_page is not None else None
-            except (TypeError, ValueError):
-                total_page_int = None
-            if total_page_int is not None and page_value < total_page_int:
-                page_value += 1
-                continue
-            break
-
-        merged_data = GMVMaxReportData(
-            list=aggregated_entries,
-            page_info=merged_page_info,
-            summary=summary,
+        params = self._build_report_get_params(
+            request, inject_promotion_types=inject_promotion_types
         )
-        return GMVMaxResponse[GMVMaxReportData](  # type: ignore[call-arg]
-            code=response.code,
-            message=response.message,
-            request_id=response.request_id,
-            data=merged_data,
-        )
+        return await self._gmv_max_report_get(params)
 
     async def gmv_max_report_get_dataset(
         self,
@@ -1674,10 +2169,15 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
             [campaign_id]
         )
         item_group_list = _sanitize_id_list(item_group_ids)
+        report_item_group_list = (
+            item_group_list
+            if level_value is GMVMaxMetricsLevel.CREATIVE
+            else None
+        )
 
         filters = GMVMaxReportFiltering(
             campaign_ids=campaign_id_list,
-            item_group_ids=item_group_list,
+            item_group_ids=report_item_group_list,
         )
 
         base_kwargs = dict(
@@ -1696,7 +2196,7 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         request_kwargs = dict(
             metrics=metrics,
             dimensions=dimensions,
-            item_group_ids=item_group_list,
+            item_group_ids=report_item_group_list,
             **base_kwargs,
             filtering=filters,
         )
@@ -1705,6 +2205,65 @@ class TikTokBusinessGMVMaxClient(TTBApiClient):
         return await self.gmv_max_report_get(
             request, inject_promotion_types=inject_promotion_types
         )
+
+
+async def fetch_all_occupied_custom_shop_ads(
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    store_id: str,
+    occupied_asset_type: str,
+    asset_ids: Sequence[str],
+) -> GMVMaxResponse[GMVMaxOccupiedListData]:
+    """Aggregate the official one-asset occupancy lookup for multiple IDs."""
+
+    clean_ids = list(dict.fromkeys(str(item) for item in asset_ids if str(item)))
+    if not clean_ids:
+        return GMVMaxResponse[GMVMaxOccupiedListData](
+            code=0,
+            message="",
+            request_id=None,
+            data=GMVMaxOccupiedListData(),
+        )
+
+    aggregated: list[GMVMaxOccupiedAd] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    request_ids: list[str] = []
+    for asset_id in clean_ids:
+        response = await client.gmv_max_occupied_custom_shop_ads_list(
+            GMVMaxOccupiedCustomShopAdsListRequest(
+                advertiser_id=str(advertiser_id),
+                store_id=str(store_id),
+                occupied_asset_type=str(occupied_asset_type),
+                asset_ids=[asset_id],
+            )
+        )
+        if response.request_id:
+            request_ids.append(str(response.request_id))
+        for item in (
+            getattr(response.data, "occupied_custom_shop_ads", None) or []
+        ):
+            item_payload = item.model_dump(exclude_none=True)
+            item_payload.setdefault("asset_id", asset_id)
+            if str(occupied_asset_type).upper() == "SPU":
+                item_payload.setdefault("item_group_id", asset_id)
+            item = GMVMaxOccupiedAd.model_validate(item_payload)
+            key = (
+                str(getattr(item, "campaign_id", None) or ""),
+                str(getattr(item, "adgroup_id", None) or ""),
+                str(getattr(item, "ad_id", None) or ""),
+                str(getattr(item, "item_group_id", None) or asset_id),
+            )
+            if key in seen:
+                continue
+            aggregated.append(item)
+            seen.add(key)
+    return GMVMaxResponse[GMVMaxOccupiedListData](
+        code=0,
+        message="",
+        request_id=",".join(request_ids) or None,
+        data=GMVMaxOccupiedListData(occupied_custom_shop_ads=aggregated),
+    )
 
 
 __all__ = [
@@ -1717,6 +2276,9 @@ __all__ = [
     "GMVMaxSessionCreateRequest",
     "GMVMaxSessionUpdateRequest",
     "GMVMaxSessionListRequest",
+    "GMVMaxSessionListData",
+    "GMVMaxSessionMutationData",
+    "gmv_max_session_entries",
     "GMVMaxIdentityGetRequest",
     "GMVMaxOccupiedCustomShopAdsListRequest",
     "GMVMaxStoreListRequest",
@@ -1724,7 +2286,8 @@ __all__ = [
     "GMVMaxStoreListData",
     "GMVMaxStoreAdUsageCheckData",
     "GMVMaxVideoGetRequest",
-    "GMVMaxCustomAnchorVideoListGetRequest",
+    "GMVMaxCreationCustomAnchorVideoListGetRequest",
+    "GMVMaxCreationCustomAnchorVideoListGetData",
     "GMVMaxExclusiveAuthorizationGetRequest",
     "GMVMaxExclusiveAuthorizationCreateRequest",
     "GMVMaxBidRecommendRequest",
@@ -1738,5 +2301,5 @@ __all__ = [
     "GMVMaxCreativeReportRequest",
     "GMVMaxRoomReportRequest",
     "GMVMaxSessionReportRequest",
+    "fetch_all_occupied_custom_shop_ads",
 ]
-

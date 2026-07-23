@@ -22,6 +22,10 @@ from app.core.config import settings
 from app.data.db import Base  # Base.metadata
 # 为将来 autogenerate 留好口子：务必确保导入模型模块（如果 __init__ 空的，请把子模块显式 import 到 __init__）
 import app.data.models  # noqa: F401
+# GMV Max control-plane models currently live beside the tenant feature code.
+# Register them explicitly so Alembic autogenerate/check never mistakes these
+# live production tables for removed schema.
+import app.features.tenants.ttb.gmv_max.control  # noqa: F401
 
 target_metadata = Base.metadata
 
@@ -93,4 +97,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

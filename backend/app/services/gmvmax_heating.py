@@ -5,40 +5,30 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Tuple
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCreativeHeating
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxLiveCampaignCatalog,
+    GmvmaxProductCampaignCatalog,
+)
+from app.data.models.ttb_entities import TTBBindingConfig
+from app.data.models.ttb_gmvmax import TTBGmvMaxCreativeHeating
 from app.data.repositories.tiktok_business.gmvmax_creative_metrics import (
     CreativeMetricsAggregate,
     get_recent_creative_metrics,
-    upsert_creative_metrics,
 )
 from app.data.repositories.tiktok_business.gmvmax_heating import (
-    update_heating_action_result,
     update_heating_evaluation,
 )
-from app.providers.tiktok_business.gmvmax_client import (
-    GMVMaxCampaignActionApplyBody,
-    GMVMaxCampaignActionApplyRequest,
-    GMVMaxCreativeReportRequest,
-    GMVMaxReportFiltering,
-    GMVMaxReportTimeRange,
-    TikTokBusinessGMVMaxClient,
-)
-from app.services.gmvmax_heating_actions import apply_boost_creative_action
-from app.services.gmvmax_spec import GMVMAX_CREATIVE_METRICS
+from app.providers.tiktok_business.gmvmax_client import TikTokBusinessGMVMaxClient
+from app.services.gmvmax_heating_actions import stop_boost_creative_session
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 
 logger = logging.getLogger("gmv.services.gmvmax.heating")
-
-# Creative 级别报表使用的指标集合（维度由 GMVMaxDataset.CREATIVE 统一管理）
-_CREATIVE_METRICS = list(GMVMAX_CREATIVE_METRICS)
-_REPORT_PAGE_SIZE = 200
-_HEATABLE_STATUSES = {"DELIVERING", "LEARNING", "IN_QUEUE"}
 
 
 @dataclass
@@ -48,6 +38,22 @@ class HeatingEvaluationResult:
     result: str
     should_stop: bool
     ready_to_heat: bool = False
+
+
+@dataclass(frozen=True)
+class HeatingCampaign:
+    """Canonical catalog identity required by creative heating."""
+
+    workspace_id: int
+    auth_id: int
+    advertiser_id: str
+    store_id: str
+    campaign_id: str
+    promotion_type: str
+    campaign_name: str | None
+    operation_status: str | None
+    secondary_status: str | None
+    budget_cents: int | None
 
 
 def evaluate_heating_rule(
@@ -62,17 +68,6 @@ def evaluate_heating_rule(
     clicks_actual = metrics.clicks or 0
     ctr_actual = metrics.ad_click_rate if metrics.ad_click_rate is not None else 0.0
     revenue_actual = metrics.gross_revenue if metrics.gross_revenue is not None else 0
-    orders_actual = metrics.orders or 0 if hasattr(metrics, "orders") else 0
-    cost_actual = metrics.cost or 0 if hasattr(metrics, "cost") else 0
-    roi_actual = None
-    if getattr(metrics, "roi", None) is not None:
-        roi_actual = float(metrics.roi)
-    elif cost_actual and metrics.gross_revenue is not None:
-        try:
-            roi_actual = float(metrics.gross_revenue) / float(cost_actual)
-        except ZeroDivisionError:  # defensive
-            roi_actual = None
-
     if config.min_clicks is not None and clicks_actual < int(config.min_clicks):
         if config.auto_stop_enabled and config.is_heating_active:
             return HeatingEvaluationResult("auto_stopped_low_clicks", True)
@@ -102,124 +97,22 @@ def evaluate_heating_rule(
     return HeatingEvaluationResult(result="ready_to_heat", should_stop=False, ready_to_heat=True)
 
 
-async def _sync_creative_metrics_for_campaign(
-    db: Session,
-    client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    provider: str,
-    auth_id: int,
-    campaign: TTBGmvMaxCampaign,
-    start_date: date,
-    end_date: date,
-) -> int:
-    """Pull creative-level GMV Max metrics for a single campaign and upsert into DB."""
-
-    if not campaign.store_id or not campaign.advertiser_id:
-        logger.debug(
-            "skip creative metrics sync because store_id or advertiser_id missing",
-            extra={
-                "campaign_id": campaign.campaign_id,
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-            },
-        )
-        return 0
-
-    if not campaign.campaign_id:
-        logger.debug(
-            "skip creative metrics sync because campaign_id missing",
-            extra={
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-            },
-        )
-        return 0
-
-    time_range = GMVMaxReportTimeRange(
-        start_time=start_date.isoformat(), end_time=end_date.isoformat()
-    )
-    filtering = GMVMaxReportFiltering(
-        store_ids=[str(campaign.store_id)],
-        campaign_ids=[str(campaign.campaign_id)],
-    )
-    request = GMVMaxCreativeReportRequest(
-        advertiser_id=str(campaign.advertiser_id),
-        campaign_ids=[str(campaign.campaign_id)],
-        metrics=_CREATIVE_METRICS,
-        dimensions=["campaign_id", "creative_id", "stat_time_day", "creative_delivery_status"],
-        time_range=time_range,
-        time_granularity="DAILY",
-        time_dimension="DAILY",
-        filtering=filtering,
-        page_size=_REPORT_PAGE_SIZE,
-    )
-
-    response = await client.gmv_max_creative_report(request)
-    data = response.data
-    entries = list(data.list)
-    if not entries:
-        return 0
-
-    rows = 0
-    for entry in entries:
-        dims = entry.dimensions or {}
-        metrics_payload = dict(entry.metrics or {})
-        creative_id = dims.get("creative_id")
-        stat_time = dims.get("stat_time_day") or dims.get("date")
-        if not creative_id or not stat_time:
-            continue
-
-        # 补充一些创意级元数据到 metrics 里，方便后续查询
-        for meta_field in ("creative_name", "adgroup_id", "product_id", "item_id"):
-            if meta_field in dims and dims[meta_field] is not None:
-                metrics_payload.setdefault(meta_field, dims[meta_field])
-
-        delivery_status = dims.get("creative_delivery_status")
-        if delivery_status is not None:
-            metrics_payload.setdefault("creative_status", delivery_status)
-
-        stat_datetime = _parse_stat_time(stat_time)
-        await upsert_creative_metrics(
-            db,
-            workspace_id=workspace_id,
-            provider=provider,
-            auth_id=auth_id,
-            campaign_id=campaign.campaign_id,
-            creative_id=str(creative_id),
-            stat_time_day=stat_datetime,
-            metrics=metrics_payload,
-        )
-        rows += 1
-
-    db.flush()
-    return rows
-
-
-def _parse_stat_time(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time())
-    if isinstance(value, str):
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("empty stat_time_day value")
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-        return datetime.fromisoformat(cleaned)
-    raise ValueError(f"unsupported stat_time_day value: {value!r}")
-
-
 def _group_configs(
     rows: Iterable[TTBGmvMaxCreativeHeating],
-) -> Dict[Tuple[int, int, str], List[TTBGmvMaxCreativeHeating]]:
-    groups: Dict[Tuple[int, int, str], List[TTBGmvMaxCreativeHeating]] = defaultdict(list)
+) -> Dict[Tuple[int, int, str, str, str], List[TTBGmvMaxCreativeHeating]]:
+    groups: Dict[
+        Tuple[int, int, str, str, str],
+        List[TTBGmvMaxCreativeHeating],
+    ] = defaultdict(list)
     for row in rows:
-        key = (row.workspace_id, row.auth_id, row.campaign_id)
+        promotion_type = getattr(row.promotion_type, "value", row.promotion_type)
+        key = (
+            int(row.workspace_id),
+            int(row.auth_id),
+            str(row.advertiser_id),
+            str(row.campaign_id),
+            str(promotion_type or "").upper(),
+        )
         groups[key].append(row)
     return groups
 
@@ -244,14 +137,61 @@ def _load_campaign(
     *,
     workspace_id: int,
     auth_id: int,
+    advertiser_id: str,
     campaign_id: str,
-) -> TTBGmvMaxCampaign | None:
-    stmt: Select[TTBGmvMaxCampaign] = (
-        select(TTBGmvMaxCampaign)
-        .where(TTBGmvMaxCampaign.workspace_id == workspace_id)
-        .where(TTBGmvMaxCampaign.campaign_id == str(campaign_id))
+    promotion_type: str,
+) -> HeatingCampaign | None:
+    """Load one campaign through the authoritative account binding and catalog."""
+
+    binding = db.execute(
+        select(TTBBindingConfig)
+        .where(TTBBindingConfig.workspace_id == int(workspace_id))
+        .where(TTBBindingConfig.auth_id == int(auth_id))
+        .limit(1)
+    ).scalars().first()
+    bound_advertiser = str(getattr(binding, "advertiser_id", "") or "").strip()
+    bound_store = str(getattr(binding, "store_id", "") or "").strip()
+    if (
+        binding is None
+        or not bound_advertiser
+        or not bound_store
+        or bound_advertiser != str(advertiser_id)
+    ):
+        return None
+
+    normalized_promotion = str(promotion_type).upper()
+    if normalized_promotion == "PRODUCT":
+        model = GmvmaxProductCampaignCatalog
+    elif normalized_promotion == "LIVE":
+        model = GmvmaxLiveCampaignCatalog
+    else:
+        return None
+    stmt: Select[Any] = (
+        select(model)
+        .where(model.workspace_id == int(workspace_id))
+        .where(model.auth_id == int(auth_id))
+        .where(model.advertiser_id == bound_advertiser)
+        .where(model.store_id == bound_store)
+        .where(model.campaign_id == str(campaign_id))
+        .order_by(model.updated_at.desc())
+        .limit(2)
     )
-    return db.execute(stmt).scalars().first()
+    rows = list(db.execute(stmt).scalars().all())
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    return HeatingCampaign(
+        workspace_id=int(row.workspace_id),
+        auth_id=int(row.auth_id),
+        advertiser_id=str(row.advertiser_id),
+        store_id=str(row.store_id),
+        campaign_id=str(row.campaign_id),
+        promotion_type=str(promotion_type).upper(),
+        campaign_name=getattr(row, "campaign_name", None),
+        operation_status=getattr(row, "operation_status", None),
+        secondary_status=getattr(row, "secondary_status", None),
+        budget_cents=getattr(row, "budget_cents", None),
+    )
 
 
 async def _ensure_client(
@@ -271,23 +211,19 @@ async def _auto_stop_creative(
     db: Session,
     *,
     client: TikTokBusinessGMVMaxClient,
-    campaign: TTBGmvMaxCampaign,
+    campaign: HeatingCampaign,
     heating: TTBGmvMaxCreativeHeating,
     evaluation_result: str,
     evaluation_time: datetime,
 ) -> bool:
-    action_body = {
-        "campaign_id": str(heating.campaign_id),
-        "action_type": "STOP_CREATIVE",
-        "creative_id": str(heating.creative_id),
-    }
-    request = GMVMaxCampaignActionApplyRequest(
-        advertiser_id=str(campaign.advertiser_id),
-        body=GMVMaxCampaignActionApplyBody(**action_body),
-    )
-
     try:
-        response = await client.gmv_max_campaign_action_apply(request)
+        await stop_boost_creative_session(
+            db,
+            client=client,
+            campaign=campaign,
+            heating=heating,
+            note=evaluation_result,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "auto-stop creative heating failed",
@@ -298,16 +234,6 @@ async def _auto_stop_creative(
                 "creative_id": heating.creative_id,
             },
         )
-        await update_heating_action_result(
-            db,
-            heating_id=heating.id,
-            status="FAILED",
-            action_type="STOP_CREATIVE",
-            action_time=evaluation_time,
-            request_payload=action_body,
-            response_payload=None,
-            error_message=str(exc),
-        )
         await update_heating_evaluation(
             db,
             heating_id=heating.id,
@@ -317,17 +243,6 @@ async def _auto_stop_creative(
         )
         return False
 
-    payload = response.data.model_dump(exclude_none=True)
-    await update_heating_action_result(
-        db,
-        heating_id=heating.id,
-        status="CANCELLED",
-        action_type="STOP_CREATIVE",
-        action_time=evaluation_time,
-        request_payload=action_body,
-        response_payload=payload,
-        error_message=None,
-    )
     await update_heating_evaluation(
         db,
         heating_id=heating.id,
@@ -364,20 +279,30 @@ async def run_creative_heating_cycle(
 
     clients: Dict[int, TikTokBusinessGMVMaxClient] = {}
     try:
-        for (workspace_id, auth_id, campaign_id), items in grouped.items():
+        for (
+            workspace_id,
+            auth_id,
+            advertiser_id,
+            campaign_id,
+            promotion_type,
+        ), items in grouped.items():
             campaign = _load_campaign(
                 db,
                 workspace_id=workspace_id,
                 auth_id=auth_id,
+                advertiser_id=advertiser_id,
                 campaign_id=campaign_id,
+                promotion_type=promotion_type,
             )
             if campaign is None:
                 logger.warning(
-                    "campaign missing for heating config",
+                    "canonical campaign scope missing for heating config",
                     extra={
                         "workspace_id": workspace_id,
                         "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
                         "campaign_id": campaign_id,
+                        "promotion_type": promotion_type,
                     },
                 )
                 for heating in items:
@@ -385,74 +310,69 @@ async def run_creative_heating_cycle(
                         db,
                         heating_id=heating.id,
                         evaluated_at=cycle_time,
-                        evaluation_result="campaign_missing",
-                        is_heating_active=False,
+                        evaluation_result="campaign_scope_missing",
+                        is_heating_active=heating.is_heating_active,
                     )
                 continue
-
-            try:
-                client = await _ensure_client(clients, db, auth_id=auth_id)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "failed to build GMV Max client",
-                    extra={
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                    },
-                )
-                for heating in items:
-                    await update_heating_evaluation(
-                        db,
-                        heating_id=heating.id,
-                        evaluated_at=cycle_time,
-                        evaluation_result="client_error",
-                        is_heating_active=True,
-                    )
-                continue
-
-            try:
-                max_window = max((item.evaluation_window_minutes or 60) for item in items)
-                start_day = (cycle_time - timedelta(minutes=max_window)).date()
-                end_day = cycle_time.date()
-                await _sync_creative_metrics_for_campaign(
-                    db,
-                    client,
-                    workspace_id=workspace_id,
-                    provider="tiktok-business",
-                    auth_id=auth_id,
-                    campaign=campaign,
-                    start_date=start_day,
-                    end_date=end_day,
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "syncing creative metrics failed",
-                    extra={
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                        "campaign_id": campaign_id,
-                    },
-                )
 
             for heating in items:
                 try:
+                    item_group_id = str(
+                        getattr(heating, "item_group_id", None)
+                        or getattr(heating, "product_id", None)
+                        or ""
+                    ).strip()
+                    if promotion_type != "PRODUCT" or not item_group_id:
+                        await update_heating_evaluation(
+                            db,
+                            heating_id=heating.id,
+                            evaluated_at=cycle_time,
+                            evaluation_result="item_group_scope_missing",
+                            is_heating_active=heating.is_heating_active,
+                        )
+                        continue
+
                     window = heating.evaluation_window_minutes or 60
                     metrics_map = await get_recent_creative_metrics(
                         db,
                         workspace_id=workspace_id,
                         provider="tiktok-business",
                         auth_id=auth_id,
+                        advertiser_id=campaign.advertiser_id,
+                        store_id=campaign.store_id,
                         campaign_id=campaign_id,
+                        item_group_id=item_group_id,
                         window_minutes=window,
                         creative_ids=[heating.creative_id],
+                        now=cycle_time,
                     )
                     metrics = metrics_map.get(str(heating.creative_id))
                     evaluation = evaluate_heating_rule(heating, metrics)
-                    creative_status = (
-                        getattr(metrics, "creative_status", None) if metrics is not None else None
-                    )
 
                     if evaluation.should_stop:
+                        try:
+                            client = await _ensure_client(
+                                clients,
+                                db,
+                                auth_id=auth_id,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "failed to build GMV Max client",
+                                extra={
+                                    "workspace_id": workspace_id,
+                                    "auth_id": auth_id,
+                                    "campaign_id": campaign_id,
+                                },
+                            )
+                            await update_heating_evaluation(
+                                db,
+                                heating_id=heating.id,
+                                evaluated_at=cycle_time,
+                                evaluation_result="client_error",
+                                is_heating_active=True,
+                            )
+                            continue
                         stopped = await _auto_stop_creative(
                             db,
                             client=client,
@@ -464,55 +384,6 @@ async def run_creative_heating_cycle(
                         if stopped:
                             summary["stopped"] += 1
                     else:
-                        normalized_status = (
-                            str(creative_status).upper() if creative_status is not None else None
-                        )
-
-                        if evaluation.ready_to_heat and normalized_status in _HEATABLE_STATUSES:
-                            logger.debug(
-                                "creative ready to heat",
-                                extra={
-                                    "workspace_id": workspace_id,
-                                    "auth_id": auth_id,
-                                    "campaign_id": campaign_id,
-                                    "creative_id": heating.creative_id,
-                                    "creative_status": normalized_status,
-                                },
-                            )
-                            try:
-                                await apply_boost_creative_action(
-                                    db,
-                                    client=client,
-                                    campaign=campaign,
-                                    heating=heating,
-                                    mode=heating.mode,
-                                    target_daily_budget=float(heating.target_daily_budget)
-                                    if heating.target_daily_budget
-                                    else None,
-                                    budget_delta=float(heating.budget_delta)
-                                    if heating.budget_delta
-                                    else None,
-                                    currency=heating.currency,
-                                    max_duration_minutes=heating.max_duration_minutes,
-                                    note=heating.note,
-                                    performed_by="system_auto_heating",
-                                )
-                                summary["boosted_creatives"] = summary.get(
-                                    "boosted_creatives", 0
-                                ) + 1
-                                heating.is_heating_active = True
-                                db.flush()
-                            except Exception:  # noqa: BLE001
-                                logger.exception(
-                                    "auto boost creative failed",
-                                    extra={
-                                        "workspace_id": workspace_id,
-                                        "auth_id": auth_id,
-                                        "campaign_id": campaign_id,
-                                        "creative_id": heating.creative_id,
-                                    },
-                                )
-
                         await update_heating_evaluation(
                             db,
                             heating_id=heating.id,
@@ -549,4 +420,3 @@ async def run_creative_heating_cycle(
         extra=summary,
     )
     return summary
-

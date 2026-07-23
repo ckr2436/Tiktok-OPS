@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { startGmvMaxSync } from "../api/gmvMaxApi.js";
+import { startGmvMaxSync, syncGmvMaxMetrics } from "../api/gmvMaxApi.js";
 import { formatError } from "../utils/errors.js";
 import { composeGmvTaskQueryKey } from "../utils/taskQueryKey.js";
 import { isActiveTaskState, isTerminalTaskState, normalizeTaskState } from "../utils/taskState.js";
@@ -18,31 +18,48 @@ function createSyncError(error) {
   return new Error(message);
 }
 
-export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFailure }) {
+export function useGmvSyncTask({
+  workspaceId,
+  provider,
+  authId,
+  campaignId,
+  onSuccess,
+  onFailure,
+}) {
   const queryClient = useQueryClient();
   const [currentTaskId, setCurrentTaskId] = useState();
   const [lastTaskId, setLastTaskId] = useState(null);
   const [lastState, setLastState] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [syncStartedAt, setSyncStartedAt] = useState(null);
   const [error, setError] = useState(null);
   const completionResolversRef = useRef([]);
+  const earlyTerminalTasksRef = useRef(new Map());
 
   const resolveCompletion = useCallback((task, isError = false) => {
     const resolvedTaskId = normalizeTaskId(task?.task_id || task?.taskId);
     const matchers = completionResolversRef.current;
     completionResolversRef.current = [];
+    let matched = false;
     matchers.forEach(({ taskId, resolve, reject }) => {
       const normalizedTaskId = normalizeTaskId(taskId);
       if (normalizedTaskId && resolvedTaskId && normalizedTaskId !== resolvedTaskId) {
         completionResolversRef.current.push({ taskId: normalizedTaskId, resolve, reject });
         return;
       }
+      matched = true;
       if (isError) {
         reject?.(task);
       } else {
         resolve?.(task);
       }
     });
+    // A very fast task may finish between mutateAsync's onSuccess callback and
+    // startSync registering its waiter.  Retain that terminal result briefly
+    // so the caller gets a settled promise instead of waiting forever.
+    if (!matched && resolvedTaskId) {
+      earlyTerminalTasksRef.current.set(resolvedTaskId, { task, isError });
+    }
   }, []);
 
   const handleSuccess = useCallback(
@@ -53,6 +70,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       setLastTaskId(resolvedTaskId);
       setLastState(normalizedState);
       setCurrentTaskId(undefined);
+      setSyncStartedAt(null);
       setError(null);
       setLastSyncedAt(Date.now());
       await queryClient.invalidateQueries({
@@ -91,6 +109,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       setLastTaskId(resolvedTaskId);
       setLastState(normalizedState);
       setCurrentTaskId(undefined);
+      setSyncStartedAt(null);
       const syncError = task instanceof Error ? task : createSyncError(task?.error || task?.message || task);
       setError(syncError);
       onFailure?.(syncError);
@@ -134,12 +153,17 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
   }, [polledTask, resolveCompletion]);
 
   const startMutation = useMutation({
-    mutationFn: (payload) => startGmvMaxSync(workspaceId, provider, authId, payload),
+    mutationFn: (payload) =>
+      campaignId
+        ? syncGmvMaxMetrics(workspaceId, provider, authId, campaignId, payload)
+        : startGmvMaxSync(workspaceId, provider, authId, payload),
     onMutate: () => {
       setError(null);
       setLastState(null);
       setLastTaskId(null);
       setCurrentTaskId(undefined);
+      setSyncStartedAt(Date.now());
+      earlyTerminalTasksRef.current.clear();
       queryClient.removeQueries({
         queryKey: composeGmvTaskQueryKey(workspaceId, provider, authId),
         exact: false,
@@ -155,6 +179,7 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
 
       if (taskId && isActiveTaskState(state)) {
         setCurrentTaskId(taskId);
+        setSyncStartedAt(Date.now());
         return;
       }
 
@@ -196,18 +221,45 @@ export function useGmvSyncTask({ workspaceId, provider, authId, onSuccess, onFai
       const response = await startMutation.mutateAsync(payload);
       const normalizedState = normalizeTaskState(response?.state || "PENDING");
       const taskId = normalizeTaskId(response?.task_id || response?.taskId);
+
+      if (isTerminalTaskState(normalizedState)) {
+        if (taskId) earlyTerminalTasksRef.current.delete(taskId);
+        return {
+          state: normalizedState,
+          taskId,
+          completion:
+            normalizedState === "SUCCESS"
+              ? Promise.resolve({ ...response, state: normalizedState, task_id: taskId })
+              : null,
+        };
+      }
+
+      if (!taskId || !isActiveTaskState(normalizedState)) {
+        // A non-terminal response without an identity cannot be polled or
+        // proven fresh.  Do not create an unresolvable completion promise.
+        return {
+          state: normalizedState,
+          taskId: null,
+          completion: null,
+        };
+      }
+
+      const earlyTerminal = earlyTerminalTasksRef.current.get(taskId);
+      if (earlyTerminal) {
+        earlyTerminalTasksRef.current.delete(taskId);
+        return {
+          state: normalizedState,
+          taskId,
+          // Resolve with the terminal task even on failure.  Callers already
+          // inspect its state, and a pre-rejected promise could become an
+          // unhandled rejection when a manual sync caller ignores it.
+          completion: Promise.resolve(earlyTerminal.task),
+        };
+      }
+
       const completionPromise = new Promise((resolve, reject) => {
         completionResolversRef.current.push({ taskId, resolve, reject });
       });
-
-      if (isTerminalTaskState(normalizedState)) {
-        if (normalizedState === "SUCCESS") {
-          resolveCompletion({ ...response, state: normalizedState, task_id: taskId });
-        } else {
-          resolveCompletion({ ...response, state: normalizedState, task_id: taskId }, true);
-        }
-      }
-
       return {
         state: normalizedState,
         taskId,
@@ -234,12 +286,14 @@ export function useEnsureFreshGmvData({
   workspaceId,
   provider,
   authId,
+  campaignId,
   reportParams,
   levels = ["OVERVIEW"],
   campaignIds,
+  itemGroupIds,
   freshnessMs = 10 * 60 * 1000,
 }) {
-  const syncTask = useGmvSyncTask({ workspaceId, provider, authId });
+  const syncTask = useGmvSyncTask({ workspaceId, provider, authId, campaignId });
   const lastEnsuredRef = useRef(0);
 
   const normalizedCampaignIds = useMemo(() => {
@@ -249,6 +303,14 @@ export function useEnsureFreshGmvData({
       .map((value) => (value === undefined || value === null ? "" : String(value)))
       .filter(Boolean);
   }, [campaignIds]);
+
+  const normalizedItemGroupIds = useMemo(() => {
+    if (!itemGroupIds) return [];
+    const list = Array.isArray(itemGroupIds) ? itemGroupIds : [itemGroupIds];
+    return list
+      .map((value) => (value === undefined || value === null ? "" : String(value)))
+      .filter(Boolean);
+  }, [itemGroupIds]);
 
   const ensureFresh = useCallback(
     async () => {
@@ -264,8 +326,19 @@ export function useEnsureFreshGmvData({
         end_date: reportParams?.end_date || reportParams?.endDate || null,
         levels,
         campaign_ids: normalizedCampaignIds.length ? normalizedCampaignIds : undefined,
+        item_group_ids: normalizedItemGroupIds.length ? normalizedItemGroupIds : undefined,
       };
-      const result = await syncTask.startSync(payload);
+      let result;
+      try {
+        result = await syncTask.startSync(payload);
+      } catch (startError) {
+        // Mutating actions must fail closed when their preflight sync cannot
+        // even be started.  The sync hook already exposes the underlying
+        // error for the UI; this boolean prevents the caller from proceeding.
+        // eslint-disable-next-line no-console
+        console.error("GMV Max sync preflight could not start", startError);
+        return false;
+      }
       if (result?.state === 'SUCCESS') {
         lastEnsuredRef.current = Date.now();
         return true;
@@ -288,12 +361,24 @@ export function useEnsureFreshGmvData({
         return false;
       }
       if (!result) {
-        lastEnsuredRef.current = Date.now();
-        return true;
+        // startSync returns no result when another sync is already pending.
+        // That is not proof of freshness; callers must wait and retry instead
+        // of recording a false successful preflight.
+        return false;
       }
       return false;
     },
-    [freshnessMs, reportParams, syncTask, workspaceId, provider, authId, levels, normalizedCampaignIds],
+    [
+      freshnessMs,
+      reportParams,
+      syncTask,
+      workspaceId,
+      provider,
+      authId,
+      levels,
+      normalizedCampaignIds,
+      normalizedItemGroupIds,
+    ],
   );
 
   return {

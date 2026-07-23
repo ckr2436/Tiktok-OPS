@@ -38,7 +38,6 @@ from app.data.models.ttb_entities import (
     TTBProduct,
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
-    TTBSyncCursor,
 )
 from app.data.models.ttb_gmvmax import TTBGmvMaxCampaign, TTBGmvMaxCampaignProduct
 from app.services.ttb_sync_dispatch import DispatchResult, SYNC_TASKS, dispatch_sync
@@ -52,7 +51,6 @@ from app.services.ttb_meta import (
     MetaCursorState,
     build_gmvmax_options,
     compute_meta_etag,
-    enqueue_meta_sync,
     get_meta_cursor_state,
 )
 from app.services.ttb_sync import _normalize_identifier
@@ -65,7 +63,6 @@ SUPPORTED_PROVIDERS = {"tiktok-business", "tiktok_business"}
 
 # Module‑wide loggers.  The names mirror those from the original router.
 logger = logging.getLogger("gmv.ttb.meta")
-backfill_logger = logger.getChild("backfill")
 
 _RELATION_PRIORITY = {"OWNER": 1, "AUTHORIZER": 2, "PARTNER": 3, "UNKNOWN": 4}
 
@@ -240,6 +237,7 @@ class ProductItem(BaseModel):
     ext_created_time: Optional[str]
     ext_updated_time: Optional[str]
     raw: Optional[Dict[str, Any]]
+    gmvmax_automation_stats: Optional[Dict[str, Any]] = None
 
 
 class ProductList(BaseModel):
@@ -252,6 +250,7 @@ class ProductList(BaseModel):
 class AdvertiserBalance(BaseModel):
     currency: Optional[str] = None
     cash_balance: Optional[float] = None
+    budget_remaining: Optional[float] = None
     fetched_at: Optional[str] = None
 
 
@@ -349,160 +348,6 @@ def _serialize_account_summary(row: OAuthAccountTTB) -> AccountSummary:
     return AccountSummary(auth_id=binding.auth_id, label=binding.label, status=binding.status)
 
 
-def _has_records(db: Session, model: Any, *, workspace_id: int, auth_id: int) -> bool:
-    """Return True if at least one record exists for the given model and account."""
-    row = (
-        db.query(model.id)
-        .filter(model.workspace_id == int(workspace_id))
-        .filter(model.auth_id == int(auth_id))
-        .limit(1)
-        .first()
-    )
-    return row is not None
-
-
-def _needs_account_bootstrap(db: Session, *, workspace_id: int, auth_id: int) -> bool:
-    """Determine whether an account requires bootstrap meta sync."""
-    required = {"bc": False, "advertiser": False, "store": False, "product": False}
-    normalization = {"advertisers": "advertiser", "shop": "store", "shops": "store", "products": "product"}
-    rows = (
-        db.query(TTBSyncCursor.resource_type, TTBSyncCursor.last_rev)
-        .filter(
-            TTBSyncCursor.workspace_id == int(workspace_id),
-            TTBSyncCursor.auth_id == int(auth_id),
-            TTBSyncCursor.provider == "tiktok-business",
-        )
-        .all()
-    )
-    for resource_type, last_rev in rows:
-        key = normalization.get((resource_type or "").strip().lower(), (resource_type or "").strip().lower())
-        if key in required and (last_rev or "").strip():
-            required[key] = True
-    if not required["bc"]:
-        required["bc"] = _has_records(db, TTBBusinessCenter, workspace_id=workspace_id, auth_id=auth_id)
-    if not required["advertiser"]:
-        required["advertiser"] = _has_records(db, TTBAdvertiser, workspace_id=workspace_id, auth_id=auth_id)
-    if not required["store"]:
-        required["store"] = _has_records(db, TTBStore, workspace_id=workspace_id, auth_id=auth_id)
-    if not required["product"]:
-        required["product"] = _has_records(db, TTBProduct, workspace_id=workspace_id, auth_id=auth_id)
-    return not all(required.values())
-
-
-def _run_provider_scope_now(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    scope: Literal["meta", "products"],
-    options: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, Any]]:
-    """Synchronously run a provider scope to backfill missing data."""
-    handler = provider_registry.get("tiktok-business")
-    if handler is None:
-        backfill_logger.error("provider handler not registered; cannot backfill scope=%s", scope)
-        return None
-    envelope = {
-        "envelope_version": 1,
-        "provider": "tiktok-business",
-        "scope": scope,
-        "workspace_id": int(workspace_id),
-        "auth_id": int(auth_id),
-        "options": options or {},
-    }
-    try:
-        return asyncio.run(
-            handler.run_scope(
-                db=db,
-                envelope=envelope,
-                scope=scope,
-                logger=backfill_logger,
-            )
-        )
-    except RuntimeError as exc:
-        backfill_logger.warning("backfill skipped; unable to create event loop: %s", exc)
-    except Exception:
-        backfill_logger.exception("backfill scope=%s failed", scope)
-    return None
-
-
-def _backfill_meta_if_needed(db: Session, *, workspace_id: int, auth_id: int) -> None:
-    """Enqueue a meta sync task if the account appears to be missing meta data."""
-    try:
-        _run_provider_scope_now(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            scope="meta",
-            options={"page_size": 200},
-        )
-    except Exception:
-        backfill_logger.exception(
-            "failed to backfill meta synchronously",
-            extra={"workspace_id": workspace_id, "auth_id": auth_id},
-        )
-    try:
-        enqueue_meta_sync(workspace_id=int(workspace_id), auth_id=int(auth_id))
-    except Exception:
-        backfill_logger.exception("failed to enqueue meta backfill", extra={"workspace_id": workspace_id, "auth_id": auth_id})
-
-
-def _backfill_products_if_needed(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    store_id: str,
-    advertiser_id: Optional[str],
-) -> None:
-    """Enqueue a products sync task if the store appears to be missing products."""
-    options: Dict[str, Any] = {
-        "mode": "full",
-        "store_id": str(store_id),
-        "product_eligibility": "gmv_max",
-    }
-    if advertiser_id:
-        options["advertiser_id"] = str(advertiser_id)
-    _run_provider_scope_now(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        scope="products",
-        options=options,
-    )
-
-
-def _ensure_account_meta_seeded(db: Session, *, workspace_id: int, account: OAuthAccountTTB) -> None:
-    """Ensure that an account has meta data; if not, enqueue a meta sync."""
-    if account.status != "active":
-        return
-    auth_id = int(account.id)
-    workspace_val = int(workspace_id)
-    if not _needs_account_bootstrap(db, workspace_id=workspace_val, auth_id=auth_id):
-        return
-    try:
-        result = enqueue_meta_sync(workspace_id=workspace_val, auth_id=auth_id)
-        logger.info(
-            "auto meta sync enqueued from accounts list",
-            extra={
-                "provider": "tiktok-business",
-                "workspace_id": workspace_val,
-                "auth_id": auth_id,
-                "task_name": result.task_name,
-                "idempotency_key": result.idempotency_key,
-            },
-        )
-    except Exception:
-        logger.exception(
-            "failed to enqueue auto meta sync from accounts list",
-            extra={
-                "provider": "tiktok-business",
-                "workspace_id": workspace_val,
-                "auth_id": auth_id,
-            },
-        )
-
-
 def _serialize_binding_config(
     row: TTBBindingConfig | None, balance: Any | None = None
 ) -> GMVMaxBindingConfig:
@@ -522,6 +367,9 @@ def _serialize_binding_config(
             currency=getattr(value, "currency", None),
             cash_balance=float(getattr(value, "valid_cash_balance", None) or getattr(value, "cash_balance", 0) or 0)
             if getattr(value, "valid_cash_balance", None) is not None or getattr(value, "cash_balance", None) is not None
+            else None,
+            budget_remaining=float(getattr(value, "budget_remaining"))
+            if getattr(value, "budget_remaining", None) is not None
             else None,
             fetched_at=_iso(fetched),
         )
@@ -851,22 +699,6 @@ def _coerce_utc(value: Optional[datetime]) -> Optional[datetime]:
     return value.astimezone(timezone.utc)
 
 
-def _options_match(params: Dict[str, Any], *, auth_id: int, advertiser_id: str, store_id: str) -> bool:
-    """Check if a schedule's params match a given auth/advertiser/store combination and gmv_max eligibility."""
-    raw_auth = params.get("auth_id") or params.get("authId")
-    if raw_auth is None or int(raw_auth) != int(auth_id):
-        return False
-    options = params.get("options") or {}
-    eligibility = str(options.get("product_eligibility") or "").strip().lower()
-    if eligibility not in ("", "gmv_max"):
-        return False
-    if str(options.get("advertiser_id")) != str(advertiser_id):
-        return False
-    if str(options.get("store_id")) != str(store_id):
-        return False
-    return True
-
-
 def _enforce_products_limits(
     db: Session,
     *,
@@ -878,6 +710,14 @@ def _enforce_products_limits(
     """Ensure that product syncs are not executed concurrently or too frequently."""
     now = datetime.now(timezone.utc)
     lookback = now - timedelta(days=1)
+    # Apply the account/store scope in SQL before considering recent runs.
+    # Limiting a workspace-wide prefix first lets unrelated stores hide an
+    # active or rate-limited target run.
+    params = Schedule.params_json
+    options = params["options"]
+    eligibility = func.lower(
+        func.coalesce(options["product_eligibility"].as_string(), "")
+    )
     rows = (
         db.query(ScheduleRun, Schedule)
         .join(Schedule, Schedule.id == ScheduleRun.schedule_id)
@@ -885,15 +725,18 @@ def _enforce_products_limits(
             ScheduleRun.workspace_id == int(workspace_id),
             Schedule.task_name == SYNC_TASKS["products"],
             ScheduleRun.created_at >= lookback,
+            or_(
+                params["auth_id"].as_integer() == int(auth_id),
+                params["authId"].as_integer() == int(auth_id),
+            ),
+            options["advertiser_id"].as_string() == str(advertiser_id),
+            options["store_id"].as_string() == str(store_id),
+            eligibility.in_(("", "gmv_max")),
         )
         .order_by(ScheduleRun.created_at.desc())
-        .limit(50)
         .all()
     )
-    for run, schedule in rows:
-        params = schedule.params_json or {}
-        if not _options_match(params, auth_id=auth_id, advertiser_id=advertiser_id, store_id=store_id):
-            continue
+    for run, _schedule in rows:
         if run.status in {"enqueued", "running"}:
             raise APIError(
                 "SYNC_IN_PROGRESS",
@@ -907,7 +750,6 @@ def _enforce_products_limits(
                 "GMV Max product sync was triggered too recently.",
                 status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        break
 
 
 def _get_business_center(
@@ -1064,31 +906,31 @@ def _validate_bc_alignment(
             raise APIError(
                 "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
                 "Advertiser belongs to a different business center.",
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
         if store_candidates and normalized_expected not in store_candidates:
             raise APIError(
                 "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
                 "Store belongs to a different business center.",
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
     if advertiser_primary and store_direct and advertiser_primary != store_direct:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
             "Advertiser and store are not linked to the same business center.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     if advertiser_primary and store_authorized and advertiser_primary != store_authorized:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
             "Advertiser and store are not linked to the same business center.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     if normalized_expected and store_primary and normalized_expected != store_primary:
         raise APIError(
             "BC_MISMATCH_BETWEEN_ADVERTISER_AND_STORE",
             "Advertiser and store are not linked to the same business center.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
 
@@ -1165,12 +1007,6 @@ __all__ = [
     "_extract_sync_summary",
     "_serialize_binding",
     "_serialize_account_summary",
-    "_has_records",
-    "_needs_account_bootstrap",
-    "_run_provider_scope_now",
-    "_backfill_meta_if_needed",
-    "_backfill_products_if_needed",
-    "_ensure_account_meta_seeded",
     "_serialize_binding_config",
     "_normalize_if_none_match",
     "_poll_for_meta_refresh",
@@ -1198,7 +1034,6 @@ __all__ = [
     "_meta_summary_from_dict",
     "_perform_meta_sync",
     "logger",
-    "backfill_logger",
     "SUPPORTED_PROVIDERS",
     "SYNC_TASKS",
 ]

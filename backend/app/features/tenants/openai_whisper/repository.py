@@ -36,8 +36,11 @@ def _apply_overall_status(job: OpenAIWhisperJob) -> None:
     if any(state == "failed" for state in statuses):
         job.status = "failed"
         return
-    if any(state in {"processing", "pending"} for state in statuses):
+    if any(state == "processing" for state in statuses):
         job.status = "processing"
+        return
+    if any(state == "pending" for state in statuses):
+        job.status = "pending"
         return
     job.status = "success"
 

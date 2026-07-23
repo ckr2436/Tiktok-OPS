@@ -1,0 +1,82 @@
+{
+  "title": "About the Guide",
+  "url": "https://business-api.tiktok.com/portal/docs/remove-or-add-back-gmv-max-creatives/v1.3",
+  "doc_type": "reference",
+  "sections": [
+    {
+      "title": "Recommended paths for different scenarios",
+      "tables": [
+        {
+          "heading": "Recommended paths for different scenarios",
+          "headers": [
+            "Scenario",
+            "Recommendation"
+          ],
+          "rows": [
+            {
+              "Scenario": "Scenario",
+              "Recommendation": "Recommendation"
+            },
+            {
+              "Scenario": "I am a new developer who wants to get onboarded quickly and integrate with the API.",
+              "Recommendation": "See Get Started ."
+            },
+            {
+              "Scenario": "I am a new developer and I want to know the maximum number of developer apps allowed for each developer account, the relationship between developer account and advertiser account, and the maximum number of campaigns, ad groups and ads within an advertiser account.",
+              "Recommendation": "See Account structure and Ads structure ."
+            },
+            {
+              "Scenario": "I am a developer interested in learning about the request and response schemas of endpoints.",
+              "Recommendation": "See API Reference ."
+            },
+            {
+              "Scenario": "I am a product manager and I want to explore all API offerings.",
+              "Recommendation": "See API Reference ."
+            },
+            {
+              "Scenario": "I am a marketing professional looking for success stories.",
+              "Recommendation": "See Success Stories ."
+            },
+            {
+              "Scenario": "I want to stay updated on a weekly basis with the latest enhancements and changes.",
+              "Recommendation": "See What's New and Developer Blog ."
+            },
+            {
+              "Scenario": "I want to subscribe to the weekly newsletter.",
+              "Recommendation": "Go to the homepage and scroll down to find the Newsletter signup section."
+            },
+            {
+              "Scenario": "I'm integrating with a set of endpoints and want a deeper understanding of the features involved.",
+              "Recommendation": "See guides for specific APIs ( Marketing API , Organic API , or Business Messaging API )."
+            },
+            {
+              "Scenario": "I've gone through the available documents but still need further clarification on certain features.",
+              "Recommendation": "See TikTok Business Help Center ."
+            },
+            {
+              "Scenario": "I have specific queries during the integration and want to find readily available answers.",
+              "Recommendation": "See FAQs ."
+            },
+            {
+              "Scenario": "I want to learn about how to integrate with a specific feature, such as Carousel Ads.",
+              "Recommendation": "See Use Cases ."
+            },
+            {
+              "Scenario": "I'm facing technical issues I can't resolve on my own and need technical assistance.",
+              "Recommendation": "See Need support ."
+            },
+            {
+              "Scenario": "I'm familiar with TikTok Ads Manager and want to know how to create similar ads using the API.",
+              "Recommendation": "See Mapping between campaign features in TikTok Ads Manager and API configurations and API Reference ."
+            },
+            {
+              "Scenario": "I can't find the information I need, and it seems there is no document for it. I believe many developers would benefit from such a document and would like to request its creation.",
+              "Recommendation": "See Need support and provide documentation feedback using the feedback window, providing details about the information you're seeking and explaining how it would benefit a large number of developers. The API documentation team will review your request and consider creating the requested document to provide the necessary information."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "grabbedAt": "2026-07-17T12:53:26.430595Z"
+}

@@ -381,7 +381,10 @@ def list_gmvmax_campaigns(
     total = query.count()
     offset = (page - 1) * page_size
     items = (
-        query.order_by(*_order_desc_nulls_last(GmvCampaign.ext_created_time))
+        query.order_by(
+            *_order_desc_nulls_last(GmvCampaign.ext_created_time),
+            GmvCampaign.id.desc(),
+        )
         .offset(offset)
         .limit(page_size)
         .all()

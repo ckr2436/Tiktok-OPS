@@ -707,6 +707,23 @@ class BaseMetricMixin(CoreFinancialMetricMixin, ImpressionMetricMixin):
     """Common metric columns reused across tables."""
 
 
+class FactFreshnessMixin:
+    """Provenance and advertiser-local settlement state for mutable facts."""
+
+    source_observed_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    ingested_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    is_final: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0")
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+
+
 class CampaignMetricMixin(CoreFinancialMetricMixin, ImpressionMetricMixin):
     """Financial + exposure metrics supported at the campaign level.
 
@@ -744,7 +761,11 @@ class TenSecondLiveMetricExtras:
     )
 
 
-class GmvOverviewMetricsDaily(Base, CoreFinancialMetricMixin):
+class GmvOverviewMetricsDaily(
+    Base,
+    CoreFinancialMetricMixin,
+    FactFreshnessMixin,
+):
     """Advertiser-level daily metrics (financial only)."""
 
     __tablename__ = "gmv_overview_metrics_daily"
@@ -768,7 +789,11 @@ class GmvOverviewMetricsDaily(Base, CoreFinancialMetricMixin):
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-class GmvOverviewMetricsHourly(Base, CoreFinancialMetricMixin):
+class GmvOverviewMetricsHourly(
+    Base,
+    CoreFinancialMetricMixin,
+    FactFreshnessMixin,
+):
     """Advertiser-level hourly metrics (financial only)."""
 
     __tablename__ = "gmv_overview_metrics_hourly"
@@ -900,7 +925,7 @@ class GmvCampaignMetricsHourly(
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
-class GmvProductMetricsDaily(Base, BaseMetricMixin):
+class GmvProductMetricsDaily(Base, BaseMetricMixin, FactFreshnessMixin):
     """Product-level daily metrics."""
 
     __tablename__ = "gmv_product_metrics_daily"
@@ -936,7 +961,7 @@ class GmvProductMetricsDaily(Base, BaseMetricMixin):
     bid_type: Mapped[str | None] = mapped_column(String(64), default=None)
 
 
-class GmvProductMetricsHourly(Base, BaseMetricMixin):
+class GmvProductMetricsHourly(Base, BaseMetricMixin, FactFreshnessMixin):
     """Product-level hourly metrics."""
 
     __tablename__ = "gmv_product_metrics_hourly"
@@ -970,6 +995,71 @@ class GmvProductMetricsHourly(Base, BaseMetricMixin):
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     bid_type: Mapped[str | None] = mapped_column(String(64), default=None)
+
+
+class GmvProductOrderEvent(Base):
+    """Product order timing inferred from product-level hourly GMV Max reports."""
+
+    __tablename__ = "gmv_product_order_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "campaign_id",
+            "item_group_id",
+            "order_time_hour",
+            name="uk_product_order_event_hour",
+        ),
+        Index(
+            "idx_product_order_events_product_time",
+            "workspace_id",
+            "auth_id",
+            "item_group_id",
+            "order_time_hour",
+        ),
+        Index(
+            "idx_product_order_events_campaign_time",
+            "campaign_id",
+            "order_time_hour",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auth_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    order_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
+    advertiser_timezone: Mapped[str | None] = mapped_column(String(64), default=None)
+    order_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    gross_revenue_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    cost_cents: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    cost_per_order: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    roi: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="GMVMAX_PRODUCT_HOURLY")
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
 
 
 class GmvCreativeMetricsDaily(Base, BaseMetricMixin, VideoViewRateMetricMixin):
@@ -1055,19 +1145,11 @@ class GmvCreativeMetrics10Min(Base, BaseMetricMixin, VideoViewRateMetricMixin):
             "advertiser_id",
             "store_id",
             "campaign_id",
+            "item_group_id",
             "creative_id",
             "stat_time_day",
             "snapshot_at",
-            name="uk_creative_10min",
-        ),
-        Index(
-            "idx_creative_10min_campaign",
-            "workspace_id",
-            "auth_id",
-            "campaign_id",
-            "creative_id",
-            "stat_time_day",
-            "snapshot_at",
+            name="uk_creative_10min_scope_item",
         ),
     )
 
@@ -1077,9 +1159,23 @@ class GmvCreativeMetrics10Min(Base, BaseMetricMixin, VideoViewRateMetricMixin):
     advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
     creative_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    creative_status: Mapped[str | None] = mapped_column(String(32), default=None)
     stat_time_day: Mapped[date] = mapped_column(Date, nullable=False)
     snapshot_at: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
+    source_observed_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    ingested_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    is_final: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0")
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
 
 
 class GmvDurationMetricsDaily(Base, BaseMetricMixin, AllShopsMetricMixin):
@@ -1234,4 +1330,3 @@ class GmvLivestreamMetricsHourly(
     stat_time_hour: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
     live_views: Mapped[int | None] = mapped_column(BigInteger, default=None)
     live_follows: Mapped[int | None] = mapped_column(BigInteger, default=None)
-

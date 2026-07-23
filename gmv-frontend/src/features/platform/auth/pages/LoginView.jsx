@@ -247,7 +247,7 @@ export default function LoginView() {
               <EyeButton on={showPwd} onToggle={() => setShowPwd(v => !v)} />
             </div>
             <div className="small-muted" style={{ marginTop: 6 }}>
-              忘记密码？请联系管理员 <a href="mailto:support@drafyn.com">support@drafyn.com</a>
+              忘记密码？请联系管理员 <a href="mailto:support@myupona.com">support@myupona.com</a>
             </div>
           </FormField>
 

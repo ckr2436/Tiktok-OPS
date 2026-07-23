@@ -6,6 +6,7 @@ from typing import Any
 from celery.utils.log import get_task_logger
 
 from app.celery_app import celery_app
+from app.core.config import settings
 from app.data.db import SessionLocal
 from app.services.hermes_agent.service import execute_run
 
@@ -15,7 +16,7 @@ logger = get_task_logger(__name__)
 @celery_app.task(
     name="hermes_agent.run",
     bind=True,
-    queue="gmv.tasks.hermes_agent",
+    queue=settings.HERMES_AGENT_TASK_QUEUE,
     max_retries=2,
     default_retry_delay=15,
 )

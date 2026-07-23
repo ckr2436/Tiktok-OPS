@@ -1,0 +1,25 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -819,6 +819,13 @@ class APIServerAdapter(BasePlatformAdapter):
+
+         user_config = _load_gateway_config()
+         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
++        model_config = user_config.get("model") or {}
++        configured_max_tokens = model_config.get("max_tokens")
++        try:
++            max_tokens = int(configured_max_tokens) if configured_max_tokens is not None else None
++        except (TypeError, ValueError):
++            logger.warning("Ignoring invalid model.max_tokens=%r", configured_max_tokens)
++            max_tokens = None
+
+         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+
+@@ -839,6 +846,7 @@ class APIServerAdapter(BasePlatformAdapter):
+             tool_progress_callback=tool_progress_callback,
+             tool_start_callback=tool_start_callback,
+             tool_complete_callback=tool_complete_callback,
++            max_tokens=max_tokens,
+             session_db=self._ensure_session_db(),
+             fallback_model=fallback_model,
+             reasoning_config=reasoning_config,

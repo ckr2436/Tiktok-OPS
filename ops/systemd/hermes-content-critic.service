@@ -1,0 +1,36 @@
+[Unit]
+Description=Hermes Independent Content Critic API Server for GMV Ops
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes/hermes-agent
+EnvironmentFile=/etc/gmv/ai-gateway.env
+Environment=HERMES_HOME=/home/hermes/.hermes-content-critic
+Environment=API_SERVER_ENABLED=true
+Environment=API_SERVER_HOST=127.0.0.1
+Environment=API_SERVER_PORT=8646
+Environment=API_SERVER_MODEL_NAME=gmv-ops-hermes-content-critic
+ExecStart=/home/hermes/hermes-agent/venv/bin/hermes gateway
+Restart=always
+RestartSec=10
+TimeoutStopSec=180
+KillSignal=SIGTERM
+LimitNOFILE=32768
+TasksMax=256
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/hermes/.hermes-content-critic /home/hermes/hermes-agent
+MemoryHigh=768M
+MemoryMax=1024M
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,31 @@ import { apiRoot } from '@/core/config.js'
 const MAX_INPUT_BUFFERED_AMOUNT = 1024 * 1024
 const OUTPUT_FLUSH_INTERVAL_MS = 16
 const CTRL_C = '\x03'
+const TERMINAL_SHORTCUT_ROWS = [
+  [
+    { label: 'ESC', data: '\x1b', title: 'Escape' },
+    { label: 'TAB', data: '\t', title: 'Tab' },
+    { label: '|', data: '|', title: '竖线' },
+    { label: '-', data: '-', title: '短横线' },
+    { label: '/', data: '/', title: 'Linux 路径分隔符' },
+  ],
+  [
+    { label: 'HOME', data: '\x1b[H', title: '行首' },
+    { label: 'END', data: '\x1b[F', title: '行尾' },
+    { label: 'PGUP', data: '\x1b[5~', title: '向上翻页' },
+    { label: 'PGDN', data: '\x1b[6~', title: '向下翻页' },
+    { label: 'INS', data: '\x1b[2~', title: 'Insert' },
+    { label: 'DEL', data: '\x1b[3~', title: 'Delete' },
+  ],
+  [
+    { label: '←', data: '\x1b[D', title: '左方向键' },
+    { label: '↑', data: '\x1b[A', title: '上方向键' },
+    { label: '↓', data: '\x1b[B', title: '下方向键' },
+    { label: '→', data: '\x1b[C', title: '右方向键' },
+    { label: 'ENTER', data: '\r', title: '回车' },
+    { label: '⌫', data: '\x7f', title: '退格' },
+  ],
+]
 const SAFE_COMMAND_TEMPLATE = `pwd
 whoami
 printf 'UNDER_SCORE_TEST=%s\n' ok`
@@ -60,47 +85,39 @@ function encodeInputBase64(data) {
   return window.btoa(binary)
 }
 
-function terminalKeyToBytes(event) {
-  if (event.isComposing) return null
-  const key = event.key
-  const lowerKey = typeof key === 'string' ? key.toLowerCase() : ''
-  if ((event.ctrlKey || event.metaKey) && lowerKey === 'v') return null
-  if (event.metaKey) return null
-  if (event.ctrlKey && !event.altKey) {
-    if (lowerKey.length === 1 && lowerKey >= 'a' && lowerKey <= 'z') {
-      return String.fromCharCode(lowerKey.charCodeAt(0) - 96)
-    }
-    if (key === '[') return '\x1b'
-    if (key === ']') return '\x1d'
-    if (key === '\\') return '\x1c'
-    if (key === '^') return '\x1e'
-    if (key === '_') return '\x1f'
-  }
-  const specialKeys = {
-    Enter: '\r',
-    Escape: '\x1b',
-    Backspace: '\x7f',
-    Tab: '\t',
-    ArrowUp: '\x1b[A',
-    ArrowDown: '\x1b[B',
-    ArrowRight: '\x1b[C',
-    ArrowLeft: '\x1b[D',
-    Insert: '\x1b[2~',
-    Delete: '\x1b[3~',
-    Home: '\x1b[H',
-    End: '\x1b[F',
-    PageUp: '\x1b[5~',
-    PageDown: '\x1b[6~',
-  }
-  if (specialKeys[key]) return specialKeys[key]
-  if (event.altKey && key.length === 1) return `\x1b${key}`
-  if (!event.ctrlKey && !event.altKey && key.length === 1) return key
-  return null
-}
-
 function normalizePastedText(text) {
   if (!text) return ''
   return String(text).replace(/\r\n/g, '\r').replace(/\n/g, '\r')
+}
+
+function applyCtrlModifier(data) {
+  if (!data || data.length !== 1) return data
+  const character = data.toLowerCase()
+  if (character >= 'a' && character <= 'z') {
+    return String.fromCharCode(character.charCodeAt(0) - 96)
+  }
+  const ctrlCharacters = {
+    '@': '\x00',
+    '[': '\x1b',
+    '\\': '\x1c',
+    ']': '\x1d',
+    '^': '\x1e',
+    '_': '\x1f',
+    '?': '\x7f',
+  }
+  return ctrlCharacters[data] ?? data
+}
+
+function applyTerminalModifiers(data, ctrl, alt) {
+  if (!data || (!ctrl && !alt)) return data
+  const modifierCode = ctrl && alt ? 7 : ctrl ? 5 : 3
+  const cursorKey = data.match(/^\x1b\[([A-DHF])$/)
+  if (cursorKey) return `\x1b[1;${modifierCode}${cursorKey[1]}`
+  const tildeKey = data.match(/^\x1b\[(\d+)~$/)
+  if (tildeKey) return `\x1b[${tildeKey[1]};${modifierCode}~`
+
+  const ctrlData = ctrl ? applyCtrlModifier(data) : data
+  return alt ? `\x1b${ctrlData}` : ctrlData
 }
 
 export default function PlatformWebShellPage() {
@@ -113,8 +130,12 @@ export default function PlatformWebShellPage() {
   const resizeTimerRef = useRef(null)
   const connectedRef = useRef(false)
   const manuallyClosedRef = useRef(false)
+  const ctrlActiveRef = useRef(false)
+  const altActiveRef = useRef(false)
   const [status, setStatus] = useState('未连接')
   const [commandText, setCommandText] = useState('')
+  const [ctrlActive, setCtrlActive] = useState(false)
+  const [altActive, setAltActive] = useState(false)
   const wsUrlCandidates = useMemo(() => buildWebSocketUrlCandidates(), [])
 
   const focusTerminal = () => {
@@ -180,6 +201,34 @@ export default function PlatformWebShellPage() {
     return sendJson({ type: 'input_b64', data_b64: dataB64 })
   }
 
+  const setModifier = (modifier, active) => {
+    if (modifier === 'ctrl') {
+      ctrlActiveRef.current = active
+      setCtrlActive(active)
+    } else {
+      altActiveRef.current = active
+      setAltActive(active)
+    }
+  }
+
+  const sendModifiedInput = (data) => {
+    if (!data) return false
+    const ctrl = ctrlActiveRef.current
+    const alt = altActiveRef.current
+    const modifiedData = applyTerminalModifiers(data, ctrl, alt)
+    const sent = sendRawInput(modifiedData)
+    if (sent) {
+      if (ctrl) setModifier('ctrl', false)
+      if (alt) setModifier('alt', false)
+    }
+    return sent
+  }
+
+  const sendShortcut = (data) => {
+    sendModifiedInput(data)
+    window.setTimeout(focusTerminal, 0)
+  }
+
   const sendResize = () => {
     const term = xtermRef.current
     if (!term) return
@@ -197,14 +246,6 @@ export default function PlatformWebShellPage() {
   const scheduleResize = () => {
     if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current)
     resizeTimerRef.current = window.setTimeout(sendResize, 120)
-  }
-
-  const handleTerminalKeyDown = (event) => {
-    const data = terminalKeyToBytes(event)
-    if (!data) return
-    event.preventDefault()
-    event.stopPropagation()
-    sendRawInput(data)
   }
 
   const handleTerminalPaste = (event) => {
@@ -227,6 +268,18 @@ export default function PlatformWebShellPage() {
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.open(terminalRef.current)
+    // xterm writes mobile/IME input through its hidden textarea. Listening to
+    // onData is required because soft keyboards often emit no usable keydown.
+    const inputDisposable = term.onData((data) => sendModifiedInput(data))
+    const helperTextarea = terminalRef.current?.querySelector('.xterm-helper-textarea')
+    if (helperTextarea) {
+      helperTextarea.setAttribute('inputmode', 'text')
+      helperTextarea.setAttribute('enterkeyhint', 'enter')
+      helperTextarea.setAttribute('autocapitalize', 'off')
+      helperTextarea.setAttribute('autocomplete', 'off')
+      helperTextarea.setAttribute('autocorrect', 'off')
+      helperTextarea.setAttribute('spellcheck', 'false')
+    }
     fitAddon.fit()
     term.writeln('欢迎使用平台 WebShell，连接后可直接管理平台服务器。')
     term.writeln('提示：输入已经改为 base64 字节传输，用于避免下划线和控制字符被改写。')
@@ -238,6 +291,7 @@ export default function PlatformWebShellPage() {
     window.addEventListener('resize', onResize)
     return () => {
       manuallyClosedRef.current = true
+      inputDisposable.dispose()
       if (resizeDisposable) resizeDisposable.dispose()
       window.removeEventListener('resize', onResize)
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current)
@@ -348,6 +402,12 @@ export default function PlatformWebShellPage() {
     window.setTimeout(focusTerminal, 0)
   }
 
+  const toggleModifier = (modifier) => {
+    const active = modifier === 'ctrl' ? ctrlActiveRef.current : altActiveRef.current
+    setModifier(modifier, !active)
+    window.setTimeout(focusTerminal, 0)
+  }
+
   const runCommand = () => {
     const payload = normalizeCommandText(commandText)
     if (sendRawInput(payload)) {
@@ -380,11 +440,62 @@ export default function PlatformWebShellPage() {
         role="application"
         aria-label="WebShell terminal"
         onMouseDown={() => window.setTimeout(focusTerminal, 0)}
+        onTouchStart={() => window.setTimeout(focusTerminal, 0)}
         onClick={() => window.setTimeout(focusTerminal, 0)}
-        onKeyDownCapture={handleTerminalKeyDown}
         onPasteCapture={handleTerminalPaste}
-        style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden', outline: 'none' }}
+        style={{ width: '100%', height: 520, borderRadius: 8, overflow: 'hidden', outline: 'none', touchAction: 'manipulation' }}
       />
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+        <div className="small-muted">快捷键（CTRL / ALT 点亮后作用于下一次按键）</div>
+        <div role="toolbar" aria-label="WebShell 快捷键" style={{ display: 'grid', gap: 6, padding: '2px 2px 4px' }}>
+          {TERMINAL_SHORTCUT_ROWS.map((shortcuts, rowIndex) => (
+            <div
+              key={shortcuts.map((shortcut) => shortcut.label).join('-')}
+              role="group"
+              aria-label={`快捷键第 ${rowIndex + 1} 行`}
+              style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+            >
+              {rowIndex === 0 && (
+                <>
+                  <button
+                    type="button"
+                    className={ctrlActive ? 'btn' : 'btn ghost'}
+                    aria-pressed={ctrlActive}
+                    title="点亮后与下一次按键组合"
+                    onClick={() => toggleModifier('ctrl')}
+                    style={{ flex: '0 0 auto', minWidth: 58 }}
+                  >
+                    CTRL
+                  </button>
+                  <button
+                    type="button"
+                    className={altActive ? 'btn' : 'btn ghost'}
+                    aria-pressed={altActive}
+                    title="点亮后与下一次按键组合"
+                    onClick={() => toggleModifier('alt')}
+                    style={{ flex: '0 0 auto', minWidth: 52 }}
+                  >
+                    ALT
+                  </button>
+                </>
+              )}
+              {shortcuts.map((shortcut) => (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  key={shortcut.label}
+                  title={shortcut.title}
+                  aria-label={shortcut.title}
+                  onClick={() => sendShortcut(shortcut.data)}
+                  style={{ flex: '0 0 auto', minWidth: shortcut.label.length > 3 ? 58 : 42 }}
+                >
+                  {shortcut.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
       <div style={{ display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <strong>安全命令输入</strong>

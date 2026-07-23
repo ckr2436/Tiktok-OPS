@@ -4,10 +4,22 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from app.celery_app import celery_app
+from app.data.db import SessionLocal
 from app.gmvmax.domain.monitoring_strategy import GmvMaxMonitoringStrategyRepository
+from app.gmvmax.services.sync_execution_lock import (
+    acquire_account_sync_fence,
+    build_account_sync_lock,
+    release_account_sync_fence,
+)
 from app.gmvmax.services.sync_service import GmvMaxSyncService
+from app.services.ttb_api import (
+    TTBHttpError,
+    TTBRateLimitBudgetError,
+    ttb_retry_countdown,
+)
 from app.services.scheduler_schema_utils import validate_params_or_raise
 from app.services.scheduler_task_registry import get_task_config
 
@@ -126,13 +138,13 @@ def run_gmvmax_sync_scheduler() -> dict[str, Any]:
 
 @celery_app.task(
     name="gmvmax.sync.run_for_strategy",
-    max_retries=3,
+    bind=True,
+    max_retries=10,
     default_retry_delay=60,
 )
-def run_gmvmax_sync_for_strategy(strategy_id: int) -> dict[str, Any]:
+def run_gmvmax_sync_for_strategy(self, strategy_id: int) -> dict[str, Any]:
     now = _now_utc()
     repo = GmvMaxMonitoringStrategyRepository()
-    service = GmvMaxSyncService()
 
     strategy = repo.get_by_id(int(strategy_id))
     if not strategy:
@@ -143,11 +155,82 @@ def run_gmvmax_sync_for_strategy(strategy_id: int) -> dict[str, Any]:
             "gmvmax sync skipped: strategy disabled", extra={"strategy_id": strategy_id, "level": strategy.level}
         )
         return {"skipped": True, "reason": "disabled"}
+    if strategy.auth_id is None:
+        reason = "missing exact auth_id scope"
+        repo.mark_error(strategy.id, now, reason)
+        logger.error(
+            "gmvmax sync skipped: strategy scope is incomplete",
+            extra={
+                "strategy_id": strategy.id,
+                "workspace_id": strategy.workspace_id,
+                "level": strategy.level,
+            },
+        )
+        return {
+            "skipped": True,
+            "reason": "missing_auth_scope",
+            "strategy_id": strategy.id,
+        }
 
     logger.info(
         "gmvmax sync start",
         extra={"strategy_id": strategy.id, "workspace_id": strategy.workspace_id, "level": strategy.level},
     )
+    lock = build_account_sync_lock(
+        workspace_id=int(strategy.workspace_id),
+        auth_id=int(strategy.auth_id),
+        # A retry/redelivery keeps the Celery request id.  Add a fresh nonce
+        # for every execution so a stale delivery can never verify or release
+        # the newer delivery's Redis lock.
+        owner_token=f"{self.request.id or f'strategy:{strategy.id}'}:{uuid4()}",
+    )
+    if not lock.acquire(timeout=1.0, retry_interval=0.1):
+        # The inflight account sync may cover a different level or report
+        # window. Retry this exact strategy instead of marking it successful.
+        logger.warning(
+            "gmvmax strategy deferred: account sync already running",
+            extra={
+                "strategy_id": strategy.id,
+                "workspace_id": strategy.workspace_id,
+                "auth_id": strategy.auth_id,
+                "level": strategy.level,
+            },
+        )
+        raise self.retry(
+            exc=RuntimeError("GMV Max account sync already running"),
+            countdown=min(
+                120,
+                15 * (int(self.request.retries or 0) + 1),
+            ),
+        )
+    fence = None
+    with SessionLocal() as fence_db:
+        try:
+            fence = acquire_account_sync_fence(
+                fence_db,
+                redis_lock=lock,
+                workspace_id=int(strategy.workspace_id),
+                auth_id=int(strategy.auth_id),
+                owner_token=str(lock.owner_token),
+            )
+            if fence is None:
+                fence_db.rollback()
+            else:
+                fence_db.commit()
+        except Exception:
+            fence_db.rollback()
+            lock.release()
+            raise
+    if fence is None:
+        lock.release()
+        raise self.retry(
+            exc=RuntimeError("GMV Max durable account sync lease is busy"),
+            countdown=min(
+                120,
+                15 * (int(self.request.retries or 0) + 1),
+            ),
+        )
+    service = GmvMaxSyncService(execution_guard=fence.assert_current)
     try:
         service.sync_strategy(strategy, now)
         repo.mark_success(strategy.id, now)
@@ -159,4 +242,25 @@ def run_gmvmax_sync_for_strategy(strategy_id: int) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         repo.mark_error(strategy.id, now, str(exc))
         logger.exception("gmvmax sync failed", extra={"strategy_id": strategy.id, "level": strategy.level})
-        raise
+        countdown = (
+            ttb_retry_countdown(exc)
+            if isinstance(exc, (TTBRateLimitBudgetError, TTBHttpError))
+            else 60
+        )
+        raise self.retry(exc=exc, countdown=countdown)
+    finally:
+        with SessionLocal() as release_db:
+            try:
+                release_account_sync_fence(release_db, fence=fence)
+                release_db.commit()
+            except Exception:  # noqa: BLE001
+                release_db.rollback()
+                logger.exception(
+                    "gmvmax strategy durable fence release failed",
+                    extra={
+                        "strategy_id": strategy.id,
+                        "workspace_id": strategy.workspace_id,
+                        "auth_id": strategy.auth_id,
+                    },
+                )
+        lock.release()

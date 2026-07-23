@@ -15,3 +15,18 @@ export function formatError(error) {
   if (error?.message) return error.message;
   return 'Request failed';
 }
+
+export function isSyncRateLimitedError(error) {
+  if (!error) return false;
+  const status = error?.response?.status ?? error?.status;
+  const code = String(
+    error?.response?.data?.error?.code || error?.payload?.error?.code || error?.code || '',
+  ).toUpperCase();
+  const message = String(formatError(error) || '').toLowerCase();
+  return (
+    status === 429 ||
+    code === 'SYNC_RATE_LIMITED' ||
+    message.includes('sync was triggered too recently') ||
+    message.includes('同步任务触发过于频繁')
+  );
+}

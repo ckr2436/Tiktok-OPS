@@ -23,19 +23,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Verify Content Factory legacy guard
+        run: bash scripts/verify_content_factory_legacy_guard.sh
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-
-      - name: Enable corepack
-        run: corepack enable
+          node-version: '22'
 
       - name: Build FE
         run: |
           cd gmv-frontend
-          pnpm install --frozen-lockfile=false
-          pnpm build
+          npm ci
+          npm run build
 
       - name: Verify FE API prefix
         run: bash scripts/verify_fe_api_prefix.sh

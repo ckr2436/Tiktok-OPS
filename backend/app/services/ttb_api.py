@@ -10,16 +10,27 @@ TikTok Business API 客户端：
     * iter_stores()            -> /store/list/  （data.stores，页码分页）
     * iter_products()          -> /store/product/get/（data.store_products，页码分页）
 - URL 统一通过 app.services.ttb_http.build_url 构造，不重复 open_api/v1.3。
-- 令牌桶限速（默认 10 QPS），429/5xx 指数退避，page_size 强制上限 50（支持分页的接口才生效）。
+- 令牌桶限速（默认 10 QPS），429/5xx 指数退避，并按端点执行官方 page_size 上限。
 """
 
 import asyncio
+import hashlib
 import json
 import math
 import time
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, Iterable, Optional, Tuple, Literal, Sequence, Mapping
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    Iterable,
+    Literal,
+    Mapping,
+    Optional,
+    Tuple,
+)
 
 import httpx
 from tenacity import (
@@ -30,6 +41,7 @@ from tenacity import (
 )
 
 from app.core.config import settings
+from app.services.redis_client import get_redis_sync
 from app.services.ttb_http import build_url
 
 
@@ -69,9 +81,70 @@ class TTBHttpError(Exception):
         self.payload = payload
 
 
+class TTBRateLimitBudgetError(TTBApiError):
+    """A shared app or endpoint quota cannot be acquired within the wait budget."""
+
+
+class TTBPaginationError(TTBApiError):
+    """TikTok pagination metadata is contradictory or cannot make progress."""
+
+
+def ttb_retry_countdown(
+    exc: BaseException,
+    *,
+    default_seconds: int = 60,
+    maximum_seconds: int = 6 * 60 * 60,
+) -> int:
+    """Honor a shared quota reset without creating a one-minute retry storm."""
+
+    retry_after_ms: int | None = None
+    payload = getattr(exc, "payload", None)
+    if isinstance(payload, Mapping):
+        try:
+            retry_after_ms = int(payload.get("retry_after_ms"))
+        except (TypeError, ValueError):
+            retry_after_ms = None
+    if retry_after_ms is None or retry_after_ms <= 0:
+        return max(1, min(int(default_seconds), int(maximum_seconds)))
+    # Add a small drain margin so workers do not all wake on the exact Redis
+    # window boundary.
+    seconds = math.ceil(retry_after_ms / 1000) + 5
+    return max(1, min(int(seconds), int(maximum_seconds)))
+
+
+_RATE_LIMIT_SCRIPT = b"""
+for index = 1, #KEYS do
+    local current = tonumber(redis.call('GET', KEYS[index]) or '0')
+    local limit = tonumber(ARGV[index])
+    if current >= limit then
+        return {0, index, redis.call('PTTL', KEYS[index])}
+    end
+end
+for index = 1, #KEYS do
+    local current = redis.call('INCR', KEYS[index])
+    if current == 1 then
+        redis.call('PEXPIRE', KEYS[index], ARGV[#KEYS + index])
+    end
+end
+return {1, 0, 0}
+"""
+
+_COOLDOWN_SCRIPT = b"""
+local current = redis.call('PTTL', KEYS[1])
+local requested = tonumber(ARGV[1])
+if current < requested then
+    redis.call('SET', KEYS[1], '1', 'PX', requested)
+    return requested
+end
+return current
+"""
+
+
 # --------------------------- 常量/限流 ---------------------------
 
-_MAX_PAGE_SIZE = 50  # 官方上限
+_MAX_PAGE_SIZE = 50
+_TIKTOK_LARGE_PAGE_SIZE = 1000
+_MAX_PAGINATION_PAGES = 2000
 
 _ALLOWED_GMV_MAX_PROMOTION_TYPES: tuple[str, str] = (
     "PRODUCT",
@@ -118,9 +191,25 @@ def _clean_params_map(data: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+def _encode_query_arrays(params: Dict[str, Any], *keys: str) -> Dict[str, Any]:
+    """Encode TikTok GET array parameters using the v1.3 JSON-string contract."""
+    for key in keys:
+        value = params.get(key)
+        if isinstance(value, (list, tuple, set)):
+            params[key] = json.dumps(
+                [_remove_none(item) for item in value if item is not None],
+                ensure_ascii=False,
+            )
+    return params
+
+
 def _normalize_promotion_types(value: Any) -> list[str]:
     if isinstance(value, str):
-        candidates = [value]
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            decoded = value
+        candidates = list(decoded) if isinstance(decoded, list) else [decoded]
     elif isinstance(value, (list, tuple, set)):
         candidates = list(value)
     else:
@@ -180,7 +269,11 @@ def _ensure_gmvmax_campaign_filters(
     filtering_dict["gmv_max_promotion_types"] = formatted_types
 
     if top_level_raw is not None:
-        params["gmv_max_promotion_types"] = formatted_types
+        params["gmv_max_promotion_types"] = json.dumps(
+            formatted_types,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     else:
         params.pop("gmv_max_promotion_types", None)
 
@@ -192,12 +285,328 @@ def _ensure_gmvmax_campaign_filters(
     )
 
 
-def _clamp_page_size(x: Any, default: int = _MAX_PAGE_SIZE) -> int:
+def _page_size_limit(path: str) -> int:
+    """Return the documented limit for a paginated TikTok endpoint."""
+
+    normalized = f"/{str(path or '').strip('/')}/"
+    if normalized in {
+        "/gmv_max/report/get/",
+        "/report/integrated/get/",
+        "/ad/get/",
+    }:
+        return _TIKTOK_LARGE_PAGE_SIZE
+    if normalized in {
+        "/gmv_max/campaign/get/",
+        "/identity/get/",
+    }:
+        return 100
+    if normalized == "/store/product/get/":
+        return 100
+    if normalized == "/file/video/ad/search/":
+        return 100
+    return _MAX_PAGE_SIZE
+
+
+def _clamp_page_size(
+    x: Any,
+    default: int = _MAX_PAGE_SIZE,
+    *,
+    maximum: int = _MAX_PAGE_SIZE,
+) -> int:
     try:
         n = int(x)
     except Exception:
         n = default
-    return n if n <= _MAX_PAGE_SIZE else _MAX_PAGE_SIZE
+    return max(1, min(n, int(maximum)))
+
+
+def _pagination_int(
+    value: Any,
+    *,
+    field: str,
+    minimum: int,
+    page_info: Mapping[str, Any],
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise TTBPaginationError(
+            f"TikTok pagination field {field} must be an integer",
+            code="PAGINATION_METADATA_INVALID",
+            payload={"field": field, "value": value, "page_info": dict(page_info)},
+        )
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise TTBPaginationError(
+            f"TikTok pagination field {field} must be an integer",
+            code="PAGINATION_METADATA_INVALID",
+            payload={"field": field, "value": value, "page_info": dict(page_info)},
+        ) from exc
+    if isinstance(value, float) and value != parsed:
+        raise TTBPaginationError(
+            f"TikTok pagination field {field} must be an integer",
+            code="PAGINATION_METADATA_INVALID",
+            payload={"field": field, "value": value, "page_info": dict(page_info)},
+        )
+    if parsed < minimum:
+        raise TTBPaginationError(
+            f"TikTok pagination field {field} is below {minimum}",
+            code="PAGINATION_METADATA_INVALID",
+            payload={"field": field, "value": value, "page_info": dict(page_info)},
+        )
+    return parsed
+
+
+def _pagination_bool(
+    value: Any,
+    *,
+    field: str,
+    page_info: Mapping[str, Any],
+) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y"}:
+        return True
+    if normalized in {"false", "0", "no", "n"}:
+        return False
+    raise TTBPaginationError(
+        f"TikTok pagination field {field} must be boolean",
+        code="PAGINATION_METADATA_INVALID",
+        payload={"field": field, "value": value, "page_info": dict(page_info)},
+    )
+
+
+def _pagination_cursor(
+    value: Any,
+    *,
+    page_info: Mapping[str, Any] | None = None,
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or isinstance(value, (dict, list, tuple, set)):
+        raise TTBPaginationError(
+            "TikTok pagination cursor has an invalid type",
+            code="PAGINATION_METADATA_INVALID",
+            payload={
+                "field": "cursor",
+                "value": value,
+                "page_info": dict(page_info or {}),
+            },
+        )
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _pagination_page_info(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    data = payload.get("data")
+    if not isinstance(data, Mapping):
+        return None
+    page_info = data.get("page_info")
+    if page_info is None:
+        return None
+    if not isinstance(page_info, Mapping):
+        raise TTBPaginationError(
+            "TikTok data.page_info must be an object",
+            code="PAGINATION_METADATA_INVALID",
+            payload={"page_info": page_info},
+        )
+    return page_info
+
+
+def _pagination_continuation(
+    page_info: Mapping[str, Any] | None,
+    *,
+    requested_page: int,
+    items_seen: int,
+) -> bool | None:
+    if page_info is None:
+        return None
+
+    response_page = _pagination_int(
+        page_info.get("page"),
+        field="page",
+        minimum=1,
+        page_info=page_info,
+    )
+    if response_page is not None and response_page != requested_page:
+        raise TTBPaginationError(
+            "TikTok pagination returned an unexpected page "
+            f"(requested {requested_page}, returned {response_page})",
+            code="PAGINATION_PAGE_STALLED",
+            payload={
+                "requested_page": requested_page,
+                "response_page": response_page,
+                "page_info": dict(page_info),
+            },
+        )
+
+    signals: dict[str, bool] = {}
+    total_page = _pagination_int(
+        page_info.get("total_page"),
+        field="total_page",
+        minimum=0,
+        page_info=page_info,
+    )
+    if total_page is not None:
+        if total_page == 0:
+            if items_seen:
+                raise TTBPaginationError(
+                    "TikTok pagination returned rows with total_page=0",
+                    code="PAGINATION_METADATA_CONFLICT",
+                    payload={
+                        "requested_page": requested_page,
+                        "items_seen": items_seen,
+                        "page_info": dict(page_info),
+                    },
+                )
+            signals["total_page"] = False
+        else:
+            if requested_page > total_page:
+                raise TTBPaginationError(
+                    "TikTok pagination advanced beyond total_page",
+                    code="PAGINATION_METADATA_CONFLICT",
+                    payload={
+                        "requested_page": requested_page,
+                        "items_seen": items_seen,
+                        "page_info": dict(page_info),
+                    },
+                )
+            signals["total_page"] = requested_page < total_page
+
+    total_number = _pagination_int(
+        page_info.get("total_number"),
+        field="total_number",
+        minimum=0,
+        page_info=page_info,
+    )
+    if total_number is not None:
+        if items_seen > total_number:
+            raise TTBPaginationError(
+                "TikTok pagination returned more rows than total_number",
+                code="PAGINATION_METADATA_CONFLICT",
+                payload={
+                    "requested_page": requested_page,
+                    "items_seen": items_seen,
+                    "page_info": dict(page_info),
+                },
+            )
+        signals["total_number"] = items_seen < total_number
+
+    for field in ("has_more", "has_next"):
+        signal = _pagination_bool(
+            page_info.get(field),
+            field=field,
+            page_info=page_info,
+        )
+        if signal is not None:
+            signals[field] = signal
+
+    if not signals:
+        return None
+    # TikTok occasionally returns a stale negative flag alongside an
+    # authoritative positive total. A positive continuation signal must win:
+    # stopping is safe only when every supplied signal says the page is final.
+    return any(signals.values())
+
+
+def _pagination_page_signature(items: Iterable[Any]) -> str:
+    serialized = json.dumps(
+        list(items),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _pagination_item_signature(
+    item: Any,
+    *,
+    item_key: Callable[[Mapping[str, Any]], Any],
+    requested_page: int,
+    item_index: int,
+) -> str:
+    if not isinstance(item, Mapping):
+        raise TTBPaginationError(
+            "TikTok pagination returned a non-object item",
+            code="PAGINATION_ITEM_KEY_INVALID",
+            payload={
+                "requested_page": requested_page,
+                "item_index": item_index,
+            },
+        )
+    try:
+        value = item_key(item)
+    except Exception as exc:  # noqa: BLE001 - normalize caller key extractors
+        raise TTBPaginationError(
+            "TikTok pagination could not extract a stable item key",
+            code="PAGINATION_ITEM_KEY_INVALID",
+            payload={
+                "requested_page": requested_page,
+                "item_index": item_index,
+            },
+        ) from exc
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise TTBPaginationError(
+            "TikTok pagination returned an item without a stable key",
+            code="PAGINATION_ITEM_KEY_INVALID",
+            payload={
+                "requested_page": requested_page,
+                "item_index": item_index,
+            },
+        )
+    serialized = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _product_pagination_key(item: Mapping[str, Any]) -> str | None:
+    for field in ("item_group_id", "product_id", "id"):
+        value = item.get(field)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _resource_pagination_key(
+    item: Mapping[str, Any],
+    fields: tuple[str, ...],
+) -> str | None:
+    for field in fields:
+        value = item.get(field)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _default_pagination_item_key(
+    path: str,
+) -> Callable[[Mapping[str, Any]], Any] | None:
+    """Bind every persisted official resource to an endpoint-stable key."""
+
+    normalized = f"/{str(path or '').strip('/')}/"
+    fields_by_path: dict[str, tuple[str, ...]] = {
+        "/bc/get/": ("bc_id", "business_center_id", "id"),
+        "/oauth2/advertiser/get/": ("advertiser_id", "id"),
+        "/store/list/": ("store_id", "id"),
+        "/store/product/get/": ("item_group_id", "product_id", "id"),
+    }
+    fields = fields_by_path.get(normalized)
+    if fields is None:
+        return None
+    return lambda item: _resource_pagination_key(item, fields)
 
 
 class TokenBucket:
@@ -223,6 +632,165 @@ class TokenBucket:
                 self.timestamp = time.monotonic()
             else:
                 self.tokens -= 1
+
+
+class SharedTikTokRateLimiter:
+    """Redis-backed quota gate shared by API and Celery worker processes."""
+
+    def __init__(self, *, app_id: str | None, access_token: str) -> None:
+        identity = str(app_id or access_token or "default")
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+        environment = str(getattr(settings, "LOCK_ENV", "prod") or "prod")
+        self._prefix = f"gmv:ttb:quota:{environment}:{digest}"
+        self._max_wait = max(
+            0.25,
+            float(getattr(settings, "TTB_API_RATE_LIMIT_MAX_WAIT_SECONDS", 8.0)),
+        )
+
+    @staticmethod
+    def _limits(path: str) -> list[tuple[str, int, int]]:
+        limits = [
+            ("global:s", int(getattr(settings, "TTB_API_GLOBAL_QPS", 18)), 1_000),
+            ("global:m", int(getattr(settings, "TTB_API_GLOBAL_QPM", 1000)), 60_000),
+            ("global:d", int(getattr(settings, "TTB_API_GLOBAL_QPD", 1_600_000)), 86_400_000),
+        ]
+        normalized = "/" + str(path or "").strip("/") + "/"
+        if normalized == "/gmv_max/report/get/":
+            limits.extend(
+                [
+                    (
+                        "gmv-report:s",
+                        int(getattr(settings, "TTB_API_GMVMAX_REPORT_QPS", 6)),
+                        1_000,
+                    ),
+                    (
+                        "gmv-report:m",
+                        int(getattr(settings, "TTB_API_GMVMAX_REPORT_QPM", 240)),
+                        60_000,
+                    ),
+                    (
+                        "gmv-report:d",
+                        int(getattr(settings, "TTB_API_GMVMAX_REPORT_QPD", 28_000)),
+                        86_400_000,
+                    ),
+                ]
+            )
+        if normalized in {"/store/list/", "/gmv_max/store/list/"}:
+            limits.extend(
+                [
+                    ("store-list:s", int(getattr(settings, "TTB_API_STORE_LIST_QPS", 3)), 1_000),
+                    ("store-list:m", int(getattr(settings, "TTB_API_STORE_LIST_QPM", 60)), 60_000),
+                ]
+            )
+        return [(name, max(1, limit), period_ms) for name, limit, period_ms in limits]
+
+    def _cooldown_key(self, path: str) -> str:
+        normalized = "/" + str(path or "").strip("/") + "/"
+        quota = "gmv-report" if normalized == "/gmv_max/report/get/" else "global"
+        return f"{self._prefix}:cooldown:{quota}"
+
+    async def penalize(
+        self,
+        path: str,
+        *,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        """Publish an upstream quota cooldown shared by every process."""
+
+        default_seconds = max(
+            1.0,
+            float(getattr(settings, "TTB_API_UPSTREAM_COOLDOWN_SECONDS", 30.0)),
+        )
+        maximum_seconds = max(
+            default_seconds,
+            float(getattr(settings, "TTB_API_UPSTREAM_COOLDOWN_MAX_SECONDS", 300.0)),
+        )
+        requested_seconds = (
+            default_seconds
+            if retry_after_seconds is None
+            else max(default_seconds, float(retry_after_seconds))
+        )
+        requested_ms = int(min(requested_seconds, maximum_seconds) * 1000)
+        try:
+            redis_client = get_redis_sync()
+            await asyncio.to_thread(
+                redis_client.eval,
+                _COOLDOWN_SCRIPT,
+                1,
+                self._cooldown_key(path),
+                str(requested_ms),
+            )
+        except Exception as exc:
+            # The per-process tenacity backoff remains active if Redis is down.
+            logger.warning("TTB shared cooldown unavailable: %s", exc)
+
+    async def acquire(self, path: str) -> None:
+        deadline = time.monotonic() + self._max_wait
+        limits = self._limits(path)
+        while True:
+            try:
+                redis_client = get_redis_sync()
+                cooldown_ms = int(
+                    await asyncio.to_thread(
+                        redis_client.pttl,
+                        self._cooldown_key(path),
+                    )
+                    or -1
+                )
+            except Exception as exc:  # Redis outage must not disable ad control.
+                logger.warning("TTB shared rate limiter unavailable; using local bucket: %s", exc)
+                return
+            if cooldown_ms > 0:
+                remaining = deadline - time.monotonic()
+                if cooldown_ms / 1000 > remaining:
+                    raise TTBRateLimitBudgetError(
+                        "TikTok upstream quota cooldown is active",
+                        code="UPSTREAM_RATE_LIMIT",
+                        payload={
+                            "path": path,
+                            "quota": "upstream-cooldown",
+                            "retry_after_ms": cooldown_ms,
+                        },
+                        status=429,
+                    )
+                await asyncio.sleep(min(cooldown_ms / 1000, remaining))
+                continue
+
+            now_ms = int(time.time() * 1000)
+            keys = [
+                f"{self._prefix}:{name}:{now_ms // period_ms}"
+                for name, _limit, period_ms in limits
+            ]
+            argv = [str(limit) for _name, limit, _period_ms in limits]
+            argv.extend(str(period_ms + 2_000) for _name, _limit, period_ms in limits)
+            try:
+                result = await asyncio.to_thread(
+                    redis_client.eval,
+                    _RATE_LIMIT_SCRIPT,
+                    len(keys),
+                    *keys,
+                    *argv,
+                )
+            except Exception as exc:  # Redis outage must not disable ad control.
+                logger.warning("TTB shared rate limiter unavailable; using local bucket: %s", exc)
+                return
+
+            allowed = bool(result and int(result[0]) == 1)
+            if allowed:
+                return
+
+            blocked_index = max(1, int(result[1] or 1)) - 1
+            retry_ms = max(50, int(result[2] or 100))
+            remaining = deadline - time.monotonic()
+            if retry_ms / 1000 > remaining:
+                quota_name = limits[min(blocked_index, len(limits) - 1)][0]
+                raise TTBRateLimitBudgetError(
+                    f"TikTok shared quota busy: {quota_name}",
+                    code="LOCAL_RATE_LIMIT",
+                    payload={"path": path, "quota": quota_name, "retry_after_ms": retry_ms},
+                    status=429,
+                )
+            await asyncio.sleep(min(retry_ms / 1000, remaining))
 
 
 # --------------------------- 端点路径（来自 settings，可覆盖） ---------------------------
@@ -297,6 +865,10 @@ class TTBApiClient:
 
         default_qps = float(getattr(settings, "TTB_API_DEFAULT_QPS", 5.0))
         self._bucket = TokenBucket(rate_per_sec=float(qps or default_qps))
+        self._shared_limiter = SharedTikTokRateLimiter(
+            app_id=app_id,
+            access_token=access_token,
+        )
         self._timeout = timeout or float(
             getattr(settings, "HTTP_CLIENT_TIMEOUT_SECONDS", 15.0)
         )
@@ -304,7 +876,6 @@ class TTBApiClient:
         # Access-Token 头是必须的
         default_headers = {
             "Access-Token": access_token,
-            "Content-Type": "application/json",
             "Accept": "application/json",
         }
         if headers:
@@ -330,14 +901,54 @@ class TTBApiClient:
         *,
         params: Dict[str, Any] | None = None,
         json_body: Dict[str, Any] | None = None,
+        multipart_body: Dict[str, Any] | None = None,
+        multipart_files: Dict[str, tuple[str, Any, str]] | None = None,
+        request_timeout: float | httpx.Timeout | None = None,
     ) -> Dict[str, Any]:
+        return await self._request_json_once(
+            method,
+            path,
+            params=params,
+            json_body=json_body,
+            multipart_body=multipart_body,
+            multipart_files=multipart_files,
+            request_timeout=request_timeout,
+        )
+
+    async def _request_json_once(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Dict[str, Any] | None = None,
+        json_body: Dict[str, Any] | None = None,
+        multipart_body: Dict[str, Any] | None = None,
+        multipart_files: Dict[str, tuple[str, Any, str]] | None = None,
+        request_timeout: float | httpx.Timeout | None = None,
+    ) -> Dict[str, Any]:
+        """Perform exactly one HTTP request.
+
+        Non-idempotent create endpoints use this primitive so a transport
+        timeout or a retryable TikTok error can never cause a blind second
+        POST after the remote side may already have committed the mutation.
+        """
+
         await self._bucket.acquire()
+        await self._shared_limiter.acquire(path)
 
         params = dict(params or {})
 
-        # 只有支持分页的接口才会校正 page_size
+        # GMV Max reports officially allow 1,000 rows, while most Business API
+        # list endpoints cap pages at 50. A global 50-row clamp made the report
+        # synchronizers believe they had requested 200 rows even though only 50
+        # were sent, which could truncate responses lacking page_info.
         if "page_size" in params:
-            params["page_size"] = _clamp_page_size(params["page_size"])
+            page_limit = _page_size_limit(path)
+            params["page_size"] = _clamp_page_size(
+                params["page_size"],
+                default=page_limit,
+                maximum=page_limit,
+            )
 
         # 对 /oauth2/advertiser/get/ 自动附加 app_id / secret（若提供）
         needs_app_credentials = path.rstrip("/") == self._paths.advertisers_get.rstrip("/")
@@ -346,13 +957,40 @@ class TTBApiClient:
             params.setdefault("secret", self._app_secret)
 
         url = build_url(path)
-        resp = await self._client.request(method, url, params=params, json=json_body)
+        request_kwargs: Dict[str, Any] = {"params": params}
+        if request_timeout is not None:
+            request_kwargs["timeout"] = request_timeout
+        if multipart_body is not None or multipart_files is not None:
+            for _, file_value in (multipart_files or {}).items():
+                stream = file_value[1] if len(file_value) > 1 else None
+                if hasattr(stream, "seek"):
+                    stream.seek(0)
+            files = {
+                str(key): (None, str(value).lower() if isinstance(value, bool) else str(value))
+                for key, value in (multipart_body or {}).items()
+                if value is not None
+            }
+            files.update(multipart_files or {})
+            request_kwargs["files"] = files
+        elif json_body is not None:
+            request_kwargs["json"] = json_body
+        resp = await self._client.request(method, url, **request_kwargs)
 
         status = resp.status_code
         text = resp.text
 
         if status in (429, 500, 502, 503, 504):
             # 这些是可重试错误，tenacity 会自动重试
+            if status == 429:
+                retry_after_seconds: float | None = None
+                try:
+                    retry_after_seconds = float(resp.headers.get("Retry-After", ""))
+                except (TypeError, ValueError):
+                    retry_after_seconds = None
+                await self._shared_limiter.penalize(
+                    path,
+                    retry_after_seconds=retry_after_seconds,
+                )
             raise TTBHttpError(status, "retryable", payload=text)
 
         if status >= 400:
@@ -389,6 +1027,16 @@ class TTBApiClient:
                 json.dumps(data, ensure_ascii=False)[:1000],
             )
             message = data.get("message") or "api error"
+            normalized_message = str(message).lower()
+            if (
+                str(code) == "40100"
+                or (str(code) == "40000" and any(token in normalized_message for token in ("frequent", "too many", "rate limit")))
+                or (str(code) == "40700" and any(token in normalized_message for token in ("timeout", "redis error", "server error", "internal")))
+            ):
+                retry_status = 429 if str(code) in {"40000", "40100"} else 503
+                if retry_status == 429:
+                    await self._shared_limiter.penalize(path)
+                raise TTBHttpError(retry_status, message, payload=data)
             if str(code) == "40002":
                 raise TTBBusinessError(
                     message,
@@ -444,22 +1092,210 @@ class TTBApiClient:
         path: str,
         base_params: Dict[str, Any] | None = None,
         page_size: int = _MAX_PAGE_SIZE,
+        item_key: Callable[[Mapping[str, Any]], Any] | None = None,
     ) -> AsyncIterator[dict]:
         params = dict(base_params or {})
-        params["page_size"] = _clamp_page_size(page_size)
-        cursor: Optional[str] = None
+        effective_item_key = item_key or _default_pagination_item_key(path)
+        page_limit = _page_size_limit(path)
+        size = _clamp_page_size(
+            page_size,
+            default=page_limit,
+            maximum=page_limit,
+        )
+        params["page_size"] = size
+        cursor = _pagination_cursor(params.pop("cursor", None))
+        seen_cursors = {cursor} if cursor is not None else set()
+        seen_signatures: set[str] = set()
+        seen_item_keys: set[str] = set()
+        items_seen = 0
+        expected_total_number: int | None = None
 
-        while True:
-            if cursor:
+        for requested_page in range(1, _MAX_PAGINATION_PAGES + 1):
+            if cursor is None:
+                params.pop("cursor", None)
+            else:
                 params["cursor"] = cursor
             payload = await self._request_json(method, path, params=params)
-            items, next_cursor = self._extract_list_page(payload)
+            items_iterable, _ = self._extract_list_page(payload)
+            items = list(items_iterable)
+            page_info = _pagination_page_info(payload)
+            if items:
+                signature = _pagination_page_signature(items)
+                if signature in seen_signatures:
+                    raise TTBPaginationError(
+                        "TikTok cursor pagination repeated a page",
+                        code="PAGINATION_CURSOR_STALLED",
+                        payload={
+                            "requested_page": requested_page,
+                            "cursor": cursor,
+                            "page_info": dict(page_info or {}),
+                        },
+                    )
+                seen_signatures.add(signature)
+            if effective_item_key is None:
+                items_seen += len(items)
+            else:
+                page_item_keys: set[str] = set()
+                for item_index, item in enumerate(items):
+                    signature = _pagination_item_signature(
+                        item,
+                        item_key=effective_item_key,
+                        requested_page=requested_page,
+                        item_index=item_index,
+                    )
+                    if (
+                        signature in page_item_keys
+                        or signature in seen_item_keys
+                    ):
+                        raise TTBPaginationError(
+                            "TikTok cursor pagination repeated a stable item key",
+                            code="PAGINATION_ITEM_DUPLICATE",
+                            payload={
+                                "requested_page": requested_page,
+                                "item_index": item_index,
+                            },
+                        )
+                    page_item_keys.add(signature)
+                seen_item_keys.update(page_item_keys)
+                items_seen = len(seen_item_keys)
+
+            declared_total_number = _pagination_int(
+                page_info.get("total_number") if page_info is not None else None,
+                field="total_number",
+                minimum=0,
+                page_info=page_info or {},
+            )
+            if declared_total_number is not None:
+                if expected_total_number is None:
+                    expected_total_number = declared_total_number
+                elif declared_total_number != expected_total_number:
+                    raise TTBPaginationError(
+                        "TikTok pagination changed total_number across pages",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": requested_page,
+                            "expected_total_number": expected_total_number,
+                            "total_number": declared_total_number,
+                        },
+                    )
+            explicit_continuation = _pagination_continuation(
+                page_info,
+                requested_page=requested_page,
+                items_seen=items_seen,
+            )
+            next_cursor = _pagination_cursor(
+                page_info.get("cursor") if page_info is not None else None,
+                page_info=page_info,
+            )
+
+            if explicit_continuation is True and not items:
+                raise TTBPaginationError(
+                    "TikTok cursor pagination returned an empty non-terminal page",
+                    code="PAGINATION_METADATA_CONFLICT",
+                    payload={
+                        "requested_page": requested_page,
+                        "items_seen": items_seen,
+                        "page_info": dict(page_info or {}),
+                    },
+                )
+
+            if explicit_continuation is None:
+                if next_cursor is not None:
+                    has_more = True
+                elif len(items) == size:
+                    raise TTBPaginationError(
+                        "TikTok cursor pagination returned a full page without "
+                        "a continuation cursor",
+                        code="PAGINATION_CURSOR_MISSING",
+                        payload={
+                            "requested_page": requested_page,
+                            "items_seen": items_seen,
+                            "page_size": size,
+                            "page_info": dict(page_info or {}),
+                        },
+                    )
+                else:
+                    has_more = False
+            else:
+                has_more = explicit_continuation
+
+            if expected_total_number is not None:
+                if items_seen > expected_total_number:
+                    raise TTBPaginationError(
+                        "TikTok pagination returned more unique items than total_number",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": requested_page,
+                            "items_seen": items_seen,
+                            "total_number": expected_total_number,
+                        },
+                    )
+                if items_seen < expected_total_number:
+                    if not items:
+                        raise TTBPaginationError(
+                            "TikTok pagination terminated before every unique item "
+                            "was returned",
+                            code="PAGINATION_METADATA_CONFLICT",
+                            payload={
+                                "requested_page": requested_page,
+                                "items_seen": items_seen,
+                                "total_number": expected_total_number,
+                            },
+                        )
+                    has_more = True
+
+            if has_more:
+                if next_cursor is None:
+                    raise TTBPaginationError(
+                        "TikTok cursor pagination requires another page but "
+                        "did not return a cursor",
+                        code="PAGINATION_CURSOR_MISSING",
+                        payload={
+                            "requested_page": requested_page,
+                            "items_seen": items_seen,
+                            "page_info": dict(page_info or {}),
+                        },
+                    )
+                if next_cursor == cursor or next_cursor in seen_cursors:
+                    raise TTBPaginationError(
+                        "TikTok cursor pagination did not advance",
+                        code="PAGINATION_CURSOR_STALLED",
+                        payload={
+                            "requested_page": requested_page,
+                            "cursor": cursor,
+                            "next_cursor": next_cursor,
+                            "page_info": dict(page_info or {}),
+                        },
+                    )
+
             for it in items:
                 if isinstance(it, dict):
                     yield it
-            if not next_cursor:
-                break
+            if not has_more:
+                if (
+                    expected_total_number is not None
+                    and items_seen != expected_total_number
+                ):
+                    raise TTBPaginationError(
+                        "TikTok pagination unique item count does not match "
+                        "total_number",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": requested_page,
+                            "items_seen": items_seen,
+                            "total_number": expected_total_number,
+                        },
+                    )
+                return
+
+            seen_cursors.add(next_cursor)
             cursor = next_cursor
+
+        raise TTBPaginationError(
+            "TikTok cursor pagination exceeded the safety page limit",
+            code="PAGINATION_LIMIT_EXCEEDED",
+            payload={"max_pages": _MAX_PAGINATION_PAGES, "items_seen": items_seen},
+        )
 
     async def _paged_by_page(
         self,
@@ -469,12 +1305,23 @@ class TTBApiClient:
         base_params: Dict[str, Any] | None = None,
         page_param: str = "page",
         page_size: int = _MAX_PAGE_SIZE,
-        extractor: Literal["stores", "products"],
+        extractor: Literal["stores", "products", "list"],
+        item_key: Callable[[Mapping[str, Any]], Any] | None = None,
     ) -> AsyncIterator[dict]:
         page = 1
-        size = _clamp_page_size(page_size)
+        effective_item_key = item_key or _default_pagination_item_key(path)
+        page_limit = _page_size_limit(path)
+        size = _clamp_page_size(
+            page_size,
+            default=page_limit,
+            maximum=page_limit,
+        )
+        items_seen = 0
+        seen_signatures: set[str] = set()
+        seen_item_keys: set[str] = set()
+        expected_total_number: int | None = None
 
-        while True:
+        while page <= _MAX_PAGINATION_PAGES:
             params = dict(base_params or {})
             params[page_param] = page
             params["page_size"] = size
@@ -484,18 +1331,150 @@ class TTBApiClient:
                 items, _ = self._extract_stores(payload)
             elif extractor == "products":
                 items, _ = self._extract_products(payload)
+            elif extractor == "list":
+                items, _ = self._extract_list_page(payload)
             else:
                 raise RuntimeError("unknown extractor")
 
-            count = 0
+            items = list(items)
+            count = len(items)
+            page_info = _pagination_page_info(payload)
+            if items:
+                signature = _pagination_page_signature(items)
+                if signature in seen_signatures:
+                    raise TTBPaginationError(
+                        "TikTok numbered pagination repeated a page",
+                        code="PAGINATION_PAGE_STALLED",
+                        payload={
+                            "requested_page": page,
+                            "items_seen": items_seen,
+                            "page_info": dict(page_info or {}),
+                        },
+                    )
+                seen_signatures.add(signature)
+            if effective_item_key is None:
+                items_seen += count
+            else:
+                page_item_keys: set[str] = set()
+                for item_index, item in enumerate(items):
+                    signature = _pagination_item_signature(
+                        item,
+                        item_key=effective_item_key,
+                        requested_page=page,
+                        item_index=item_index,
+                    )
+                    if (
+                        signature in page_item_keys
+                        or signature in seen_item_keys
+                    ):
+                        raise TTBPaginationError(
+                            "TikTok numbered pagination repeated a stable item key",
+                            code="PAGINATION_ITEM_DUPLICATE",
+                            payload={
+                                "requested_page": page,
+                                "item_index": item_index,
+                            },
+                        )
+                    page_item_keys.add(signature)
+                seen_item_keys.update(page_item_keys)
+                items_seen = len(seen_item_keys)
+
+            declared_total_number = _pagination_int(
+                page_info.get("total_number") if page_info is not None else None,
+                field="total_number",
+                minimum=0,
+                page_info=page_info or {},
+            )
+            if declared_total_number is not None:
+                if expected_total_number is None:
+                    expected_total_number = declared_total_number
+                elif declared_total_number != expected_total_number:
+                    raise TTBPaginationError(
+                        "TikTok pagination changed total_number across pages",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": page,
+                            "expected_total_number": expected_total_number,
+                            "total_number": declared_total_number,
+                        },
+                    )
+            explicit_continuation = _pagination_continuation(
+                page_info,
+                requested_page=page,
+                items_seen=items_seen,
+            )
+
+            if explicit_continuation is True and not items:
+                raise TTBPaginationError(
+                    "TikTok numbered pagination returned an empty non-terminal page",
+                    code="PAGINATION_METADATA_CONFLICT",
+                    payload={
+                        "requested_page": page,
+                        "items_seen": items_seen,
+                        "page_info": dict(page_info or {}),
+                    },
+                )
+
             for it in items:
-                count += 1
                 if isinstance(it, dict):
                     yield it
 
-            if count < size:
-                break
+            if explicit_continuation is None:
+                # A short page is not a reliable terminal signal: TikTok can
+                # return fewer rows than requested while more pages remain.
+                # Metadata-free numbered endpoints therefore probe until an
+                # empty page. If the server ignores ``page``, the repeated-page
+                # signature check above fails closed instead of truncating.
+                has_more = bool(items)
+            else:
+                has_more = explicit_continuation
+            if expected_total_number is not None:
+                if items_seen > expected_total_number:
+                    raise TTBPaginationError(
+                        "TikTok pagination returned more unique items than total_number",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": page,
+                            "items_seen": items_seen,
+                            "total_number": expected_total_number,
+                        },
+                    )
+                if items_seen < expected_total_number:
+                    if not items:
+                        raise TTBPaginationError(
+                            "TikTok pagination terminated before every unique item "
+                            "was returned",
+                            code="PAGINATION_METADATA_CONFLICT",
+                            payload={
+                                "requested_page": page,
+                                "items_seen": items_seen,
+                                "total_number": expected_total_number,
+                            },
+                        )
+                    has_more = True
+            if not has_more:
+                if (
+                    expected_total_number is not None
+                    and items_seen != expected_total_number
+                ):
+                    raise TTBPaginationError(
+                        "TikTok pagination unique item count does not match "
+                        "total_number",
+                        code="PAGINATION_METADATA_CONFLICT",
+                        payload={
+                            "requested_page": page,
+                            "items_seen": items_seen,
+                            "total_number": expected_total_number,
+                        },
+                    )
+                return
             page += 1
+
+        raise TTBPaginationError(
+            "TikTok numbered pagination exceeded the safety page limit",
+            code="PAGINATION_LIMIT_EXCEEDED",
+            payload={"max_pages": _MAX_PAGINATION_PAGES, "items_seen": items_seen},
+        )
 
     # ---------- 公共读取器 ----------
 
@@ -504,11 +1483,13 @@ class TTBApiClient:
         *,
         page_size: int = _MAX_PAGE_SIZE,
     ) -> AsyncIterator[dict]:
-        async for it in self._paged_cursor(
+        async for it in self._paged_by_page(
             method="GET",
             path=self._paths.bc_get,
             base_params={},
+            page_param="page",
             page_size=page_size,
+            extractor="list",
         ):
             yield it
 
@@ -596,14 +1577,15 @@ class TTBApiClient:
         fields: Iterable[str] | None = None,
     ) -> list[dict]:
         """
-        Fetch advertiser balances via /advertiser/info/.
+        Fetch advertiser balance and budget via /advertiser/balance/get/.
 
-        The previous balance endpoint only returned accounts under the same bc_id;
-        this implementation relies on the advertiser/info API so we can query
-        arbitrary advertiser IDs directly. The bc_id and page_size parameters are
-        preserved for backwards compatibility but are not used by the underlying
-        request.
+        TikTok returns budget_remaining only when it is explicitly requested in
+        fields, so keep this method on the official balance endpoint instead of
+        advertiser/info.
         """
+
+        if not bc_id:
+            return []
 
         ids: list[str] = []
         if advertiser_ids:
@@ -616,7 +1598,11 @@ class TTBApiClient:
         if not ids:
             return []
 
-        default_fields = ["advertiser_id", "balance", "currency"]
+        default_fields = [
+            "budget_remaining",
+            "budget_amount_restriction",
+            "balance_info",
+        ]
         requested_fields: list[str] = []
         seen: set[str] = set()
         for field in fields or default_fields:
@@ -629,26 +1615,44 @@ class TTBApiClient:
             requested_fields.append(key)
 
         params: Dict[str, Any] = {
-            "advertiser_ids": json.dumps(ids, ensure_ascii=False),
+            "bc_id": str(bc_id),
+            "page": 1,
+            "page_size": max(1, min(int(page_size or _MAX_PAGE_SIZE), _MAX_PAGE_SIZE)),
         }
+        if len(ids) == 1:
+            params["keyword"] = ids[0]
         if requested_fields:
             params["fields"] = json.dumps(requested_fields, ensure_ascii=False)
 
         response = await self._request_json(
             "GET",
-            self._paths.advertiser_info,
+            self._paths.advertiser_balance_get,
             params=params,
         )
         data = response.get("data") or {}
         candidates = []
-        for key in ("list", "advertiser_list", "advertiser_infos", "advertisers"):
+        for key in ("advertiser_account_list", "list", "advertiser_list", "advertiser_infos", "advertisers"):
             value = data.get(key)
             if isinstance(value, list):
                 candidates = value
                 break
         if not isinstance(candidates, list):
             return []
-        return [item for item in candidates if isinstance(item, dict)]
+        id_set = set(ids)
+        matched = [
+            item
+            for item in candidates
+            if isinstance(item, dict) and (not id_set or str(item.get("advertiser_id") or "") in id_set)
+        ]
+        if matched:
+            return matched
+        if len(ids) == 1:
+            fallback = [item for item in candidates if isinstance(item, dict)]
+            for item in fallback:
+                item.setdefault("_requested_advertiser_id", ids[0])
+                item.setdefault("_balance_advertiser_id", str(item.get("advertiser_id") or ""))
+            return fallback[:1]
+        return []
 
     async def iter_stores(
         self,
@@ -679,7 +1683,7 @@ class TTBApiClient:
         bc_id: Optional[str] = None,
         advertiser_id: Optional[str] = None,
         page_size: int = _MAX_PAGE_SIZE,
-        eligibility: Optional[Literal["GMV_MAX", "CUSTOM_STORE_ADS"]] = None,
+        eligibility: Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]] = None,
         product_name: Optional[str] = None,
         item_group_ids: Optional[list[str]] = None,
     ) -> AsyncIterator[dict]:
@@ -702,6 +1706,8 @@ class TTBApiClient:
             params["filtering"] = json.dumps({"ad_creation_eligible": eligibility})
             params["ad_creation_eligible"] = eligibility
 
+        _encode_query_arrays(params, "item_group_ids")
+
         async for it in self._paged_by_page(
             method="GET",
             path=self._paths.products_list,
@@ -709,6 +1715,7 @@ class TTBApiClient:
             page_param="page",
             page_size=page_size,
             extractor="products",
+            item_key=_product_pagination_key,
         ):
             yield it
 
@@ -729,11 +1736,13 @@ class TTBApiClient:
         ``store_products`` entries.
         """
 
-        cleaned_ids = [
-            str(item).strip()
-            for item in item_group_ids
-            if item is not None and str(item).strip()
-        ]
+        cleaned_ids = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in item_group_ids
+                if item is not None and str(item).strip()
+            )
+        )
         if not cleaned_ids:
             return []
 
@@ -743,11 +1752,12 @@ class TTBApiClient:
         ]
 
         results: list[dict[str, Any]] = []
+        seen_product_ids: set[str] = set()
         for batch in batches:
+            batch_ids = set(batch)
             params: Dict[str, Any] = {
                 "store_id": str(store_id),
                 "advertiser_id": str(advertiser_id),
-                "page_size": page_size,
                 "filtering": json.dumps(
                     {
                         "ad_creation_eligible": "GMV_MAX",
@@ -759,460 +1769,47 @@ class TTBApiClient:
             if bc_id:
                 params["bc_id"] = str(bc_id)
 
-            payload = await self._request_json(
-                "GET",
-                self._paths.products_list,
-                params=params,
-            )
-            data = payload.get("data") or {}
-            items = data.get("store_products") or []
-            if isinstance(items, list):
-                results.extend([item for item in items if isinstance(item, dict)])
+            async for item in self._paged_by_page(
+                method="GET",
+                path=self._paths.products_list,
+                base_params=params,
+                page_param="page",
+                page_size=page_size,
+                extractor="products",
+                item_key=_product_pagination_key,
+            ):
+                product_id = _product_pagination_key(item)
+                item_group_id = str(item.get("item_group_id") or "").strip()
+                if (
+                    product_id is None
+                    or not item_group_id
+                    or item_group_id not in batch_ids
+                ):
+                    raise TTBPaginationError(
+                        "TikTok product response escaped its item_group_id filter",
+                        code="PAGINATION_ITEM_KEY_INVALID",
+                        payload={
+                            "product_id": product_id,
+                            "item_group_ids": list(batch),
+                        },
+                    )
+                if item_group_id in seen_product_ids:
+                    raise TTBPaginationError(
+                        "TikTok product response repeated an item across filter chunks",
+                        code="PAGINATION_ITEM_DUPLICATE",
+                        payload={"item_group_id": item_group_id},
+                    )
+                seen_product_ids.add(item_group_id)
+                results.append(item)
 
         return results
-
-    # ---------- GMV Max ----------
-
-    async def list_gmvmax_stores(self, advertiser_id: str, **kwargs: Any) -> dict:
-        params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
-        params.update(kwargs)
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/store/list/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def get_gmvmax_exclusive_auth(
-        self,
-        advertiser_id: str,
-        store_id: str,
-        store_authorized_bc_id: str,
-    ) -> dict:
-        params = _clean_params_map(
-            {
-                "advertiser_id": str(advertiser_id),
-                "store_id": str(store_id),
-                "store_authorized_bc_id": str(store_authorized_bc_id),
-            }
-        )
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/exclusive_authorization/get/",
-            params=params,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def create_gmvmax_exclusive_auth(
-        self,
-        advertiser_id: str,
-        store_id: str,
-        store_authorized_bc_id: str,
-    ) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        body = _remove_none(
-            {
-                "store_id": str(store_id),
-                "store_authorized_bc_id": str(store_authorized_bc_id),
-            }
-        )
-        payload = await self._request_json(
-            "POST",
-            "/gmv_max/exclusive_authorization/create/",
-            params=params,
-            json_body=body,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def list_gmvmax_identities(
-        self,
-        advertiser_id: str,
-        store_id: str,
-        store_authorized_bc_id: str,
-    ) -> dict:
-        params = _clean_params_map(
-            {
-                "advertiser_id": str(advertiser_id),
-                "store_id": str(store_id),
-                "store_authorized_bc_id": str(store_authorized_bc_id),
-            }
-        )
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/identity/get/",
-            params=params,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def list_gmvmax_videos(
-        self,
-        advertiser_id: str,
-        store_id: str,
-        spu_id_list: list[str] | None = None,
-        **filters: Any,
-    ) -> dict:
-        params: Dict[str, Any] = {
-            "advertiser_id": str(advertiser_id),
-            "store_id": str(store_id),
-        }
-        if spu_id_list is not None:
-            params["spu_id_list"] = [str(item) for item in spu_id_list if item is not None]
-        params.update(filters)
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/video/get/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def recommend_gmvmax_bid(
-        self,
-        advertiser_id: str,
-        store_id: str,
-        shopping_ads_type: str,
-        optimization_goal: str,
-        item_group_ids: list[str],
-        identity_id: str | None = None,
-    ) -> dict:
-        params: Dict[str, Any] = {
-            "advertiser_id": str(advertiser_id),
-            "store_id": str(store_id),
-            "shopping_ads_type": shopping_ads_type,
-            "optimization_goal": optimization_goal,
-            "item_group_ids": [str(item) for item in item_group_ids if item is not None],
-            "identity_id": str(identity_id) if identity_id is not None else None,
-        }
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/bid/recommend/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def create_gmvmax_campaign(self, advertiser_id: str, body: dict) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        payload = await self._request_json(
-            "POST",
-            "/campaign/gmv_max/create/",
-            params=params,
-            json_body=_remove_none(dict(body or {})),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def update_gmvmax_campaign(self, advertiser_id: str, body: dict) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        payload = await self._request_json(
-            "POST",
-            "/campaign/gmv_max/update/",
-            params=params,
-            json_body=_remove_none(dict(body or {})),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def fetch_gmvmax_campaigns(self, advertiser_id: str, **filters: Any) -> dict:
-        params: Dict[str, Any] = {"advertiser_id": str(advertiser_id)}
-        params.update(filters)
-        _ensure_gmvmax_campaign_filters(params, promotion_type_format="campaign")
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/campaign/get/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def iter_gmvmax_campaigns(
-        self,
-        advertiser_id: str,
-        **filters: Any,
-    ) -> AsyncIterator[tuple[dict, dict]]:
-        base_filters = dict(filters)
-        page_size_value = base_filters.pop("page_size", None)
-        cursor_value = base_filters.pop("cursor", None)
-        page_token_value = base_filters.pop("page_token", None)
-        page_value_raw = base_filters.pop("page", None)
-        if cursor_value is None and page_token_value is None:
-            if page_value_raw is None:
-                page_value = 1
-            else:
-                try:
-                    page_value = int(page_value_raw)
-                except (TypeError, ValueError):
-                    page_value = 1
-        else:
-            try:
-                page_value = int(page_value_raw) if page_value_raw is not None else None
-            except (TypeError, ValueError):
-                page_value = None
-        base_filters_clean = _clean_params_map(base_filters)
-
-        while True:
-            query: Dict[str, Any] = dict(base_filters_clean)
-            if page_size_value is not None:
-                query["page_size"] = page_size_value
-            if cursor_value is not None:
-                query["cursor"] = cursor_value
-            if page_token_value is not None:
-                query["page_token"] = page_token_value
-            if page_value is not None:
-                query["page"] = page_value
-
-            data = await self.fetch_gmvmax_campaigns(advertiser_id, **query)
-
-            items_list: list[dict] = []
-            page_info: Dict[str, Any] | None = None
-            page_context: dict = data if isinstance(data, dict) else {}
-            if isinstance(page_context, dict):
-                for key in ("list", "campaign_list", "items", "campaigns"):
-                    value = page_context.get(key)
-                    if isinstance(value, list):
-                        items_list = [item for item in value if isinstance(item, dict)]
-                        if items_list:
-                            break
-                raw_page_info = page_context.get("page_info")
-                if isinstance(raw_page_info, dict):
-                    page_info = raw_page_info
-
-            for item in items_list:
-                yield item, page_context
-
-            if not items_list and not cursor_value and not page_token_value:
-                break
-
-            advanced = False
-            info_dict = page_info or {}
-            next_cursor = info_dict.get("cursor")
-            next_page_token = info_dict.get("page_token")
-            has_more_flags = info_dict.get("has_more") or info_dict.get("has_next") or info_dict.get("has_next_page")
-
-            if next_cursor:
-                if next_cursor != cursor_value:
-                    cursor_value = next_cursor
-                    page_token_value = None
-                    page_value = None
-                    advanced = True
-            elif next_page_token:
-                if next_page_token != page_token_value:
-                    page_token_value = next_page_token
-                    cursor_value = None
-                    page_value = None
-                    advanced = True
-            else:
-                current_page = info_dict.get("page")
-                total_page = info_dict.get("total_page")
-                try:
-                    current_page_int = int(current_page) if current_page is not None else None
-                except (TypeError, ValueError):
-                    current_page_int = None
-                try:
-                    total_page_int = int(total_page) if total_page is not None else None
-                except (TypeError, ValueError):
-                    total_page_int = None
-
-                if current_page_int is not None and total_page_int is not None and current_page_int < total_page_int:
-                    page_value = current_page_int + 1
-                    cursor_value = None
-                    page_token_value = None
-                    advanced = True
-                elif has_more_flags in (True, 1):
-                    next_page_number = (current_page_int or page_value or 1) + 1
-                    page_value = next_page_number
-                    cursor_value = None
-                    page_token_value = None
-                    advanced = True
-
-            if not advanced:
-                expected_size = None
-                if page_size_value is not None:
-                    try:
-                        expected_size = int(page_size_value)
-                    except (TypeError, ValueError):
-                        expected_size = None
-                if expected_size and len(items_list) == expected_size:
-                    page_value = (page_value or 1) + 1
-                    cursor_value = None
-                    page_token_value = None
-                    advanced = True
-
-            if not advanced:
-                break
-
-    async def get_gmvmax_campaign_info(
-        self,
-        advertiser_id: str,
-        campaign_id: str,
-    ) -> dict:
-        params = _clean_params_map(
-            {
-                "advertiser_id": str(advertiser_id),
-                "campaign_id": str(campaign_id),
-            }
-        )
-        payload = await self._request_json(
-            "GET",
-            "/campaign/gmv_max/info/",
-            params=params,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def report_gmvmax(
-        self,
-        advertiser_id: str,
-        *,
-        store_ids: Sequence[str],
-        start_date: str,
-        end_date: str,
-        metrics: Sequence[str],
-        dimensions: Sequence[str],
-        enable_total_metrics: bool | None = None,
-        filtering: Mapping[str, Any] | None = None,
-        page: int | None = None,
-        page_size: int | None = None,
-        sort_field: str | None = None,
-        sort_type: str | None = None,
-        **extra_params: Any,
-    ) -> dict:
-        cleaned_store_ids = [
-            str(item)
-            for item in store_ids
-            if item is not None and str(item).strip()
-        ]
-        if not cleaned_store_ids:
-            raise ValueError("store_ids must not be empty")
-
-        params: Dict[str, Any] = {
-            "advertiser_id": str(advertiser_id),
-            # TikTok treats array-type GET parameters as JSON strings. Passing
-            # repeated query params (dimensions=value&dimensions=value2) causes
-            # errors like "dimensions: error unmarshaling parameter
-            # \"dimensions\"". Therefore, store_ids/metrics/dimensions should be
-            # JSON encoded before issuing the request.
-            "store_ids": json.dumps(cleaned_store_ids, ensure_ascii=False),
-            "start_date": start_date,
-            "end_date": end_date,
-            "metrics": json.dumps(
-                [str(metric) for metric in metrics if metric is not None], ensure_ascii=False
-            ),
-            "dimensions": json.dumps(
-                [str(dimension) for dimension in dimensions if dimension is not None],
-                ensure_ascii=False,
-            ),
-        }
-        if enable_total_metrics is not None:
-            params["enable_total_metrics"] = bool(enable_total_metrics)
-        if filtering:
-            if isinstance(filtering, str):
-                params["filtering"] = filtering
-            else:
-                params["filtering"] = json.dumps(dict(filtering), ensure_ascii=False)
-        if page is not None:
-            params["page"] = int(page)
-        if page_size is not None:
-            params["page_size"] = int(page_size)
-        if sort_field:
-            params["sort_field"] = str(sort_field)
-        if sort_type:
-            params["sort_type"] = str(sort_type)
-        if extra_params:
-            params.update(_remove_none(extra_params))
-
-        _ensure_gmvmax_campaign_filters(params, promotion_type_format="report")
-
-        payload = await self._request_json(
-            "GET",
-            "/gmv_max/report/get/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def create_gmvmax_session(self, advertiser_id: str, body: dict) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        payload = await self._request_json(
-            "POST",
-            "/campaign/gmv_max/session/create/",
-            params=params,
-            json_body=_remove_none(dict(body or {})),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def update_gmvmax_session(self, advertiser_id: str, body: dict) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        payload = await self._request_json(
-            "POST",
-            "/campaign/gmv_max/session/update/",
-            params=params,
-            json_body=_remove_none(dict(body or {})),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def delete_gmvmax_session(self, advertiser_id: str, session_id: str) -> dict:
-        params = _clean_params_map({"advertiser_id": str(advertiser_id)})
-        body = _remove_none({"session_id": str(session_id)})
-        payload = await self._request_json(
-            "POST",
-            "/campaign/gmv_max/session/delete/",
-            params=params,
-            json_body=body,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def get_gmvmax_session(
-        self,
-        advertiser_id: str,
-        session_id: str,
-    ) -> dict:
-        params = _clean_params_map(
-            {
-                "advertiser_id": str(advertiser_id),
-                "session_ids": [str(session_id)],
-            }
-        )
-        payload = await self._request_json(
-            "GET",
-            "/campaign/gmv_max/session/get/",
-            params=params,
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
-    async def list_gmvmax_sessions(
-        self,
-        advertiser_id: str,
-        campaign_id: str,
-        **paging: Any,
-    ) -> dict:
-        params: Dict[str, Any] = {
-            "advertiser_id": str(advertiser_id),
-            "campaign_id": str(campaign_id),
-        }
-        params.update(paging)
-        payload = await self._request_json(
-            "GET",
-            "/campaign/gmv_max/session/list/",
-            params=_clean_params_map(params),
-        )
-        data = payload.get("data")
-        return data if isinstance(data, dict) else {}
-
 
 __all__ = [
     "TTBApiClient",
     "TTBApiError",
     "TTBBusinessError",
     "TTBHttpError",
+    "TTBPaginationError",
+    "TTBRateLimitBudgetError",
     "TTBPaths",
 ]
-

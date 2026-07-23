@@ -19,6 +19,9 @@ from app.features.platform.router_admin import router as platform_admin_router
 from app.features.platform.router_companies import router as platform_companies_router
 from app.features.platform.router_oauth_apps import router as platform_oauth_apps_router
 from app.features.platform.router_oauth_callback import router as oauth_callback_router
+from app.features.platform.router_oauth_tiktok_shop_callback import (
+    router as oauth_tiktok_shop_callback_router,
+)
 from app.features.platform.router_tasks import router as platform_tasks_router
 from app.features.platform.router_platform_policies import router as platform_policies_router
 from app.features.platform.router_gmvmax_monitoring_strategies import (
@@ -35,6 +38,9 @@ from app.features.platform.router_webshell import (
 # --- Tenants ---
 from app.features.tenants.users.router import router as tenant_users_router
 from app.features.tenants.oauth_ttb.router import router as tenant_oauth_ttb_router
+from app.features.tenants.oauth_tiktok_shop.router import router as tenant_oauth_tiktok_shop_router
+from app.features.tenants.tiktok_shop.router import router as tenant_tiktok_shop_router
+from app.features.tenants.commerce.router import router as tenant_commerce_router
 from app.features.tenants.schedules.router import router as tenant_schedules_router
 from app.features.tenants.ttb.router import router as tenant_ttb_router
 
@@ -45,7 +51,7 @@ from app.features.tenants.oauth_ttb.router_cursors import router as cursors_rout
 from app.features.tenants.oauth_ttb.router_jobs import router as jobs_router
 
 # --- AI Routers ---
-from app.features.tenants.kie_ai.router_sora2 import router as tenant_kie_ai_router
+from app.features.tenants.bandianwa_ai.router_videos import router as tenant_bandianwa_video_router
 from app.features.tenants.openai_whisper.router import router as tenant_openai_whisper_router
 from app.features.tenants.hermes_agent.router import router as tenant_hermes_agent_router
 
@@ -103,6 +109,9 @@ def create_app() -> FastAPI:
     # Tenant routes
     app.include_router(tenant_users_router)
     app.include_router(tenant_oauth_ttb_router)
+    app.include_router(tenant_oauth_tiktok_shop_router)
+    app.include_router(tenant_tiktok_shop_router)
+    app.include_router(tenant_commerce_router)
     app.include_router(tenant_schedules_router)
     app.include_router(tenant_ttb_router)
 
@@ -113,12 +122,13 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
 
     # Tenant AI routes
-    app.include_router(tenant_kie_ai_router)
+    app.include_router(tenant_bandianwa_video_router)
     app.include_router(tenant_openai_whisper_router)
     app.include_router(tenant_hermes_agent_router)
 
     # OAuth callback router
     app.include_router(oauth_callback_router)  # /api/oauth/tiktok-business/callback (no versioning)
+    app.include_router(oauth_tiktok_shop_callback_router)
 
     def _custom_openapi() -> Dict[str, Any]:
         if app.openapi_schema:

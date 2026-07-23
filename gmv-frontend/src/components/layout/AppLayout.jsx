@@ -11,6 +11,7 @@ export default function AppLayout({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [flash, setFlash] = useState(null)
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
 
   useEffect(() => {
     if (location.state?.err) {
@@ -25,15 +26,42 @@ export default function AppLayout({ children }) {
     return () => clearTimeout(timer)
   }, [flash])
 
+  useEffect(() => {
+    setMobileNavigationOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!mobileNavigationOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [mobileNavigationOpen])
+
   // 统一从单一来源构建菜单，避免手动漏项
   const groups = buildMenus(session || {})
 
   return (
     <div className="shell">
-      <Header />
+      <Header
+        mobileNavigationOpen={mobileNavigationOpen}
+        onToggleMobileNavigation={() => setMobileNavigationOpen((open) => !open)}
+      />
 
       <div className="layout">
-        <Sidebar groups={groups} />
+        <button
+          type="button"
+          className={`sidebar-backdrop${mobileNavigationOpen ? ' is-open' : ''}`}
+          aria-label="关闭侧边导航"
+          tabIndex={mobileNavigationOpen ? 0 : -1}
+          onClick={() => setMobileNavigationOpen(false)}
+        />
+        <Sidebar
+          groups={groups}
+          className={`drawer${mobileNavigationOpen ? ' drawer-open' : ''}`}
+          onNavigate={() => setMobileNavigationOpen(false)}
+        />
         <main className="content">
           {flash && (
             <div className="alert alert--error" role="alert" style={{ marginBottom: '16px' }}>
@@ -45,7 +73,7 @@ export default function AppLayout({ children }) {
       </div>
 
       <footer className="footer">
-        <span className="small-muted">© 2025 Drafyn · All rights reserved.</span>
+        <span className="small-muted">© 2026 MYUPONA · All rights reserved.</span>
         <span>·</span>
         <a href="/terms.html" target="_blank" rel="noopener">服务条款</a>
         <span>·</span>
@@ -54,4 +82,3 @@ export default function AppLayout({ children }) {
     </div>
   )
 }
-

@@ -1,5 +1,6 @@
 import { describe, expect, beforeEach, vi, it } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -43,18 +44,26 @@ const policyFixtures = [
 ]
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
   return render(
-    <MemoryRouter initialEntries={["/"]}>
-      <Routes>
-        <Route path="/" element={<PlatformPolicies />} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<PlatformPolicies />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
 describe('PlatformPolicies page', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     listPolicyProviders.mockResolvedValue(providerFixtures)
     listPolicies.mockResolvedValue({
       items: policyFixtures,
@@ -94,7 +103,7 @@ describe('PlatformPolicies page', () => {
     await userEvent.type(within(modal).getByLabelText('策略名称'), 'UI Test Policy')
     const domainInput = within(modal).getByPlaceholderText('例如：api.example.com 或 *.example.com')
     await userEvent.type(domainInput, 'API.TEST.COM')
-    await userEvent.tab()
+    await userEvent.keyboard('{Enter}')
     await userEvent.clear(within(modal).getByLabelText('速率限制 (RPS)'))
     await userEvent.type(within(modal).getByLabelText('速率限制 (RPS)'), '20')
 
@@ -143,7 +152,7 @@ describe('PlatformPolicies page', () => {
   it('reverts optimistic toggle on failure', async () => {
     togglePolicy.mockRejectedValue(new Error('切换失败'))
     renderPage()
-    await waitFor(() => expect(listPolicies).toHaveBeenCalled())
+    await screen.findByRole('row', { name: /tiktok-business/i })
 
     const toggleButton = screen.getByRole('button', { name: '停用' })
     await userEvent.click(toggleButton)
@@ -156,7 +165,7 @@ describe('PlatformPolicies page', () => {
   it('opens dry-run modal and calls service', async () => {
     dryRunPolicy.mockResolvedValue({ allowed: true, trace: [] })
     renderPage()
-    await waitFor(() => expect(listPolicies).toHaveBeenCalled())
+    await screen.findByRole('row', { name: /tiktok-business/i })
 
     await userEvent.click(screen.getByRole('button', { name: '测试' }))
     const modal = await screen.findByRole('dialog')

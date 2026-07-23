@@ -9,7 +9,7 @@ export const DEFAULT_REPORT_METRICS = [
   'roi',
 ];
 export const EMPTY_QUERY_PARAMS = Object.freeze({});
-export { formatError } from '../../utils/errors.js';
+export { formatError, isSyncRateLimitedError } from '../../utils/errors.js';
 
 export function formatMetaSummary(summary) {
   if (!summary || typeof summary !== 'object') return '';

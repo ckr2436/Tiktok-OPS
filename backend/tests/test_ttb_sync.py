@@ -19,8 +19,10 @@ from app.data.models import (
     TaskCatalog,
     OAuthProviderApp,
     OAuthAccountTTB,
-    TTBGmvMaxCampaign,
-    TTBGmvMaxCampaignProduct,
+)
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxProductCampaignCatalog,
+    GmvmaxProductCampaignItemGroup,
 )
 from app.data.models.scheduling import Schedule, ScheduleRun
 from app.data.models.ttb_entities import (
@@ -29,6 +31,7 @@ from app.data.models.ttb_entities import (
     TTBStore,
     TTBBindingConfig,
     TTBProduct,
+    TTBProductAdvertiserEligibility,
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
 )
@@ -48,10 +51,27 @@ from app.services.policy_engine import PolicyLimits
 from app.services.providers.tiktok_business import TiktokBusinessProvider
 from app.services.ttb_sync import TTBSyncService
 
-ttb_router_module = importlib.import_module("app.features.tenants.ttb.router")
+ttb_sync_router_module = importlib.import_module("app.features.tenants.ttb.router.sync")
 from app.services.crypto import encrypt_text_to_blob
-from app.services.ttb_meta import MetaSyncEnqueueResult
+from app.services import ttb_meta
 from app.services.ttb_sync_dispatch import DispatchResult
+from app.tasks import ttb_sync_tasks
+
+
+def test_product_eligibility_uses_official_shopping_ads_enum():
+    assert ttb_sync._eligibility_to_api("gmv_max") == "GMV_MAX"
+    assert ttb_sync._eligibility_to_api("ads") == "CUSTOM_SHOP_ADS"
+    assert ttb_sync._eligibility_to_api("all") is None
+
+
+def test_sync_task_never_reports_provider_errors_as_success():
+    assert ttb_sync_tasks._completion_status([]) == "success"
+    assert (
+        ttb_sync_tasks._completion_status(
+            [{"stage": "products", "code": "PAGINATION_METADATA_CONFLICT"}]
+        )
+        == "partial"
+    )
 
 
 @pytest.fixture()
@@ -197,6 +217,7 @@ def _seed_data(db_session) -> None:
         is_enabled=True,
     )
     db_session.merge(task)
+    db_session.commit()
 
 
 def _create_workspace_and_auth(db_session):
@@ -234,8 +255,6 @@ def _create_workspace_and_auth(db_session):
     db_session.flush()
 
     return workspace, account
-
-    db_session.commit()
 
 
 def test_get_binding_config_returns_default(tenant_app):
@@ -342,7 +361,7 @@ def test_metadata_endpoints_return_items(tenant_app):
     assert "updated_time" in products["items"][0]
 
 
-def test_list_accounts_triggers_meta_sync_for_incomplete_account(monkeypatch, tenant_app):
+def test_list_accounts_is_read_only_for_incomplete_account(monkeypatch, tenant_app):
     client, db_session = tenant_app
 
     account = OAuthAccountTTB(
@@ -358,17 +377,14 @@ def test_list_accounts_triggers_meta_sync_for_incomplete_account(monkeypatch, te
     db_session.add(account)
     db_session.commit()
 
-    triggered: list[tuple[int, int]] = []
+    def _unexpected_enqueue(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("account listing must not enqueue a metadata sync")
 
-    def _fake_enqueue_meta_sync(*, workspace_id: int, auth_id: int, now=None):  # noqa: ANN001
-        triggered.append((workspace_id, auth_id))
-        return MetaSyncEnqueueResult(idempotency_key="auto", task_name="ttb.sync.all")
-
-    monkeypatch.setattr(ttb_router_module, "enqueue_meta_sync", _fake_enqueue_meta_sync)
+    monkeypatch.setattr(ttb_meta, "enqueue_meta_sync", _unexpected_enqueue)
 
     resp = client.get("/api/v1/tenants/1/providers/tiktok-business/accounts")
     assert resp.status_code == 200
-    assert triggered == [(1, int(account.id))]
+    assert any(item["auth_id"] == int(account.id) for item in resp.json()["items"])
 
 
 def test_store_and_product_filters_require_ids(tenant_app):
@@ -452,23 +468,21 @@ def test_product_assignment_respects_enabled_campaigns(tenant_app):
         price=19.9,
     )
 
-    campaign_enabled = TTBGmvMaxCampaign(
-        id=100,
+    campaign_enabled = GmvmaxProductCampaignCatalog(
         workspace_id=1,
         auth_id=1,
         advertiser_id="ADV1",
         campaign_id="CMP_ENABLED",
         store_id="STORE1",
-        status="enable",
+        operation_status="ENABLE",
     )
-    campaign_disabled = TTBGmvMaxCampaign(
-        id=101,
+    campaign_disabled = GmvmaxProductCampaignCatalog(
         workspace_id=1,
         auth_id=1,
         advertiser_id="ADV1",
         campaign_id="CMP_DISABLED",
         store_id="STORE1",
-        status="disable",
+        operation_status="DISABLE",
     )
 
     db_session.add_all(
@@ -478,20 +492,18 @@ def test_product_assignment_respects_enabled_campaigns(tenant_app):
 
     db_session.add_all(
         [
-            TTBGmvMaxCampaignProduct(
-                id=200,
+            GmvmaxProductCampaignItemGroup(
                 workspace_id=1,
                 auth_id=1,
-                campaign_pk=campaign_enabled.id,
+                advertiser_id="ADV1",
                 campaign_id=campaign_enabled.campaign_id,
                 store_id="STORE1",
                 item_group_id=product_enabled.product_id,
             ),
-            TTBGmvMaxCampaignProduct(
-                id=201,
+            GmvmaxProductCampaignItemGroup(
                 workspace_id=1,
                 auth_id=1,
-                campaign_pk=campaign_disabled.id,
+                advertiser_id="ADV1",
                 campaign_id=campaign_disabled.campaign_id,
                 store_id="STORE1",
                 item_group_id=product_disabled.product_id,
@@ -522,23 +534,33 @@ def test_legacy_routes_removed(tenant_app):
 def test_meta_sync_returns_summary(monkeypatch, tenant_app):
     client, _ = tenant_app
 
-    def fake_meta_sync(db, *, workspace_id, auth_id, page_size=200):  # noqa: ANN001
-        return {
-            "bc": {"added": 1, "removed": 0, "unchanged": 0},
-            "advertisers": {"added": 0, "removed": 0, "unchanged": 1},
-            "stores": {"added": 0, "removed": 0, "unchanged": 1},
-        }
+    def fake_dispatch(db, **kwargs):  # noqa: ANN001
+        class _Run:
+            id = 123
+            schedule_id = 456
+            idempotency_key = "meta-key"
+            stats_json = {
+                "processed": {
+                    "summary": {
+                        "bc": {"added": 1, "removed": 0, "unchanged": 0},
+                        "advertisers": {"added": 0, "removed": 0, "unchanged": 1},
+                        "stores": {"added": 0, "removed": 0, "unchanged": 1},
+                    }
+                }
+            }
 
-    monkeypatch.setattr(ttb_router_module, "_perform_meta_sync", fake_meta_sync)
+        return DispatchResult(run=_Run(), task_id="task", status="enqueued", idempotent=False)
+
+    monkeypatch.setattr(ttb_sync_router_module, "dispatch_sync", fake_dispatch)
 
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
         json={"scope": "meta"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     data = resp.json()
     assert data["summary"]["bc"]["added"] == 1
-    assert data["run_id"] is None
+    assert data["run_id"] == 123
 
 
 def test_product_sync_missing_advertiser(tenant_app):
@@ -659,7 +681,7 @@ def test_product_sync_dispatch(monkeypatch, tenant_app):
 
         return DispatchResult(run=_Run(), task_id="task", status="enqueued", idempotent=False)
 
-    monkeypatch.setattr(ttb_router_module, "dispatch_sync", fake_dispatch)
+    monkeypatch.setattr(ttb_sync_router_module, "dispatch_sync", fake_dispatch)
 
     resp = client.post(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/sync",
@@ -845,6 +867,235 @@ def test_product_sync_limits_pairs_to_selected_advertiser(db_session):
     assert client.calls[0]["store_id"] == "STORE1"
 
 
+def test_gmv_product_sync_tombstones_only_previously_tracked_absences(db_session):
+    _seed_data(db_session)
+
+    class SnapshotClient:
+        def __init__(self):
+            self.snapshots = [
+                [
+                    {
+                        "item_group_id": "PRODUCT-CURRENT",
+                        "store_id": "STORE1",
+                        "title": "Current",
+                        "status": "AVAILABLE",
+                        "gmv_max_ads_status": "UNOCCUPIED",
+                    },
+                    {
+                        "item_group_id": "PRODUCT-STALE",
+                        "store_id": "STORE1",
+                        "title": "Stale",
+                        "status": "AVAILABLE",
+                        "gmv_max_ads_status": "UNOCCUPIED",
+                    },
+                ],
+                [
+                    {
+                        "item_group_id": "PRODUCT-CURRENT",
+                        "store_id": "STORE1",
+                        "title": "Current",
+                        "status": "AVAILABLE",
+                        "gmv_max_ads_status": "UNOCCUPIED",
+                    }
+                ],
+            ]
+
+        async def iter_products(self, **_kwargs):  # noqa: ANN003
+            for item in self.snapshots.pop(0):
+                yield item
+
+    client = SnapshotClient()
+    service = TTBSyncService(db_session, client, workspace_id=1, auth_id=1)
+    asyncio.run(service.sync_products(store_id="STORE1", advertiser_id="ADV1"))
+    asyncio.run(service.sync_products(store_id="STORE1", advertiser_id="ADV1"))
+
+    current = db_session.query(TTBProduct).filter_by(product_id="PRODUCT-CURRENT").one()
+    stale = db_session.query(TTBProduct).filter_by(product_id="PRODUCT-STALE").one()
+    legacy = db_session.query(TTBProduct).filter_by(product_id="PROD1").one()
+    current_evidence = db_session.query(TTBProductAdvertiserEligibility).filter_by(
+        advertiser_id="ADV1",
+        product_id="PRODUCT-CURRENT",
+    ).one()
+    stale_evidence = db_session.query(TTBProductAdvertiserEligibility).filter_by(
+        advertiser_id="ADV1",
+        product_id="PRODUCT-STALE",
+    ).one()
+
+    assert current.status == "AVAILABLE"
+    assert current.gmv_max_ads_status == "UNOCCUPIED"
+    assert stale.status == "AVAILABLE"
+    assert current_evidence.is_eligible is True
+    assert stale_evidence.is_eligible is False
+    assert stale_evidence.absent_at is not None
+    # The pre-existing row has no trustworthy eligibility-set provenance, so
+    # the first deployment must not guess and invalidate it.
+    assert legacy.status == "ON_SALE"
+    assert (
+        db_session.query(TTBProductAdvertiserEligibility)
+        .filter_by(advertiser_id="ADV1", product_id="PROD1")
+        .count()
+        == 0
+    )
+
+
+def test_failed_gmv_product_pagination_never_tombstones(db_session):
+    _seed_data(db_session)
+
+    class SnapshotClient:
+        fail = False
+
+        async def iter_products(self, **_kwargs):  # noqa: ANN003
+            if self.fail:
+                raise RuntimeError("official pagination failed")
+            yield {
+                "item_group_id": "PRODUCT-TRACKED",
+                "store_id": "STORE1",
+                "title": "Tracked",
+                "status": "AVAILABLE",
+                "gmv_max_ads_status": "UNOCCUPIED",
+            }
+
+    client = SnapshotClient()
+    service = TTBSyncService(db_session, client, workspace_id=1, auth_id=1)
+    asyncio.run(service.sync_products(store_id="STORE1", advertiser_id="ADV1"))
+
+    client.fail = True
+    with pytest.raises(RuntimeError, match="pagination failed"):
+        asyncio.run(service.sync_products(store_id="STORE1", advertiser_id="ADV1"))
+
+    tracked = db_session.query(TTBProduct).filter_by(product_id="PRODUCT-TRACKED").one()
+    evidence = db_session.query(TTBProductAdvertiserEligibility).filter_by(
+        advertiser_id="ADV1",
+        product_id="PRODUCT-TRACKED",
+    ).one()
+    assert tracked.gmv_max_ads_status == "UNOCCUPIED"
+    assert evidence.is_eligible is True
+    assert evidence.absent_at is None
+
+
+def test_product_listing_uses_exact_advertiser_eligibility_evidence(
+    tenant_app,
+    monkeypatch,
+):
+    http_client, db_session = tenant_app
+    meta_router_module = importlib.import_module(
+        "app.features.tenants.ttb.router.meta"
+    )
+    monkeypatch.setattr(
+        meta_router_module,
+        "_load_product_automation_stats",
+        lambda *_args, **_kwargs: {},
+    )
+    db_session.add(
+        TTBAdvertiser(
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="ADV2",
+            bc_id="BC1",
+            name="Advertiser 2",
+            status="ENABLE",
+        )
+    )
+    db_session.add(
+        TTBAdvertiserStoreLink(
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="ADV2",
+            store_id="STORE1",
+            relation_type="AUTHORIZER",
+            store_authorized_bc_id="BC1",
+            bc_id_hint="BC1",
+        )
+    )
+    db_session.commit()
+
+    class SnapshotClient:
+        phase = 1
+
+        async def iter_products(self, *, advertiser_id, **_kwargs):  # noqa: ANN003
+            if advertiser_id == "ADV1" or self.phase == 1:
+                yield {
+                    "item_group_id": "PRODUCT-SHARED",
+                    "store_id": "STORE1",
+                    "title": "Shared",
+                    "status": "AVAILABLE",
+                    "gmv_max_ads_status": "UNOCCUPIED",
+                }
+            if advertiser_id == "ADV1":
+                yield {
+                    "item_group_id": "PRODUCT-A2",
+                    "store_id": "STORE1",
+                    "title": "Advertiser A second product",
+                    "status": "AVAILABLE",
+                    "gmv_max_ads_status": "UNOCCUPIED",
+                }
+
+    snapshot_client = SnapshotClient()
+    service = TTBSyncService(
+        db_session,
+        snapshot_client,
+        workspace_id=1,
+        auth_id=1,
+    )
+    asyncio.run(service.sync_products(store_id="STORE1"))
+    snapshot_client.phase = 2
+    asyncio.run(service.sync_products(store_id="STORE1"))
+    db_session.commit()
+
+    first_page = http_client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={
+            "store_id": "STORE1",
+            "advertiser_id": "ADV1",
+            "page": 1,
+            "page_size": 1,
+        },
+    )
+    second_page = http_client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={
+            "store_id": "STORE1",
+            "advertiser_id": "ADV1",
+            "page": 2,
+            "page_size": 1,
+        },
+    )
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 2
+    assert second_page.json()["total"] == 2
+    assert (
+        first_page.json()["items"][0]["product_id"]
+        != second_page.json()["items"][0]["product_id"]
+    )
+
+    response = http_client.get(
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/products",
+        params={
+            "store_id": "STORE1",
+            "advertiser_id": "ADV2",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+    product = db_session.query(TTBProduct).filter_by(
+        product_id="PRODUCT-SHARED"
+    ).one()
+    evidence = {
+        row.advertiser_id: row
+        for row in db_session.query(TTBProductAdvertiserEligibility)
+        .filter_by(product_id="PRODUCT-SHARED")
+        .all()
+    }
+    assert evidence["ADV1"].is_eligible is True
+    assert evidence["ADV2"].is_eligible is False
+    # The compatibility projection remains AVAILABLE/UNOCCUPIED for ADV1;
+    # ADV2 is excluded by its own evidence rather than this shared column.
+    assert product.status == "AVAILABLE"
+    assert product.gmv_max_ads_status == "UNOCCUPIED"
+
+
 def test_validate_options_preserves_advertiser_id_for_products():
     provider = TiktokBusinessProvider()
 
@@ -910,6 +1161,33 @@ def test_sync_advertisers_hydrates_info(monkeypatch, tenant_app):
     assert advertiser.display_timezone == "UTC+08:00"
     assert advertiser.currency == "USD"
     assert advertiser.raw_json["advertiser_name"] == "Hydrated"
+
+
+def test_sync_advertisers_does_not_treat_page_size_as_total_limit(tenant_app):
+    _, db_session = tenant_app
+
+    class DummyClient:
+        async def iter_advertisers(self, *, page_size):  # noqa: ANN001
+            assert page_size == 50
+            for advertiser_id in ("ADV1", "ADV2", "ADV3"):
+                yield {"advertiser_id": advertiser_id, "version": 1}
+
+        async def fetch_advertiser_info(self, advertiser_ids, fields=None):  # noqa: ANN001
+            assert set(advertiser_ids) == {"ADV1", "ADV2", "ADV3"}
+            assert fields is not None
+            return []
+
+    service = TTBSyncService(db_session, DummyClient(), workspace_id=1, auth_id=1)
+
+    stats = asyncio.run(service.sync_advertisers(page_size=2))
+
+    assert stats["fetched"] == 3
+    assert {
+        row.advertiser_id
+        for row in db_session.query(TTBAdvertiser)
+        .filter(TTBAdvertiser.workspace_id == 1, TTBAdvertiser.auth_id == 1)
+        .all()
+    } >= {"ADV1", "ADV2", "ADV3"}
 
 
 def test_upsert_adv_without_display_timezone_support(monkeypatch):

@@ -15,6 +15,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data.models.gmv_restructured import GmvCreativeMetrics10Min
 from app.data.models.gmvmax_campaign_metrics import (
     GmvmaxLiveCampaignMetricsDaily,
     GmvmaxLiveCampaignMetricsHourly,
@@ -25,6 +26,7 @@ from app.data.models.gmvmax_campaign_snapshots import (
     GmvmaxLiveCampaignSnapshotBatch,
     GmvmaxProductCampaignSnapshotBatch,
 )
+from app.data.models.gmvmax_sync_state import GmvCreative10MinBatchManifest
 
 logger = logging.getLogger("gmv.gmvmax.cleanup")
 
@@ -66,8 +68,9 @@ def cleanup_campaign_tables(
     hourly_retention_days: int = 90,
     daily_retention_days: int = 730,
     snapshot_retention_days: int = 90,
+    creative_10min_retention_days: int = 90,
 ) -> dict:
-    """Delete expired metric and snapshot rows for GMV Max campaign tables."""
+    """Delete expired campaign facts, snapshots, and creative batch watermarks."""
 
     started = time.monotonic()
     clock = now or datetime.utcnow()
@@ -76,6 +79,9 @@ def cleanup_campaign_tables(
         days=daily_retention_days
     )
     snapshot_cutoff = clock - timedelta(days=snapshot_retention_days)
+    creative_10min_cutoff = clock - timedelta(
+        days=creative_10min_retention_days
+    )
 
     deleted_hourly_prod = _delete_in_batches(
         session,
@@ -113,6 +119,21 @@ def cleanup_campaign_tables(
         cutoff_value=snapshot_cutoff,
         cutoff_column=lambda model: model.snapshot_at,
     )
+    # Remove manifests first so a crash between the two bounded sweeps leaves
+    # orphaned detail rows fail-closed rather than readable without a watermark.
+    # Both tables use the exact same snapshot cutoff.
+    deleted_creative_10min_manifests = _delete_in_batches(
+        session,
+        GmvCreative10MinBatchManifest,
+        cutoff_value=creative_10min_cutoff,
+        cutoff_column=lambda model: model.snapshot_at,
+    )
+    deleted_creative_10min_metrics = _delete_in_batches(
+        session,
+        GmvCreativeMetrics10Min,
+        cutoff_value=creative_10min_cutoff,
+        cutoff_column=lambda model: model.snapshot_at,
+    )
 
     elapsed = time.monotonic() - started
     summary = {
@@ -122,6 +143,8 @@ def cleanup_campaign_tables(
         "daily_live": deleted_daily_live,
         "snapshots_prod": deleted_snapshots_prod,
         "snapshots_live": deleted_snapshots_live,
+        "creative_10min_manifests": deleted_creative_10min_manifests,
+        "creative_10min_metrics": deleted_creative_10min_metrics,
         "elapsed_seconds": elapsed,
     }
     logger.info(
@@ -131,6 +154,7 @@ def cleanup_campaign_tables(
             "hourly_cutoff": hourly_cutoff.isoformat(),
             "daily_cutoff": daily_cutoff.isoformat(),
             "snapshot_cutoff": snapshot_cutoff.isoformat(),
+            "creative_10min_cutoff": creative_10min_cutoff.isoformat(),
         },
     )
     return summary

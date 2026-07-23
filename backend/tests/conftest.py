@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 import sys
+import tempfile
 from collections.abc import Generator
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import event
+from sqlalchemy import BigInteger, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import close_all_sessions
 
 try:  # pragma: no cover - testing shim
     import email_validator  # type: ignore # noqa: F401
@@ -27,8 +31,41 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
-TEST_DB_PATH = ROOT / "test_platform.db"
+TEST_DB_PATH = pathlib.Path(
+    os.environ.get("GMV_TEST_DB_PATH")
+    or (pathlib.Path(tempfile.gettempdir()) / "gmv-ops-test_platform.db")
+)
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+TEST_CONTENT_FACTORY_STORAGE_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="gmv-content-factory-tests-"))
+os.environ["CONTENT_FACTORY_STORAGE_ROOT"] = str(TEST_CONTENT_FACTORY_STORAGE_ROOT)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_content_factory_test_storage() -> Generator[None, None, None]:
+    yield
+    shutil.rmtree(TEST_CONTENT_FACTORY_STORAGE_ROOT, ignore_errors=True)
+
+
+def _assert_isolated_test_database(engine: Engine) -> None:
+    """Refuse destructive test setup unless it targets the dedicated SQLite file."""
+
+    url = engine.url
+    database = str(url.database or "")
+    is_expected_sqlite = url.get_backend_name() == "sqlite" and database not in {"", ":memory:"}
+    if is_expected_sqlite:
+        is_expected_sqlite = pathlib.Path(database).resolve() == TEST_DB_PATH.resolve()
+    if not is_expected_sqlite:
+        raise RuntimeError(
+            "Refusing to reset a non-test database. "
+            f"Expected sqlite:///{TEST_DB_PATH}, got {url.render_as_string(hide_password=True)}"
+        )
+
+
+@compiles(BigInteger, "sqlite")
+def _compile_bigint_for_sqlite(type_, compiler, **kw):  # noqa: ANN001, ARG001
+    """SQLite only autoincrements a primary key declared exactly as INTEGER."""
+
+    return "INTEGER"
 
 
 @event.listens_for(Engine, "before_cursor_execute", retval=True)
@@ -46,22 +83,26 @@ def _sqlite_timestamp_precision_fix(
 
 @pytest.fixture(autouse=True)
 def _reset_database() -> Generator[None, None, None]:
-    from app.data.db import Base, engine, SessionLocal
+    from app.data.db import Base, engine
     import app.data.models  # noqa: F401 - ensure models registered
 
-    SessionLocal.close_all()
+    _assert_isolated_test_database(engine)
+    close_all_sessions()
     engine.dispose()
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
-
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     yield
 
-    SessionLocal.close_all()
+    close_all_sessions()
     engine.dispose()
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
+
+
+@pytest.fixture()
+def anyio_backend() -> str:
+    """The production stack runs asyncio; do not synthesize an unavailable Trio run."""
+
+    return "asyncio"
 
 
 @pytest.fixture()

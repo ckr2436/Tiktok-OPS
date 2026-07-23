@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from app.features.tenants.ttb.gmv_max import service
 from app.features.tenants.ttb.gmv_max.schemas import (
+    CampaignDetailResponse,
     CreateCampaignRequest,
     GMVMaxCustomAnchorVideo,
     GMVMaxIdentityRequest,
@@ -14,6 +15,26 @@ from app.features.tenants.ttb.gmv_max.schemas import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture(autouse=True)
+def _stub_advertiser_timezone(monkeypatch):
+    monkeypatch.setattr(service, "_get_advertiser_timezone", lambda *args, **kwargs: None)
+
+    async def _authorized(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "ensure_gmvmax_store_authorized", _authorized)
+
+    async def _conflict_free(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_ensure_create_payload_conflict_free", _conflict_free)
+
+    async def _resolved_identities(*args, **kwargs):
+        return list(kwargs.get("requested_identities") or [])
+
+    monkeypatch.setattr(service, "_resolve_product_identity_list", _resolved_identities)
 
 
 class _FakeSession:
@@ -208,3 +229,24 @@ async def test_create_campaign_invalid_customized_products(monkeypatch):
             payload=payload,
             client=_FakeClient(),
         )
+
+
+async def test_campaign_detail_response_accepts_pending_creation_quarantine():
+    response = CampaignDetailResponse.model_validate(
+        {
+            "campaign": {
+                "campaign_id": "campaign-created",
+                "campaign_name": "Created campaign",
+                "operation_status": "ENABLE",
+            },
+            "creation_status": "QUARANTINE_PENDING",
+            "warnings": [
+                {
+                    "code": "GMVMAX_CREATE_POSTPROCESS_QUARANTINED",
+                    "message": "Safety pause still needs confirmation.",
+                }
+            ],
+        }
+    )
+
+    assert response.creation_status == "QUARANTINE_PENDING"

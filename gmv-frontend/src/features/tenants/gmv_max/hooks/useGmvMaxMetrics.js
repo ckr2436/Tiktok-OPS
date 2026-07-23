@@ -16,10 +16,12 @@ export function useGmvMaxMetrics({
   metricsParams,
   campaignFilterId,
   itemGroupId,
+  itemGroupIds,
   enabled = true,
   campaignEnabled = true,
   productEnabled = true,
   creativeEnabled = true,
+  refetchInterval = 60 * 1000,
 }) {
   const baseKey = useMemo(
     () => composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
@@ -49,40 +51,54 @@ export function useGmvMaxMetrics({
     () => ({
       ...commonParams,
       level: GmvMaxMetricsLevel.CREATIVE,
-      item_group_id: itemGroupId || undefined,
+      item_group_ids:
+        Array.isArray(itemGroupIds) && itemGroupIds.length > 0
+          ? itemGroupIds
+          : itemGroupId
+            ? [itemGroupId]
+            : undefined,
     }),
-    [commonParams, itemGroupId],
+    [commonParams, itemGroupId, itemGroupIds],
+  );
+  const hasItemGroupFilter = Boolean(
+    itemGroupId || (Array.isArray(itemGroupIds) && itemGroupIds.length > 0),
   );
 
   const queries = useQueries({
     queries: [
       {
         queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, campaignParams),
-        queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, campaignParams),
+        queryFn: ({ signal }) =>
+          getGmvMaxMetrics(workspaceId, provider, authId, campaignId, campaignParams, { signal }),
         enabled: resolveEnabled(enabled && campaignEnabled && workspaceId && provider && authId && campaignId),
         retry: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
+        refetchInterval,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
         staleTime: 30 * 1000,
       },
       {
         queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, productParams),
-        queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, productParams),
+        queryFn: ({ signal }) =>
+          getGmvMaxMetrics(workspaceId, provider, authId, campaignId, productParams, { signal }),
         enabled: resolveEnabled(enabled && productEnabled && workspaceId && provider && authId && campaignId),
         retry: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
+        refetchInterval,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
         staleTime: 30 * 1000,
       },
       {
         queryKey: composeMetricsQueryKey(workspaceId, provider, authId, campaignId, creativeParams),
-        queryFn: () => getGmvMaxMetrics(workspaceId, provider, authId, campaignId, creativeParams),
+        queryFn: ({ signal }) =>
+          getGmvMaxMetrics(workspaceId, provider, authId, campaignId, creativeParams, { signal }),
         enabled: resolveEnabled(
-          enabled && creativeEnabled && itemGroupId && workspaceId && provider && authId && campaignId,
+          enabled && creativeEnabled && hasItemGroupFilter && workspaceId && provider && authId && campaignId,
         ),
         retry: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
+        refetchInterval,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
         staleTime: 30 * 1000,
       },
     ],
@@ -95,4 +111,3 @@ export function useGmvMaxMetrics({
     creativeMetrics: queries[2],
   };
 }
-

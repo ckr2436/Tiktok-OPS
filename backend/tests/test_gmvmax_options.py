@@ -252,8 +252,8 @@ def test_refresh_timeout_returns_body(monkeypatch, gmv_app):
         call_args["auth"] = auth_id
         return MetaSyncEnqueueResult(idempotency_key="test-key", task_name="ttb.sync.all")
 
-    router_module = importlib.import_module("app.features.tenants.ttb.router")
-    monkeypatch.setattr(router_module, "enqueue_meta_sync", _fake_enqueue_meta_sync)
+    binding_module = importlib.import_module("app.features.tenants.ttb.router.binding")
+    monkeypatch.setattr(binding_module, "enqueue_meta_sync", _fake_enqueue_meta_sync)
 
     resp = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/options",
@@ -274,7 +274,8 @@ def test_refresh_returns_new_data_when_updated(monkeypatch, gmv_app):
     )
     initial_etag = first.headers["ETag"]
 
-    router_module = importlib.import_module("app.features.tenants.ttb.router")
+    router_module = importlib.import_module("app.features.tenants.ttb.router.common")
+    binding_module = importlib.import_module("app.features.tenants.ttb.router.binding")
 
     new_state = MetaCursorState(
         revisions={"bc": "bc_rev_new", "advertiser": "adv_rev_new", "store": "store_rev_new"},
@@ -288,7 +289,7 @@ def test_refresh_returns_new_data_when_updated(monkeypatch, gmv_app):
 
     monkeypatch.setattr(router_module, "_poll_for_meta_refresh", _fake_poll)
     monkeypatch.setattr(
-        router_module,
+        binding_module,
         "enqueue_meta_sync",
         lambda *, workspace_id, auth_id, now=None: MetaSyncEnqueueResult(
             idempotency_key="refresh-key", task_name="ttb.sync.all"
@@ -329,10 +330,7 @@ def test_enqueue_meta_sync_builds_payload(monkeypatch):
     assert payload["scope"] == expected_scope
     envelope = payload["params"]["envelope"]
     assert envelope["meta"]["idempotency_key"] == result.idempotency_key
-    from app.core.config import settings
-
-    expected_queue = getattr(settings, "CELERY_DEFAULT_QUEUE", None) or "gmv.tasks.events"
-    assert recorded["queue"] == expected_queue
+    assert recorded["queue"] == "gmvmax"
 
 
 def test_enqueue_meta_sync_falls_back_when_primary_task_fails(monkeypatch):
@@ -544,7 +542,7 @@ def test_options_links_handle_raw_variants(gmv_app):
 
 
 def test_gmvmax_alias_scope_enforced(monkeypatch, gmv_app):
-    client, _ = gmv_app
+    client, db = gmv_app
 
     binding = router_provider.GMVMaxAccountBinding(
         account=None,
@@ -559,7 +557,7 @@ def test_gmvmax_alias_scope_enforced(monkeypatch, gmv_app):
         store_id="7496202240253986992",
         binding=binding,
         client=SimpleNamespace(gmv_max_campaign_get=lambda *_, **__: None),
-        db=SimpleNamespace(flush=lambda: None),
+        db=db,
     )
 
     def _context_override(workspace_id: int, provider: str, auth_id: int, db=None):  # noqa: ANN001
@@ -567,12 +565,7 @@ def test_gmvmax_alias_scope_enforced(monkeypatch, gmv_app):
             raise HTTPException(status_code=404, detail="binding not found")
         return context
 
-    async def fake_call(func, *args, **kwargs):  # noqa: ANN001
-        payload = type("Payload", (), {"list": [], "page_info": {}})()
-        return type("Resp", (), {"data": payload, "request_id": "stub"})()
-
     client.app.dependency_overrides[router_provider.get_route_context] = _context_override
-    monkeypatch.setattr(router_provider, "_call_tiktok", fake_call)
 
     ok_resp = client.get(
         "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/"

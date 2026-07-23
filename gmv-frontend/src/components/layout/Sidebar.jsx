@@ -14,17 +14,17 @@ import { NavLink } from 'react-router-dom'
  *   ]}
  * ]
  */
-export default function Sidebar({ groups = [] }) {
+export default function Sidebar({ groups = [], className = '', onNavigate }) {
   return (
-    <aside className="sidebar" aria-label="侧边导航">
+    <aside id="app-sidebar" className={`sidebar ${className}`.trim()} aria-label="侧边导航">
       {groups.map((g, i) => (
-        <SidebarGroup key={i} title={g.title} items={g.items || []} />
+        <SidebarGroup key={i} title={g.title} items={g.items || []} onNavigate={onNavigate} />
       ))}
     </aside>
   )
 }
 
-function SidebarGroup({ title, items }) {
+function SidebarGroup({ title, items, onNavigate }) {
   const [open, setOpen] = useState(true)
   return (
     <div className={'sidebar-group' + (open ? '' : ' collapsed')}>
@@ -52,6 +52,7 @@ function SidebarGroup({ title, items }) {
                 target={it.external ? '_blank' : undefined}
                 rel={it.external ? 'noopener' : undefined}
                 title={it.label}
+                onClick={onNavigate}
               >
                 <i className="link-dot" />
                 <span className="sidebar-link__label">{it.label}</span>
@@ -66,6 +67,7 @@ function SidebarGroup({ title, items }) {
               end={!!it.exact}               // ★ 精确匹配：防止父级也被激活
               className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}
               title={it.label}
+              onClick={onNavigate}
             >
               <i className="link-dot" />
               <span className="sidebar-link__label">{it.label}</span>
@@ -76,4 +78,3 @@ function SidebarGroup({ title, items }) {
     </div>
   )
 }
-

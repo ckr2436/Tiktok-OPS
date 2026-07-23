@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import asyncio
-from sqlalchemy import event
 
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.ttb_gmvmax import TTBGmvMaxCreativeHeating
@@ -21,21 +20,11 @@ from app.data.repositories.tiktok_business.gmvmax_heating import (
 _PROVIDER = "tiktok-business"
 _CAMPAIGN_ID = "cmp-1"
 _CREATIVE_ID = "cr-1"
-_HEATING_ID_SEQ = 1
-
-
-@event.listens_for(TTBGmvMaxCreativeHeating, "before_insert")
-def _assign_heating_id(mapper, connection, target) -> None:  # pragma: no cover - sqlite helper
-    global _HEATING_ID_SEQ
-    if target.id is not None:
-        return
-    target.id = _HEATING_ID_SEQ
-    _HEATING_ID_SEQ += 1
+_ADVERTISER_ID = "adv-1"
+_PROMOTION_TYPE = "PRODUCT"
 
 
 def _setup_workspace_and_account(db_session):
-    global _HEATING_ID_SEQ
-    _HEATING_ID_SEQ = 1
     workspace = Workspace(id=1, name="Tenant", company_code="0001")
     db_session.add(workspace)
     db_session.flush()
@@ -74,6 +63,8 @@ def test_upsert_creative_heating_insert_and_update(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id=_CREATIVE_ID,
             mode="BOOST",
@@ -81,6 +72,8 @@ def test_upsert_creative_heating_insert_and_update(db_session):
             currency="USD",
             max_duration_minutes=120,
             note="Initial boost",
+            product_id="spu-1",
+            item_id="post-1",
             evaluation_window_minutes=90,
             min_clicks=40,
             min_ctr=0.02,
@@ -95,6 +88,8 @@ def test_upsert_creative_heating_insert_and_update(db_session):
     assert first.currency == "USD"
     assert first.max_duration_minutes == 120
     assert first.note == "Initial boost"
+    assert first.product_id == "spu-1"
+    assert first.item_id == "post-1"
     assert first.evaluation_window_minutes == 90
     assert first.min_clicks == 40
     assert float(first.min_ctr) == 0.02
@@ -107,6 +102,8 @@ def test_upsert_creative_heating_insert_and_update(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id=_CREATIVE_ID,
             mode="SET_BUDGET",
@@ -130,6 +127,30 @@ def test_upsert_creative_heating_insert_and_update(db_session):
     assert updated.creative_name == "Hero Video"
     assert updated.auto_stop_enabled is False
 
+    stopped = asyncio.run(
+        upsert_creative_heating(
+            db_session,
+            workspace_id=workspace_id,
+            provider=_PROVIDER,
+            auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
+            campaign_id=_CAMPAIGN_ID,
+            creative_id=_CREATIVE_ID,
+            mode="STOP",
+            budget_delta=0,
+        )
+    )
+    db_session.flush()
+
+    assert stopped is first
+    assert stopped.mode == "STOP"
+    assert float(stopped.budget_delta) == 0
+    assert float(stopped.target_daily_budget) == 200
+    assert stopped.currency == "USD"
+    assert stopped.product_id == "spu-1"
+    assert stopped.item_id == "post-1"
+
 
 def test_update_heating_action_result(db_session):
     workspace_id, auth_id = _setup_workspace_and_account(db_session)
@@ -139,6 +160,8 @@ def test_update_heating_action_result(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id=_CREATIVE_ID,
         )
@@ -162,7 +185,7 @@ def test_update_heating_action_result(db_session):
 
     assert updated.status == "APPLIED"
     assert updated.last_action_type == "APPLY_BOOST"
-    assert updated.last_action_time == timestamp
+    assert updated.last_action_at == timestamp
     assert updated.last_action_request == {"creative_id": _CREATIVE_ID}
     assert updated.last_action_response == {"result": "OK"}
     assert updated.last_error is None
@@ -180,6 +203,8 @@ def test_list_and_get_heating_configs(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id="cr-1",
             mode="BOOST",
@@ -191,6 +216,8 @@ def test_list_and_get_heating_configs(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id="cr-2",
             mode="BOOST",
@@ -202,6 +229,8 @@ def test_list_and_get_heating_configs(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id="cmp-2",
             creative_id="cr-3",
             mode="BOOST",
@@ -256,6 +285,8 @@ def test_active_heating_and_evaluation_updates(db_session):
             workspace_id=workspace_id,
             provider=_PROVIDER,
             auth_id=auth_id,
+            advertiser_id=_ADVERTISER_ID,
+            promotion_type=_PROMOTION_TYPE,
             campaign_id=_CAMPAIGN_ID,
             creative_id=_CREATIVE_ID,
         )

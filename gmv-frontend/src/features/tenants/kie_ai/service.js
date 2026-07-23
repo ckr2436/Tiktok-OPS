@@ -1,197 +1,153 @@
-// src/features/tenants/kie_ai/service.js
 import http from '../../../core/httpClient.js'
 
-// wid = workspace_id
-function tenantPrefix(wid) {
+function aiVideoPrefix(wid) {
   if (!wid && wid !== 0) {
     throw new Error('workspace_id (wid) is required')
   }
-  return `/tenants/${encodeURIComponent(wid)}/kie-ai/sora2`
+  return `/tenants/${encodeURIComponent(wid)}/ai-video/videos`
 }
 
-function pathForModel(wid, modelId) {
-  const base = tenantPrefix(wid)
-  switch (modelId) {
-    case 'sora-2-text-to-video':
-      return `${base}/text-to-video`
-    case 'sora-2-pro-text-to-video':
-      return `${base}/pro-text-to-video`
-    case 'sora-2-image-to-video':
-      return `${base}/image-to-video`
-    case 'sora-2-pro-image-to-video':
-      return `${base}/pro-image-to-video`
-    case 'sora-2-pro-storyboard':
-      return `${base}/pro-storyboard`
-    case 'sora-watermark-remover':
-      return `${base}/watermark-remover`
-    default:
-      throw new Error(`Unsupported Sora2 model: ${modelId}`)
-  }
+function taskPath(wid, taskId, admin = false) {
+  const scope = admin ? '/admin' : ''
+  return `${aiVideoPrefix(wid)}${scope}/tasks/${encodeURIComponent(taskId)}`
 }
 
-// 通用创建 Sora2 任务
-async function createSora2Task(
-  wid,
-  {
-    modelId,
-    prompt,
-    aspect_ratio,
-    n_frames,
-    remove_watermark,
-    size,
-    image,
-    video_url,
-    shots,
-  },
-) {
-  if (!modelId) {
-    throw new Error('modelId is required for createSora2Task')
-  }
-  const url = pathForModel(wid, modelId)
+async function getProviderStatus(wid) {
+  const res = await http.get(`${aiVideoPrefix(wid)}/provider-status`)
+  return res?.data ?? res
+}
 
+async function createBatch(wid, payload) {
+  const res = await http.post(`${aiVideoPrefix(wid)}/batch`, payload, { timeout: 60_000 })
+  return res?.data ?? res
+}
+
+async function createBatchUpload(wid, { items = [], files = [] } = {}) {
   const form = new FormData()
-  if (prompt != null && prompt !== '') {
-    form.append('prompt', prompt)
-  }
-  if (aspect_ratio) {
-    form.append('aspect_ratio', aspect_ratio)
-  }
-  if (n_frames != null && n_frames !== '') {
-    form.append('n_frames', String(n_frames))
-  }
-  if (typeof remove_watermark === 'boolean') {
-    form.append('remove_watermark', remove_watermark ? 'true' : 'false')
-  }
-  if (size) {
-    form.append('size', size)
-  }
-  if (video_url) {
-    form.append('video_url', video_url)
-  }
-  if (shots && Array.isArray(shots) && shots.length > 0) {
-    form.append('shots', JSON.stringify(shots))
-  }
-  if (image) {
-    form.append('image', image)
-  }
-
-  const res = await http.post(url, form, {
+  form.append('items', JSON.stringify(items))
+  for (const file of files) form.append('files', file)
+  const res = await http.post(`${aiVideoPrefix(wid)}/batch-upload`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60_000,
+    timeout: 120_000,
   })
   return res?.data ?? res
 }
 
-// 兼容用法：只创建标准版 image-to-video（旧页面如果还在用的话）
-async function createImageToVideoTask(
-  wid,
-  { prompt, aspect_ratio, n_frames, remove_watermark, image },
-) {
-  return createSora2Task(wid, {
-    modelId: 'sora-2-image-to-video',
-    prompt,
-    aspect_ratio,
-    n_frames,
-    remove_watermark,
-    image,
-  })
+async function createVideo(wid, payload) {
+  const res = await http.post(`${aiVideoPrefix(wid)}/generate`, payload, { timeout: 60_000 })
+  return res?.data ?? res
 }
 
-/**
- * 获取单个任务详情
- * GET /tenants/{wid}/kie-ai/sora2/tasks/{id}?refresh=1
- *
- * - 正常返回任务对象
- * - 如果后端 404，则返回 null（不抛错），用于前端自动清理当前任务
- */
-async function getTask(wid, taskId, { refresh = true } = {}) {
-  const url = `${tenantPrefix(wid)}/tasks/${encodeURIComponent(taskId)}`
+async function getTask(wid, taskId, { refresh = true, admin = false } = {}) {
   try {
-    const res = await http.get(url, { params: { refresh: refresh ? 1 : 0 } })
+    const res = await http.get(taskPath(wid, taskId, admin), {
+      params: { refresh: refresh ? 1 : 0 },
+    })
     return res?.data ?? res
-  } catch (err) {
-    const status = err?.response?.status ?? err?.status
-    if (status === 404) {
-      // 任务不存在，返回 null，交给前端去清理状态
-      return null
-    }
-    throw err
+  } catch (error) {
+    if ((error?.response?.status ?? error?.status) === 404 && !admin) return null
+    throw error
   }
 }
 
-/**
- * 任务历史列表
- * GET /tenants/{wid}/kie-ai/sora2/tasks?page=&size=&state=&model=
- */
-async function listTasks(wid, params = {}) {
-  const url = `${tenantPrefix(wid)}/tasks`
-  const res = await http.get(url, { params })
+async function getTaskBatch(wid, taskId) {
+  const res = await http.get(`${taskPath(wid, taskId)}/batch`)
   return res?.data ?? res
 }
 
-/**
- * 某任务的文件列表
- * GET /tenants/{wid}/kie-ai/sora2/tasks/{id}/files
- */
-async function listTaskFiles(wid, taskId) {
-  const url = `${tenantPrefix(wid)}/tasks/${encodeURIComponent(taskId)}/files`
-  const res = await http.get(url)
+async function listTasks(wid, params = {}, { admin = false } = {}) {
+  const scope = admin ? '/admin' : ''
+  const res = await http.get(`${aiVideoPrefix(wid)}${scope}/tasks`, { params })
   return res?.data ?? res
 }
 
-/**
- * 获取文件下载 URL
- * GET /tenants/{wid}/kie-ai/sora2/files/{fileId}/download-url
- * 返回值是后端从 KIE 刷新的真实下载链接字符串
- */
-async function getFileDownloadUrl(wid, fileId) {
-  if (!wid && wid !== 0) {
-    throw new Error('workspace_id (wid) is required')
-  }
-  if (!fileId && fileId !== 0) {
-    throw new Error('fileId is required')
-  }
-
-  const url = `${tenantPrefix(wid)}/files/${encodeURIComponent(fileId)}/download-url`
-  const res = await http.get(url)
-  // 后端直接返回 string，所以这里直接透传
+async function listTaskFiles(wid, taskId, { admin = false } = {}) {
+  const res = await http.get(`${taskPath(wid, taskId, admin)}/files`)
   return res?.data ?? res
 }
 
-/**
- * 清空某个模型的任务记录（及其关联文件）
- * DELETE /tenants/{wid}/kie-ai/sora2/tasks?model=
- */
+async function getFileDownloadUrl(wid, fileId, { admin = false } = {}) {
+  if (!fileId && fileId !== 0) throw new Error('fileId is required')
+  const scope = admin ? '/admin' : ''
+  const res = await http.get(
+    `${aiVideoPrefix(wid)}${scope}/files/${encodeURIComponent(fileId)}/download-url`,
+  )
+  return res?.data ?? res
+}
+
 async function clearTasks(wid, { modelId } = {}) {
-  if (!wid && wid !== 0) {
-    throw new Error('workspace_id (wid) is required')
-  }
-  const url = `${tenantPrefix(wid)}/tasks`
-  await http.delete(url, {
-    params: {
-      model: modelId || undefined,
-    },
+  await http.delete(`${aiVideoPrefix(wid)}/tasks`, {
+    params: { model: modelId || undefined },
   })
 }
 
-const kieTenantApi = {
-  createSora2Task,
-  createImageToVideoTask,
+async function retryTask(wid, taskId, payload = undefined) {
+  const res = await http.post(`${taskPath(wid, taskId)}/retry`, payload)
+  return res?.data ?? res
+}
+
+async function deleteTask(wid, taskId) {
+  const res = await http.delete(taskPath(wid, taskId))
+  return res?.data ?? res
+}
+
+function filenameFromDisposition(disposition, fallback) {
+  const value = String(disposition || '')
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  return value.match(/filename="?([^";]+)"?/i)?.[1] || fallback
+}
+
+async function batchDownloadTasks(wid, taskIds = []) {
+  const res = await http.post(
+    `${aiVideoPrefix(wid)}/tasks/batch-download`,
+    { task_ids: taskIds },
+    { responseType: 'blob', timeout: 120_000 },
+  )
+  return {
+    blob: res?.data,
+    filename: filenameFromDisposition(
+      res?.headers?.['content-disposition'],
+      'ai-videos.zip',
+    ),
+  }
+}
+
+const aiVideoApi = {
+  getProviderStatus,
+  createBatch,
+  createBatchUpload,
+  createVideo,
   getTask,
+  getTaskBatch,
   listTasks,
   listTaskFiles,
   getFileDownloadUrl,
   clearTasks,
+  retryTask,
+  deleteTask,
+  batchDownloadTasks,
 }
 
-export default kieTenantApi
+export default aiVideoApi
 export {
-  createSora2Task,
-  createImageToVideoTask,
+  getProviderStatus,
+  createBatch,
+  createBatchUpload,
+  createVideo,
   getTask,
+  getTaskBatch,
   listTasks,
   listTaskFiles,
   getFileDownloadUrl,
   clearTasks,
+  retryTask,
+  deleteTask,
+  batchDownloadTasks,
 }
-

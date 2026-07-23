@@ -18,6 +18,7 @@ from app.data.models.ttb_entities import (
     TTBAdvertiser,
     TTBStore,
     TTBProduct,
+    TTBProductAdvertiserEligibility,
     TTBBCAdvertiserLink,
     TTBAdvertiserStoreLink,
 )
@@ -746,9 +747,7 @@ def _upsert_product(
             .filter(TTBProduct.product_id == str(product_id))
             .first()
         )
-        existing_status = None
-        if existing_row:
-            existing_status = existing_row[0] if isinstance(existing_row, tuple) else existing_row.status
+        existing_status = existing_row[0] if existing_row else None
         status_value = existing_status or ""
     running_custom_ads = _to_boolish(_pick(item, "is_running_custom_shop_ads"))
 
@@ -807,18 +806,96 @@ def _upsert_product(
     return True
 
 
+def _upsert_gmv_max_product_eligibility(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    store_id: str,
+    advertiser_id: str,
+    product_id: str,
+    gmv_max_ads_status: str | None,
+    observed_at: datetime,
+) -> None:
+    _upsert(
+        db,
+        TTBProductAdvertiserEligibility,
+        values={
+            "workspace_id": int(workspace_id),
+            "auth_id": int(auth_id),
+            "advertiser_id": str(advertiser_id),
+            "store_id": str(store_id),
+            "product_id": str(product_id),
+            "is_eligible": True,
+            "gmv_max_ads_status": _clean_nullable_str(gmv_max_ads_status),
+            "last_seen_at": observed_at,
+            "absent_at": None,
+        },
+        conflict_columns=(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "product_id",
+        ),
+        update_columns=(
+            "is_eligible",
+            "gmv_max_ads_status",
+            "last_seen_at",
+            "absent_at",
+        ),
+    )
+
+
+def _tombstone_absent_gmv_max_products(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    store_id: str,
+    advertiser_id: str,
+    seen_product_ids: set[str],
+    observed_at: datetime,
+) -> int:
+    """Tombstone only this fully fetched advertiser/store partition."""
+
+    query = (
+        db.query(TTBProductAdvertiserEligibility)
+        .filter(
+            TTBProductAdvertiserEligibility.workspace_id == int(workspace_id),
+            TTBProductAdvertiserEligibility.auth_id == int(auth_id),
+            TTBProductAdvertiserEligibility.advertiser_id == str(advertiser_id),
+            TTBProductAdvertiserEligibility.store_id == str(store_id),
+            TTBProductAdvertiserEligibility.is_eligible.is_(True),
+            TTBProductAdvertiserEligibility.last_seen_at < observed_at,
+        )
+    )
+    if seen_product_ids:
+        query = query.filter(
+            ~TTBProductAdvertiserEligibility.product_id.in_(seen_product_ids)
+        )
+    rows: list[TTBProductAdvertiserEligibility] = (
+        query.with_for_update().all()
+    )
+    for row in rows:
+        row.is_eligible = False
+        row.absent_at = observed_at
+        db.add(row)
+    return len(rows)
+
+
 # --------------------------- 同步服务 ---------------------------
 
 
 def _eligibility_to_api(
     value: Optional[Literal["gmv_max", "ads", "all"]],
-) -> Optional[Literal["GMV_MAX", "CUSTOM_STORE_ADS"]]:
+) -> Optional[Literal["GMV_MAX", "CUSTOM_SHOP_ADS"]]:
     if not value or value == "all":
         return None
     if value == "gmv_max":
         return "GMV_MAX"
     if value == "ads":
-        return "CUSTOM_STORE_ADS"
+        return "CUSTOM_SHOP_ADS"
     return None
 
 
@@ -1060,12 +1137,6 @@ class TTBSyncService:
             bc_ids_for_auth.append(norm)
         bc_id_for_auth: Optional[str] = bc_ids_for_auth[0] if bc_ids_for_auth else None
 
-        try:
-            fetch_limit = int(page_size)
-        except Exception:
-            fetch_limit = 0
-        fetch_limit = max(fetch_limit, 0)
-
         async for item in self.client.iter_advertisers(
             page_size=_ADVERTISER_INFO_BATCH_SIZE
         ):
@@ -1103,9 +1174,6 @@ class TTBSyncService:
                     latest_rev = str(rev)
             else:
                 stats["skipped"] += 1
-
-            if fetch_limit and stats["fetched"] >= fetch_limit:
-                break
 
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
 
@@ -1279,8 +1347,16 @@ class TTBSyncService:
             self._cursor_checkpoint(cursor, last_rev=latest_rev)
             return {"resource": "products", **stats, "cursor": {"last_rev": cursor.last_rev}}
 
+        # A store can be linked to more than one advertiser.  Keep each
+        # eligibility snapshot as an independent advertiser partition; the
+        # official GMV_MAX filter is advertiser-dependent.
+        pairs = list(dict.fromkeys(pairs))
+        advertisers_by_store: dict[str, list[str]] = {}
+        for adv_id, sid in pairs:
+            advertisers_by_store.setdefault(str(sid), []).append(str(adv_id))
+
         # 预加载所有涉及到的 store 行，方便拿 bc_id / raw_json
-        store_ids = {sid for _, sid in pairs}
+        store_ids = set(advertisers_by_store)
         store_rows: List[TTBStore] = (
             self.db.query(TTBStore)
             .filter(TTBStore.workspace_id == self.workspace_id)
@@ -1290,7 +1366,8 @@ class TTBSyncService:
         )
         store_by_id = {str(s.store_id): s for s in store_rows if s and s.store_id}
 
-        for adv_id, sid in pairs:
+        sync_observed_at = _now()
+        for sid, advertiser_ids in advertisers_by_store.items():
             s = store_by_id.get(sid)
             if not s:
                 continue
@@ -1320,27 +1397,75 @@ class TTBSyncService:
                         },
                     )
 
-            async for item in self.client.iter_products(
-                store_id=sid,
-                bc_id=str(bc_id) if bc_id else None,
-                advertiser_id=adv_id,
-                page_size=page_size,
-                eligibility=eligibility_api,
-            ):
-                stats["fetched"] += 1
-                ok = _upsert_product(
-                    self.db,
-                    workspace_id=self.workspace_id,
-                    auth_id=self.auth_id,
-                    item=item,
+            for adv_id in advertiser_ids:
+                seen_product_ids: set[str] = set()
+                yielded_product_count = 0
+                snapshot_valid = True
+                # The async iterator returns only after every official page has
+                # completed.  Any API or pagination exception exits this
+                # method before the absence reconciliation below.
+                async for item in self.client.iter_products(
+                    store_id=sid,
+                    bc_id=str(bc_id) if bc_id else None,
+                    advertiser_id=adv_id,
+                    page_size=page_size,
+                    eligibility=eligibility_api,
+                ):
+                    yielded_product_count += 1
+                    stats["fetched"] += 1
+                    returned_store_id = _normalize_identifier(_pick(item, "store_id"))
+                    if returned_store_id != str(sid):
+                        stats["skipped"] += 1
+                        snapshot_valid = False
+                        continue
+                    ok = _upsert_product(
+                        self.db,
+                        workspace_id=self.workspace_id,
+                        auth_id=self.auth_id,
+                        item=item,
+                    )
+                    if ok:
+                        stats["upserts"] += 1
+                        product_id = _normalize_identifier(
+                            _pick(item, "product_id", "item_group_id")
+                        )
+                        if product_id:
+                            seen_product_ids.add(product_id)
+                            if eligibility_api == "GMV_MAX":
+                                _upsert_gmv_max_product_eligibility(
+                                    self.db,
+                                    workspace_id=self.workspace_id,
+                                    auth_id=self.auth_id,
+                                    store_id=sid,
+                                    advertiser_id=adv_id,
+                                    product_id=product_id,
+                                    gmv_max_ads_status=_pick(
+                                        item,
+                                        "gmv_max_ads_status",
+                                    ),
+                                    observed_at=sync_observed_at,
+                                )
+                        rev = _pick(item, "version")
+                        if rev:
+                            latest_rev = str(rev)
+                    else:
+                        stats["skipped"] += 1
+                        snapshot_valid = False
+
+                unique_snapshot_complete = (
+                    snapshot_valid
+                    and yielded_product_count == len(seen_product_ids)
                 )
-                if ok:
-                    stats["upserts"] += 1
-                    rev = _pick(item, "version")
-                    if rev:
-                        latest_rev = str(rev)
-                else:
-                    stats["skipped"] += 1
+                if eligibility_api == "GMV_MAX" and unique_snapshot_complete:
+                    _tombstone_absent_gmv_max_products(
+                        self.db,
+                        workspace_id=self.workspace_id,
+                        auth_id=self.auth_id,
+                        store_id=sid,
+                        advertiser_id=adv_id,
+                        seen_product_ids=seen_product_ids,
+                        observed_at=sync_observed_at,
+                    )
 
         self._cursor_checkpoint(cursor, last_rev=latest_rev)
         return {"resource": "products", **stats, "cursor": {"last_rev": cursor.last_rev}}
@@ -1395,4 +1520,3 @@ async def run_sync_all(
     finally:
         with contextlib.suppress(Exception):
             await service.client.aclose()
-

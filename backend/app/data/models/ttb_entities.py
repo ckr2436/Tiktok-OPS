@@ -242,6 +242,9 @@ class TTBProduct(Base):
     image_url: Mapped[str | None] = mapped_column(String(1024), default=None)
     min_price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
     max_price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    effective_price: Mapped[float | None] = mapped_column(Numeric(18, 4), default=None)
+    effective_price_source: Mapped[str | None] = mapped_column(String(64), default=None)
+    effective_price_updated_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
     historical_sales: Mapped[int | None] = mapped_column(Integer, default=None)
     category: Mapped[str | None] = mapped_column(String(255), default=None)
     gmv_max_ads_status: Mapped[str | None] = mapped_column(String(32), default=None)
@@ -257,6 +260,78 @@ class TTBProduct(Base):
         MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
+class TTBProductAdvertiserEligibility(Base):
+    """Advertiser-scoped GMV Max eligibility evidence for one store product."""
+
+    __tablename__ = "ttb_product_advertiser_eligibility"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "product_id",
+            name="uk_ttb_product_advertiser_eligibility",
+        ),
+        Index(
+            "idx_ttb_product_advertiser_eligible",
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "is_eligible",
+        ),
+        Index(
+            "idx_ttb_product_eligibility_product",
+            "workspace_id",
+            "auth_id",
+            "store_id",
+            "product_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("workspaces.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    auth_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_accounts_ttb.id", onupdate="RESTRICT", ondelete="CASCADE"),
+        nullable=False,
+    )
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("1"),
+    )
+    gmv_max_ads_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    absent_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        default=None,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP(6)"),
@@ -446,6 +521,7 @@ class TTBAdvertiserBalance(Base):
     valid_cash_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
     credit_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
     valid_credit_balance: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
+    budget_remaining: Mapped[float | None] = mapped_column(Numeric(18, 2), default=None)
 
     fetched_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
@@ -459,4 +535,3 @@ class TTBAdvertiserBalance(Base):
         server_default=text("CURRENT_TIMESTAMP(6)"),
         server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
-

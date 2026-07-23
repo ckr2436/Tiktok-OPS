@@ -6,22 +6,22 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from time import time_ns
 from typing import Any, Callable, Collection, Mapping, Optional, Sequence, TypedDict
 
-from sqlalchemy import select, func, delete, update
+from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxLiveCampaignCatalog,
+    GmvmaxProductCampaignItemGroup,
+    GmvmaxProductCampaignCatalog,
+)
 from app.data.models.gmv_restructured import (
-    GmvActionLog,
     GmvCampaign,
     GmvCampaignCreative,
     GmvCampaignLivestream,
-    GmvCampaignMetricsDaily,
-    GmvCampaignMetricsHourly,
-    GmvCampaignProduct,
-    GmvCreativeMetricsDaily,
-    GmvCreativeMetricsHourly,
     GmvDurationMetricsDaily,
     GmvDurationMetricsHourly,
     GmvLivestreamMetricsDaily,
@@ -31,10 +31,9 @@ from app.data.models.gmv_restructured import (
     GmvOverviewSnapshot,
     GmvProductMetricsDaily,
     GmvProductMetricsHourly,
-    GmvStrategyConfig,
     PromotionTypeEnum,
 )
-from app.data.models.ttb_entities import TTBAdvertiserStoreLink
+from app.data.models.ttb_entities import TTBAdvertiser, TTBAdvertiserStoreLink
 from app.data.repositories.tiktok_business import gmvmax as gmvmax_repo
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignCreateBody,
@@ -45,7 +44,6 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxCampaignReportRequest,
     GMVMaxCampaignUpdateBody,
     GMVMaxCampaignUpdateRequest,
-    GMVMaxCreativeReportRequest,
     GMVMaxDataset,
     GMVMaxExclusiveAuthorizationCreateRequest,
     GMVMaxExclusiveAuthorizationGetRequest,
@@ -54,12 +52,28 @@ from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxMetricsLevel,
     GMVMaxReportFiltering,
     GMVMaxReportGetRequest,
-    GMVMaxReportTimeRange,
     GMVMaxStoreListRequest,
     build_gmv_max_report_request,
     TikTokBusinessGMVMaxClient,
 )
 from app.gmvmax.services.campaign_mapper import map_gmvmax_campaign_info_to_model
+from app.gmvmax.services.campaign_catalog_freshness import (
+    catalog_observation_now,
+    catalog_response_is_stale,
+    normalize_catalog_observed_at,
+)
+from app.gmvmax.services.fact_freshness import (
+    settlement_metadata,
+    utc_now_naive,
+)
+from app.gmvmax.services.fact_reconciliation import StagedFactKeySet
+from app.gmvmax.services.report_pagination import (
+    OFFICIAL_REPORT_PAGE_SIZE,
+    ReportPaginationState,
+    chunk_report_filter_ids,
+    iter_numbered_pages,
+    report_page_has_more,
+)
 from app.services.gmvmax_spec import (
     GMVMAX_BASE_METRICS,
     GMVMAX_SUPPORTED_METRICS,
@@ -88,16 +102,6 @@ def _ensure_campaign_not_deleted(campaign: GmvCampaign | None) -> None:
 __all__ = [
     "upsert_campaign_from_api",
     "sync_gmvmax_campaigns",
-    "upsert_metrics_hourly_row",
-    "sync_gmvmax_metrics_hourly",
-    "upsert_metrics_daily_row",
-    "sync_gmvmax_metrics_daily",
-    "sync_gmvmax_reports_for_campaign",
-    "log_campaign_action",
-    "apply_campaign_action",
-    "get_or_create_strategy_config",
-    "aggregate_recent_metrics",
-    "decide_campaign_action",
     "resolve_store_id_from_page_context",
     "ensure_gmvmax_store_authorized",
     "build_gmvmax_anchor_params",
@@ -105,7 +109,6 @@ __all__ = [
     "update_gmvmax_campaign",
     "fetch_gmvmax_report_by_level",
     "fetch_overview_summary_rows",
-    "get_item_group_ids_for_campaign",
     "fetch_and_cache_campaign_detail",
     "normalize_overview_metrics",
     "upsert_overview_snapshot",
@@ -156,6 +159,9 @@ def _sanitize_id_list(values: Sequence[str] | Sequence[int] | None) -> list[str]
         cleaned.append(text)
     return cleaned or None
 _DEFAULT_REPORT_METRICS = list(GMVMAX_DEFAULT_METRICS)
+_PRODUCT_REPORT_METRICS = list(
+    dict.fromkeys(GMV_REPORT_CONFIG[GMVMaxReportLevel.PRODUCT]["metrics"])
+)
 _OVERVIEW_FINANCIAL_METRICS = (
     "cost",
     "net_cost",
@@ -180,7 +186,76 @@ _CREATIVE_ATTRIBUTE_FIELDS = (
     "item_id",
 )
 
-_REPORT_PAGE_SIZE = 200
+_REPORT_PAGE_SIZE = OFFICIAL_REPORT_PAGE_SIZE
+
+
+def _official_report_date_windows(
+    start_date: date | str,
+    end_date: date | str,
+    *,
+    max_days: int,
+) -> list[tuple[date, date]]:
+    """Split report/get dates at the API's inclusive date-window boundary."""
+
+    if max_days < 1:
+        raise ValueError("max_days must be positive")
+    normalized_start = date.fromisoformat(_normalize_date(start_date))
+    normalized_end = date.fromisoformat(_normalize_date(end_date))
+    if normalized_start > normalized_end:
+        raise ValueError("start_date must not be after end_date")
+
+    windows: list[tuple[date, date]] = []
+    current = normalized_start
+    while current <= normalized_end:
+        window_end = min(
+            normalized_end,
+            current + timedelta(days=max_days - 1),
+        )
+        windows.append((current, window_end))
+        current = window_end + timedelta(days=1)
+    return windows
+
+
+def _advertiser_timezone_for_fact(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+) -> str | None:
+    row = db.execute(
+        select(TTBAdvertiser.display_timezone, TTBAdvertiser.timezone)
+        .where(TTBAdvertiser.workspace_id == int(workspace_id))
+        .where(TTBAdvertiser.auth_id == int(auth_id))
+        .where(TTBAdvertiser.advertiser_id == str(advertiser_id))
+        .order_by(TTBAdvertiser.last_seen_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    return str(row.display_timezone or row.timezone or "").strip() or None
+
+
+def _apply_fact_freshness(
+    instance: Any,
+    *,
+    stat_day: date,
+    source_observed_at: datetime,
+    ingested_at: datetime,
+    advertiser_timezone: str | None,
+) -> None:
+    incoming_final, incoming_settled_at = settlement_metadata(
+        stat_day,
+        source_observed_at=source_observed_at,
+        advertiser_timezone=advertiser_timezone,
+    )
+    instance.source_observed_at = source_observed_at
+    instance.ingested_at = ingested_at
+    instance.is_final = bool(
+        getattr(instance, "is_final", False) or incoming_final
+    )
+    if incoming_settled_at is not None:
+        instance.settled_at = incoming_settled_at
 
 
 async def fetch_gmvmax_report_by_level(
@@ -195,9 +270,11 @@ async def fetch_gmvmax_report_by_level(
     end_date: date | str,
     item_group_ids: Sequence[str] | None = None,
 ) -> list[GMVMaxReportEntry]:
-    """Fetch GMV Max metrics from TikTok for the requested level."""
+    """Fetch every GMV Max report page for the requested level."""
 
-    clean_campaign_ids = _sanitize_id_list(campaign_ids)
+    clean_campaign_ids = _sanitize_id_list(campaign_ids) or _sanitize_id_list(
+        [campaign_id]
+    )
     clean_item_group_ids = _sanitize_id_list(item_group_ids)
     level_value = GMVMaxMetricsLevel(level)
 
@@ -214,26 +291,66 @@ async def fetch_gmvmax_report_by_level(
 
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
-    response = await client.fetch_gmvmax_report(
-        advertiser_id=str(advertiser_id),
-        store_id=str(store_id),
-        campaign_id=str(campaign_id),
-        campaign_ids=clean_campaign_ids,
-        level=level_value,
-        start_date=start_date_str,
-        end_date=end_date_str,
-        item_group_ids=clean_item_group_ids,
-    )
-    data = getattr(response, "data", None)
-    raw_entries = getattr(data, "list", None) or []
 
-    def _build_dimensions(payload: Mapping[str, Any]) -> dict[str, Any]:
+    report_level = GMVMaxReportLevel(level_value.value)
+    report_config = GMV_REPORT_CONFIG[report_level]
+    metrics = list(dict.fromkeys(report_config["metrics"]))
+    dimensions = list(report_config["dimensions"])
+    # The official product-level report rejects item_group_ids and
+    # gmv_max_promotion_types with 40002. Item groups are dimensions at that
+    # level, not supported filters. Creative-level reports still require them.
+    #
+    # PRODUCT responses also do not include campaign_id as a dimension, so
+    # each request must be scoped to exactly one campaign. For the other
+    # levels, campaign/item filters are chunked at the official 100-ID limit.
+    if level_value is GMVMaxMetricsLevel.PRODUCT:
+        campaign_id_chunks = [[value] for value in clean_campaign_ids]
+    else:
+        campaign_id_chunks = chunk_report_filter_ids(clean_campaign_ids)
+    item_group_id_chunks: list[list[str] | None] = (
+        chunk_report_filter_ids(clean_item_group_ids)
+        if level_value is GMVMaxMetricsLevel.CREATIVE
+        else [None]
+    )
+
+    def _build_dimensions(
+        payload: Mapping[str, Any],
+        *,
+        fallback_stat_time_day: str,
+        fallback_campaign_id: str | None,
+        window_start: date,
+        window_end: date,
+    ) -> dict[str, Any]:
+        raw_stat_time_day = payload.get("stat_time_day")
+        if level_value is GMVMaxMetricsLevel.CREATIVE:
+            parsed_stat_time_day = _parse_date(raw_stat_time_day)
+            if (
+                parsed_stat_time_day is None
+                or parsed_stat_time_day < window_start
+                or parsed_stat_time_day > window_end
+            ):
+                raise TTBBusinessError(
+                    "GMV Max creative report returned a row without a valid "
+                    "stat_time_day inside the requested window",
+                    code="GMVMAX_REPORT_DATE_INCOMPLETE",
+                    payload={
+                        "campaign_ids": list(campaign_id_chunk),
+                        "window_start": window_start.isoformat(),
+                        "window_end": window_end.isoformat(),
+                        "stat_time_day": raw_stat_time_day,
+                    },
+                )
+            stat_time_day: Any = parsed_stat_time_day.isoformat()
+        else:
+            stat_time_day = (
+                raw_stat_time_day
+                or payload.get("date")
+                or fallback_stat_time_day
+            )
         base = {
-            "campaign_id": payload.get("campaign_id"),
+            "campaign_id": payload.get("campaign_id") or fallback_campaign_id,
             "store_id": str(store_id),
-            "stat_time_day": payload.get("stat_time_day")
-            or payload.get("date")
-            or start_date_str,
+            "stat_time_day": stat_time_day,
         }
         if level_value is GMVMaxMetricsLevel.PRODUCT:
             base["product_id"] = payload.get("item_group_id") or payload.get("product_id")
@@ -243,17 +360,232 @@ async def fetch_gmvmax_report_by_level(
         return base
 
     mapped_entries: list[GMVMaxReportEntry] = []
-    for entry in raw_entries:
-        payload = _merge_report_entry(entry)
-        metrics_payload = {
-            metric: payload.get(metric)
-            for metric in GMVMAX_SUPPORTED_METRICS
-            if metric in payload
-        }
-        dimensions_payload = _build_dimensions(payload)
-        mapped_entries.append(
-            GMVMaxReportEntry(metrics=metrics_payload, dimensions=dimensions_payload)
+    max_pages = 200
+    for window_start, window_end in _official_report_date_windows(
+        start_date_str,
+        end_date_str,
+        max_days=30,
+    ):
+        for campaign_id_chunk in campaign_id_chunks:
+            for item_group_id_chunk in item_group_id_chunks:
+                filtering = GMVMaxReportFiltering(
+                    campaign_ids=campaign_id_chunk,
+                    item_group_ids=item_group_id_chunk,
+                )
+                request = GMVMaxReportGetRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_ids=[str(store_id)],
+                    start_date=window_start.isoformat(),
+                    end_date=window_end.isoformat(),
+                    metrics=metrics,
+                    dimensions=dimensions,
+                    gmv_max_promotion_types=(
+                        ["PRODUCT"]
+                        if level_value is GMVMaxMetricsLevel.CAMPAIGN
+                        else None
+                    ),
+                    campaign_ids=campaign_id_chunk,
+                    item_group_ids=item_group_id_chunk,
+                    filtering=filtering,
+                    enable_total_metrics=False,
+                    page=1,
+                    page_size=_REPORT_PAGE_SIZE,
+                )
+                page = 1
+                pagination_state = ReportPaginationState(require_dimensions=True)
+                while True:
+                    if page > max_pages:
+                        raise RuntimeError(
+                            f"GMV Max {level_value.value} report pagination "
+                            f"exceeded {max_pages} pages for "
+                            f"{window_start}..{window_end}"
+                        )
+                    request.page = page
+                    response = await client.gmv_max_report_get(
+                        request,
+                        inject_promotion_types=(
+                            level_value is GMVMaxMetricsLevel.CAMPAIGN
+                        ),
+                    )
+                    data = getattr(response, "data", None)
+                    raw_entries = getattr(data, "list", None) or []
+                    for entry in raw_entries:
+                        payload = _merge_report_entry(entry)
+                        response_campaign_id = payload.get("campaign_id")
+                        if (
+                            response_campaign_id is not None
+                            and str(response_campaign_id)
+                            not in campaign_id_chunk
+                        ):
+                            raise RuntimeError(
+                                "GMV Max report response escaped its "
+                                "campaign filter chunk"
+                            )
+                        response_item_group_id = (
+                            payload.get("item_group_id")
+                            or payload.get("product_id")
+                        )
+                        if (
+                            item_group_id_chunk is not None
+                            and response_item_group_id is not None
+                            and str(response_item_group_id)
+                            not in item_group_id_chunk
+                        ):
+                            raise RuntimeError(
+                                "GMV Max report response escaped its item "
+                                "filter chunk"
+                            )
+                        metrics_payload = {
+                            metric: payload.get(metric)
+                            for metric in GMVMAX_SUPPORTED_METRICS
+                            if metric in payload
+                        }
+                        dimensions_payload = _build_dimensions(
+                            payload,
+                            fallback_stat_time_day=window_start.isoformat(),
+                            fallback_campaign_id=(
+                                campaign_id_chunk[0]
+                                if len(campaign_id_chunk) == 1
+                                else None
+                            ),
+                            window_start=window_start,
+                            window_end=window_end,
+                        )
+                        mapped_entries.append(
+                            GMVMaxReportEntry(
+                                metrics=metrics_payload,
+                                dimensions=dimensions_payload,
+                            )
+                        )
+
+                    has_more = report_page_has_more(
+                        data,
+                        current_page=page,
+                        rows=raw_entries,
+                        state=pagination_state,
+                    )
+                    if not has_more:
+                        break
+                    page += 1
+
+    return mapped_entries
+
+
+async def fetch_gmvmax_current_creative_statuses(
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    advertiser_id: str,
+    store_id: str,
+    campaign_ids: Sequence[str],
+    item_group_ids: Sequence[str],
+    report_date: date | str,
+) -> list[GMVMaxReportEntry]:
+    """Fetch the current creative inventory, including zero-delivery queue rows.
+
+    TikTok omits ``IN_QUEUE`` rows when ``stat_time_day`` is requested because
+    creatives without delivery cannot be assigned to a reporting day. Current
+    status inventory therefore requires a second report without a time
+    dimension. The caller assigns the snapshot to ``report_date`` before
+    merging it with dated performance rows.
+    """
+
+    clean_campaign_ids = _sanitize_id_list(campaign_ids)
+    clean_item_group_ids = _sanitize_id_list(item_group_ids)
+    if not clean_campaign_ids or not clean_item_group_ids:
+        raise TTBBusinessError(
+            "campaign_ids and item_group_ids are required for creative status inventory",
+            code="GMVMAX_REPORT_CREATIVE_STATUS_SCOPE_REQUIRED",
+            payload={
+                "campaign_ids": campaign_ids,
+                "item_group_ids": item_group_ids,
+            },
         )
+
+    report_date_str = _normalize_date(report_date)
+    max_pages = 200
+    mapped_entries: list[GMVMaxReportEntry] = []
+    for campaign_id_chunk in chunk_report_filter_ids(clean_campaign_ids):
+        for item_group_id_chunk in chunk_report_filter_ids(clean_item_group_ids):
+            page = 1
+            pagination_state = ReportPaginationState(require_dimensions=True)
+            while True:
+                if page > max_pages:
+                    raise RuntimeError(
+                        "GMV Max creative status pagination exceeded "
+                        f"{max_pages} pages"
+                    )
+
+                filtering = GMVMaxReportFiltering(
+                    campaign_ids=campaign_id_chunk,
+                    item_group_ids=item_group_id_chunk,
+                )
+                request = GMVMaxReportGetRequest(
+                    advertiser_id=str(advertiser_id),
+                    store_ids=[str(store_id)],
+                    start_date=report_date_str,
+                    end_date=report_date_str,
+                    metrics=list(GMVMAX_CREATIVE_METRICS),
+                    dimensions=["campaign_id", "item_group_id", "item_id"],
+                    campaign_ids=campaign_id_chunk,
+                    item_group_ids=item_group_id_chunk,
+                    filtering=filtering,
+                    enable_total_metrics=False,
+                    page=page,
+                    page_size=_REPORT_PAGE_SIZE,
+                )
+                response = await client.gmv_max_report_get(
+                    request,
+                    inject_promotion_types=False,
+                )
+                data = getattr(response, "data", None)
+                raw_entries = getattr(data, "list", None) or []
+                for entry in raw_entries:
+                    payload = _merge_report_entry(entry)
+                    creative_id = payload.get("item_id") or payload.get("creative_id")
+                    campaign_id = payload.get("campaign_id")
+                    item_group_id = payload.get("item_group_id") or payload.get("product_id")
+                    if not campaign_id or not item_group_id or not creative_id:
+                        raise RuntimeError(
+                            "GMV Max creative status response contains an "
+                            "incomplete row"
+                        )
+                    if (
+                        str(campaign_id) not in campaign_id_chunk
+                        or str(item_group_id) not in item_group_id_chunk
+                    ):
+                        raise RuntimeError(
+                            "GMV Max creative status response escaped its "
+                            "campaign/item filter chunk"
+                        )
+                    metrics_payload = {
+                        metric: payload.get(metric)
+                        for metric in GMVMAX_SUPPORTED_METRICS
+                        if metric in payload
+                    }
+                    mapped_entries.append(
+                        GMVMaxReportEntry(
+                            metrics=metrics_payload,
+                            dimensions={
+                                "campaign_id": str(campaign_id),
+                                "store_id": str(store_id),
+                                "item_group_id": str(item_group_id),
+                                "product_id": str(item_group_id),
+                                "item_id": str(creative_id),
+                                "shop_content_id": str(creative_id),
+                                "stat_time_day": report_date_str,
+                            },
+                        )
+                    )
+
+                if report_page_has_more(
+                    data,
+                    current_page=page,
+                    rows=raw_entries,
+                    state=pagination_state,
+                ):
+                    page += 1
+                    continue
+                break
 
     return mapped_entries
 
@@ -265,11 +597,28 @@ def _normalize_identifier(value: Any) -> str | None:
     return text or None
 
 
+def _normalize_store_identifier(value: Any) -> str | None:
+    """Treat TikTok's zero store placeholder as an absent identifier."""
+
+    normalized = _normalize_identifier(value)
+    if normalized is None or set(normalized) == {"0"}:
+        return None
+    return normalized
+
+
+def _campaign_pagination_key(item: Any) -> str | None:
+    if isinstance(item, Mapping):
+        return _normalize_identifier(item.get("campaign_id") or item.get("id"))
+    return _normalize_identifier(
+        getattr(item, "campaign_id", None) or getattr(item, "id", None)
+    )
+
+
 def _get_bound_store_id(db: Session, *, workspace_id: int, auth_id: int) -> str | None:
     """Return the configured store_id for the binding, if any."""
 
     binding = get_binding_config(db, workspace_id=int(workspace_id), auth_id=int(auth_id))
-    return _normalize_identifier(binding.store_id) if binding else None
+    return _normalize_store_identifier(binding.store_id) if binding else None
 
 
 def _require_single_identifier(
@@ -296,6 +645,7 @@ async def ensure_gmvmax_store_authorized(
     *,
     advertiser_id: str,
     target_store_id: str,
+    execution_guard: Callable[[], None] | None = None,
 ) -> str:
     """Validate store availability and ensure exclusive authorization exists."""
 
@@ -303,37 +653,27 @@ async def ensure_gmvmax_store_authorized(
         "gmvmax.ensure_store_authorized.list",
         extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
     )
-    matched_store = None
-    page = 1
-    page_size = 200
-    while matched_store is None:
-        store_list_request = GMVMaxStoreListRequest(
-            advertiser_id=str(advertiser_id), page=page, page_size=page_size
-        )
-        store_list_response = await client.gmv_max_store_list(store_list_request)
-        store_list = (
-            getattr(store_list_response.data, "store_list", []) if store_list_response else []
-        )
-        for store in store_list:
-            if _normalize_identifier(getattr(store, "store_id", None)) == str(
-                target_store_id
-            ):
-                matched_store = store
-                break
-
-        if matched_store:
-            break
-
-        page_info = getattr(store_list_response.data, "page_info", None)
-        current_page = getattr(page_info, "page", None) or page
-        total_page = getattr(page_info, "total_page", None)
-        has_more = bool(getattr(page_info, "has_next", None)) or bool(
-            getattr(page_info, "has_more", None)
-        )
-        if has_more or (total_page and current_page < total_page):
-            page = current_page + 1
-        else:
-            break
+    if execution_guard is not None:
+        execution_guard()
+    store_list_response = await client.gmv_max_store_list(
+        GMVMaxStoreListRequest(advertiser_id=str(advertiser_id))
+    )
+    if execution_guard is not None:
+        execution_guard()
+    store_list = (
+        getattr(store_list_response.data, "store_list", [])
+        if store_list_response
+        else []
+    )
+    matched_store = next(
+        (
+            store
+            for store in store_list
+            if _normalize_store_identifier(getattr(store, "store_id", None))
+            == str(target_store_id)
+        ),
+        None,
+    )
 
     if matched_store is None:
         raise TTBApiError(
@@ -374,7 +714,11 @@ async def ensure_gmvmax_store_authorized(
         "gmvmax.ensure_store_authorized.get",
         extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
     )
+    if execution_guard is not None:
+        execution_guard()
     get_response = await client.gmv_max_exclusive_authorization_get(get_request)
+    if execution_guard is not None:
+        execution_guard()
     if get_response and getattr(get_response, "data", None):
         data = get_response.data
         if bool(getattr(data, "is_authorized", False)):
@@ -389,7 +733,11 @@ async def ensure_gmvmax_store_authorized(
         "gmvmax.ensure_store_authorized.create",
         extra={"advertiser_id": advertiser_id, "store_id": target_store_id},
     )
+    if execution_guard is not None:
+        execution_guard()
     create_response = await client.gmv_max_exclusive_authorization_create(create_request)
+    if execution_guard is not None:
+        execution_guard()
     auth_data = getattr(create_response, "data", None)
     if auth_data:
         authorized_id = _normalize_identifier(getattr(auth_data, "store_authorized_bc_id", None))
@@ -501,11 +849,11 @@ def _extract_store_links(payload: Mapping[str, Any] | None) -> dict[str, list[st
         store_ids: list[str] = []
         if isinstance(raw_store_ids, (list, tuple, set)):
             for candidate in raw_store_ids:
-                normalized = _normalize_identifier(candidate)
+                normalized = _normalize_store_identifier(candidate)
                 if normalized:
                     store_ids.append(normalized)
         else:
-            normalized = _normalize_identifier(raw_store_ids)
+            normalized = _normalize_store_identifier(raw_store_ids)
             if normalized:
                 store_ids.append(normalized)
         if store_ids:
@@ -520,7 +868,7 @@ def _build_store_lookup(stores: Any) -> dict[str, Mapping[str, Any]]:
     for entry in stores:
         if not isinstance(entry, Mapping):
             continue
-        store_key = _normalize_identifier(
+        store_key = _normalize_store_identifier(
             entry.get("store_id") or entry.get("shop_id") or entry.get("id")
         )
         if not store_key:
@@ -619,7 +967,7 @@ def _resolve_store_id_for_metrics(
     workspaces.
     """
 
-    store_id = _normalize_identifier(campaign.store_id)
+    store_id = _normalize_store_identifier(campaign.store_id)
     if store_id:
         return store_id
 
@@ -665,6 +1013,41 @@ def _resolve_store_id_for_metrics(
     return chosen
 
 
+def _resolve_product_report_item_group_ids(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    campaign: Any,
+) -> list[str]:
+    campaign_id = _normalize_identifier(getattr(campaign, "campaign_id", None))
+    payloads = (
+        getattr(campaign, "raw_json", None),
+        getattr(campaign, "detail_raw_json", None),
+        getattr(campaign, "list_raw_json", None),
+    )
+    resolved: list[str] = []
+    for payload in payloads:
+        if isinstance(payload, Mapping):
+            resolved.extend(_extract_item_group_ids_from_campaign_payload(payload))
+
+    if not resolved and campaign_id:
+        rows = db.execute(
+            select(GmvmaxProductCampaignItemGroup.item_group_id)
+            .where(GmvmaxProductCampaignItemGroup.workspace_id == int(workspace_id))
+            .where(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+            .where(GmvmaxProductCampaignItemGroup.advertiser_id == str(advertiser_id))
+            .where(GmvmaxProductCampaignItemGroup.store_id == str(store_id))
+            .where(GmvmaxProductCampaignItemGroup.campaign_id == str(campaign_id))
+        ).scalars()
+        resolved.extend(str(item) for item in rows if item)
+
+    normalized = [_normalize_identifier(value) or "" for value in resolved]
+    return list(dict.fromkeys(item for item in normalized if item))
+
+
 def _resolve_room_ids_for_campaign(db: Session, *, campaign_id: str) -> list[str]:
     stmt = select(GmvCampaignLivestream.room_id).where(
         GmvCampaignLivestream.campaign_id == str(campaign_id)
@@ -672,6 +1055,50 @@ def _resolve_room_ids_for_campaign(db: Session, *, campaign_id: str) -> list[str
     rows = [row[0] for row in db.execute(stmt).all() if row and row[0]]
     deduped = list(dict.fromkeys(_normalize_identifier(value) or "" for value in rows))
     return [value for value in deduped if value]
+
+
+def _record_campaign_livestream(
+    db: Session,
+    *,
+    campaign_id: str,
+    room_id: str,
+) -> bool:
+    """Persist a room discovered from the official LIVE_LIVESTREAM report."""
+
+    normalized_campaign_id = _normalize_identifier(campaign_id)
+    normalized_room_id = _normalize_identifier(room_id)
+    if not normalized_campaign_id or not normalized_room_id:
+        return False
+    existing = db.scalar(
+        select(GmvCampaignLivestream.id)
+        .where(GmvCampaignLivestream.campaign_id == normalized_campaign_id)
+        .where(GmvCampaignLivestream.room_id == normalized_room_id)
+        .where(GmvCampaignLivestream.promotion_type == PromotionTypeEnum.LIVE)
+    )
+    if existing is not None:
+        return False
+    try:
+        with db.begin_nested():
+            db.add(
+                GmvCampaignLivestream(
+                    campaign_id=normalized_campaign_id,
+                    room_id=normalized_room_id,
+                    promotion_type=PromotionTypeEnum.LIVE,
+                )
+            )
+            db.flush()
+    except IntegrityError:
+        # LIVE and DURATION strategies can discover the same room concurrently.
+        # Keep the outer metrics transaction usable after the unique-key race.
+        logger.debug(
+            "gmvmax livestream room already discovered concurrently",
+            extra={
+                "campaign_id": normalized_campaign_id,
+                "room_id": normalized_room_id,
+            },
+        )
+        return False
+    return True
 
 
 def _pick_dataset_for_level(
@@ -805,18 +1232,36 @@ async def create_gmvmax_campaign(
     advertiser_id: str,
     client: TikTokBusinessGMVMaxClient,
     body: GMVMaxCampaignCreateBody,
+    execution_guard: Callable[[Session], None] | None = None,
 ) -> GmvCampaign:
     body_dump = body.model_dump(exclude_none=False)
+    if not body_dump.get("request_id"):
+        body = body.copy(update={"request_id": str(time_ns())})
+        body_dump = body.model_dump(exclude_none=False)
     if body_dump.get("store_id") and not body_dump.get("store_authorized_bc_id"):
+        if execution_guard is not None:
+            execution_guard(db)
         authorized_bc_id = await ensure_gmvmax_store_authorized(
             client,
             advertiser_id=str(advertiser_id),
             target_store_id=str(body_dump["store_id"]),
+            execution_guard=(
+                (lambda: execution_guard(db))
+                if execution_guard is not None
+                else None
+            ),
         )
+        if execution_guard is not None:
+            execution_guard(db)
         body = body.copy(update={"store_authorized_bc_id": authorized_bc_id})
 
     request = GMVMaxCampaignCreateRequest(advertiser_id=str(advertiser_id), body=body)
+    if execution_guard is not None:
+        execution_guard(db)
     response = await client.gmv_max_campaign_create(request)
+    if execution_guard is not None:
+        execution_guard(db)
+    mutation_observed_at = catalog_observation_now()
     raw_data = response.data
     if hasattr(raw_data, "model_dump"):
         campaign_data: dict[str, Any] = raw_data.model_dump(exclude_none=True)
@@ -835,15 +1280,16 @@ async def create_gmvmax_campaign(
     if "item_group_ids" not in campaign_payload and body_dump.get("item_group_ids"):
         campaign_payload["item_group_ids"] = [str(item) for item in body_dump.get("item_group_ids", [])]
 
-    row = upsert_campaign_from_api(
+    row = _upsert_campaign_catalog_from_api(
         db,
         workspace_id=workspace_id,
-        provider=provider,
         auth_id=auth_id,
         advertiser_id=str(advertiser_id),
         payload=campaign_payload,
         store_id_hint=str(body_dump.get("store_id")) if body_dump.get("store_id") is not None else None,
+        trusted_store_id_hint=True,
         campaign_details=campaign_data,
+        source_observed_at=mutation_observed_at,
     )
     db.flush()
     return row
@@ -858,9 +1304,15 @@ async def update_gmvmax_campaign(
     advertiser_id: str,
     client: TikTokBusinessGMVMaxClient,
     body: GMVMaxCampaignUpdateBody,
+    execution_guard: Callable[[Session], None] | None = None,
 ) -> GmvCampaign:
     request = GMVMaxCampaignUpdateRequest(advertiser_id=str(advertiser_id), body=body)
+    if execution_guard is not None:
+        execution_guard(db)
     response = await client.gmv_max_campaign_update(request)
+    if execution_guard is not None:
+        execution_guard(db)
+    mutation_observed_at = catalog_observation_now()
     raw_data = response.data
     if hasattr(raw_data, "model_dump"):
         campaign_data: dict[str, Any] = raw_data.model_dump(exclude_none=True)
@@ -879,105 +1331,18 @@ async def update_gmvmax_campaign(
     if "item_group_ids" not in campaign_payload and body_dump.get("item_group_ids"):
         campaign_payload["item_group_ids"] = [str(item) for item in body_dump.get("item_group_ids", [])]
 
-    target_campaign_id = _normalize_identifier(body_dump.get("campaign_id"))
-    if target_campaign_id:
-        existing = (
-            db.execute(
-                select(GmvCampaign)
-                .where(GmvCampaign.workspace_id == workspace_id)
-                .where(GmvCampaign.auth_id == auth_id)
-                .where(GmvCampaign.campaign_id == target_campaign_id)
-                .where(GmvCampaign.advertiser_id == str(advertiser_id))
-            )
-            .scalars()
-            .first()
-        )
-        _ensure_campaign_not_deleted(existing)
-
-    row = upsert_campaign_from_api(
+    row = _upsert_campaign_catalog_from_api(
         db,
         workspace_id=workspace_id,
-        provider=provider,
         auth_id=auth_id,
         advertiser_id=str(advertiser_id),
         payload=campaign_payload,
         store_id_hint=str(body_dump.get("store_id")) if body_dump.get("store_id") is not None else None,
         campaign_details=campaign_data,
+        source_observed_at=mutation_observed_at,
     )
     db.flush()
     return row
-
-
-def _assign_sqlite_pk(db: Session, row: GmvCampaign) -> None:
-    bind = db.get_bind()
-    if bind is None or bind.dialect.name != "sqlite":
-        return
-    if getattr(row, "id", None):
-        return
-    next_value = db.execute(
-        select(func.coalesce(func.max(GmvCampaign.id), 0))
-    ).scalar_one()
-    row.id = int(next_value or 0) + 1
-
-
-def _migrate_campaign_products(db: Session, *, source_id: int, target_id: int) -> None:
-    if not source_id or not target_id or source_id == target_id:
-        return
-    stmt = (
-        update(GmvCampaignProduct)
-        .where(GmvCampaignProduct.campaign_pk == int(source_id))
-        .values(campaign_pk=int(target_id))
-    )
-    db.execute(stmt)
-
-
-def _migrate_action_logs(db: Session, *, source_id: int, target_id: int) -> None:
-    if not source_id or not target_id or source_id == target_id:
-        return
-    stmt = (
-        update(GmvActionLog)
-        .where(GmvActionLog.campaign_id == int(source_id))
-        .values(campaign_id=int(target_id))
-    )
-    db.execute(stmt)
-
-
-def _merge_duplicate_campaign_rows(
-    db: Session,
-    *,
-    campaign_rows: Sequence[GmvCampaign],
-) -> GmvCampaign:
-    if not campaign_rows:
-        raise ValueError("campaign_rows must not be empty")
-    primary = campaign_rows[0]
-    if not getattr(primary, "id", None):
-        return primary
-    duplicates = [row for row in campaign_rows[1:] if getattr(row, "id", None)]
-    if not duplicates:
-        return primary
-    logger.warning(
-        "detected duplicate gmvmax campaign rows; merging",  # noqa: G004
-        extra={
-            "workspace_id": primary.workspace_id,
-            "advertiser_id": primary.advertiser_id,
-            "campaign_id": primary.campaign_id,
-            "duplicates": [row.id for row in duplicates],
-            "kept": primary.id,
-        },
-    )
-    for duplicate in duplicates:
-        _migrate_campaign_products(
-            db,
-            source_id=int(duplicate.id),
-            target_id=int(primary.id),
-        )
-        _migrate_action_logs(
-            db,
-            source_id=int(duplicate.id),
-            target_id=int(primary.id),
-        )
-        db.delete(duplicate)
-    return primary
 
 
 def _collect_product_ids_from_value(source: Any, target: set[str]) -> None:
@@ -1069,100 +1434,6 @@ def _extract_item_group_ids_from_payload(payload: Mapping[str, Any] | None) -> l
     return sorted(collected)
 
 
-def _sync_campaign_product_assignments(
-    db: Session,
-    *,
-    campaign: GmvCampaign,
-    product_ids: Sequence[str],
-    store_id_hint: str | None,
-    operation_status: Any,
-    promotion_type: PromotionTypeEnum,
-) -> None:
-    normalized_status = _normalize_status_value(operation_status)
-    store_id = (
-        _normalize_identifier(store_id_hint)
-        or _normalize_identifier(getattr(campaign, "store_id", None))
-        or ""
-    )
-
-    campaign_pk = getattr(campaign, "id", None)
-    if campaign_pk is None:
-        db.flush([campaign])
-        campaign_pk = getattr(campaign, "id", None)
-    if campaign_pk is None:
-        raise ValueError("campaign.id must be available before syncing products")
-
-    incoming_ids: set[str] = set()
-    for product_id in product_ids:
-        normalized = _normalize_identifier(product_id)
-        if normalized:
-            incoming_ids.add(normalized)
-
-    if not incoming_ids:
-        return
-
-    existing_products = (
-        db.execute(
-            select(GmvCampaignProduct)
-            .where(GmvCampaignProduct.workspace_id == campaign.workspace_id)
-            .where(GmvCampaignProduct.auth_id == campaign.auth_id)
-            .where(GmvCampaignProduct.store_id == store_id)
-            .where(GmvCampaignProduct.item_group_id.in_(incoming_ids))
-        )
-        .scalars()
-        .all()
-    )
-
-    existing_by_item_group_id = {item.item_group_id: item for item in existing_products}
-
-    to_update = incoming_ids & set(existing_by_item_group_id)
-    to_insert = incoming_ids - set(existing_by_item_group_id)
-
-    for item_group_id in to_update:
-        record = existing_by_item_group_id[item_group_id]
-        record.campaign_pk = campaign_pk
-        record.campaign_id = campaign.campaign_id
-        record.store_id = store_id
-        record.promotion_type = promotion_type
-        record.operation_status = normalized_status
-
-    if to_insert:
-        db.add_all(
-            [
-                GmvCampaignProduct(
-                    workspace_id=campaign.workspace_id,
-                    auth_id=campaign.auth_id,
-                    campaign_pk=campaign_pk,
-                    campaign_id=campaign.campaign_id,
-                    item_group_id=item_group_id,
-                    promotion_type=promotion_type,
-                    store_id=store_id,
-                    operation_status=normalized_status,
-                )
-                for item_group_id in to_insert
-            ]
-        )
-
-
-def _list_campaign_product_ids(
-    db: Session, *, campaign: GmvCampaign
-) -> list[str]:
-    if not getattr(campaign, "id", None):
-        return []
-
-    rows = (
-        db.execute(
-            select(GmvCampaignProduct.item_group_id)
-            .where(GmvCampaignProduct.campaign_pk == int(campaign.id))
-            .where(GmvCampaignProduct.store_id == str(campaign.store_id or ""))
-            .where(GmvCampaignProduct.operation_status == "ENABLE")
-        )
-        .scalars()
-        .all()
-    )
-    return [item for item in (_normalize_identifier(row) for row in rows) if item]
-
-
 def _extract_item_group_ids_from_campaign_payload(raw_payload: Any) -> list[str]:
     if not raw_payload:
         return []
@@ -1195,100 +1466,6 @@ def _extract_item_group_ids_from_campaign_payload(raw_payload: Any) -> list[str]
     return deduped
 
 
-def get_item_group_ids_for_campaign(
-    db: Session, *, campaign: GmvCampaign
-) -> list[str]:
-    """Return item_group_ids for a campaign, backfilling product rows when needed."""
-
-    item_group_ids = _list_campaign_product_ids(db, campaign=campaign)
-    if item_group_ids:
-        return item_group_ids
-
-    raw_item_group_ids = _extract_item_group_ids_from_campaign_payload(campaign.raw_json)
-    normalized_item_group_ids = [
-        _normalize_identifier(value) or "" for value in (raw_item_group_ids or [])
-    ]
-    deduped_item_group_ids = list(dict.fromkeys(filter(None, normalized_item_group_ids)))
-
-    if not deduped_item_group_ids:
-        return []
-
-    store_id = str(campaign.store_id or "")
-    promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
-    normalized_status = _normalize_status_value(campaign.operation_status)
-    operation_status = normalized_status or "ENABLE"
-    for item_group_id in deduped_item_group_ids:
-        existing = (
-            db.query(GmvCampaignProduct)
-            .filter_by(
-                workspace_id=campaign.workspace_id,
-                auth_id=campaign.auth_id,
-                store_id=store_id,
-                item_group_id=item_group_id,
-            )
-            .one_or_none()
-        )
-
-        new_values = dict(
-            campaign_pk=campaign.id,
-            campaign_id=campaign.campaign_id,
-            promotion_type=promotion_type,
-            operation_status=operation_status,
-        )
-
-        if existing is None:
-            db.add(
-                GmvCampaignProduct(
-                    workspace_id=campaign.workspace_id,
-                    auth_id=campaign.auth_id,
-                    store_id=store_id,
-                    item_group_id=item_group_id,
-                    **new_values,
-                )
-            )
-            continue
-
-        if (
-            existing.campaign_pk == new_values["campaign_pk"]
-            and existing.campaign_id == new_values["campaign_id"]
-            and existing.promotion_type == new_values["promotion_type"]
-            and existing.operation_status == new_values["operation_status"]
-        ):
-            continue
-
-        if existing.campaign_pk != new_values["campaign_pk"]:
-            existing.campaign_pk = new_values["campaign_pk"]
-        if existing.campaign_id != new_values["campaign_id"]:
-            existing.campaign_id = new_values["campaign_id"]
-        if existing.promotion_type != new_values["promotion_type"]:
-            existing.promotion_type = new_values["promotion_type"]
-        if existing.operation_status != new_values["operation_status"]:
-            existing.operation_status = new_values["operation_status"]
-
-    # Flush pending inserts/updates. In rare cases multiple workers may try to
-    # insert the same (workspace_id, auth_id, store_id, item_group_id) mapping
-    # concurrently, which would raise a duplicate-key IntegrityError on
-    # gmv_campaign_products.uk_gmv_store_product_unique. Treat that as benign
-    # by re-reading existing mappings from the database.
-    from sqlalchemy.exc import IntegrityError  # local import to avoid touching global imports
-
-    try:
-        # Use a nested transaction so that a duplicate-key failure here does
-        # not force the outer transaction into a failed state.
-        with db.begin_nested():
-            db.flush()
-    except IntegrityError as exc:  # pragma: no cover - defensive concurrency guard
-        message = str(getattr(exc, "orig", exc))
-        if "gmv_campaign_products.uk_gmv_store_product_unique" not in message:
-            # Not the duplicate-key we expect; bubble it up.
-            raise
-        # Another transaction inserted the rows first; reuse the mappings
-        # already present in the database.
-        return _list_campaign_product_ids(db, campaign=campaign)
-
-    return deduped_item_group_ids
-
-
 def _lookup_store_id_from_links(
     db: Session,
     *,
@@ -1318,7 +1495,7 @@ def _lookup_store_id_from_links(
     matched_by_bc: list[str] = []
     candidates: list[str] = []
     for row in rows:
-        store_value = _normalize_identifier(row.store_id)
+        store_value = _normalize_store_identifier(row.store_id)
         if not store_value:
             continue
         candidates.append(store_value)
@@ -1483,18 +1660,13 @@ def _to_int(value: Any) -> Optional[int]:
 def _to_cents(value: Any) -> Optional[int]:
     if value is None:
         return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, Decimal):
-        cents = value * _ONE_HUNDRED
-    else:
-        s = str(value).strip()
-        if not s:
-            return None
-        try:
-            cents = Decimal(s) * _ONE_HUNDRED
-        except (InvalidOperation, ValueError):
-            return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        cents = Decimal(s) * _ONE_HUNDRED
+    except (InvalidOperation, ValueError):
+        return None
     return int(cents.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -1541,6 +1713,311 @@ def _normalize_promotion_type(value: Any, fallback: PromotionTypeEnum = Promotio
         except ValueError:  # pragma: no cover - defensive fallback
             return fallback
     return fallback
+
+
+def _authoritative_item_group_snapshot(
+    campaign_details: Mapping[str, Any] | None,
+    *,
+    details_complete: bool,
+) -> tuple[bool, list[str]]:
+    """Classify the official campaign/info product binding collection.
+
+    TikTok documents ``item_group_ids`` as the complete SPU list for PRODUCT
+    campaigns whose ``product_specific_type`` is ``CUSTOMIZED_PRODUCTS``.  It
+    is omitted by contract for ``ALL``, which authoritatively means there are
+    no explicit item-group bindings.  A missing field for any other type, a
+    null value, or a malformed member is an incomplete response and must not
+    drive absence deletion.
+    """
+
+    if not details_complete or not isinstance(campaign_details, Mapping):
+        return False, []
+
+    product_specific_type = str(
+        campaign_details.get("product_specific_type") or ""
+    ).strip().upper()
+    if "item_group_ids" not in campaign_details:
+        if product_specific_type == "ALL":
+            return True, []
+        return False, []
+
+    raw_ids = campaign_details.get("item_group_ids")
+    if not isinstance(raw_ids, (list, tuple)):
+        return False, []
+
+    normalized_ids: list[str] = []
+    for raw_id in raw_ids:
+        normalized = _normalize_identifier(raw_id)
+        if not normalized:
+            return False, []
+        if normalized not in normalized_ids:
+            normalized_ids.append(normalized)
+    return True, sorted(normalized_ids)
+
+
+def _upsert_campaign_catalog_from_api(
+    db: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    payload: Mapping[str, Any],
+    store_id_hint: str | None = None,
+    trusted_store_id_hint: bool = False,
+    campaign_details: Mapping[str, Any] | None = None,
+    campaign_details_complete: bool = False,
+    promotion_type: PromotionTypeEnum | None = None,
+    source_observed_at: datetime,
+) -> Any:
+    """Persist one catalog response if it is not older than local authority.
+
+    ``source_observed_at`` must be captured before the official read starts.
+    The row is locked before comparing the durable observation fence so a
+    response that arrives late cannot overwrite a newer sync or a successful
+    Guard/manual mutation.  A stale response returns the existing row without
+    touching catalog fields or item-group relations.
+    """
+
+    observed_at = normalize_catalog_observed_at(source_observed_at)
+    campaign_identifier = _normalize_identifier(
+        _extract_field_from_sources(("campaign_id", "id"), payload, campaign_details)
+    )
+    if not campaign_identifier:
+        raise ValueError("campaign_id missing in payload")
+
+    promotion_type_value = promotion_type or _normalize_promotion_type(
+        _extract_field_from_sources(
+            ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
+            campaign_details,
+            payload,
+        )
+    )
+    is_live = promotion_type_value == PromotionTypeEnum.LIVE
+    catalog_model = GmvmaxLiveCampaignCatalog if is_live else GmvmaxProductCampaignCatalog
+    ingested_at = catalog_observation_now()
+
+    row = (
+        db.query(catalog_model)
+        .filter(catalog_model.workspace_id == int(workspace_id))
+        .filter(catalog_model.auth_id == int(auth_id))
+        .filter(catalog_model.advertiser_id == str(advertiser_id))
+        .filter(catalog_model.campaign_id == str(campaign_identifier))
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if row is not None and catalog_response_is_stale(row, observed_at):
+        logger.info(
+            "gmvmax campaign catalog ignored stale official response",
+            extra={
+                "workspace_id": int(workspace_id),
+                "auth_id": int(auth_id),
+                "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_identifier),
+                "source_observed_at": observed_at.isoformat(),
+            },
+        )
+        return row
+
+    if row is None:
+        row = catalog_model(
+            workspace_id=int(workspace_id),
+            auth_id=int(auth_id),
+            advertiser_id=str(advertiser_id),
+            campaign_id=str(campaign_identifier),
+        )
+        db.add(row)
+
+    raw_store = _extract_field_from_sources(
+        ("store_id", "shop_id"),
+        campaign_details,
+        payload,
+    )
+    # TikTok may return numeric ``0`` for store_id immediately after campaign
+    # creation. The request scope is already validated by our tenant binding,
+    # so use that trusted hint instead of persisting the placeholder.
+    normalized_raw_store = _normalize_store_identifier(raw_store)
+    normalized_store_hint = _normalize_store_identifier(store_id_hint)
+    if trusted_store_id_hint and normalized_store_hint:
+        if normalized_raw_store and normalized_raw_store != normalized_store_hint:
+            logger.warning(
+                "gmvmax create response store differed from validated request scope",
+                extra={
+                    "workspace_id": int(workspace_id),
+                    "auth_id": int(auth_id),
+                    "advertiser_id": str(advertiser_id),
+                    "campaign_id": str(campaign_identifier),
+                    "response_store_id": normalized_raw_store,
+                    "validated_store_id": normalized_store_hint,
+                },
+            )
+        store_id = normalized_store_hint
+    else:
+        store_id = (
+            normalized_raw_store
+            or normalized_store_hint
+            or _normalize_store_identifier(getattr(row, "store_id", None))
+        )
+
+    row.campaign_name = _extract_field_from_sources(
+        ("campaign_name", "name"),
+        campaign_details,
+        payload,
+    )
+    row.operation_status = _extract_field_from_sources(
+        ("operation_status", "status", "campaign_status"),
+        campaign_details,
+        payload,
+    )
+    row.secondary_status = _extract_field_from_sources(
+        ("secondary_status", "primary_status"),
+        campaign_details,
+        payload,
+    )
+    row.objective_type = _extract_field_from_sources(("objective_type",), campaign_details, payload)
+    row.create_time_utc = _parse_datetime(
+        _extract_field_from_sources(("create_time", "created_time"), campaign_details, payload)
+    )
+    row.modify_time_utc = _parse_datetime(
+        _extract_field_from_sources(("modify_time", "update_time", "updated_time"), campaign_details, payload)
+    )
+    row.list_raw_json = dict(payload)
+    row.store_id = store_id
+    row.shopping_ads_type = "LIVE" if is_live else "PRODUCT"
+    if not is_live:
+        row.product_specific_type = _extract_field_from_sources(
+            ("product_specific_type",),
+            campaign_details,
+            payload,
+        )
+    row.optimization_goal = _extract_field_from_sources(
+        ("optimization_goal",),
+        campaign_details,
+        payload,
+    )
+    row.deep_bid_type = _extract_field_from_sources(
+        ("deep_bid_type", "bid_type"),
+        campaign_details,
+        payload,
+    )
+    row.roas_bid = _to_decimal(
+        _extract_field_from_sources(("roas_bid",), campaign_details, payload),
+        quantize=_DECIMAL_FOUR,
+    )
+    row.budget_cents = _to_cents(
+        _extract_field_from_sources(("budget", "daily_budget"), campaign_details, payload)
+    )
+    row.schedule_type = _extract_field_from_sources(("schedule_type",), campaign_details, payload)
+    row.schedule_start_time_utc = _parse_datetime(
+        _extract_field_from_sources(("schedule_start_time",), campaign_details, payload)
+    )
+    row.schedule_end_time_utc = _parse_datetime(
+        _extract_field_from_sources(("schedule_end_time",), campaign_details, payload)
+    )
+    # A campaign/get list response is intentionally cheaper and less complete
+    # than campaign/info.  Realtime catalog refreshes therefore often omit
+    # ``campaign_details`` for rows whose store ownership is already known.
+    # Treat omission as "not observed", never as an authoritative deletion of
+    # the last complete detail payload.  Clearing this field loses the durable
+    # item-group binding used by the campaign detail page and silently disables
+    # creative metrics in the frontend.
+    if isinstance(campaign_details, Mapping):
+        row.detail_raw_json = dict(campaign_details)
+    row.list_synced_at = observed_at
+    if campaign_details:
+        row.detail_synced_at = observed_at
+    row.updated_at = ingested_at
+    db.add(row)
+
+    if not is_live and store_id:
+        # A placeholder store can create a second item-group relation before a
+        # later campaign sync corrects the catalog row. Keep one canonical
+        # campaign/store scope and remove those stale cross-store relations.
+        db.execute(
+            delete(GmvmaxProductCampaignItemGroup)
+            .where(
+                GmvmaxProductCampaignItemGroup.workspace_id
+                == int(workspace_id)
+            )
+            .where(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+            .where(
+                GmvmaxProductCampaignItemGroup.advertiser_id
+                == str(advertiser_id)
+            )
+            .where(
+                GmvmaxProductCampaignItemGroup.campaign_id
+                == str(campaign_identifier)
+            )
+            .where(GmvmaxProductCampaignItemGroup.store_id != str(store_id))
+        )
+        item_group_snapshot_complete, authoritative_item_group_ids = (
+            _authoritative_item_group_snapshot(
+                campaign_details,
+                details_complete=campaign_details_complete,
+            )
+        )
+        if item_group_snapshot_complete:
+            item_group_ids = authoritative_item_group_ids
+            absent_stmt = (
+                delete(GmvmaxProductCampaignItemGroup)
+                .where(
+                    GmvmaxProductCampaignItemGroup.workspace_id
+                    == int(workspace_id)
+                )
+                .where(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+                .where(
+                    GmvmaxProductCampaignItemGroup.advertiser_id
+                    == str(advertiser_id)
+                )
+                .where(
+                    GmvmaxProductCampaignItemGroup.store_id == str(store_id)
+                )
+                .where(
+                    GmvmaxProductCampaignItemGroup.campaign_id
+                    == str(campaign_identifier)
+                )
+            )
+            if item_group_ids:
+                absent_stmt = absent_stmt.where(
+                    GmvmaxProductCampaignItemGroup.item_group_id.notin_(
+                        item_group_ids
+                    )
+                )
+            db.execute(absent_stmt)
+        else:
+            # Partial/list/mutation payloads may add observed bindings, but
+            # they never prove that an older binding disappeared.
+            item_group_ids = _extract_item_group_ids_from_payload(payload)
+        if not item_group_snapshot_complete and isinstance(campaign_details, Mapping):
+            item_group_ids = sorted(
+                {
+                    *item_group_ids,
+                    *_extract_item_group_ids_from_payload(campaign_details),
+                }
+            )
+        for item_group_id in item_group_ids:
+            relation = (
+                db.query(GmvmaxProductCampaignItemGroup)
+                .filter(GmvmaxProductCampaignItemGroup.workspace_id == int(workspace_id))
+                .filter(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+                .filter(GmvmaxProductCampaignItemGroup.advertiser_id == str(advertiser_id))
+                .filter(GmvmaxProductCampaignItemGroup.store_id == str(store_id))
+                .filter(GmvmaxProductCampaignItemGroup.campaign_id == str(campaign_identifier))
+                .filter(GmvmaxProductCampaignItemGroup.item_group_id == str(item_group_id))
+                .first()
+            )
+            if relation is None:
+                db.add(
+                    GmvmaxProductCampaignItemGroup(
+                        workspace_id=int(workspace_id),
+                        auth_id=int(auth_id),
+                        advertiser_id=str(advertiser_id),
+                        store_id=str(store_id),
+                        campaign_id=str(campaign_identifier),
+                        item_group_id=str(item_group_id),
+                    )
+                )
+    return row
 
 
 def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -1613,7 +2090,13 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             quantize=_DECIMAL_FOUR,
         ),
         "live_10s_views": _to_int(
-            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+            _extract_field(
+                row,
+                "live_10s_views",
+                "live_view_10s",
+                "live_views_10s",
+                "10_second_live_views",
+            )
         ),
         "cost_per_live_view": _to_decimal(
             _extract_field(row, "cost_per_live_view"), quantize=_DECIMAL_FOUR
@@ -1639,20 +2122,6 @@ def _normalize_metric_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
-    serialized: dict[str, Any] = {}
-    for key, value in state.items():
-        if isinstance(value, Decimal):
-            serialized[key] = format(value, "f")
-        elif isinstance(value, datetime):
-            serialized[key] = value.isoformat()
-        elif isinstance(value, date):
-            serialized[key] = value.isoformat()
-        else:
-            serialized[key] = value
-    return serialized
-
-
 async def _fetch_campaign_details(
     ttb_client: TikTokBusinessGMVMaxClient,
     *,
@@ -1660,7 +2129,13 @@ async def _fetch_campaign_details(
     campaign_id: str,
 ) -> Mapping[str, Any] | None:
     try:
-        details = await ttb_client.get_gmvmax_campaign_info(advertiser_id, campaign_id)
+        response = await ttb_client.gmv_max_campaign_info(
+            GMVMaxCampaignInfoRequest(
+                advertiser_id=str(advertiser_id),
+                campaign_id=str(campaign_id),
+            )
+        )
+        details = response.data
     except Exception:  # pragma: no cover - defensive logging
         logger.warning(
             "failed to fetch campaign info when resolving store_id",
@@ -1672,10 +2147,15 @@ async def _fetch_campaign_details(
         )
         return None
 
-    if not isinstance(details, Mapping):
-        return None
+    if isinstance(details, Mapping):
+        return details
 
-    return details
+    if hasattr(details, "model_dump"):
+        dumped = details.model_dump(exclude_none=True)
+        if isinstance(dumped, Mapping):
+            return dumped
+
+    return None
 
 
 async def sync_gmvmax_campaigns(
@@ -1685,8 +2165,13 @@ async def sync_gmvmax_campaigns(
     workspace_id: int,
     auth_id: int,
     advertiser_id: str,
+    include_campaign_details: bool = True,
     **filters: Any,
 ) -> dict:
+    # One account snapshot shares a single pre-fetch boundary across every
+    # list page and campaign/info lookup.  Using per-write timestamps would
+    # let the oldest page win solely because it completed last.
+    snapshot_started_at = catalog_observation_now()
     provided_filters = {k: v for k, v in filters.items() if v is not None}
     store_scope = provided_filters.get("store_ids")
     campaign_scope = provided_filters.get("campaign_ids")
@@ -1696,6 +2181,21 @@ async def sync_gmvmax_campaigns(
         campaign_scope = [str(item) for item in campaign_scope]
 
     bound_store_id = _get_bound_store_id(db, workspace_id=workspace_id, auth_id=auth_id)
+    known_campaign_stores: dict[str, str] = {}
+    for catalog_model in (GmvmaxProductCampaignCatalog, GmvmaxLiveCampaignCatalog):
+        known_rows = db.execute(
+            select(catalog_model.campaign_id, catalog_model.store_id).where(
+                catalog_model.workspace_id == int(workspace_id),
+                catalog_model.auth_id == int(auth_id),
+                catalog_model.advertiser_id == str(advertiser_id),
+            )
+        ).all()
+        for known_campaign_id, known_store_id in known_rows:
+            normalized_known_store = _normalize_store_identifier(known_store_id)
+            if normalized_known_store and (
+                not bound_store_id or normalized_known_store == bound_store_id
+            ):
+                known_campaign_stores[str(known_campaign_id)] = normalized_known_store
     if bound_store_id:
         store_scope = [bound_store_id]
         provided_filters["store_ids"] = [bound_store_id]
@@ -1723,8 +2223,8 @@ async def sync_gmvmax_campaigns(
 
     async def _sync_round(primary_status: str | None) -> None:
         nonlocal synced
-        page = 1
-        while True:
+
+        async def _fetch_page(page: int):
             # NOTE:
             # TikTok 不接受 STATUS_NOT_DELETE 作为 primary_status 的枚举值。
             # 想要“未删除”（STATUS_NOT_DELETE）的行为，必须完全省略 primary_status 字段。
@@ -1741,11 +2241,19 @@ async def sync_gmvmax_campaigns(
             request = GMVMaxCampaignGetRequest(
                 advertiser_id=str(advertiser_id),
                 filtering=GMVMaxCampaignFiltering(**filtering_kwargs),
-                page_size=50,
+                page_size=100,
                 page=page,
             )
-            response = await ttb_client.gmv_max_campaign_get(request)
-            data = response.data
+            return await ttb_client.gmv_max_campaign_get(request)
+
+        async for fetched_page in iter_numbered_pages(
+            _fetch_page,
+            rows_from_data=lambda data: data.list,
+            item_key=_campaign_pagination_key,
+            requested_page_size=100,
+            probe_on_missing_metadata=True,
+        ):
+            data = fetched_page.data
 
             page_context: Mapping[str, Any] | None = None
             try:  # pragma: no cover - defensive fallback for unexpected payloads
@@ -1776,7 +2284,10 @@ async def sync_gmvmax_campaigns(
                     continue
 
                 campaign_details: Mapping[str, Any] | None = None
-                if campaign_identifier not in details_cache:
+                needs_campaign_details = bool(include_campaign_details) or (
+                    campaign_identifier not in known_campaign_stores
+                )
+                if needs_campaign_details and campaign_identifier not in details_cache:
                     details_cache[campaign_identifier] = await _fetch_campaign_details(
                         ttb_client,
                         advertiser_id=str(advertiser_id),
@@ -1787,18 +2298,41 @@ async def sync_gmvmax_campaigns(
                 resolved_store_id = _extract_field_from_sources(
                     ("store_id", "shop_id"), campaign_details, payload
                 )
-                if not resolved_store_id:
+                raw_store_is_placeholder = (
+                    resolved_store_id is not None
+                    and _normalize_store_identifier(resolved_store_id) is None
+                )
+                if _normalize_store_identifier(resolved_store_id) is None:
                     resolved_store_id = _resolve_store_id(
                         advertiser_id=str(advertiser_id),
                         campaign_payload=payload,
                         page_context=page_context or {},
                     )
-                if not resolved_store_id and campaign_details:
+                if (
+                    _normalize_store_identifier(resolved_store_id) is None
+                    and campaign_details
+                ):
                     resolved_store_id = _extract_field_from_sources(
                         ("store_id", "shop_id"), campaign_details
                     )
+                if _normalize_store_identifier(resolved_store_id) is None:
+                    # The existing catalog row was originally admitted through
+                    # an exact workspace/auth/advertiser/store proof. Reusing
+                    # that verified ownership lets the realtime lane update
+                    # status without issuing campaign/info for every known row.
+                    resolved_store_id = known_campaign_stores.get(campaign_identifier)
 
-                normalized_store_id = _normalize_identifier(resolved_store_id)
+                normalized_store_id = _normalize_store_identifier(resolved_store_id)
+                if (
+                    normalized_store_id is None
+                    and bound_store_id
+                    and raw_store_is_placeholder
+                ):
+                    # This list request was already scoped to the validated
+                    # bound store. Only TikTok's explicit ``0`` placeholder
+                    # may use that trusted scope as a hint. A genuinely
+                    # missing store remains unproven and is skipped below.
+                    normalized_store_id = bound_store_id
                 if bound_store_id:
                     if normalized_store_id is None:
                         logger.info(
@@ -1833,7 +2367,7 @@ async def sync_gmvmax_campaigns(
                         payload,
                     )
                 )
-                store_for_round = normalized_store_id or str(resolved_store_id or "")
+                store_for_round = normalized_store_id
 
                 if (
                     bound_store_id
@@ -1853,7 +2387,7 @@ async def sync_gmvmax_campaigns(
                     )
                     continue
 
-                upsert_campaign_from_api(
+                _upsert_campaign_catalog_from_api(
                     db,
                     workspace_id=workspace_id,
                     auth_id=auth_id,
@@ -1861,14 +2395,11 @@ async def sync_gmvmax_campaigns(
                     payload=payload,
                     store_id_hint=store_for_round,
                     campaign_details=campaign_details,
+                    campaign_details_complete=campaign_details is not None,
                     promotion_type=promotion_type,
+                    source_observed_at=snapshot_started_at,
                 )
                 synced += 1
-
-            page_info = data.page_info
-            if not page_info or not page_info.total_page or page >= page_info.total_page:
-                break
-            page += 1
 
     # 第一轮：不传 primary_status（等价于 STATUS_NOT_DELETE，只返回未删除系列）
     # 第二轮：显式 STATUS_DELETE，用于同步已删除系列
@@ -1889,108 +2420,24 @@ def upsert_campaign_from_api(
     payload: dict,
     store_id_hint: str | None = None,
     campaign_details: Mapping[str, Any] | None = None,
+    campaign_details_complete: bool = False,
     promotion_type: PromotionTypeEnum | None = None,
-) -> GmvCampaign:
+    source_observed_at: datetime,
+) -> Any:
     if not isinstance(payload, dict):
         raise ValueError("payload must be dict")
-    campaign_identifier = _extract_field(payload, "campaign_id", "id")
-    if not campaign_identifier:
-        raise ValueError("campaign_id missing in payload")
-    campaign_id = str(campaign_identifier)
-
-    normalized_advertiser = str(advertiser_id)
-    existing = (
-        db.execute(
-            select(GmvCampaign)
-            .where(GmvCampaign.workspace_id == workspace_id)
-            .where(GmvCampaign.auth_id == auth_id)
-            .where(GmvCampaign.campaign_id == campaign_id)
-        )
-        .scalars()
-        .first()
-    )
-
-    promotion_type_raw = _extract_field_from_sources(
-        ("gmv_max_promotion_type", "promotion_type", "shopping_ads_type"),
-        payload,
-        campaign_details,
-    )
-    promotion_type_value = promotion_type or _normalize_promotion_type(promotion_type_raw)
-
-    normalized_status = _normalize_status_value(
-        _extract_field_from_sources(("status", "campaign_status"), payload, campaign_details)
-    )
-
-    store_candidates = [
-        _extract_field_from_sources(("store_id", "shop_id"), campaign_details),
-        _extract_field_from_sources(("store_id", "shop_id"), payload),
-        store_id_hint,
-        _lookup_store_id_from_links(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            advertiser_id=advertiser_id,
-            campaign_payload=payload,
-        ),
-    ]
-    store_identifier: str | None = None
-    for candidate in store_candidates:
-        normalized = _normalize_identifier(candidate)
-        if normalized:
-            store_identifier = normalized
-            break
-    if store_identifier is None:
-        store_identifier = ""
-        logger.warning(
-            "gmvmax campaign missing store_id; defaulting to empty string",
-            extra={
-                "workspace_id": workspace_id,
-                "auth_id": auth_id,
-                "campaign_id": campaign_id,
-            },
-        )
-
-    currency_value = _extract_field_from_sources(
-        ("currency", "budget_currency"), payload, campaign_details
-    )
-
-    merged_payload: dict[str, Any] = dict(payload)
-    if isinstance(campaign_details, Mapping) and campaign_details:
-        merged_payload["_campaign_info"] = dict(campaign_details)
-
-    result = map_gmvmax_campaign_info_to_model(
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=normalized_advertiser,
-        info=merged_payload,
-        campaign_id=campaign_id,
-        status_value=normalized_status,
-        store_id_hint=store_identifier,
-        currency_fallback=str(currency_value) if currency_value is not None else None,
-        promotion_type_override=promotion_type_value,
-        synced_at=datetime.now(timezone.utc),
-        existing=existing,
-    )
-    if existing is None:
-        db.add(result)
-
-    operation_status_value = _extract_field_from_sources(
-        ("operation_status",), payload, campaign_details
-    )
-    product_ids = _extract_item_group_ids_from_payload(payload)
-    if isinstance(campaign_details, Mapping):
-        detail_products = _extract_item_group_ids_from_payload(campaign_details)
-        if detail_products:
-            product_ids = sorted({*product_ids, *detail_products})
-    _sync_campaign_product_assignments(
+    result = _upsert_campaign_catalog_from_api(
         db,
-        campaign=result,
-        product_ids=product_ids,
-        store_id_hint=store_identifier,
-        operation_status=operation_status_value,
-        promotion_type=promotion_type_value,
+        workspace_id=int(workspace_id),
+        auth_id=int(auth_id),
+        advertiser_id=str(advertiser_id),
+        payload=payload,
+        store_id_hint=store_id_hint,
+        campaign_details=campaign_details,
+        campaign_details_complete=campaign_details_complete,
+        promotion_type=promotion_type,
+        source_observed_at=source_observed_at,
     )
-
     db.flush()
     return result
 
@@ -2004,26 +2451,34 @@ async def fetch_and_cache_campaign_detail(
     advertiser_id: str,
     campaign_id: str,
     include_sessions: bool = True,
+    execution_guard: Callable[[Session], None] | None = None,
 ) -> dict[str, Any]:
     _ = include_sessions
     bound_store_id = _get_bound_store_id(db, workspace_id=workspace_id, auth_id=auth_id)
     info_request = GMVMaxCampaignInfoRequest(
         advertiser_id=str(advertiser_id), campaign_id=str(campaign_id)
     )
+    source_observed_at = catalog_observation_now()
     info_resp = await ttb_client.gmv_max_campaign_info(info_request)
 
-    normalized_store = _normalize_identifier(info_resp.data.store_id)
-    existing_row = (
-        db.execute(
-            select(GmvCampaign)
-            .where(GmvCampaign.workspace_id == workspace_id)
-            .where(GmvCampaign.auth_id == auth_id)
-            .where(GmvCampaign.campaign_id == str(campaign_id))
+    normalized_store = _normalize_store_identifier(info_resp.data.store_id)
+    existing_row = None
+    for catalog_model in (GmvmaxProductCampaignCatalog, GmvmaxLiveCampaignCatalog):
+        existing_row = (
+            db.query(catalog_model)
+            .filter(catalog_model.workspace_id == int(workspace_id))
+            .filter(catalog_model.auth_id == int(auth_id))
+            .filter(catalog_model.advertiser_id == str(advertiser_id))
+            .filter(catalog_model.campaign_id == str(campaign_id))
+            .first()
         )
-        .scalars()
-        .first()
+        if existing_row is not None:
+            break
+    resolved_store = (
+        normalized_store
+        or _normalize_store_identifier(getattr(existing_row, "store_id", None))
+        or bound_store_id
     )
-    resolved_store = normalized_store or _normalize_identifier(getattr(existing_row, "store_id", None))
     if bound_store_id and (resolved_store is None or resolved_store != bound_store_id):
         raise TTBBusinessError(
             "Campaign does not belong to the bound store",
@@ -2035,33 +2490,23 @@ async def fetch_and_cache_campaign_detail(
             },
         )
 
-    local_row: GmvCampaign | None = upsert_campaign_from_api(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=str(advertiser_id),
-        payload=info_resp.data.model_dump(exclude_none=True),
-        store_id_hint=info_resp.data.store_id,
-        campaign_details={
-            "campaign_id": info_resp.data.campaign_id,
-            "store_id": info_resp.data.store_id,
-        },
-    )
-    db.flush()
-
-    synced_at = datetime.now(timezone.utc)
-    store_id = info_resp.data.store_id or (local_row.store_id if local_row else "")
-
+    info_payload = info_resp.data.model_dump(exclude_none=True)
     upsert_campaign_from_api(
         db,
         workspace_id=workspace_id,
         auth_id=auth_id,
         advertiser_id=str(advertiser_id),
-        payload=info_resp.data.model_dump(exclude_none=True),
-        store_id_hint=str(store_id or ""),
-        campaign_details=info_resp.data.model_dump(exclude_none=True),
+        payload=info_payload,
+        store_id_hint=resolved_store,
+        campaign_details=info_payload,
+        campaign_details_complete=True,
+        source_observed_at=source_observed_at,
     )
 
+    synced_at = datetime.now(timezone.utc)
+
+    if execution_guard is not None:
+        execution_guard(db)
     db.commit()
 
     return {
@@ -2084,6 +2529,9 @@ def _upsert_product_metrics_hourly(
     item_group_id: str,
     metrics: Mapping[str, Any],
     bid_type: Any | None = None,
+    source_observed_at: datetime,
+    ingested_at: datetime,
+    advertiser_timezone: str | None,
 ) -> GmvProductMetricsHourly:
     stmt = (
         select(GmvProductMetricsHourly)
@@ -2109,11 +2557,21 @@ def _upsert_product_metrics_hourly(
         db.add(instance)
 
     for field, value in metrics.items():
-        if hasattr(instance, field):
+        if value is not None and hasattr(instance, field):
             setattr(instance, field, value)
+    # PRODUCT-level report/get does not support net_cost. Never carry a stale
+    # value from an older/invalid request forward as an official product fact.
+    instance.net_cost_cents = None
 
     if bid_type is not None:
         instance.bid_type = str(bid_type)
+    _apply_fact_freshness(
+        instance,
+        stat_day=stat_time_hour.date(),
+        source_observed_at=source_observed_at,
+        ingested_at=ingested_at,
+        advertiser_timezone=advertiser_timezone,
+    )
 
     db.flush()
     return instance
@@ -2131,6 +2589,9 @@ def _upsert_product_metrics_daily(
     item_group_id: str,
     metrics: Mapping[str, Any],
     bid_type: Any | None = None,
+    source_observed_at: datetime,
+    ingested_at: datetime,
+    advertiser_timezone: str | None,
 ) -> GmvProductMetricsDaily:
     stmt = (
         select(GmvProductMetricsDaily)
@@ -2156,326 +2617,21 @@ def _upsert_product_metrics_daily(
         db.add(instance)
 
     for field, value in metrics.items():
-        if hasattr(instance, field):
+        if value is not None and hasattr(instance, field):
             setattr(instance, field, value)
+    # PRODUCT-level report/get does not support net_cost. Consumers may derive
+    # their display fallback from cost, while provenance remains honest here.
+    instance.net_cost_cents = None
 
     if bid_type is not None:
         instance.bid_type = str(bid_type)
-
-    db.flush()
-    return instance
-
-
-def _upsert_creative_metrics(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    store_id: str,
-    campaign_id: str,
-    creative_id: str,
-    metrics_row: Mapping[str, Any],
-    stat_time_day: date | None = None,
-    stat_time_hour: datetime | None = None,
-    item_group_id: str | None = None,
-) -> GmvCreativeMetricsDaily | GmvCreativeMetricsHourly:
-    if stat_time_day is None and stat_time_hour is None:
-        raise ValueError("stat_time required")
-
-    metrics = _normalize_metric_payload(metrics_row)
-    normalized_item = _normalize_identifier(item_group_id) if item_group_id else None
-
-    if stat_time_day is not None:
-        stmt = (
-            select(GmvCreativeMetricsDaily)
-            .where(GmvCreativeMetricsDaily.workspace_id == workspace_id)
-            .where(GmvCreativeMetricsDaily.auth_id == auth_id)
-            .where(GmvCreativeMetricsDaily.advertiser_id == advertiser_id)
-            .where(GmvCreativeMetricsDaily.store_id == store_id)
-            .where(GmvCreativeMetricsDaily.campaign_id == campaign_id)
-            .where(GmvCreativeMetricsDaily.creative_id == creative_id)
-            .where(GmvCreativeMetricsDaily.stat_time_day == stat_time_day)
-        )
-        instance = db.execute(stmt).scalars().first()
-        if instance is None:
-            instance = GmvCreativeMetricsDaily(
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=advertiser_id,
-                store_id=store_id,
-                campaign_id=campaign_id,
-                creative_id=creative_id,
-                stat_time_day=stat_time_day,
-            )
-            db.add(instance)
-    else:
-        stmt = (
-            select(GmvCreativeMetricsHourly)
-            .where(GmvCreativeMetricsHourly.workspace_id == workspace_id)
-            .where(GmvCreativeMetricsHourly.auth_id == auth_id)
-            .where(GmvCreativeMetricsHourly.advertiser_id == advertiser_id)
-            .where(GmvCreativeMetricsHourly.store_id == store_id)
-            .where(GmvCreativeMetricsHourly.campaign_id == campaign_id)
-            .where(GmvCreativeMetricsHourly.creative_id == creative_id)
-            .where(GmvCreativeMetricsHourly.stat_time_hour == stat_time_hour)
-        )
-        instance = db.execute(stmt).scalars().first()
-        if instance is None and stat_time_hour is not None:
-            instance = GmvCreativeMetricsHourly(
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=advertiser_id,
-                store_id=store_id,
-                campaign_id=campaign_id,
-                creative_id=creative_id,
-                stat_time_hour=stat_time_hour,
-            )
-            db.add(instance)
-
-    if normalized_item:
-        instance.item_group_id = normalized_item
-
-    instance.workspace_id = workspace_id
-    instance.auth_id = auth_id
-    instance.advertiser_id = advertiser_id
-    instance.store_id = store_id
-    for field, value in metrics.items():
-        if hasattr(instance, field):
-            setattr(instance, field, value)
-
-    db.flush()
-    return instance
-
-
-def upsert_metrics_hourly_row(
-    db: Session,
-    *,
-    campaign: GmvCampaign,
-    row: dict,
-) -> GmvCampaignMetricsHourly:
-    if not isinstance(row, dict):
-        raise ValueError("row must be dict")
-    stat_time_value = _extract_field(
-        row,
-        "stat_time_hour",
-        "interval_start",
-        "interval_start_time",
-        "start_time",
-        "stat_time",
+    _apply_fact_freshness(
+        instance,
+        stat_day=stat_time_day,
+        source_observed_at=source_observed_at,
+        ingested_at=ingested_at,
+        advertiser_timezone=advertiser_timezone,
     )
-    stat_time_hour = _parse_datetime(stat_time_value)
-    if stat_time_hour is None:
-        raise ValueError("interval_start missing")
-
-    promotion_type = _normalize_promotion_type(
-        _extract_field(row, "promotion_type", "gmv_max_promotion_type", "gmv_max_promotion_types"),
-        fallback=_normalize_promotion_type(campaign.shopping_ads_type),
-    )
-
-    store_id = _normalize_identifier(getattr(campaign, "store_id", None)) or ""
-
-    stmt = (
-        select(GmvCampaignMetricsHourly)
-        .where(GmvCampaignMetricsHourly.workspace_id == campaign.workspace_id)
-        .where(GmvCampaignMetricsHourly.auth_id == campaign.auth_id)
-        .where(GmvCampaignMetricsHourly.advertiser_id == campaign.advertiser_id)
-        .where(GmvCampaignMetricsHourly.store_id == store_id)
-        .where(GmvCampaignMetricsHourly.campaign_id == str(campaign.campaign_id))
-        .where(GmvCampaignMetricsHourly.promotion_type == promotion_type)
-        .where(GmvCampaignMetricsHourly.stat_time_hour == stat_time_hour)
-    )
-    instance = db.execute(stmt).scalars().first()
-    if instance is None:
-        instance = GmvCampaignMetricsHourly(
-            workspace_id=campaign.workspace_id,
-            auth_id=campaign.auth_id,
-            advertiser_id=campaign.advertiser_id,
-            store_id=store_id,
-            campaign_id=str(campaign.campaign_id),
-            promotion_type=promotion_type,
-            stat_time_hour=stat_time_hour,
-        )
-        db.add(instance)
-
-    instance.workspace_id = campaign.workspace_id
-    instance.auth_id = campaign.auth_id
-    instance.advertiser_id = campaign.advertiser_id
-    if store_id:
-        instance.store_id = store_id
-
-    metrics_payload = _normalize_metric_payload(row)
-    for field, value in metrics_payload.items():
-        if hasattr(instance, field):
-            setattr(instance, field, value)
-
-    instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
-    instance.live_10s_views = _to_int(
-        _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
-    )
-    instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
-
-    item_group_id = _normalize_identifier(
-        _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
-    )
-    if item_group_id:
-        _upsert_product_metrics_hourly(
-            db,
-            workspace_id=campaign.workspace_id,
-            auth_id=campaign.auth_id,
-            advertiser_id=campaign.advertiser_id,
-            store_id=store_id,
-            campaign_id=str(campaign.campaign_id),
-            stat_time_hour=stat_time_hour,
-            item_group_id=item_group_id,
-            metrics=metrics_payload,
-            bid_type=_extract_field(row, "bid_type"),
-        )
-
-    db.flush()
-    return instance
-
-
-async def sync_gmvmax_metrics_hourly(
-    db: Session,
-    ttb_client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign: GmvCampaign,
-    start_date: date | str,
-    end_date: date | str,
-) -> dict:
-    _log_sync_target("CAMPAIGN", granularity="HOURLY")
-    start_date_str = _normalize_date(start_date)
-    end_date_str = _normalize_date(end_date)
-
-    synced_rows = 0
-    store_id = _resolve_store_id_for_metrics(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=advertiser_id,
-        campaign=campaign,
-    )
-    if not store_id:
-        return {"synced_rows": 0}
-
-    dimensions = ["campaign_id", "stat_time_hour"]
-    campaign_ids = [campaign.campaign_id]
-    request = _build_campaign_report_request(
-        advertiser_id=str(advertiser_id),
-        campaign_ids=campaign_ids,
-        store_id=store_id,
-        start_date=start_date_str,
-        end_date=end_date_str,
-        granularity="HOURLY",
-        metrics=_DEFAULT_REPORT_METRICS,
-        dimensions=dimensions,
-        page=1,
-        page_size=_REPORT_PAGE_SIZE,
-    )
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, dict)]
-    for row in rows:
-        try:
-            upsert_metrics_hourly_row(db, campaign=campaign, row=row)
-            synced_rows += 1
-        except ValueError:
-            logger.debug(
-                "skip hourly metrics row without interval_start",
-                extra={
-                    "campaign_id": campaign.campaign_id,
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                },
-            )
-            continue
-
-    db.flush()
-    return {"synced_rows": synced_rows}
-
-
-def upsert_metrics_daily_row(
-    db: Session,
-    *,
-    campaign: GmvCampaign,
-    row: dict,
-) -> GmvCampaignMetricsDaily:
-    if not isinstance(row, dict):
-        raise ValueError("row must be dict")
-    date_value = _extract_field(row, "stat_time_day", "date", "stat_time")
-    stat_date = _parse_date(date_value)
-    if stat_date is None:
-        raise ValueError("date missing")
-
-    promotion_type = _normalize_promotion_type(
-        _extract_field(row, "promotion_type", "gmv_max_promotion_type", "gmv_max_promotion_types"),
-        fallback=_normalize_promotion_type(campaign.shopping_ads_type),
-    )
-
-    store_id = _normalize_identifier(getattr(campaign, "store_id", None)) or ""
-
-    stmt = (
-        select(GmvCampaignMetricsDaily)
-        .where(GmvCampaignMetricsDaily.workspace_id == campaign.workspace_id)
-        .where(GmvCampaignMetricsDaily.auth_id == campaign.auth_id)
-        .where(GmvCampaignMetricsDaily.advertiser_id == campaign.advertiser_id)
-        .where(GmvCampaignMetricsDaily.store_id == store_id)
-        .where(GmvCampaignMetricsDaily.campaign_id == str(campaign.campaign_id))
-        .where(GmvCampaignMetricsDaily.promotion_type == promotion_type)
-        .where(GmvCampaignMetricsDaily.stat_time_day == stat_date)
-    )
-    instance = db.execute(stmt).scalars().first()
-    if instance is None:
-        instance = GmvCampaignMetricsDaily(
-            workspace_id=campaign.workspace_id,
-            auth_id=campaign.auth_id,
-            advertiser_id=campaign.advertiser_id,
-            store_id=store_id,
-            campaign_id=str(campaign.campaign_id),
-            promotion_type=promotion_type,
-            stat_time_day=stat_date,
-        )
-        db.add(instance)
-
-    instance.workspace_id = campaign.workspace_id
-    instance.auth_id = campaign.auth_id
-    instance.advertiser_id = campaign.advertiser_id
-    if store_id:
-        instance.store_id = store_id
-
-    metrics_payload = _normalize_metric_payload(row)
-    for field, value in metrics_payload.items():
-        if hasattr(instance, field):
-            setattr(instance, field, value)
-
-    instance.live_views = _to_int(_extract_field(row, "live_views", "live_watch_cnt"))
-    instance.live_10s_views = _to_int(
-        _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
-    )
-    instance.live_follows = _to_int(_extract_field(row, "live_follows", "live_followers"))
-
-    item_group_id = _normalize_identifier(
-        _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
-    )
-    if item_group_id:
-        _upsert_product_metrics_daily(
-            db,
-            workspace_id=campaign.workspace_id,
-            auth_id=campaign.auth_id,
-            advertiser_id=campaign.advertiser_id,
-            store_id=store_id,
-            campaign_id=str(campaign.campaign_id),
-            stat_time_day=stat_date,
-            item_group_id=item_group_id,
-            metrics=metrics_payload,
-            bid_type=_extract_field(row, "bid_type"),
-        )
 
     db.flush()
     return instance
@@ -2527,7 +2683,13 @@ def _upsert_livestream_metrics_daily(
     for attr, value in {
         "live_views": _to_int(_extract_field(row, "live_views", "live_watch_cnt")),
         "live_10s_views": _to_int(
-            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+            _extract_field(
+                row,
+                "live_10s_views",
+                "live_view_10s",
+                "live_views_10s",
+                "10_second_live_views",
+            )
         ),
         "live_follows": _to_int(_extract_field(row, "live_follows", "live_followers")),
     }.items():
@@ -2585,7 +2747,13 @@ def _upsert_livestream_metrics_hourly(
     for attr, value in {
         "live_views": _to_int(_extract_field(row, "live_views", "live_watch_cnt")),
         "live_10s_views": _to_int(
-            _extract_field(row, "live_10s_views", "live_view_10s", "live_views_10s")
+            _extract_field(
+                row,
+                "live_10s_views",
+                "live_view_10s",
+                "live_views_10s",
+                "10_second_live_views",
+            )
         ),
         "live_follows": _to_int(_extract_field(row, "live_follows", "live_followers")),
     }.items():
@@ -2727,6 +2895,7 @@ async def sync_gmvmax_product_metrics_hourly(
     campaign: GmvCampaign,
     start_date: date | str,
     end_date: date | str,
+    advertiser_timezone: str | None = None,
 ) -> dict[str, Any]:
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
@@ -2752,82 +2921,175 @@ async def sync_gmvmax_product_metrics_hourly(
         )
         return {"synced_rows": 0}
 
+    resolved_timezone = advertiser_timezone or _advertiser_timezone_for_fact(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+    )
+    source_observed_at = utc_now_naive()
+    ingested_at = utc_now_naive()
     campaign_ids = [campaign.campaign_id]
-    page = 1
-    while True:
-        request = _build_campaign_report_request(
-            advertiser_id=str(advertiser_id),
-            campaign_ids=campaign_ids,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            granularity="HOURLY",
-            metrics=_DEFAULT_REPORT_METRICS,
-            dimensions=["campaign_id", "item_group_id", "stat_time_hour"],
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
+    for window_start, window_end in _official_report_date_windows(
+        start_date_str,
+        end_date_str,
+        max_days=1,
+    ):
+        reconciliation_stage = StagedFactKeySet(
+            model=GmvProductMetricsHourly,
+            time_column="stat_time_hour",
+            range_start=datetime.combine(window_start, datetime.min.time()),
+            range_end_exclusive=datetime.combine(
+                window_end + timedelta(days=1),
+                datetime.min.time(),
+            ),
+            key_columns=("item_group_id", "stat_time_hour"),
+            scope_equals={
+                "workspace_id": int(workspace_id),
+                "auth_id": int(auth_id),
+                "advertiser_id": str(advertiser_id),
+                "store_id": str(store_id),
+                "campaign_id": str(campaign.campaign_id),
+            },
         )
-        try:
-            response = await ttb_client.gmv_max_report_get(request)
-        except Exception:
-            logger.exception(
-                "gmvmax product hourly report fetch failed",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "advertiser_id": advertiser_id,
-                    "campaign_id": campaign.campaign_id,
-                    "page": page,
-                },
-            )
-            raise
-
-        data = getattr(response, "data", None)
-        rows_raw = getattr(data, "list", None) or []
-        rows = [_merge_report_entry(item) for item in rows_raw]
-        rows = [row for row in rows if isinstance(row, dict)]
-        for row in rows:
-            stat_time_value = _extract_field(row, "stat_time_hour", "stat_time", "interval_start")
-            stat_time_hour = _parse_datetime(stat_time_value)
-            item_group_id = _normalize_identifier(
-                _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
-            )
-            if stat_time_hour is None or not item_group_id:
-                logger.debug(
-                    "skip product hourly row missing identifiers",
-                    extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id, "auth_id": auth_id},
+        page = 1
+        pagination_state = ReportPaginationState(require_dimensions=True)
+        while True:
+            if page > 200:
+                raise RuntimeError(
+                    "GMV Max product hourly report pagination exceeded "
+                    f"200 pages for {window_start}..{window_end}"
                 )
-                continue
-
-            metrics_payload = _normalize_metric_payload(row)
-            _upsert_product_metrics_hourly(
-                db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=advertiser_id,
+            request = _build_campaign_report_request(
+                advertiser_id=str(advertiser_id),
+                campaign_ids=campaign_ids,
                 store_id=store_id,
-                campaign_id=str(campaign.campaign_id),
-                stat_time_hour=stat_time_hour,
-                item_group_id=item_group_id,
-                metrics=metrics_payload,
-                bid_type=_extract_field(row, "bid_type"),
+                start_date=window_start.isoformat(),
+                end_date=window_end.isoformat(),
+                granularity="HOURLY",
+                metrics=_PRODUCT_REPORT_METRICS,
+                dimensions=[
+                    "item_group_id",
+                    "stat_time_hour",
+                ],
+                page=page,
+                page_size=_REPORT_PAGE_SIZE,
             )
-            synced_rows += 1
+            try:
+                response = await ttb_client.gmv_max_report_get(
+                    request,
+                    inject_promotion_types=False,
+                )
+            except Exception:
+                logger.exception(
+                    "gmvmax product hourly report fetch failed",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "campaign_id": campaign.campaign_id,
+                        "date_start": window_start.isoformat(),
+                        "date_end": window_end.isoformat(),
+                        "page": page,
+                    },
+                )
+                raise
 
-        page_info = getattr(data, "page_info", None)
-        has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False))
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
+            data = getattr(response, "data", None)
+            rows_raw = getattr(data, "list", None) or []
+            rows = [_merge_report_entry(item) for item in rows_raw]
+            rows = [row for row in rows if isinstance(row, dict)]
+            for row in rows:
+                stat_time_value = _extract_field(
+                    row,
+                    "stat_time_hour",
+                    "stat_time",
+                    "interval_start",
+                )
+                stat_time_hour = _parse_datetime(stat_time_value)
+                item_group_id = _normalize_identifier(
+                    _extract_field(
+                        row,
+                        "item_group_id",
+                        "product_id",
+                        "itemId",
+                        "spu_id",
+                        "item_id",
+                    )
+                )
+                if stat_time_hour is None or not item_group_id:
+                    reconciliation_stage.invalidate()
+                    logger.debug(
+                        "skip product hourly row missing identifiers; absence "
+                        "reconciliation disabled for window",
+                        extra={
+                            "campaign_id": campaign.campaign_id,
+                            "workspace_id": workspace_id,
+                            "auth_id": auth_id,
+                        },
+                    )
+                    continue
+                if not reconciliation_stage.contains_time(stat_time_hour):
+                    reconciliation_stage.invalidate()
+                    logger.warning(
+                        "skip product hourly row outside requested window; "
+                        "absence reconciliation disabled for window",
+                        extra={
+                            "campaign_id": campaign.campaign_id,
+                            "stat_time_hour": stat_time_hour,
+                            "window_start": window_start,
+                            "window_end": window_end,
+                        },
+                    )
+                    continue
+                returned_campaign_id = _normalize_identifier(
+                    _extract_field(row, "campaign_id")
+                )
+                if (
+                    returned_campaign_id
+                    and returned_campaign_id != str(campaign.campaign_id)
+                ):
+                    reconciliation_stage.invalidate()
+                    logger.warning(
+                        "skip product hourly row outside requested campaign; "
+                        "absence reconciliation disabled for window",
+                        extra={
+                            "requested_campaign_id": campaign.campaign_id,
+                            "returned_campaign_id": returned_campaign_id,
+                        },
+                    )
+                    continue
+
+                metrics_payload = _normalize_metric_payload(row)
+                _upsert_product_metrics_hourly(
+                    db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=advertiser_id,
+                    store_id=store_id,
+                    campaign_id=str(campaign.campaign_id),
+                    stat_time_hour=stat_time_hour,
+                    item_group_id=item_group_id,
+                    metrics=metrics_payload,
+                    bid_type=_extract_field(row, "bid_type"),
+                    source_observed_at=source_observed_at,
+                    ingested_at=ingested_at,
+                    advertiser_timezone=resolved_timezone,
+                )
+                reconciliation_stage.add(item_group_id, stat_time_hour)
+                synced_rows += 1
+
+            has_more = report_page_has_more(
+                data,
+                current_page=page,
+                rows=rows_raw,
+                state=pagination_state,
+            )
+            if not has_more:
+                break
             page += 1
-            continue
-        try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
-            continue
-        break
+        reconciliation_stage.mark_pagination_complete()
+        reconciliation_stage.reconcile(db)
 
     db.flush()
     return {"synced_rows": synced_rows}
@@ -2843,6 +3105,7 @@ async def sync_gmvmax_product_metrics_daily(
     campaign: GmvCampaign,
     start_date: date | str,
     end_date: date | str,
+    advertiser_timezone: str | None = None,
 ) -> dict[str, Any]:
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
@@ -2868,81 +3131,173 @@ async def sync_gmvmax_product_metrics_daily(
         )
         return {"synced_rows": 0}
 
+    resolved_timezone = advertiser_timezone or _advertiser_timezone_for_fact(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+    )
+    source_observed_at = utc_now_naive()
+    ingested_at = utc_now_naive()
     campaign_ids = [campaign.campaign_id]
-    page = 1
-    while True:
-        request = _build_campaign_report_request(
-            advertiser_id=str(advertiser_id),
-            campaign_ids=campaign_ids,
-            store_id=store_id,
-            start_date=start_date_str,
-            end_date=end_date_str,
-            granularity="DAILY",
-            metrics=_DEFAULT_REPORT_METRICS,
-            dimensions=["campaign_id", "item_group_id", "stat_time_day"],
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
+    for window_start, window_end in _official_report_date_windows(
+        start_date_str,
+        end_date_str,
+        max_days=30,
+    ):
+        reconciliation_stage = StagedFactKeySet(
+            model=GmvProductMetricsDaily,
+            time_column="stat_time_day",
+            range_start=window_start,
+            range_end_exclusive=window_end + timedelta(days=1),
+            key_columns=("item_group_id", "stat_time_day"),
+            scope_equals={
+                "workspace_id": int(workspace_id),
+                "auth_id": int(auth_id),
+                "advertiser_id": str(advertiser_id),
+                "store_id": str(store_id),
+                "campaign_id": str(campaign.campaign_id),
+            },
         )
-        try:
-            response = await ttb_client.gmv_max_report_get(request)
-        except Exception:
-            logger.exception(
-                "gmvmax product daily report fetch failed",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "advertiser_id": advertiser_id,
-                    "campaign_id": campaign.campaign_id,
-                    "page": page,
-                },
-            )
-            raise
-
-        data = getattr(response, "data", None)
-        rows_raw = getattr(data, "list", None) or []
-        rows = [_merge_report_entry(item) for item in rows_raw]
-        rows = [row for row in rows if isinstance(row, dict)]
-        for row in rows:
-            stat_date = _parse_date(_extract_field(row, "stat_time_day", "date", "stat_time"))
-            item_group_id = _normalize_identifier(
-                _extract_field(row, "item_group_id", "product_id", "itemId", "spu_id", "item_id")
-            )
-            if stat_date is None or not item_group_id:
-                logger.debug(
-                    "skip product daily row missing identifiers",
-                    extra={"campaign_id": campaign.campaign_id, "workspace_id": workspace_id, "auth_id": auth_id},
+        page = 1
+        pagination_state = ReportPaginationState(require_dimensions=True)
+        while True:
+            if page > 200:
+                raise RuntimeError(
+                    "GMV Max product daily report pagination exceeded "
+                    f"200 pages for {window_start}..{window_end}"
                 )
-                continue
-
-            metrics_payload = _normalize_metric_payload(row)
-            _upsert_product_metrics_daily(
-                db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=advertiser_id,
+            request = _build_campaign_report_request(
+                advertiser_id=str(advertiser_id),
+                campaign_ids=campaign_ids,
                 store_id=store_id,
-                campaign_id=str(campaign.campaign_id),
-                stat_time_day=stat_date,
-                item_group_id=item_group_id,
-                metrics=metrics_payload,
-                bid_type=_extract_field(row, "bid_type"),
+                start_date=window_start.isoformat(),
+                end_date=window_end.isoformat(),
+                granularity="DAILY",
+                metrics=_PRODUCT_REPORT_METRICS,
+                dimensions=[
+                    "item_group_id",
+                    "stat_time_day",
+                ],
+                page=page,
+                page_size=_REPORT_PAGE_SIZE,
             )
-            synced_rows += 1
+            try:
+                response = await ttb_client.gmv_max_report_get(
+                    request,
+                    inject_promotion_types=False,
+                )
+            except Exception:
+                logger.exception(
+                    "gmvmax product daily report fetch failed",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "campaign_id": campaign.campaign_id,
+                        "date_start": window_start.isoformat(),
+                        "date_end": window_end.isoformat(),
+                        "page": page,
+                    },
+                )
+                raise
 
-        page_info = getattr(data, "page_info", None)
-        has_more = bool(getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False))
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
+            data = getattr(response, "data", None)
+            rows_raw = getattr(data, "list", None) or []
+            rows = [_merge_report_entry(item) for item in rows_raw]
+            rows = [row for row in rows if isinstance(row, dict)]
+            for row in rows:
+                stat_date = _parse_date(
+                    _extract_field(
+                        row,
+                        "stat_time_day",
+                        "date",
+                        "stat_time",
+                    )
+                )
+                item_group_id = _normalize_identifier(
+                    _extract_field(
+                        row,
+                        "item_group_id",
+                        "product_id",
+                        "itemId",
+                        "spu_id",
+                        "item_id",
+                    )
+                )
+                if stat_date is None or not item_group_id:
+                    reconciliation_stage.invalidate()
+                    logger.debug(
+                        "skip product daily row missing identifiers; absence "
+                        "reconciliation disabled for window",
+                        extra={
+                            "campaign_id": campaign.campaign_id,
+                            "workspace_id": workspace_id,
+                            "auth_id": auth_id,
+                        },
+                    )
+                    continue
+                if not reconciliation_stage.contains_time(stat_date):
+                    reconciliation_stage.invalidate()
+                    logger.warning(
+                        "skip product daily row outside requested window; "
+                        "absence reconciliation disabled for window",
+                        extra={
+                            "campaign_id": campaign.campaign_id,
+                            "stat_time_day": stat_date,
+                            "window_start": window_start,
+                            "window_end": window_end,
+                        },
+                    )
+                    continue
+                returned_campaign_id = _normalize_identifier(
+                    _extract_field(row, "campaign_id")
+                )
+                if (
+                    returned_campaign_id
+                    and returned_campaign_id != str(campaign.campaign_id)
+                ):
+                    reconciliation_stage.invalidate()
+                    logger.warning(
+                        "skip product daily row outside requested campaign; "
+                        "absence reconciliation disabled for window",
+                        extra={
+                            "requested_campaign_id": campaign.campaign_id,
+                            "returned_campaign_id": returned_campaign_id,
+                        },
+                    )
+                    continue
+
+                metrics_payload = _normalize_metric_payload(row)
+                _upsert_product_metrics_daily(
+                    db,
+                    workspace_id=workspace_id,
+                    auth_id=auth_id,
+                    advertiser_id=advertiser_id,
+                    store_id=store_id,
+                    campaign_id=str(campaign.campaign_id),
+                    stat_time_day=stat_date,
+                    item_group_id=item_group_id,
+                    metrics=metrics_payload,
+                    bid_type=_extract_field(row, "bid_type"),
+                    source_observed_at=source_observed_at,
+                    ingested_at=ingested_at,
+                    advertiser_timezone=resolved_timezone,
+                )
+                reconciliation_stage.add(item_group_id, stat_date)
+                synced_rows += 1
+
+            has_more = report_page_has_more(
+                data,
+                current_page=page,
+                rows=rows_raw,
+                state=pagination_state,
+            )
+            if not has_more:
+                break
             page += 1
-            continue
-        try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
-            continue
-        break
+        reconciliation_stage.mark_pagination_complete()
+        reconciliation_stage.reconcile(db)
 
     db.flush()
     return {"synced_rows": synced_rows}
@@ -2956,6 +3311,9 @@ def _upsert_overview_daily(
     advertiser_id: str,
     store_id: str,
     row: Mapping[str, Any],
+    source_observed_at: datetime,
+    ingested_at: datetime,
+    advertiser_timezone: str | None,
 ) -> GmvOverviewMetricsDaily:
     stat_date = _parse_date(_extract_field(row, "stat_time_day", "date", "stat_time"))
     if stat_date is None:
@@ -2982,8 +3340,15 @@ def _upsert_overview_daily(
 
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
-        if hasattr(instance, field):
+        if value is not None and hasattr(instance, field):
             setattr(instance, field, value)
+    _apply_fact_freshness(
+        instance,
+        stat_day=stat_date,
+        source_observed_at=source_observed_at,
+        ingested_at=ingested_at,
+        advertiser_timezone=advertiser_timezone,
+    )
 
     db.flush()
     return instance
@@ -2997,6 +3362,9 @@ def _upsert_overview_hourly(
     advertiser_id: str,
     store_id: str,
     row: Mapping[str, Any],
+    source_observed_at: datetime,
+    ingested_at: datetime,
+    advertiser_timezone: str | None,
 ) -> GmvOverviewMetricsHourly:
     stat_time_value = _extract_field(row, "stat_time_hour", "stat_time")
     stat_time_hour = _parse_datetime(stat_time_value)
@@ -3024,8 +3392,15 @@ def _upsert_overview_hourly(
 
     metrics_payload = _normalize_metric_payload(row)
     for field, value in metrics_payload.items():
-        if hasattr(instance, field):
+        if value is not None and hasattr(instance, field):
             setattr(instance, field, value)
+    _apply_fact_freshness(
+        instance,
+        stat_day=stat_time_hour.date(),
+        source_observed_at=source_observed_at,
+        ingested_at=ingested_at,
+        advertiser_timezone=advertiser_timezone,
+    )
 
     db.flush()
     return instance
@@ -3044,22 +3419,52 @@ async def fetch_overview_summary_rows(
     start_date_str = _normalize_date(start_date)
     end_date_str = _normalize_date(end_date)
 
-    request = build_gmv_max_report_request(
-        dataset=GMVMaxDataset.OVERVIEW,
-        advertiser_id=str(advertiser_id),
-        store_ids=[str(store_id)],
-        start_date=start_date_str,
-        end_date=end_date_str,
-        metrics=list(_OVERVIEW_FINANCIAL_METRICS),
-        page_size=_REPORT_PAGE_SIZE,
-    )
-    request.dimensions = requested_dimensions
+    rows: list[dict[str, Any]] = []
+    for window_start, window_end in _official_report_date_windows(
+        start_date_str,
+        end_date_str,
+        max_days=30,
+    ):
+        page = 1
+        pagination_state = ReportPaginationState(require_dimensions=True)
+        while True:
+            if page > 200:
+                raise RuntimeError(
+                    "GMV Max overview summary pagination exceeded 200 pages "
+                    f"for {window_start}..{window_end}"
+                )
+            request = build_gmv_max_report_request(
+                dataset=GMVMaxDataset.OVERVIEW,
+                advertiser_id=str(advertiser_id),
+                store_ids=[str(store_id)],
+                start_date=window_start.isoformat(),
+                end_date=window_end.isoformat(),
+                metrics=list(_OVERVIEW_FINANCIAL_METRICS),
+                page=page,
+                page_size=_REPORT_PAGE_SIZE,
+            )
+            request.dimensions = requested_dimensions
 
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    return [row for row in rows if isinstance(row, dict)]
+            response = await ttb_client.gmv_max_report_get(request)
+            data = getattr(response, "data", None)
+            rows_raw = getattr(data, "list", None) or []
+            rows.extend(
+                row
+                for row in (
+                    _merge_report_entry(item) for item in rows_raw
+                )
+                if isinstance(row, dict)
+            )
+            has_more = report_page_has_more(
+                data,
+                current_page=page,
+                rows=rows_raw,
+                state=pagination_state,
+            )
+            if not has_more:
+                break
+            page += 1
+    return rows
 
 
 def normalize_overview_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -3067,14 +3472,11 @@ def normalize_overview_metrics(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _aggregate_overview_metrics(metric_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    cost_cents = _sum_int([_to_int(row.get("cost_cents")) for row in metric_rows])
-    net_cost_cents = _sum_int([
-        _to_int(row.get("net_cost_cents")) for row in metric_rows
-    ])
-    orders = _sum_int([_to_int(row.get("orders")) for row in metric_rows])
-    gross_revenue_cents = _sum_int(
-        [_to_int(row.get("gross_revenue_cents")) for row in metric_rows]
-    )
+    normalized_rows = [_normalize_metric_payload(row) for row in metric_rows if isinstance(row, Mapping)]
+    cost_cents = _sum_int([_to_int(row.get("cost_cents")) for row in normalized_rows])
+    net_cost_cents = _sum_int([_to_int(row.get("net_cost_cents")) for row in normalized_rows])
+    orders = _sum_int([_to_int(row.get("orders")) for row in normalized_rows])
+    gross_revenue_cents = _sum_int([_to_int(row.get("gross_revenue_cents")) for row in normalized_rows])
 
     cost_per_order: Decimal | None = None
     if cost_cents and orders:
@@ -3110,7 +3512,7 @@ def upsert_overview_snapshot(
     metrics_rows: Sequence[Mapping[str, Any]],
 ) -> GmvOverviewSnapshot:
     aggregated = _aggregate_overview_metrics(metrics_rows)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     def _fetch_existing() -> GmvOverviewSnapshot | None:
         stmt = (
@@ -3193,8 +3595,6 @@ def _build_campaign_report_request(
     page_size: int,
 ) -> GMVMaxReportGetRequest:
     filtering = GMVMaxReportFiltering(
-        gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
-        store_ids=[store_id] if store_id else None,
         campaign_ids=[str(cid) for cid in campaign_ids],
     )
     return GMVMaxReportGetRequest(
@@ -3204,78 +3604,11 @@ def _build_campaign_report_request(
         end_date=end_date,
         metrics=list(metrics),
         dimensions=list(dimensions),
-        gmv_max_promotion_types=["PRODUCT_GMV_MAX"],
         campaign_ids=list(campaign_ids),
         filtering=filtering,
         page=page,
         page_size=page_size,
     )
-
-
-async def sync_gmvmax_metrics_daily(
-    db: Session,
-    ttb_client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign: GmvCampaign,
-    start_date: date | str,
-    end_date: date | str,
-) -> dict:
-    _log_sync_target("PRODUCT", granularity="DAILY")
-    _log_sync_target("PRODUCT", granularity="HOURLY")
-    _log_sync_target("CAMPAIGN", granularity="DAILY")
-    start_date_str = _normalize_date(start_date)
-    end_date_str = _normalize_date(end_date)
-
-    synced_rows = 0
-    store_id = _resolve_store_id_for_metrics(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=advertiser_id,
-        campaign=campaign,
-    )
-    if not store_id:
-        return {"synced_rows": 0}
-
-    dimensions = ["campaign_id", "stat_time_day"]
-    campaign_ids = [campaign.campaign_id]
-    request = _build_campaign_report_request(
-        advertiser_id=str(advertiser_id),
-        campaign_ids=campaign_ids,
-        store_id=store_id,
-        start_date=start_date_str,
-        end_date=end_date_str,
-        granularity="DAILY",
-        metrics=_DEFAULT_REPORT_METRICS,
-        dimensions=dimensions,
-        page=1,
-        page_size=_REPORT_PAGE_SIZE,
-    )
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, dict)]
-    for row in rows:
-        try:
-            upsert_metrics_daily_row(db, campaign=campaign, row=row)
-            synced_rows += 1
-        except ValueError:
-            logger.debug(
-                "skip daily metrics row without date",
-                extra={
-                    "campaign_id": campaign.campaign_id,
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                },
-            )
-            continue
-
-    db.flush()
-    return {"synced_rows": synced_rows}
 
 
 async def sync_gmvmax_overview_metrics(
@@ -3290,6 +3623,7 @@ async def sync_gmvmax_overview_metrics(
     end_date: date | str,
     granularity: str = "DAILY",
     hour_window: tuple[datetime, datetime] | None = None,
+    advertiser_timezone: str | None = None,
 ) -> dict:
     _log_sync_target("OVERVIEW", granularity=str(granularity or "").strip().upper())
     start_date_str = _normalize_date(start_date)
@@ -3299,73 +3633,378 @@ async def sync_gmvmax_overview_metrics(
 
     metrics = list(GMVMAX_BASE_METRICS)
     granularity_normalized = str(granularity or "").strip().upper()
+    resolved_timezone = advertiser_timezone or _advertiser_timezone_for_fact(
+        db,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+    )
+    source_observed_at = utc_now_naive()
+    ingested_at = utc_now_naive()
+    max_days = 1 if granularity_normalized == "HOUR" else 30
     synced_rows = 0
 
     for store_id in store_ids:
-        request = build_gmv_max_report_request(
-            dataset=GMVMaxDataset.OVERVIEW,
-            advertiser_id=str(advertiser_id),
-            store_ids=[str(store_id)],
-            start_date=start_date_str,
-            end_date=end_date_str,
-            metrics=metrics,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-
-        if granularity_normalized == "HOUR":
-            request.dimensions = ["advertiser_id", "stat_time_hour"]
-        else:
-            request.dimensions = ["advertiser_id", "stat_time_day"]
-
-        response = await ttb_client.gmv_max_report_get(request)
-        data = getattr(response, "data", None)
-        rows_raw = getattr(data, "list", None) or []
-        rows = [_merge_report_entry(item) for item in rows_raw]
-        rows = [row for row in rows if isinstance(row, dict)]
-
-        for row in rows:
-            if granularity_normalized == "HOUR" and hour_window:
-                stat_time_value = _extract_field(row, "stat_time_hour", "stat_time")
-                stat_time_hour = _parse_datetime(stat_time_value)
-                if stat_time_hour is None:
-                    continue
-                if not (hour_window[0] <= stat_time_hour <= hour_window[1]):
-                    continue
-            try:
-                if granularity_normalized == "HOUR":
-                    _upsert_overview_hourly(
-                        db,
-                        workspace_id=workspace_id,
-                        auth_id=auth_id,
-                        advertiser_id=advertiser_id,
-                        store_id=str(store_id),
-                        row=row,
-                    )
-                else:
-                    _upsert_overview_daily(
-                        db,
-                        workspace_id=workspace_id,
-                        auth_id=auth_id,
-                        advertiser_id=advertiser_id,
-                        store_id=str(store_id),
-                        row=row,
-                    )
-                synced_rows += 1
-            except ValueError:
-                logger.debug(
-                    "skip overview metrics row without timestamp",
-                    extra={
-                        "workspace_id": workspace_id,
-                        "auth_id": auth_id,
-                        "advertiser_id": advertiser_id,
-                        "store_id": store_id,
-                        "granularity": granularity_normalized,
-                    },
+        for window_start, window_end in _official_report_date_windows(
+            start_date_str,
+            end_date_str,
+            max_days=max_days,
+        ):
+            if granularity_normalized == "HOUR":
+                natural_range_start = datetime.combine(
+                    window_start,
+                    datetime.min.time(),
                 )
-                continue
+                natural_range_end = datetime.combine(
+                    window_end + timedelta(days=1),
+                    datetime.min.time(),
+                )
+                reconciliation_range_start = (
+                    max(natural_range_start, hour_window[0])
+                    if hour_window
+                    else natural_range_start
+                )
+                reconciliation_range_end = (
+                    min(
+                        natural_range_end,
+                        hour_window[1] + timedelta(microseconds=1),
+                    )
+                    if hour_window
+                    else natural_range_end
+                )
+                reconciliation_model = GmvOverviewMetricsHourly
+                reconciliation_time_column = "stat_time_hour"
+            else:
+                reconciliation_range_start = window_start
+                reconciliation_range_end = window_end + timedelta(days=1)
+                reconciliation_model = GmvOverviewMetricsDaily
+                reconciliation_time_column = "stat_time_day"
+
+            reconciliation_stage = StagedFactKeySet(
+                model=reconciliation_model,
+                time_column=reconciliation_time_column,
+                range_start=reconciliation_range_start,
+                range_end_exclusive=reconciliation_range_end,
+                key_columns=(reconciliation_time_column,),
+                scope_equals={
+                    "workspace_id": int(workspace_id),
+                    "auth_id": int(auth_id),
+                    "advertiser_id": str(advertiser_id),
+                    "store_id": str(store_id),
+                },
+            )
+            page = 1
+            pagination_state = ReportPaginationState(require_dimensions=True)
+            while True:
+                if page > 200:
+                    raise RuntimeError(
+                        "GMV Max overview report pagination exceeded 200 "
+                        f"pages for {window_start}..{window_end}"
+                    )
+                request = build_gmv_max_report_request(
+                    dataset=GMVMaxDataset.OVERVIEW,
+                    advertiser_id=str(advertiser_id),
+                    store_ids=[str(store_id)],
+                    start_date=window_start.isoformat(),
+                    end_date=window_end.isoformat(),
+                    metrics=metrics,
+                    page=page,
+                    page_size=_REPORT_PAGE_SIZE,
+                )
+
+                if granularity_normalized == "HOUR":
+                    request.dimensions = [
+                        "advertiser_id",
+                        "stat_time_hour",
+                    ]
+                else:
+                    request.dimensions = [
+                        "advertiser_id",
+                        "stat_time_day",
+                    ]
+
+                response = await ttb_client.gmv_max_report_get(request)
+                data = getattr(response, "data", None)
+                rows_raw = getattr(data, "list", None) or []
+                rows = [_merge_report_entry(item) for item in rows_raw]
+                rows = [row for row in rows if isinstance(row, dict)]
+
+                for row in rows:
+                    if granularity_normalized == "HOUR":
+                        stat_time_value = _extract_field(
+                            row,
+                            "stat_time_hour",
+                            "stat_time",
+                        )
+                        stat_time_hour = _parse_datetime(stat_time_value)
+                        if stat_time_hour is None:
+                            reconciliation_stage.invalidate()
+                            continue
+                        if hour_window and not (
+                            hour_window[0] <= stat_time_hour <= hour_window[1]
+                        ):
+                            continue
+                        if not (
+                            reconciliation_range_start
+                            <= stat_time_hour
+                            < reconciliation_range_end
+                        ):
+                            reconciliation_stage.invalidate()
+                            continue
+                        reconciliation_key = stat_time_hour
+                    else:
+                        stat_time_day = _parse_date(
+                            _extract_field(
+                                row,
+                                "stat_time_day",
+                                "date",
+                                "stat_time",
+                            )
+                        )
+                        if stat_time_day is None:
+                            reconciliation_stage.invalidate()
+                            continue
+                        if not (
+                            reconciliation_range_start
+                            <= stat_time_day
+                            < reconciliation_range_end
+                        ):
+                            reconciliation_stage.invalidate()
+                            continue
+                        reconciliation_key = stat_time_day
+                    try:
+                        if granularity_normalized == "HOUR":
+                            _upsert_overview_hourly(
+                                db,
+                                workspace_id=workspace_id,
+                                auth_id=auth_id,
+                                advertiser_id=advertiser_id,
+                                store_id=str(store_id),
+                                row=row,
+                                source_observed_at=source_observed_at,
+                                ingested_at=ingested_at,
+                                advertiser_timezone=resolved_timezone,
+                            )
+                        else:
+                            _upsert_overview_daily(
+                                db,
+                                workspace_id=workspace_id,
+                                auth_id=auth_id,
+                                advertiser_id=advertiser_id,
+                                store_id=str(store_id),
+                                row=row,
+                                source_observed_at=source_observed_at,
+                                ingested_at=ingested_at,
+                                advertiser_timezone=resolved_timezone,
+                            )
+                        reconciliation_stage.add(reconciliation_key)
+                        synced_rows += 1
+                    except ValueError:
+                        reconciliation_stage.invalidate()
+                        logger.debug(
+                            "skip overview metrics row without timestamp",
+                            extra={
+                                "workspace_id": workspace_id,
+                                "auth_id": auth_id,
+                                "advertiser_id": advertiser_id,
+                                "store_id": store_id,
+                                "granularity": granularity_normalized,
+                            },
+                        )
+                        continue
+
+                has_more = report_page_has_more(
+                    data,
+                    current_page=page,
+                    rows=rows_raw,
+                    state=pagination_state,
+                )
+                if not has_more:
+                    break
+                page += 1
+            reconciliation_stage.mark_pagination_complete()
+            reconciliation_stage.reconcile(db)
 
     db.flush()
     return {"synced_rows": synced_rows}
+
+
+async def _fetch_chunked_live_report_rows(
+    ttb_client: TikTokBusinessGMVMaxClient,
+    *,
+    dataset: GMVMaxDataset,
+    advertiser_id: str,
+    store_id: str,
+    start_date: date | str,
+    end_date: date | str,
+    campaign_ids: Sequence[str],
+    room_ids: Sequence[str] | None,
+    metrics: Sequence[str],
+    dimensions: Sequence[str],
+    max_window_days: int,
+) -> list[tuple[Mapping[str, Any], str | None, str | None]]:
+    """Fetch all live report partitions within official date/ID/page limits."""
+
+    clean_campaign_ids = _sanitize_id_list(campaign_ids) or []
+    clean_room_ids = _sanitize_id_list(room_ids) or []
+    if not clean_campaign_ids:
+        return []
+    if not clean_room_ids and dataset is not GMVMaxDataset.LIVE_LIVESTREAM:
+        return []
+
+    room_chunks: list[list[str] | None] = (
+        list(chunk_report_filter_ids(clean_room_ids))
+        if clean_room_ids
+        else [None]
+    )
+
+    results: list[tuple[Mapping[str, Any], str | None, str | None]] = []
+    for window_start, window_end in _official_report_date_windows(
+        start_date,
+        end_date,
+        max_days=max_window_days,
+    ):
+        for campaign_chunk in chunk_report_filter_ids(clean_campaign_ids):
+            for room_chunk in room_chunks:
+                pagination_state = ReportPaginationState(require_dimensions=True)
+
+                async def _fetch_page(
+                    page: int,
+                    *,
+                    campaign_filter: list[str] = campaign_chunk,
+                    room_filter: list[str] | None = room_chunk,
+                    range_start: date = window_start,
+                    range_end: date = window_end,
+                ) -> Any:
+                    request = build_gmv_max_report_request(
+                        dataset=dataset,
+                        advertiser_id=str(advertiser_id),
+                        store_ids=[str(store_id)],
+                        start_date=range_start.isoformat(),
+                        end_date=range_end.isoformat(),
+                        metrics=list(metrics),
+                        campaign_ids=list(campaign_filter),
+                        room_ids=list(room_filter) if room_filter else None,
+                        page=page,
+                        page_size=_REPORT_PAGE_SIZE,
+                    )
+                    request.dimensions = list(dimensions)
+                    return await ttb_client.gmv_max_report_get(request)
+
+                async for fetched_page in iter_numbered_pages(
+                    _fetch_page,
+                    rows_from_data=lambda data: getattr(data, "list", None) or [],
+                    requested_page_size=_REPORT_PAGE_SIZE,
+                    probe_on_missing_metadata=True,
+                ):
+                    pagination_state.validate(
+                        page=fetched_page.page,
+                        rows=fetched_page.rows,
+                    )
+                    fallback_campaign_id = (
+                        campaign_chunk[0] if len(campaign_chunk) == 1 else None
+                    )
+                    fallback_room_id = (
+                        room_chunk[0]
+                        if room_chunk is not None and len(room_chunk) == 1
+                        else None
+                    )
+                    for item in fetched_page.rows:
+                        row = _merge_report_entry(item)
+                        if isinstance(row, Mapping):
+                            response_campaign_id = _normalize_identifier(
+                                _extract_field(row, "campaign_id")
+                            )
+                            if (
+                                response_campaign_id is not None
+                                and response_campaign_id not in campaign_chunk
+                            ):
+                                raise RuntimeError(
+                                    "GMV Max live report response escaped its "
+                                    "campaign filter chunk"
+                                )
+                            response_room_id = _normalize_identifier(
+                                _extract_field(row, "room_id")
+                            )
+                            if (
+                                room_chunk is not None
+                                and response_room_id is not None
+                                and response_room_id not in room_chunk
+                            ):
+                                raise RuntimeError(
+                                    "GMV Max live report response escaped its "
+                                    "room filter chunk"
+                                )
+                            results.append(
+                                (row, fallback_campaign_id, fallback_room_id)
+                            )
+    return results
+
+
+def _merge_duration_report_partitions(
+    rows: Sequence[tuple[Mapping[str, Any], str | None, str | None]],
+    *,
+    time_dimension: str,
+) -> list[tuple[Mapping[str, Any], str | None, str | None]]:
+    """Merge additive metrics split only because a room filter exceeded 100 IDs."""
+
+    additive_fields = (
+        "cost",
+        "net_cost",
+        "orders",
+        "gross_revenue",
+        "live_views",
+        "live_follows",
+        "10_second_live_views",
+        "live_10s_views",
+    )
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    fallback_campaigns: dict[tuple[str, str, str, str], str | None] = {}
+    for row, fallback_campaign_id, _fallback_room_id in rows:
+        campaign_id = (
+            _normalize_identifier(_extract_field(row, "campaign_id"))
+            or fallback_campaign_id
+            or ""
+        )
+        key = (
+            str(campaign_id),
+            str(_normalize_identifier(_extract_field(row, "item_group_id")) or ""),
+            str(_normalize_identifier(_extract_field(row, "duration")) or ""),
+            str(_extract_field(row, time_dimension) or ""),
+        )
+        if key not in grouped:
+            grouped[key] = dict(row)
+            fallback_campaigns[key] = fallback_campaign_id
+            continue
+        target = grouped[key]
+        for field_name in additive_fields:
+            incoming = _to_decimal(_extract_field(row, field_name))
+            if incoming is None:
+                continue
+            current = _to_decimal(_extract_field(target, field_name)) or Decimal("0")
+            target[field_name] = current + incoming
+
+    for key, row in grouped.items():
+        cost = _to_decimal(_extract_field(row, "cost"))
+        orders = _to_decimal(_extract_field(row, "orders"))
+        revenue = _to_decimal(_extract_field(row, "gross_revenue"))
+        live_views = _to_decimal(_extract_field(row, "live_views"))
+        live_10s_views = _to_decimal(
+            _extract_field(row, "10_second_live_views", "live_10s_views")
+        )
+        if cost is not None and orders:
+            row["cost_per_order"] = cost / orders
+        if cost and revenue is not None:
+            row["roi"] = revenue / cost
+        if cost is not None and live_views:
+            row["cost_per_live_view"] = cost / live_views
+        if cost is not None and live_10s_views:
+            row["cost_per_10_second_live_view"] = cost / live_10s_views
+
+    return [
+        (row, fallback_campaigns[key], None)
+        for key, row in grouped.items()
+    ]
 
 
 async def sync_gmvmax_livestream_metrics_hourly(
@@ -3398,37 +4037,44 @@ async def sync_gmvmax_livestream_metrics_hourly(
     resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
         db, campaign_id=str(campaign.campaign_id)
     )
-    if not resolved_rooms:
-        logger.warning(
-            "gmvmax livestream metrics sync skipped: no room ids",
-            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
-        )
-        return {"synced_rows": 0}
-
-    request = build_gmv_max_report_request(
+    resolved_campaigns = (
+        _sanitize_id_list(campaign_ids) or [str(campaign.campaign_id)]
+    )
+    rows = await _fetch_chunked_live_report_rows(
+        ttb_client,
         dataset=GMVMaxDataset.LIVE_LIVESTREAM,
         advertiser_id=str(advertiser_id),
-        store_ids=[store_id],
+        store_id=str(store_id),
         start_date=start_date_str,
         end_date=end_date_str,
         metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.ROOM]["metrics"]),
-        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        campaign_ids=resolved_campaigns,
         room_ids=resolved_rooms,
-        page_size=_REPORT_PAGE_SIZE,
+        dimensions=["campaign_id", "room_id", "stat_time_hour"],
+        max_window_days=1,
     )
-    request.dimensions = ["room_id", "stat_time_hour"]
-
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, Mapping)]
 
     synced_rows = 0
-    for row in rows:
-        room_id = _normalize_identifier(_extract_field(row, "room_id")) or (resolved_rooms[0] if resolved_rooms else None)
+    discovered_rooms = 0
+    for row, fallback_campaign_id, fallback_room_id in rows:
+        room_id = (
+            _normalize_identifier(_extract_field(row, "room_id"))
+            or fallback_room_id
+        )
         if not room_id:
             continue
+        row_campaign_id = (
+            _normalize_identifier(_extract_field(row, "campaign_id"))
+            or fallback_campaign_id
+            or str(campaign.campaign_id)
+        )
+        discovered_rooms += int(
+            _record_campaign_livestream(
+                db,
+                campaign_id=str(row_campaign_id),
+                room_id=room_id,
+            )
+        )
         try:
             _upsert_livestream_metrics_hourly(
                 db,
@@ -3436,7 +4082,7 @@ async def sync_gmvmax_livestream_metrics_hourly(
                 auth_id=auth_id,
                 advertiser_id=advertiser_id,
                 store_id=str(store_id),
-                campaign_id=str(campaign.campaign_id),
+                campaign_id=str(row_campaign_id),
                 room_id=room_id,
                 row=row,
             )
@@ -3449,7 +4095,10 @@ async def sync_gmvmax_livestream_metrics_hourly(
             continue
 
     db.flush()
-    return {"synced_rows": synced_rows}
+    return {
+        "synced_rows": synced_rows,
+        "discovered_rooms": discovered_rooms,
+    }
 
 
 async def sync_gmvmax_livestream_metrics_daily(
@@ -3482,37 +4131,44 @@ async def sync_gmvmax_livestream_metrics_daily(
     resolved_rooms = list(room_ids) if room_ids else _resolve_room_ids_for_campaign(
         db, campaign_id=str(campaign.campaign_id)
     )
-    if not resolved_rooms:
-        logger.warning(
-            "gmvmax livestream daily sync skipped: no room ids",
-            extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
-        )
-        return {"synced_rows": 0}
-
-    request = build_gmv_max_report_request(
+    resolved_campaigns = (
+        _sanitize_id_list(campaign_ids) or [str(campaign.campaign_id)]
+    )
+    rows = await _fetch_chunked_live_report_rows(
+        ttb_client,
         dataset=GMVMaxDataset.LIVE_LIVESTREAM,
         advertiser_id=str(advertiser_id),
-        store_ids=[store_id],
+        store_id=str(store_id),
         start_date=start_date_str,
         end_date=end_date_str,
         metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.ROOM]["metrics"]),
-        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        campaign_ids=resolved_campaigns,
         room_ids=resolved_rooms,
-        page_size=_REPORT_PAGE_SIZE,
+        dimensions=["campaign_id", "room_id", "stat_time_day"],
+        max_window_days=30,
     )
-    request.dimensions = ["room_id", "stat_time_day"]
-
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, Mapping)]
 
     synced_rows = 0
-    for row in rows:
-        room_id = _normalize_identifier(_extract_field(row, "room_id")) or (resolved_rooms[0] if resolved_rooms else None)
+    discovered_rooms = 0
+    for row, fallback_campaign_id, fallback_room_id in rows:
+        room_id = (
+            _normalize_identifier(_extract_field(row, "room_id"))
+            or fallback_room_id
+        )
         if not room_id:
             continue
+        row_campaign_id = (
+            _normalize_identifier(_extract_field(row, "campaign_id"))
+            or fallback_campaign_id
+            or str(campaign.campaign_id)
+        )
+        discovered_rooms += int(
+            _record_campaign_livestream(
+                db,
+                campaign_id=str(row_campaign_id),
+                room_id=room_id,
+            )
+        )
         try:
             _upsert_livestream_metrics_daily(
                 db,
@@ -3520,7 +4176,7 @@ async def sync_gmvmax_livestream_metrics_daily(
                 auth_id=auth_id,
                 advertiser_id=advertiser_id,
                 store_id=str(store_id),
-                campaign_id=str(campaign.campaign_id),
+                campaign_id=str(row_campaign_id),
                 room_id=room_id,
                 row=row,
             )
@@ -3533,7 +4189,10 @@ async def sync_gmvmax_livestream_metrics_daily(
             continue
 
     db.flush()
-    return {"synced_rows": synced_rows}
+    return {
+        "synced_rows": synced_rows,
+        "discovered_rooms": discovered_rooms,
+    }
 
 
 async def sync_gmvmax_duration_metrics_hourly(
@@ -3567,33 +4226,57 @@ async def sync_gmvmax_duration_metrics_hourly(
         db, campaign_id=str(campaign.campaign_id)
     )
     if not resolved_rooms:
+        await sync_gmvmax_livestream_metrics_hourly(
+            db,
+            ttb_client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            campaign=campaign,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            campaign_ids=campaign_ids,
+            room_ids=None,
+        )
+        resolved_rooms = _resolve_room_ids_for_campaign(
+            db,
+            campaign_id=str(campaign.campaign_id),
+        )
+    if not resolved_rooms:
         logger.warning(
-            "gmvmax duration hourly sync skipped: no room ids",
+            "gmvmax duration hourly sync skipped: room discovery returned no rooms",
             extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
         )
         return {"synced_rows": 0}
 
-    request = build_gmv_max_report_request(
+    resolved_campaigns = (
+        _sanitize_id_list(campaign_ids) or [str(campaign.campaign_id)]
+    )
+    rows = await _fetch_chunked_live_report_rows(
+        ttb_client,
         dataset=GMVMaxDataset.LIVE_DURATION,
         advertiser_id=str(advertiser_id),
-        store_ids=[store_id],
+        store_id=str(store_id),
         start_date=start_date_str,
         end_date=end_date_str,
         metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.SESSION]["metrics"]),
-        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        campaign_ids=resolved_campaigns,
         room_ids=resolved_rooms,
-        page_size=_REPORT_PAGE_SIZE,
+        dimensions=["campaign_id", "duration", "stat_time_hour"],
+        max_window_days=1,
     )
-    request.dimensions = ["duration", "stat_time_hour"]
-
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, Mapping)]
+    rows = _merge_duration_report_partitions(
+        rows,
+        time_dimension="stat_time_hour",
+    )
 
     synced_rows = 0
-    for row in rows:
+    for row, fallback_campaign_id, _fallback_room_id in rows:
+        row_campaign_id = (
+            _normalize_identifier(_extract_field(row, "campaign_id"))
+            or fallback_campaign_id
+            or str(campaign.campaign_id)
+        )
         try:
             _upsert_duration_metrics_hourly(
                 db,
@@ -3601,7 +4284,7 @@ async def sync_gmvmax_duration_metrics_hourly(
                 auth_id=auth_id,
                 advertiser_id=advertiser_id,
                 store_id=store_id,
-                campaign_id=str(campaign.campaign_id),
+                campaign_id=str(row_campaign_id),
                 row=row,
             )
             synced_rows += 1
@@ -3647,33 +4330,57 @@ async def sync_gmvmax_duration_metrics_daily(
         db, campaign_id=str(campaign.campaign_id)
     )
     if not resolved_rooms:
+        await sync_gmvmax_livestream_metrics_daily(
+            db,
+            ttb_client,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            campaign=campaign,
+            start_date=start_date_str,
+            end_date=end_date_str,
+            campaign_ids=campaign_ids,
+            room_ids=None,
+        )
+        resolved_rooms = _resolve_room_ids_for_campaign(
+            db,
+            campaign_id=str(campaign.campaign_id),
+        )
+    if not resolved_rooms:
         logger.warning(
-            "gmvmax duration daily sync skipped: no room ids",
+            "gmvmax duration daily sync skipped: room discovery returned no rooms",
             extra={"workspace_id": workspace_id, "auth_id": auth_id, "campaign_id": campaign.campaign_id},
         )
         return {"synced_rows": 0}
 
-    request = build_gmv_max_report_request(
+    resolved_campaigns = (
+        _sanitize_id_list(campaign_ids) or [str(campaign.campaign_id)]
+    )
+    rows = await _fetch_chunked_live_report_rows(
+        ttb_client,
         dataset=GMVMaxDataset.LIVE_DURATION,
         advertiser_id=str(advertiser_id),
-        store_ids=[store_id],
+        store_id=str(store_id),
         start_date=start_date_str,
         end_date=end_date_str,
         metrics=list(GMV_REPORT_CONFIG[GMVMaxReportLevel.SESSION]["metrics"]),
-        campaign_ids=list(campaign_ids) if campaign_ids else [str(campaign.campaign_id)],
+        campaign_ids=resolved_campaigns,
         room_ids=resolved_rooms,
-        page_size=_REPORT_PAGE_SIZE,
+        dimensions=["campaign_id", "duration", "stat_time_day"],
+        max_window_days=30,
     )
-    request.dimensions = ["duration", "stat_time_day"]
-
-    response = await ttb_client.gmv_max_report_get(request)
-    data = getattr(response, "data", None)
-    rows_raw = getattr(data, "list", None) or []
-    rows = [_merge_report_entry(item) for item in rows_raw]
-    rows = [row for row in rows if isinstance(row, Mapping)]
+    rows = _merge_duration_report_partitions(
+        rows,
+        time_dimension="stat_time_day",
+    )
 
     synced_rows = 0
-    for row in rows:
+    for row, fallback_campaign_id, _fallback_room_id in rows:
+        row_campaign_id = (
+            _normalize_identifier(_extract_field(row, "campaign_id"))
+            or fallback_campaign_id
+            or str(campaign.campaign_id)
+        )
         try:
             _upsert_duration_metrics_daily(
                 db,
@@ -3681,7 +4388,7 @@ async def sync_gmvmax_duration_metrics_daily(
                 auth_id=auth_id,
                 advertiser_id=advertiser_id,
                 store_id=store_id,
-                campaign_id=str(campaign.campaign_id),
+                campaign_id=str(row_campaign_id),
                 row=row,
             )
             synced_rows += 1
@@ -3694,420 +4401,6 @@ async def sync_gmvmax_duration_metrics_daily(
 
     db.flush()
     return {"synced_rows": synced_rows}
-
-
-async def _sync_campaign_level_daily(
-    db: Session,
-    client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    campaign: GmvCampaign,
-    store_id: str,
-    start_date: str,
-    end_date: str,
-) -> int:
-    synced = 0
-    request = _build_campaign_report_request(
-        advertiser_id=str(campaign.advertiser_id or ""),
-        campaign_ids=[str(campaign.campaign_id)],
-        store_id=store_id,
-        start_date=start_date,
-        end_date=end_date,
-        granularity="DAILY",
-        metrics=_DEFAULT_REPORT_METRICS,
-        dimensions=["campaign_id", "stat_time_day"],
-        page=1,
-        page_size=_REPORT_PAGE_SIZE,
-    )
-    response = await client.gmv_max_report_get(request)
-    entries = getattr(getattr(response, "data", None), "list", []) or []
-    for entry in entries:
-        row = _merge_report_entry(entry)
-        try:
-            upsert_metrics_daily_row(db, campaign=campaign, row=row)
-            synced += 1
-        except ValueError:
-            logger.debug(
-                "skip daily metrics row without date",
-                extra={
-                    "campaign_id": campaign.campaign_id,
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                },
-            )
-    db.flush()
-    return synced
-
-
-async def _sync_creative_level_daily(
-    db: Session,
-    client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    campaign: GmvCampaign,
-    store_id: str,
-    start_date: str,
-    end_date: str,
-    include_attributes: bool,
-    item_group_ids: Sequence[str] | None = None,
-) -> int:
-    dimensions = ["campaign_id", "item_group_id", "item_id"]
-    metrics = list(GMVMAX_CREATIVE_METRICS)
-    page = 1
-    rows = 0
-    while True:
-        filtering = GMVMaxReportFiltering(
-            store_ids=[store_id] if store_id else None,
-            campaign_ids=[str(campaign.campaign_id)],
-            item_group_ids=list(item_group_ids) if item_group_ids else None,
-            gmv_max_promotion_types=["PRODUCT"],
-        )
-        request = GMVMaxCreativeReportRequest(
-            advertiser_id=str(campaign.advertiser_id or ""),
-            campaign_ids=[str(campaign.campaign_id)],
-            metrics=metrics,
-            dimensions=dimensions,
-            time_range=GMVMaxReportTimeRange(start_time=start_date, end_time=end_date),
-            time_granularity="DAILY",
-            time_dimension="DAILY",
-            filtering=filtering,
-            page=page,
-            page_size=_REPORT_PAGE_SIZE,
-        )
-        response = await client.gmv_max_creative_report(request)
-        entries = getattr(getattr(response, "data", None), "list", []) or []
-        if not entries:
-            break
-        for entry in entries:
-            payload = _merge_report_entry(entry)
-            creative_id = _normalize_identifier(
-                payload.get("item_id") or payload.get("creative_id")
-            )
-            stat_time = payload.get("stat_time_day") or payload.get("date") or start_date
-            stat_time_day = _parse_date(stat_time)
-            if not creative_id or stat_time_day is None:
-                continue
-            try:
-                _upsert_creative_metrics(
-                    db,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    advertiser_id=campaign.advertiser_id,
-                    store_id=store_id,
-                    campaign_id=str(campaign.campaign_id),
-                    creative_id=str(creative_id),
-                    stat_time_day=stat_time_day,
-                    item_group_id=payload.get("item_group_id"),
-                    metrics_row=payload,
-                )
-                rows += 1
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "failed to upsert creative metrics",
-                    extra={
-                        "campaign_id": campaign.campaign_id,
-                        "creative_id": creative_id,
-                        "stat_time": stat_time,
-                        "include_attributes": include_attributes,
-                    },
-                )
-        page_info = getattr(getattr(response, "data", None), "page_info", None)
-        has_more = bool(
-            getattr(page_info, "has_more", False) or getattr(page_info, "has_next", False)
-        )
-        total_page = getattr(page_info, "total_page", None) if page_info else None
-        if has_more:
-            page += 1
-            continue
-        try:
-            total_page_int = int(total_page) if total_page is not None else None
-        except (TypeError, ValueError):
-            total_page_int = None
-        if total_page_int is not None and page < total_page_int:
-            page += 1
-            continue
-        break
-    db.flush()
-    return rows
-
-
-async def sync_gmvmax_reports_for_campaign(
-    db: Session,
-    client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign: GmvCampaign,
-    start_date: date | str,
-    end_date: date | str,
-) -> dict[str, int]:
-    start_date_str = _normalize_date(start_date)
-    end_date_str = _normalize_date(end_date)
-
-    store_id = _resolve_store_id_for_metrics(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        advertiser_id=advertiser_id,
-        campaign=campaign,
-    )
-    if not store_id:
-        return {"campaign_rows": 0, "creative_rows": 0}
-
-    campaign_rows = await _sync_campaign_level_daily(
-        db,
-        client,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        campaign=campaign,
-        store_id=store_id,
-        start_date=start_date_str,
-        end_date=end_date_str,
-    )
-
-    creative_rows = 0
-    if _normalize_identifier(campaign.shopping_ads_type) != "LIVE":
-        item_group_ids = get_item_group_ids_for_campaign(db, campaign=campaign)
-        if item_group_ids:
-            creative_rows += await _sync_creative_level_daily(
-                db,
-                client,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                campaign=campaign,
-                store_id=store_id,
-                start_date=start_date_str,
-                end_date=end_date_str,
-                include_attributes=False,
-                item_group_ids=item_group_ids,
-            )
-            for item_group_id in item_group_ids:
-                creative_rows += await _sync_creative_level_daily(
-                    db,
-                    client,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    campaign=campaign,
-                    store_id=store_id,
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    include_attributes=True,
-                    item_group_ids=[item_group_id],
-                )
-
-    return {"campaign_rows": campaign_rows, "creative_rows": creative_rows}
-
-
-def log_campaign_action(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    campaign: GmvCampaign,
-    action: str,
-    reason: str | None = None,
-    before: dict | None = None,
-    after: dict | None = None,
-    performed_by: str = "system",
-    result: str = "SUCCESS",
-    error_message: str | None = None,
-    audit_hook: Callable[..., Any] | None = None,
-) -> GmvActionLog:
-    log_row = GmvActionLog(
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        campaign_id=campaign.id,
-        action=action,
-        reason=reason,
-        before_json=_serialize_state(before or {}),
-        after_json=_serialize_state(after or {}),
-        performed_by=performed_by,
-        result=result,
-        error_message=error_message,
-    )
-    db.add(log_row)
-    db.flush()
-
-    if audit_hook is not None:
-        try:
-            audit_hook(
-                db=db,
-                workspace_id=workspace_id,
-                actor=performed_by,
-                domain="gmv_max",
-                event=f"campaign.{action.lower()}",
-                target={
-                    "campaign_id": campaign.campaign_id,
-                    "advertiser_id": campaign.advertiser_id,
-                },
-                before=before,
-                after=after,
-                result=result,
-                error=error_message,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "audit hook failed",
-                extra={
-                    "workspace_id": workspace_id,
-                    "auth_id": auth_id,
-                    "campaign_id": campaign.campaign_id,
-                    "action": action,
-                },
-            )
-    return log_row
-
-
-_ALLOWED_ACTIONS = {"START", "PAUSE", "SET_BUDGET", "SET_ROAS"}
-_ACTION_NORMALIZATION = {
-    "START": "START",
-    "ENABLE": "START",
-    "RESUME": "START",
-    "RUN": "START",
-    "PAUSE": "PAUSE",
-    "STOP": "PAUSE",
-    "DISABLE": "PAUSE",
-    "SUSPEND": "PAUSE",
-    "SET_BUDGET": "SET_BUDGET",
-    "UPDATE_BUDGET": "SET_BUDGET",
-    "SET_ROAS": "SET_ROAS",
-    "UPDATE_ROAS": "SET_ROAS",
-    "ADJUST_ROI": "SET_ROAS",
-}
-
-
-async def apply_campaign_action(
-    db: Session,
-    ttb_client: TikTokBusinessGMVMaxClient,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    advertiser_id: str,
-    campaign: GmvCampaign,
-    action: str,
-    payload: dict | None = None,
-    reason: str | None = None,
-    performed_by: str = "system",
-    audit_hook: Callable[..., Any] | None = None,
-) -> GmvActionLog:
-    _ensure_campaign_not_deleted(campaign)
-
-    requested_action = str(action or "").strip().upper()
-    normalized_action = _ACTION_NORMALIZATION.get(requested_action, requested_action)
-    if normalized_action not in _ALLOWED_ACTIONS:
-        raise ValueError(f"unsupported action: {action}")
-
-    payload = dict(payload or {})
-    before_state = {
-        "status": campaign.status,
-        "daily_budget_cents": campaign.daily_budget_cents,
-        "roas_bid": campaign.roas_bid,
-    }
-
-    api_body: dict[str, Any] = {"campaign_id": campaign.campaign_id}
-    after_state = dict(before_state)
-
-    if normalized_action == "START":
-        api_body["is_enabled"] = True
-        after_state["status"] = "ACTIVE"
-    elif normalized_action == "PAUSE":
-        api_body["is_enabled"] = False
-        after_state["status"] = "PAUSED"
-    elif normalized_action == "SET_BUDGET":
-        budget_cents_value = payload.pop("daily_budget_cents", None)
-        cents = _to_int(budget_cents_value) if budget_cents_value is not None else None
-        if cents is None:
-            raise ValueError("daily_budget_cents required for SET_BUDGET")
-        api_body["budget"] = _cents_to_currency(cents)
-        after_state["daily_budget_cents"] = cents
-    elif normalized_action == "SET_ROAS":
-        roas_value = payload.pop("roas_bid", None)
-        roas_decimal = _to_decimal(roas_value, quantize=_DECIMAL_FOUR)
-        if roas_decimal is None:
-            raise ValueError("roas_bid required for SET_ROAS")
-        api_body["roas_bid"] = format(roas_decimal, "f")
-        after_state["roas_bid"] = roas_decimal
-
-    for key in list(payload.keys()):
-        api_body[key] = payload[key]
-
-    try:
-        await ttb_client.update_gmvmax_campaign(advertiser_id, api_body)
-    except Exception as exc:  # noqa: BLE001
-        log_campaign_action(
-            db,
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            campaign=campaign,
-            action=normalized_action,
-            reason=reason,
-            before=before_state,
-            after=before_state,
-            performed_by=performed_by,
-            result="FAILED",
-            error_message=str(exc),
-            audit_hook=audit_hook,
-        )
-        raise
-
-    if normalized_action == "SET_BUDGET":
-        campaign.daily_budget_cents = after_state["daily_budget_cents"]
-    elif normalized_action == "SET_ROAS":
-        campaign.roas_bid = after_state["roas_bid"]
-    else:
-        campaign.status = after_state["status"]
-
-    db.add(campaign)
-    db.flush()
-
-    return log_campaign_action(
-        db,
-        workspace_id=workspace_id,
-        auth_id=auth_id,
-        campaign=campaign,
-        action=normalized_action,
-        reason=reason,
-        before=before_state,
-        after=after_state,
-        performed_by=performed_by,
-        result="SUCCESS",
-        audit_hook=audit_hook,
-    )
-
-
-class StrategyDecision(TypedDict):
-    action: str
-    payload: dict[str, Any]
-    reason: str
-
-
-def get_or_create_strategy_config(
-    db: Session,
-    *,
-    workspace_id: int,
-    auth_id: int,
-    campaign: GmvCampaign,
-) -> GmvStrategyConfig:
-    stmt = (
-        select(GmvStrategyConfig)
-        .where(GmvStrategyConfig.workspace_id == workspace_id)
-        .where(GmvStrategyConfig.auth_id == auth_id)
-        .where(GmvStrategyConfig.campaign_id == campaign.campaign_id)
-    )
-    instance = db.execute(stmt).scalars().first()
-    if instance is None:
-        instance = GmvStrategyConfig(
-            workspace_id=workspace_id,
-            auth_id=auth_id,
-            campaign_id=campaign.campaign_id,
-            enabled=False,
-        )
-        db.add(instance)
-        db.flush()
-    return instance
 
 
 def _sum_int(values: list[Optional[int]]) -> int:
@@ -4123,133 +4416,3 @@ def _calc_roi(gross_cents: Optional[int], cost_cents: Optional[int]) -> Optional
         return (Decimal(gross_cents) / Decimal(cost_cents)).quantize(_DECIMAL_FOUR)
     except (InvalidOperation, ZeroDivisionError):  # pragma: no cover - guard rails
         return None
-
-
-def aggregate_recent_metrics(
-    db: Session,
-    *,
-    campaign: GmvCampaign,
-    hours_window: int = 6,
-    days_window: int = 1,
-) -> dict[str, Any]:
-    now = datetime.utcnow()
-
-    promotion_type = _normalize_promotion_type(campaign.shopping_ads_type)
-
-    rows_day: list[GmvCampaignMetricsDaily] = []
-    if days_window > 0:
-        day_from = now.date() - timedelta(days=days_window)
-        stmt_day = (
-            select(GmvCampaignMetricsDaily)
-            .where(GmvCampaignMetricsDaily.campaign_id == str(campaign.campaign_id))
-            .where(GmvCampaignMetricsDaily.promotion_type == promotion_type)
-            .where(GmvCampaignMetricsDaily.stat_time_day >= day_from)
-            .where(GmvCampaignMetricsDaily.stat_time_day <= now.date())
-        )
-        rows_day = db.execute(stmt_day).scalars().all()
-
-    rows_hour: list[GmvCampaignMetricsHourly] = []
-    if hours_window > 0:
-        ts_from = now - timedelta(hours=hours_window)
-        stmt_hour = (
-            select(GmvCampaignMetricsHourly)
-            .where(GmvCampaignMetricsHourly.campaign_id == str(campaign.campaign_id))
-            .where(GmvCampaignMetricsHourly.promotion_type == promotion_type)
-            .where(GmvCampaignMetricsHourly.stat_time_hour >= ts_from)
-        )
-        rows_hour = db.execute(stmt_hour).scalars().all()
-
-    def _rows(column: str, source: list[Any]) -> list[Optional[int]]:
-        return [getattr(item, column, None) for item in source]
-
-    base_rows: list[Any] = rows_hour or rows_day
-    impressions = _sum_int(_rows("impressions", base_rows))
-    clicks = _sum_int(_rows("clicks", base_rows))
-    cost_cents = _sum_int(_rows("cost_cents", base_rows))
-    gross_revenue_cents = _sum_int(_rows("gross_revenue_cents", base_rows))
-
-    return {
-        "impressions": impressions,
-        "clicks": clicks,
-        "cost_cents": cost_cents,
-        "gross_revenue_cents": gross_revenue_cents,
-        "roi": _calc_roi(gross_revenue_cents, cost_cents),
-    }
-
-
-def decide_campaign_action(
-    *,
-    campaign: GmvCampaign,
-    strategy: GmvStrategyConfig,
-    metrics: dict[str, Any],
-) -> Optional[StrategyDecision]:
-    if not strategy.enabled:
-        return None
-
-    impressions = metrics.get("impressions") or 0
-    clicks = metrics.get("clicks") or 0
-    roi = metrics.get("roi")
-
-    min_impr = strategy.min_impressions or 0
-    min_clicks = strategy.min_clicks or 0
-    if impressions < min_impr or clicks < min_clicks:
-        return None
-
-    current_budget = campaign.daily_budget_cents or 0
-    current_roas = campaign.roas_bid
-
-    min_roi = strategy.min_roi
-    target_roi = strategy.target_roi
-
-    max_raise_pct = strategy.max_budget_raise_pct_per_day or Decimal("0")
-    max_cut_pct = strategy.max_budget_cut_pct_per_day or Decimal("0")
-    max_roas_step = strategy.max_roas_step_per_adjust or Decimal("0")
-
-    if roi is None:
-        return None
-
-    if min_roi is not None and roi < min_roi:
-        if current_budget and current_budget <= 1000:
-            return StrategyDecision(
-                action="PAUSE",
-                payload={},
-                reason=f"auto: roi({roi}) < min_roi({min_roi})",
-            )
-        if current_budget and max_cut_pct > 0:
-            new_budget = int(
-                Decimal(current_budget)
-                * (Decimal("1") - (max_cut_pct / Decimal("100")))
-            )
-            new_budget = max(new_budget, 100)
-            if new_budget < current_budget:
-                return StrategyDecision(
-                    action="SET_BUDGET",
-                    payload={"daily_budget_cents": new_budget},
-                    reason=f"auto: roi({roi}) < min_roi({min_roi}), cut budget",
-                )
-        return None
-
-    if target_roi is not None and roi > target_roi and current_budget > 0:
-        if max_raise_pct > 0:
-            new_budget = int(
-                Decimal(current_budget)
-                * (Decimal("1") + (max_raise_pct / Decimal("100")))
-            )
-            if new_budget > current_budget:
-                return StrategyDecision(
-                    action="SET_BUDGET",
-                    payload={"daily_budget_cents": new_budget},
-                    reason=f"auto: roi({roi}) > target_roi({target_roi}), raise budget",
-                )
-        if current_roas is not None and max_roas_step > 0:
-            try:
-                new_roas = (Decimal(current_roas) + max_roas_step).quantize(_DECIMAL_FOUR)
-            except (InvalidOperation, ValueError):
-                return None
-            return StrategyDecision(
-                action="SET_ROAS",
-                payload={"roas_bid": format(new_roas, "f")},
-                reason=f"auto: roi({roi}) > target_roi({target_roi}), adjust roas",
-            )
-
-    return None

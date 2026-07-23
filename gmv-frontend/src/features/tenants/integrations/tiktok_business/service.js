@@ -86,6 +86,30 @@ export async function createAuthz(wid, { provider_app_id, alias, return_to }) {
   });
 }
 
+export async function createTikTokAccountAuthz(wid, { provider_app_id, alias, return_to, scopes }) {
+  return apiPost(`${oauthPrefix(wid)}/tiktok-accounts/authz`, {
+    provider_app_id,
+    alias: alias ?? null,
+    return_to: return_to ?? null,
+    scopes: Array.isArray(scopes) && scopes.length > 0 ? scopes : null,
+  });
+}
+
+export async function listTikTokAccounts(wid) {
+  const data = await apiGet(`${oauthPrefix(wid)}/tiktok-accounts`);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export async function revokeTikTokAccount(wid, accountId, remote = true) {
+  return apiPost(
+    `${oauthPrefix(wid)}/tiktok-accounts/${encodeURIComponent(accountId)}/revoke?remote=${remote ? 'true' : 'false'}`
+  );
+}
+
+export async function hardDeleteTikTokAccount(wid, accountId) {
+  return apiDelete(`${oauthPrefix(wid)}/tiktok-accounts/${encodeURIComponent(accountId)}`);
+}
+
 /* ---------- 绑定列表 ---------- */
 export async function listBindings(wid) {
   const data = await apiGet(`${oauthPrefix(wid)}/bindings`);
@@ -165,4 +189,3 @@ export async function listEntities(wid, provider, authId, entity, params = {}, o
   const base = `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/${encodeURIComponent(entity)}`;
   return apiGet(appendQuery(base, params), options);
 }
-

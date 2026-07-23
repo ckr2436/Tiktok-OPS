@@ -224,7 +224,19 @@ def _format_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     normalized = []
     for idx, seg in enumerate(raw_segments or []):
         text = (seg.get("text") or "").strip()
-        normalized.append({"index": int(seg.get("id", idx)), "start": float(seg.get("start", 0.0)), "end": float(seg.get("end", 0.0)), "text": text})
+        item = {
+            "index": int(seg.get("id", idx)),
+            "start": float(seg.get("start", 0.0)),
+            "end": float(seg.get("end", 0.0)),
+            "text": text,
+        }
+        # Preserve Whisper's speech-confidence evidence. Existing subtitle
+        # consumers ignore these optional keys, while content analysis uses
+        # them to avoid turning music/silence hallucinations into ad copy.
+        for key in ("avg_logprob", "no_speech_prob", "compression_ratio"):
+            if seg.get(key) is not None:
+                item[key] = float(seg[key])
+        normalized.append(item)
     return normalized
 
 

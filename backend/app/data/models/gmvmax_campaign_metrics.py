@@ -6,7 +6,7 @@ from datetime import datetime, date
 
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, Numeric, String, UniqueConstraint, text
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,14 +31,27 @@ class _CommonMetricMixin:
     roi: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     cost_per_order: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
 
+    source_observed_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    ingested_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+    is_final: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0")
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 

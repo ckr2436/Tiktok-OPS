@@ -7,7 +7,10 @@ import {
   listBindings,
   listProviderApps,
   createAuthz,
+  createTikTokAccountAuthz,
+  listTikTokAccounts,
   hardDeleteBinding,
+  hardDeleteTikTokAccount,
 } from '../service.js';
 
 /* 英文状态 -> 中文展示 */
@@ -84,6 +87,15 @@ export default function TbAuthList() {
     enabled: !!wid,
   });
 
+  const tiktokAccountsQuery = useQuery({
+    queryKey: ['tb-tiktok-accounts', wid],
+    queryFn: async () => {
+      const list = await listTikTokAccounts(wid);
+      return Array.isArray(list) ? list : [];
+    },
+    enabled: !!wid,
+  });
+
   useEffect(() => {
     const providers = providersQuery.data || [];
     if (providers.length === 1) {
@@ -103,6 +115,7 @@ export default function TbAuthList() {
       const url = window.location.origin + window.location.pathname;
       window.history.replaceState({}, '', url);
       bindingsQuery.refetch();
+      tiktokAccountsQuery.refetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -122,10 +135,21 @@ export default function TbAuthList() {
     mutationFn: (payload) => createAuthz(wid, payload),
   });
 
+  const createTikTokAccountAuthzMutation = useMutation({
+    mutationFn: (payload) => createTikTokAccountAuthz(wid, payload),
+  });
+
   const hardDeleteMutation = useMutation({
     mutationFn: (authId) => hardDeleteBinding(wid, authId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tb-bindings', wid] });
+    },
+  });
+
+  const hardDeleteTikTokAccountMutation = useMutation({
+    mutationFn: (accountId) => hardDeleteTikTokAccount(wid, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-tiktok-accounts', wid] });
     },
   });
 
@@ -143,6 +167,19 @@ export default function TbAuthList() {
     window.location.assign(auth_url);
   }
 
+  async function handleCreateTikTokAccountAuth() {
+    const providers = providersQuery.data || [];
+    const pid = Number(newPid || (providers[0]?.id ?? 0));
+    if (!pid) return;
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
+    const { auth_url } = await createTikTokAccountAuthzMutation.mutateAsync({
+      provider_app_id: pid,
+      return_to,
+      alias: 'TikTok 账号',
+    });
+    window.location.assign(auth_url);
+  }
+
   /* 重新授权：弹出新建授权对话框，预填原 provider 与名称 */
   function handleReauth(row) {
     openNewAuthDialog(row);
@@ -154,7 +191,13 @@ export default function TbAuthList() {
     await hardDeleteMutation.mutateAsync(row.auth_id);
   }
 
+  async function handleCancelTikTokAccount(row) {
+    if (!confirm('确定要移除该 TikTok 账号授权吗？')) return;
+    await hardDeleteTikTokAccountMutation.mutateAsync(row.account_id);
+  }
+
   const rows = bindingsQuery.data || [];
+  const tiktokAccounts = tiktokAccountsQuery.data || [];
   const loading = bindingsQuery.isLoading || bindingsQuery.isFetching;
   const error = bindingsQuery.error ? (bindingsQuery.error.message || '加载失败') : '';
   const providers = providersQuery.data || [];
@@ -183,16 +226,91 @@ export default function TbAuthList() {
             <button className="btn ghost" onClick={() => bindingsQuery.refetch()} disabled={bindingsQuery.isRefetching}>
               {bindingsQuery.isRefetching ? '刷新中…' : '刷新'}
             </button>
+            <button
+              className="btn ghost"
+              onClick={handleCreateTikTokAccountAuth}
+              disabled={createTikTokAccountAuthzMutation.isPending || providers.length === 0}
+            >
+              {createTikTokAccountAuthzMutation.isPending ? '跳转中…' : '授权 TikTok 账号（短期 Token）'}
+            </button>
             <button className="btn" onClick={() => openNewAuthDialog()} disabled={createAuthzMutation.isPending}>
-              新建授权
+              授权广告账户（长期 Token）
             </button>
           </div>
         </div>
       </div>
 
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-base font-semibold">TikTok 账号授权（短期 Token）</div>
+            <div className="small-muted">
+              用于发布视频、上传草稿、Only show in ads 和账号素材能力。Callback 可与广告主授权共用，系统按 state 自动识别。
+            </div>
+          </div>
+          <button
+            className="btn ghost"
+            onClick={() => tiktokAccountsQuery.refetch()}
+            disabled={tiktokAccountsQuery.isFetching}
+          >
+            {tiktokAccountsQuery.isFetching ? '刷新中…' : '刷新'}
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="oauth-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <thead>
+              <tr>
+                <th className="px-2 py-2" style={{ textAlign: 'left' }}>账号</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 220 }}>Open ID</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 180 }}>Token 到期</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 120 }}>状态</th>
+                <th className="px-2 py-2" style={{ textAlign: 'center', width: 160 }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiktokAccountsQuery.isLoading ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center small-muted">加载中…</td>
+                </tr>
+              ) : tiktokAccounts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center small-muted">
+                    暂无 TikTok 账号授权。请先点击“授权 TikTok 账号”。
+                  </td>
+                </tr>
+              ) : (
+                tiktokAccounts.map((row) => (
+                  <tr key={row.account_id} className="border-t border-gray-200">
+                    <td className="px-2 py-3">
+                      <div className="font-medium">{row.alias || 'TikTok 账号'}</div>
+                      <div className="small-muted">ID：{row.account_id}</div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <span title={row.open_id}>{String(row.open_id || '').slice(0, 10)}…</span>
+                    </td>
+                    <td className="px-2 py-3">{fmt(row.expires_at)}</td>
+                    <td className="px-2 py-3">{cnStatus(row.status)}</td>
+                    <td className="px-2 py-3" style={{ textAlign: 'center' }}>
+                      <button
+                        className="btn danger"
+                        style={{ width: BTN.width, height: BTN.height }}
+                        onClick={() => handleCancelTikTokAccount(row)}
+                        disabled={hardDeleteTikTokAccountMutation.isPending}
+                      >
+                        {hardDeleteTikTokAccountMutation.isPending ? '处理中…' : '移除授权'}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 列表卡片 */}
       <div className="card">
-        <div className="text-base font-semibold mb-3">授权列表</div>
+        <div className="text-base font-semibold mb-3">广告账户授权（长期 Token）</div>
 
         {error && (
           <div className="alert alert--error mb-3">{error}</div>
@@ -280,7 +398,7 @@ export default function TbAuthList() {
         <div className="dialog-backdrop">
           <div className="dialog">
             <div className="dialog-header">
-              <div className="dialog-title">新建授权</div>
+              <div className="dialog-title">授权广告账户（长期 Token）</div>
               <button className="btn ghost" onClick={() => setShowNew(false)}>
                 关闭
               </button>

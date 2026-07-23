@@ -24,21 +24,32 @@ function formatActionLabel(type) {
     case 'HEAT':
     case 'BOOST':
     case 'BOOST_CREATIVE':
-      return '加热';
+      return '加热素材';
     case 'STOP_HEAT':
     case 'STOP':
       return '停止加热';
+    case 'ADD':
+    case 'ADD_BACK_CREATIVE':
+      return '恢复素材';
+    case 'REMOVE':
+    case 'REMOVE_CREATIVE':
+      return '排除素材';
     case 'PAUSE':
       return '暂停系列';
+    case 'START':
+    case 'ENABLE':
     case 'RESUME':
       return '启用系列';
+    case 'REBUILD':
+    case 'RESET_CAMPAIGN':
+      return '重建系列';
     case 'INCREASE_BUDGET':
     case 'RAISE_BUDGET':
       return '提升预算';
     case 'DECREASE_BUDGET':
       return '降低预算';
     default:
-      return type || '操作';
+      return type || '执行操作';
   }
 }
 
@@ -49,7 +60,7 @@ function describeTarget(entry) {
   if (entry?.campaign_id || entry?.campaignId) {
     return `系列 ${entry.campaign_id || entry.campaignId}`;
   }
-  return '系列';
+  return '当前系列';
 }
 
 function formatLogValue(value) {
@@ -67,6 +78,12 @@ function formatLogValue(value) {
   return String(value);
 }
 
+function isActionableEntry(entry) {
+  const action = String(entry?.action_type || entry?.type || '').toUpperCase();
+  const result = String(entry?.result || '').toUpperCase();
+  return action !== 'HOLD' && result !== 'SKIPPED';
+}
+
 function buildNotification(entry) {
   const type = entry?.action_type || entry?.type;
   const before = entry?.before_value ?? entry?.before ?? entry?.previous_value;
@@ -75,15 +92,11 @@ function buildNotification(entry) {
   const operator = entry?.operator || entry?.updated_by || entry?.created_by;
   const parts = [describeTarget(entry), formatActionLabel(type)];
   if (before !== undefined || after !== undefined) {
-    parts.push(`从 ${formatLogValue(before) || '—'} 调整到 ${formatLogValue(after) || '—'}`);
+    parts.push(`从 ${formatLogValue(before) || '-'} 调整为 ${formatLogValue(after) || '-'}`);
   }
-  if (reason) {
-    parts.push(`原因：${reason}`);
-  }
-  if (operator) {
-    parts.push(`操作者：${operator}`);
-  }
-  return parts.filter(Boolean).join('，');
+  if (reason) parts.push(`原因：${reason}`);
+  if (operator) parts.push(`执行方：${operator}`);
+  return parts.filter(Boolean).join('；');
 }
 
 export function useGmvMaxNotifications({
@@ -110,13 +123,19 @@ export function useGmvMaxNotifications({
     },
   );
 
+  useEffect(() => {
+    lastSeenRef.current = null;
+    setNotification(null);
+  }, [workspaceId, provider, authId, campaignId]);
+
   const latestEntry = useMemo(() => {
     const entries = ensureArray(logsQuery.data?.entries || logsQuery.data?.items);
     if (!entries.length) return null;
     return entries
+      .filter(isActionableEntry)
       .map((entry) => ({ entry, ts: resolveTimestamp(entry) }))
       .filter((item) => item.ts)
-      .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())[0];
+      .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())[0] || null;
   }, [logsQuery.data]);
 
   useEffect(() => {

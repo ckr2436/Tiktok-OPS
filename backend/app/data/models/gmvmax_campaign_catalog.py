@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, JSON, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, JSON, Numeric, String, UniqueConstraint, text
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,6 +20,73 @@ from app.data.db import Base
 
 
 UBigInt = BigInteger().with_variant(MySQL_BIGINT(unsigned=True), "mysql")
+
+
+class GmvmaxCampaignCreateIntent(Base):
+    """Durable idempotency record for a Product GMV Max create request."""
+
+    __tablename__ = "gmvmax_campaign_create_intents"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+            "idempotency_key",
+            name="uk_gmvmax_create_intent_idem",
+        ),
+        Index(
+            "idx_gmvmax_create_intent_scope",
+            "workspace_id",
+            "auth_id",
+            "advertiser_id",
+            "store_id",
+        ),
+        Index(
+            "idx_gmvmax_create_intent_state",
+            "workspace_id",
+            "auth_id",
+            "state",
+            "updated_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    auth_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    advertiser_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    official_request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    campaign_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    replacement_campaign_id: Mapped[str | None] = mapped_column(String(64))
+    campaign_id: Mapped[str | None] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="PREPARED",
+        server_default=text("'PREPARED'"),
+    )
+
+    request_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    result_json: Mapped[dict | None] = mapped_column(JSON)
+    error_json: Mapped[dict | None] = mapped_column(JSON)
+
+    submitted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    remote_created_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    finalized_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
 
 
 class GmvmaxProductCampaignCatalog(Base):
@@ -69,13 +136,13 @@ class GmvmaxProductCampaignCatalog(Base):
     detail_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
@@ -125,13 +192,13 @@ class GmvmaxLiveCampaignCatalog(Base):
     detail_synced_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6))
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
@@ -162,13 +229,13 @@ class GmvmaxProductCampaignItemGroup(Base):
     item_group_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
@@ -202,17 +269,18 @@ class GmvmaxLiveCampaignIdentity(Base):
     identity_authorized_shop_id: Mapped[str | None] = mapped_column(String(64))
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
 __all__ = [
+    "GmvmaxCampaignCreateIntent",
     "GmvmaxProductCampaignCatalog",
     "GmvmaxLiveCampaignCatalog",
     "GmvmaxProductCampaignItemGroup",

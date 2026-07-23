@@ -11,7 +11,9 @@ import {
   useApplyGmvMaxActionMutation,
   useCreateGmvMaxCampaignMutation,
   useGmvMaxCampaignsQuery,
+  useGmvMaxCampaignQuery,
   useGmvMaxConfigQuery,
+  useGmvMaxHermesDailyReportsQuery,
   useGmvMaxMetricsQuery,
   useGmvMaxOptionsQuery,
   useGmvMaxBindingStatusQuery,
@@ -26,8 +28,6 @@ import {
   useUpdateGmvMaxStrategyMutation,
 } from '../hooks/gmvMaxQueries.js';
 import {
-  clampPageSize,
-  getGmvMaxCampaign,
   getGmvMaxOptions,
 } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
@@ -40,6 +40,7 @@ import {
   EMPTY_QUERY_PARAMS,
   DEFAULT_SCOPE,
   formatError,
+  isSyncRateLimitedError,
   formatISODate,
   getProductIdentifier,
   normalizeIdValue,
@@ -90,6 +91,8 @@ import { SeriesErrorNotice } from './gmvMaxOverview/ErrorHandling.jsx';
 import ProductSelectionPanel from './gmvMaxOverview/ProductSelectionPanel.jsx';
 import CreateSeriesModal from './gmvMaxOverview/CreateSeriesModal.jsx';
 import EditSeriesModal from './gmvMaxOverview/EditSeriesModal.jsx';
+import ProductAutomationPanel from './gmvMaxOverview/ProductAutomationPanel.jsx';
+import OrderIntelligencePanel from './gmvMaxOverview/OrderIntelligencePanel.jsx';
 import { GmvMaxTexts } from '../locale.js';
 import { useGmvSyncTask } from '../hooks/useGmvSyncTask.js';
 
@@ -149,14 +152,13 @@ const bindingConfigMatchesScope = (config, { storeId, businessCenterId, advertis
 
 const AUTO_REFRESH_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_AUTO_REFRESH_INTERVAL = AUTO_REFRESH_OPTIONS[0];
-const AUTO_OVERVIEW_SYNC_KEYS = ['today', 'yesterday', '7d', '14d', '30d'];
 const BALANCE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const OVERVIEW_RANGE_OPTIONS = [
-  { key: 'today', label: '当日' },
+  { key: 'today', label: '今日' },
   { key: 'yesterday', label: '昨天' },
   { key: '7d', label: '近7天' },
-  { key: '14d', label: '14天' },
-  { key: '30d', label: '1个月' },
+  { key: '14d', label: '近14天' },
+  { key: '30d', label: '近30天' },
   { key: 'custom', label: '自定义' },
 ];
 
@@ -173,11 +175,7 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
 
   if (rangeKey === 'custom') {
     if (customRange?.start && customRange?.end) {
-      return timezoneUtils.formatRangeAsDateStrings({
-        start: new Date(customRange.start),
-        end: new Date(customRange.end),
-        timeZone: normalizedTz,
-      });
+      return { start_date: customRange.start, end_date: customRange.end };
     }
     return { start_date: '', end_date: '' };
   }
@@ -209,6 +207,66 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
   return timezoneUtils.formatRangeAsDateStrings(todayRange);
 }
 
+export function formatOverviewRangeLabel(
+  rangeKey,
+  rangeParams,
+  timeZone,
+  hasAdvertiserTimezone = false,
+) {
+  const start = rangeParams?.start_date || '';
+  const end = rangeParams?.end_date || '';
+  if (!start || !end) return '';
+  const prefix = hasAdvertiserTimezone
+    ? `按广告主时区 ${timeZone || 'UTC'}`
+    : `广告主时区未知，暂按浏览器时区 ${timeZone || 'UTC'}`;
+  if (start === end) {
+    if (rangeKey === 'today') return `${prefix}：当天 ${start}`;
+    if (rangeKey === 'yesterday') return `${prefix}：昨天 ${start}`;
+    return `${prefix}：${start}`;
+  }
+  if (rangeKey === '7d') return `${prefix}：近7天 ${start} 至 ${end}`;
+  if (rangeKey === '14d') return `${prefix}：近14天 ${start} 至 ${end}`;
+  if (rangeKey === '30d') return `${prefix}：近30天 ${start} 至 ${end}`;
+  return `${prefix}：${start} 至 ${end}`;
+}
+
+function normalizeReportList(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.list)) return payload.list;
+  if (Array.isArray(payload.data?.list)) return payload.data.list;
+  return [];
+}
+
+function getReportRecommendationItems(report) {
+  const recommendation = report?.recommendation;
+  if (!recommendation || typeof recommendation !== 'object') return [];
+  const directItems = recommendation.items || recommendation.actions || recommendation.recommendations;
+  if (Array.isArray(directItems)) return directItems;
+  return Object.entries(recommendation)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => ({
+      title: key,
+      detail: typeof value === 'string' ? value : JSON.stringify(value),
+    }));
+}
+
+function formatDailyReportStatus(value) {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'GENERATED' || normalized === 'SUCCESS') return '已生成';
+  if (normalized === 'GENERATING' || normalized === 'PENDING') return '生成中';
+  if (normalized === 'FAILED') return '生成失败';
+  return normalized || '已生成';
+}
+
+function formatRecommendationText(item) {
+  if (!item) return '';
+  if (typeof item === 'string') return item;
+  const title = item.title || item.action || item.type || item.name || '';
+  const detail = item.detail || item.reason || item.description || item.message || '';
+  return [title, detail].filter(Boolean).join('：') || JSON.stringify(item);
+}
+
 function centsToAmount(value) {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);
@@ -219,6 +277,24 @@ function coerceNumber(value) {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeOverviewSummary({ spend, gmv, orders }) {
+  const spendValue = coerceNumber(spend);
+  const gmvValue = coerceNumber(gmv);
+  const ordersValue = coerceNumber(orders);
+  const roasValue = spendValue && spendValue > 0 && gmvValue !== null ? gmvValue / spendValue : null;
+  const costPerOrderValue = spendValue !== null && ordersValue && ordersValue > 0
+    ? spendValue / ordersValue
+    : null;
+
+  return {
+    spend: spendValue,
+    gmv: gmvValue,
+    roas: roasValue,
+    orders: ordersValue,
+    costPerOrder: costPerOrderValue,
+  };
 }
 
 function deriveOverviewSnapshotSummary(payload) {
@@ -234,25 +310,15 @@ function deriveOverviewSnapshotSummary(payload) {
     );
     const gmvValue = coerceNumber(summarySource.gmv ?? summarySource.gross_revenue);
     const ordersValue = coerceNumber(summarySource.orders);
-    const roasValue = coerceNumber(summarySource.roas ?? summarySource.roi);
-    const costPerOrderValue = coerceNumber(summarySource.cost_per_order);
 
     const hasDirectFields = [
       spendValue,
       gmvValue,
       ordersValue,
-      roasValue,
-      costPerOrderValue,
     ].some((value) => value !== null);
 
     if (hasDirectFields) {
-      return {
-        spend: spendValue,
-        gmv: gmvValue,
-        roas: roasValue,
-        orders: ordersValue,
-        costPerOrder: costPerOrderValue,
-      };
+      return normalizeOverviewSummary({ spend: spendValue, gmv: gmvValue, orders: ordersValue });
     }
   }
 
@@ -272,16 +338,40 @@ function deriveOverviewSnapshotSummary(payload) {
       snapshotCandidate.cost_cents ?? snapshotCandidate.net_cost_cents,
     );
     const gmvValue = centsToAmount(snapshotCandidate.gross_revenue_cents);
-    return {
+    return normalizeOverviewSummary({
       spend: spendValue,
       gmv: gmvValue,
-      roas: coerceNumber(snapshotCandidate.roi ?? snapshotCandidate.roas),
-      orders: coerceNumber(snapshotCandidate.orders),
-      costPerOrder: coerceNumber(snapshotCandidate.cost_per_order),
-    };
+      orders: snapshotCandidate.orders,
+    });
   }
 
   return null;
+}
+
+function formatDataFreshness(freshness) {
+  if (!freshness) return null;
+  const ageSeconds = Number(freshness.age_seconds);
+  const ageLabel = Number.isFinite(ageSeconds)
+    ? ageSeconds < 60
+      ? `${Math.max(0, Math.round(ageSeconds))} 秒`
+      : `${Math.max(1, Math.round(ageSeconds / 60))} 分钟`
+    : '未知';
+  const stateLabels = {
+    fresh: '数据新鲜',
+    stale: '数据已滞后',
+    missing: '暂无快照',
+    historical: '历史完整日',
+  };
+  const sourceLabels = {
+    gmv_overview_snapshots: '整体投放数据',
+    gmvmax_product_campaign_metrics_daily: '系列投放数据',
+  };
+  const sourceLabel = sourceLabels[freshness.source] || '投放数据';
+  return {
+    state: freshness.state || 'missing',
+    label: stateLabels[freshness.state] || '状态未知',
+    detail: `${sourceLabel} · ${ageLabel}前更新`,
+  };
 }
 
 export default function GmvMaxOverviewPage() {
@@ -308,11 +398,11 @@ export default function GmvMaxOverviewPage() {
   const [hasLoadedScope, setHasLoadedScope] = useState(false);
   const [overviewRangeKey, setOverviewRangeKey] = useState('today');
   const [overviewCustomRange, setOverviewCustomRange] = useState({ start: '', end: '' });
+  const [automationStatsRangeKey, setAutomationStatsRangeKey] = useState('today');
+  const [automationStatsCustomRange, setAutomationStatsCustomRange] = useState({ start: '', end: '' });
+  const [selectedDailyReportDate, setSelectedDailyReportDate] = useState('');
   const autoOptionsRefreshAccounts = useRef(new Set());
   const syncInFlightRef = useRef(false);
-  const performSyncRef = useRef(null);
-  const lastAutoSyncScopeRef = useRef('');
-  const overviewAutoSyncScopeRef = useRef('');
   const balanceRefreshIntervalRef = useRef();
 
   const authId = scope.accountAuthId ? String(scope.accountAuthId) : '';
@@ -467,7 +557,8 @@ export default function GmvMaxOverviewPage() {
       const accountAuthId = account?.auth_id ?? account?.authId;
       return {
         queryKey: ['gmvMax', 'options', workspaceId, provider, String(accountAuthId || ''), scopeOptionsParams],
-        queryFn: () => getGmvMaxOptions(workspaceId, provider, accountAuthId, scopeOptionsParams),
+        queryFn: ({ signal }) =>
+          getGmvMaxOptions(workspaceId, provider, accountAuthId, scopeOptionsParams, { signal }),
         enabled: Boolean(workspaceId && provider && accountAuthId),
         staleTime: 5 * 60 * 1000,
       };
@@ -554,12 +645,6 @@ export default function GmvMaxOverviewPage() {
     savedStoreId,
     storeId,
   ]);
-
-  useEffect(() => {
-    if (!storeId) {
-      lastAutoSyncScopeRef.current = '';
-    }
-  }, [storeId]);
 
   const scopeOptions = scopeOptionsQuery.data || {};
   const scopeOptionsReady = scopeOptionsQuery.isSuccess;
@@ -848,6 +933,7 @@ export default function GmvMaxOverviewPage() {
       ''
     );
   }, [advertiserById, resolvedAdvertiserId]);
+  const hasAdvertiserTimezone = Boolean(advertiserTimezoneFromOptions);
 
   useEffect(() => {
     setAdvertiserTimezone(timezoneUtils.resolveTimezoneLabel(advertiserTimezoneFromOptions));
@@ -979,14 +1065,67 @@ export default function GmvMaxOverviewPage() {
     workspaceId,
   ]);
 
+  const automationStatsRangeParams = useMemo(
+    () => computeOverviewRange(automationStatsRangeKey, automationStatsCustomRange, advertiserTimezone),
+    [advertiserTimezone, automationStatsCustomRange, automationStatsRangeKey],
+  );
+  const automationStatsEffectiveRangeParams = useMemo(
+    () => {
+      if (automationStatsRangeParams.start_date && automationStatsRangeParams.end_date) {
+        return automationStatsRangeParams;
+      }
+      return computeOverviewRange('today', { start: '', end: '' }, advertiserTimezone);
+    },
+    [advertiserTimezone, automationStatsRangeParams],
+  );
+
+  const automationStatsRangeLabel = useMemo(
+    () => (
+      automationStatsRangeParams.start_date && automationStatsRangeParams.end_date
+        ? formatOverviewRangeLabel(
+          automationStatsRangeKey,
+          automationStatsRangeParams,
+          advertiserTimezone,
+          hasAdvertiserTimezone,
+        )
+        : '自定义日期未完整填写，暂按今日显示'
+    ),
+    [
+      advertiserTimezone,
+      automationStatsRangeKey,
+      automationStatsRangeParams,
+      hasAdvertiserTimezone,
+    ],
+  );
+
+  const handleAutomationStatsRangeChange = useCallback((rangeKey) => {
+    setAutomationStatsRangeKey(rangeKey);
+    if (rangeKey !== 'custom') {
+      setAutomationStatsCustomRange({ start: '', end: '' });
+    }
+  }, []);
+
+  const handleAutomationStatsCustomRangeChange = useCallback((key, value) => {
+    setAutomationStatsCustomRange((prev) => ({ ...prev, [key]: value }));
+    setAutomationStatsRangeKey('custom');
+  }, []);
+
   const productParams = useMemo(
     () => ({
       store_id: storeId || undefined,
       advertiser_id: advertiserId || undefined,
       owner_bc_id: businessCenterId || undefined,
-      page_size: clampPageSize(50),
+      automation_stats_start_date: automationStatsEffectiveRangeParams.start_date || undefined,
+      automation_stats_end_date: automationStatsEffectiveRangeParams.end_date || undefined,
+      page_size: 500,
     }),
-    [advertiserId, businessCenterId, storeId],
+    [
+      advertiserId,
+      automationStatsEffectiveRangeParams.end_date,
+      automationStatsEffectiveRangeParams.start_date,
+      businessCenterId,
+      storeId,
+    ],
   );
 
   const productsQuery = useProductsQuery(
@@ -996,17 +1135,39 @@ export default function GmvMaxOverviewPage() {
     productParams,
     {
       enabled: Boolean(workspaceId && provider && isScopeReady),
+      staleTime: 30 * 1000,
+      refetchInterval: isScopeReady ? Math.min(autoRefreshMs || 60 * 1000, 60 * 1000) : undefined,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   );
 
   const campaignParams = useMemo(() => {
-    const params = { page_size: clampPageSize(50) };
+    const params = { page_size: 50 };
+    const performanceRange = computeOverviewRange(
+      overviewRangeKey,
+      overviewCustomRange,
+      advertiserTimezone,
+    );
     if (businessCenterId) params.owner_bc_id = businessCenterId;
     if (advertiserId) params.advertiser_id = advertiserId;
     if (storeId) params.store_ids = [String(storeId)];
+    if (performanceRange.start_date) params.performance_start_date = performanceRange.start_date;
+    if (performanceRange.end_date) params.performance_end_date = performanceRange.end_date;
+    if (seriesStatusFilter === 'running') params.primary_status = 'ENABLE';
+    if (seriesStatusFilter === 'paused') params.primary_status = 'DISABLE';
     if (includeDeletedCampaigns) params.include_deleted = 1;
     return params;
-  }, [advertiserId, businessCenterId, includeDeletedCampaigns, storeId]);
+  }, [
+    advertiserId,
+    advertiserTimezone,
+    businessCenterId,
+    includeDeletedCampaigns,
+    overviewCustomRange,
+    overviewRangeKey,
+    seriesStatusFilter,
+    storeId,
+  ]);
 
   const campaignsQuery = useGmvMaxCampaignsQuery(
     workspaceId,
@@ -1015,8 +1176,67 @@ export default function GmvMaxOverviewPage() {
     campaignParams,
     {
       enabled: campaignsQueryEnabled,
+      staleTime: 15 * 1000,
+      refetchInterval: campaignsQueryEnabled ? Math.min(autoRefreshMs, 60 * 1000) : undefined,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   );
+
+  const hermesDailyReportParams = useMemo(
+    () => ({
+      advertiser_id: advertiserId || undefined,
+      store_id: storeId || undefined,
+      page_size: 60,
+      fetch_all_pages: true,
+    }),
+    [advertiserId, storeId],
+  );
+
+  const hermesDailyReportsQuery = useGmvMaxHermesDailyReportsQuery(
+    workspaceId,
+    provider,
+    authId,
+    hermesDailyReportParams,
+    {
+      enabled: Boolean(workspaceId && provider && authId && advertiserId && storeId),
+      refetchInterval: autoRefreshMs,
+    },
+  );
+
+  const hermesDailyReports = useMemo(
+    () => normalizeReportList(hermesDailyReportsQuery.data),
+    [hermesDailyReportsQuery.data],
+  );
+
+  const selectedDailyReport = useMemo(() => {
+    if (hermesDailyReports.length === 0) return null;
+    if (!selectedDailyReportDate) return hermesDailyReports[0];
+    return hermesDailyReports.find((report) => report.report_date === selectedDailyReportDate)
+      || hermesDailyReports[0];
+  }, [hermesDailyReports, selectedDailyReportDate]);
+
+  const selectedDailyReportRecommendations = useMemo(
+    () => getReportRecommendationItems(selectedDailyReport),
+    [selectedDailyReport],
+  );
+  const selectedDailyPlanDefaults = useMemo(
+    () => (Array.isArray(selectedDailyReport?.plan_defaults) ? selectedDailyReport.plan_defaults : []),
+    [selectedDailyReport],
+  );
+
+  useEffect(() => {
+    if (hermesDailyReports.length === 0) {
+      setSelectedDailyReportDate('');
+      return;
+    }
+    const latestDate = hermesDailyReports[0]?.report_date || '';
+    setSelectedDailyReportDate((current) => (
+      current && hermesDailyReports.some((report) => report.report_date === current)
+        ? current
+        : latestDate
+    ));
+  }, [hermesDailyReports]);
 
   const currentScopeKey = useMemo(
     () => ({
@@ -1077,7 +1297,7 @@ export default function GmvMaxOverviewPage() {
     if (bindingConfigError) {
       return {
         variant: 'error',
-        message: `Failed to load binding configuration: ${formatError(bindingConfigError)}`,
+        message: `绑定配置加载失败：${formatError(bindingConfigError)}`,
       };
     }
     if (bindingConfig && savedStoreId && savedStoreId !== storeId) {
@@ -1107,7 +1327,7 @@ export default function GmvMaxOverviewPage() {
         message: '正在等待绑定完成后再同步 GMV Max。',
       };
     }
-    return { variant: 'success', message: '绑定已确认，可开始同步 GMV Max。' };
+    return { variant: 'success', message: '店铺与广告主绑定正常' };
   }, [
     bindingConfigError,
     bindingConfigPending,
@@ -1312,6 +1532,15 @@ export default function GmvMaxOverviewPage() {
     }),
     [advertiserTimezone, overviewCustomRange, overviewRangeKey, storeId],
   );
+  const overviewRangeLabel = useMemo(
+    () => formatOverviewRangeLabel(
+      overviewRangeKey,
+      overviewRangeParams,
+      advertiserTimezone,
+      hasAdvertiserTimezone,
+    ),
+    [advertiserTimezone, hasAdvertiserTimezone, overviewRangeKey, overviewRangeParams],
+  );
   const hasValidOverviewRange = useMemo(
     () => Boolean(overviewRangeParams.start_date && overviewRangeParams.end_date),
     [overviewRangeParams.end_date, overviewRangeParams.start_date],
@@ -1366,6 +1595,10 @@ export default function GmvMaxOverviewPage() {
     () => deriveOverviewSnapshotSummary(overviewSummaryQuery.data),
     [overviewSummaryQuery.data],
   );
+  const overviewFreshness = useMemo(
+    () => formatDataFreshness(overviewSummaryQuery.data?.freshness),
+    [overviewSummaryQuery.data?.freshness],
+  );
   const overviewCostPerOrder = useMemo(() => {
     if (!overviewSummary) return null;
     if (overviewSummary.costPerOrder !== undefined && overviewSummary.costPerOrder !== null) {
@@ -1381,55 +1614,17 @@ export default function GmvMaxOverviewPage() {
     }
   }, [overviewSummaryQuery.refetch]);
 
-  const campaignDetailQueries = useQueries({
-    queries: campaignsQueryEnabled
-      ? campaigns.map((campaign) => {
-          const campaignId = campaign?.campaign_id || campaign?.id;
-          return {
-            queryKey: [
-              'gmvMax',
-              'campaign-detail',
-              workspaceId,
-              provider,
-              authId,
-              businessCenterId,
-              advertiserId,
-              storeId,
-              campaignId,
-            ],
-            queryFn: () => getGmvMaxCampaign(workspaceId, provider, authId, campaignId),
-            enabled: Boolean(workspaceId && authId && campaignId && campaignsQueryEnabled),
-            staleTime: 60 * 1000,
-          };
-        })
-      : [],
-  });
-
-  const campaignDetailsById = useMemo(() => {
-    const map = new Map();
-    campaigns.forEach((campaign, index) => {
-      const campaignId = campaign?.campaign_id || campaign?.id;
-      if (!campaignId) return;
-      map.set(String(campaignId), campaignDetailQueries[index] || null);
-    });
-    return map;
-  }, [campaignDetailQueries, campaigns]);
-
   const campaignCards = useMemo(
     () =>
-      campaigns.map((campaign) => {
-        const campaignId = campaign?.campaign_id || campaign?.id;
-        const detailResult = campaignId ? campaignDetailsById.get(String(campaignId)) : null;
-        return {
-          campaign,
-          detail: detailResult?.data,
-          detailLoading: detailResult?.isLoading ?? false,
-          detailError: detailResult?.error,
-          detailRefetch: detailResult?.refetch,
-          scopeFallback: campaignScopeSnapshot,
-        };
-      }),
-    [campaignDetailsById, campaignScopeSnapshot, campaigns],
+      campaigns.map((campaign) => ({
+        campaign,
+        detail: null,
+        strategy: null,
+        detailLoading: false,
+        strategyLoading: false,
+        scopeFallback: campaignScopeSnapshot,
+      })),
+    [campaignScopeSnapshot, campaigns],
   );
 
   const filteredCampaignCards = useMemo(() => {
@@ -1502,7 +1697,21 @@ export default function GmvMaxOverviewPage() {
   const sortedSeriesRows = useMemo(() => {
     const list = [...seriesRows];
     const getCreated = (card) => (Number.isFinite(card.createdAt) ? card.createdAt : 0);
+    const getPerformance = (card, key) => {
+      const performance = card.campaign?.performance || card.detail?.campaign?.performance || {};
+      const value = key === 'spend'
+        ? performance.cost ?? performance.spend
+        : performance.gmv ?? performance.gross_revenue;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : 0;
+    };
+    const getName = (card) => String(
+      card.campaign?.name || card.campaign?.campaign_name || card.detail?.campaign?.name || '',
+    );
     list.sort((a, b) => {
+      if (sortOption === 'spend') return getPerformance(b, 'spend') - getPerformance(a, 'spend');
+      if (sortOption === 'gmv') return getPerformance(b, 'gmv') - getPerformance(a, 'gmv');
+      if (sortOption === 'name') return getName(a).localeCompare(getName(b), 'zh-CN');
       return getCreated(b) - getCreated(a);
     });
     return list;
@@ -1590,7 +1799,9 @@ export default function GmvMaxOverviewPage() {
       levels: ['OVERVIEW'],
       campaign_ids: null,
     });
-    if (result?.state === 'SUCCESS') {
+    const completed = result?.completion ? await result.completion : result;
+    const completedState = String(completed?.state || result?.state || '').toUpperCase();
+    if (completedState === 'SUCCESS') {
       await refreshScopeQueries();
       return 'SUCCESS';
     }
@@ -1629,7 +1840,22 @@ export default function GmvMaxOverviewPage() {
     setSyncError(null);
     setIsSyncing(true);
     try {
-      await metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' });
+      const deferredSteps = [];
+      const runFoundationStep = async (label, action) => {
+        try {
+          await action();
+        } catch (error) {
+          if (isSyncRateLimitedError(error)) {
+            deferredSteps.push(label);
+            return;
+          }
+          throw error;
+        }
+      };
+
+      await runFoundationStep('授权资料', () => (
+        metadataSyncMutation.mutateAsync({ scope: 'meta', mode: 'full' })
+      ));
       const refetchPromises = [];
       if (typeof accountsQuery.refetch === 'function') {
         refetchPromises.push(accountsQuery.refetch());
@@ -1646,26 +1872,41 @@ export default function GmvMaxOverviewPage() {
       const bcForSync = savedBusinessCenterId || (businessCenterId ? String(businessCenterId) : '');
       const advertiserForSync = savedAdvertiserId || (advertiserId ? String(advertiserId) : '');
       if (bcForSync && advertiserForSync && storeId) {
-        await balanceSyncMutation.mutateAsync({
+        await runFoundationStep('余额', () => balanceSyncMutation.mutateAsync({
           bc_id: bcForSync,
           advertiser_id: advertiserForSync,
           store_id: storeId,
-        });
+        }));
       }
 
-      await productSyncMutation.mutateAsync({
+      await runFoundationStep('商品资料', () => productSyncMutation.mutateAsync({
         scope: 'products',
         mode: 'full',
         bc_id: businessCenterId ? String(businessCenterId) : undefined,
         advertiser_id: advertiserId ? String(advertiserId) : undefined,
         store_id: storeId ? String(storeId) : undefined,
         product_eligibility: 'gmv_max',
-      });
+      }));
 
-      const finalState = await performCampaignSync();
+      let finalState = null;
+      try {
+        finalState = await performCampaignSync();
+      } catch (error) {
+        if (!isSyncRateLimitedError(error)) throw error;
+        await Promise.all([refreshScopeQueries(), refreshMetrics()]);
+        nextNotice = {
+          variant: 'info',
+          message: '后台刚完成或正在执行同步，已刷新当前最新入库数据。',
+        };
+      }
       if (finalState === 'SUCCESS') {
         await refreshMetrics();
-        nextNotice = { variant: 'success', message: '同步完成，数据已刷新。' };
+        nextNotice = {
+          variant: 'success',
+          message: deferredSteps.length > 0
+            ? `投放数据已刷新；${deferredSteps.join('、')}仍在同步冷却期，将由后台任务继续更新。`
+            : '同步完成，数据已刷新。',
+        };
       }
     } catch (error) {
       console.error('Failed to sync GMV Max data automatically', error);
@@ -1708,73 +1949,6 @@ export default function GmvMaxOverviewPage() {
     scopeOptionsQueryKey,
     syncTask,
     storeId,
-    workspaceId,
-  ]);
-
-  useEffect(() => {
-    performSyncRef.current = performSync;
-  }, [performSync]);
-
-  const autoSyncOverviewRanges = useCallback(async () => {
-    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
-    if (syncTask.isSyncing) return;
-
-    const ranges = AUTO_OVERVIEW_SYNC_KEYS.map((rangeKey) => ({
-      key: rangeKey,
-      params: computeOverviewRange(rangeKey, { start: '', end: '' }, advertiserTimezone),
-    }));
-
-    for (const { key, params } of ranges) {
-      if (!params.start_date || !params.end_date) continue;
-      try {
-        const syncResult = await syncTask.startSync({
-          start_date: params.start_date,
-          end_date: params.end_date,
-          levels: ['OVERVIEW'],
-          campaign_ids: null,
-        });
-        if (syncResult?.completion) {
-          await syncResult.completion.catch(() => {});
-        }
-      } catch (error) {
-        console.error('Failed to auto-sync GMV Max overview', key, error);
-      }
-    }
-  }, [
-    advertiserTimezone,
-    authId,
-    isScopeReady,
-    provider,
-    storeId,
-    syncTask,
-    workspaceId,
-  ]);
-
-  useEffect(() => {
-    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
-    const scopeKey = `${workspaceId}:${provider}:${authId}:${storeId}`;
-    if (lastAutoSyncScopeRef.current === scopeKey) return;
-    lastAutoSyncScopeRef.current = scopeKey;
-    if (typeof performSyncRef.current === 'function') {
-      performSyncRef.current();
-    }
-  }, [authId, isScopeReady, provider, storeId, workspaceId]);
-
-  useEffect(() => {
-    if (!isScopeReady || !workspaceId || !provider || !authId || !storeId) return;
-    if (syncTask.isSyncing) return;
-    const scopeKey = `${workspaceId}:${provider}:${authId}:${storeId}:${advertiserTimezone}`;
-    if (overviewAutoSyncScopeRef.current === scopeKey) return;
-    overviewAutoSyncScopeRef.current = scopeKey;
-    autoSyncOverviewRanges();
-  }, [
-    advertiserTimezone,
-    authId,
-    autoSyncOverviewRanges,
-    isScopeReady,
-    provider,
-    storeId,
-    syncTask.isSyncing,
     workspaceId,
   ]);
 
@@ -1878,10 +2052,16 @@ export default function GmvMaxOverviewPage() {
     [buildCampaignSearchParams, navigate, workspaceId],
   );
 
-  const editingDetailResult = useMemo(() => {
-    if (!editingCampaignId) return null;
-    return campaignDetailsById.get(String(editingCampaignId)) || null;
-  }, [campaignDetailsById, editingCampaignId]);
+  const editingDetailResult = useGmvMaxCampaignQuery(
+    workspaceId,
+    provider,
+    authId,
+    editingCampaignId,
+    {
+      enabled: Boolean(workspaceId && provider && authId && editingCampaignId),
+      staleTime: 60 * 1000,
+    },
+  );
 
   const editingCampaign = useMemo(
     () => campaigns.find((item) => String(item?.campaign_id ?? item?.id) === String(editingCampaignId)) || null,
@@ -1893,10 +2073,14 @@ export default function GmvMaxOverviewPage() {
   const editingDetailError = editingDetailResult?.error;
   const editingDetailRefetch = editingDetailResult?.refetch;
 
-  const campaignsLoading = Boolean(
-    campaignsQueryEnabled && (campaignsQuery.isLoading || campaignsQuery.isFetching),
+  const campaignsLoading = Boolean(campaignsQueryEnabled && campaignsQuery.isLoading);
+  const campaignsRefreshing = Boolean(
+    campaignsQueryEnabled && campaignsQuery.isFetching && !campaignsQuery.isLoading,
   );
-  const productsLoading = Boolean(isScopeReady && (productsQuery.isLoading || productsQuery.isFetching));
+  const productsLoading = Boolean(isScopeReady && productsQuery.isLoading);
+  const productsRefreshing = Boolean(
+    isScopeReady && productsQuery.isFetching && !productsQuery.isLoading,
+  );
   const balanceTimestamp = advertiserBalance?.fetched_at;
   const canDisplayBalance = Boolean(storeId && bindingConfigMatchedScope);
   const isSyncIntervalUpdating = Boolean(
@@ -1941,12 +2125,12 @@ export default function GmvMaxOverviewPage() {
           {intervalNotice.message}
         </div>
       ) : null}
-      <header className="gmvmax-page__header">
-        <div>
+      <header className="gmvmax-overview-header">
+        <div className="gmvmax-overview-header__title">
           <h1>{GmvMaxTexts.overviewTitle}</h1>
           <p className="gmvmax-page__subtitle">{GmvMaxTexts.overviewSubtitle}</p>
         </div>
-        <div className="gmvmax-page__header-actions">
+        <div className="gmvmax-overview-header__actions">
           <span className="gmvmax-provider-badge">{`${GmvMaxTexts.providerLabel}：${PROVIDER_LABEL}`}</span>
           <button
             type="button"
@@ -1963,7 +2147,8 @@ export default function GmvMaxOverviewPage() {
           >
             {isSyncInProgress ? syncStatusLabel || '同步中…' : '同步数据'}
           </button>
-          <div className="gmvmax-balance-chip">
+        </div>
+        <div className="gmvmax-balance-chip gmvmax-overview-balance">
             <div className="gmvmax-balance-chip__row">
               <div>
                 <p className="gmvmax-balance-chip__title">{GmvMaxTexts.advertiserBalance}</p>
@@ -1973,7 +2158,11 @@ export default function GmvMaxOverviewPage() {
                     : GmvMaxTexts.balanceUnavailable}
                 </p>
                 {advertiserTimezone ? (
-                  <p className="gmvmax-balance-chip__timezone">{`按广告主时区：${advertiserTimezone}`}</p>
+                  <p className="gmvmax-balance-chip__timezone">
+                    {hasAdvertiserTimezone
+                      ? `按广告主时区：${advertiserTimezone}`
+                      : `广告主时区未知，暂按浏览器时区：${advertiserTimezone}`}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -1993,40 +2182,39 @@ export default function GmvMaxOverviewPage() {
                       ) : null}
                     </span>
                   </div>
+                  <div className="gmvmax-balance-banner__value-block">
+                    <span className="gmvmax-balance-banner__label">
+                      {GmvMaxTexts.balanceBudgetRemainingLabel ?? '剩余预算'}
+                    </span>
+                    <span className="gmvmax-balance-banner__value">
+                      {advertiserBalance?.budget_remaining === null ||
+                      typeof advertiserBalance?.budget_remaining === 'undefined'
+                        ? '—'
+                        : formatMoney(advertiserBalance.budget_remaining)}
+                      {advertiserBalance?.currency &&
+                      advertiserBalance?.budget_remaining !== null &&
+                      typeof advertiserBalance?.budget_remaining !== 'undefined' ? (
+                        <span className="gmvmax-balance-banner__currency">{advertiserBalance.currency}</span>
+                      ) : null}
+                    </span>
+                  </div>
                 </>
               ) : (
                 <span className="gmvmax-balance-chip__placeholder">{GmvMaxTexts.awaitingBalance}</span>
               )}
             </div>
           </div>
-        </div>
       </header>
 
-      <section className="gmvmax-card gmvmax-card--filters">
+      <section className="gmvmax-card gmvmax-overview-scope">
         <header className="gmvmax-card__header">
           <div>
-            <h2>{GmvMaxTexts.scopeFilters}</h2>
-            <p>{GmvMaxTexts.scopeDescription}</p>
+            <h2>投放范围</h2>
+            <p>选择店铺并管理页面数据刷新。</p>
           </div>
         </header>
         <div className="gmvmax-card__body">
-          <div className="gmvmax-field-grid gmvmax-field-grid--two">
-            <FormField label="数据自动刷新间隔">
-              <div>
-                <select
-                  value={autoRefreshInterval}
-                  onChange={handleAutoRefreshChange}
-                  disabled={isSyncIntervalUpdating || syncIntervalQuery.isLoading}
-                >
-                  {refreshIntervalOptions.map((option) => (
-                    <option key={option} value={option}>{`${option} 分钟`}</option>
-                  ))}
-                </select>
-                <p className="gmvmax-subtext">
-                  自动刷新间隔（当前 {autoRefreshInterval} 分钟），针对轻量级指标数据，不会触发后端全量同步。
-                </p>
-              </div>
-            </FormField>
+          <div className="gmvmax-overview-scope__controls">
             <FormField label="店铺">
               <select
                 value={storeId}
@@ -2041,16 +2229,33 @@ export default function GmvMaxOverviewPage() {
                 ))}
               </select>
             </FormField>
+            <FormField label="页面刷新">
+                <select
+                  value={autoRefreshInterval}
+                  onChange={handleAutoRefreshChange}
+                  disabled={isSyncIntervalUpdating || syncIntervalQuery.isLoading}
+                >
+                  {refreshIntervalOptions.map((option) => (
+                    <option key={option} value={option}>{`${option} 分钟`}</option>
+                  ))}
+                </select>
+            </FormField>
+            <div className={`${scopeStatusClassName} gmvmax-overview-scope__status`}>
+              <span className="gmvmax-overview-scope__status-dot" aria-hidden="true" />
+              {scopeStatus.message}
+            </div>
           </div>
-          <div className={scopeStatusClassName}>{scopeStatus.message}</div>
         </div>
       </section>
 
       {campaignsQueryEnabled ? (
-        <section className="gmvmax-card gmvmax-card--summary">
+        <section className="gmvmax-card gmvmax-card--summary gmvmax-overview-performance">
           <header className="gmvmax-card__header gmvmax-card__header--stacked">
             <div className="gmvmax-card__header-title">
               <h2>{GmvMaxTexts.summaryBarTitle}</h2>
+              {overviewRangeLabel ? (
+                <p className="gmvmax-card__subtitle">{overviewRangeLabel}</p>
+              ) : null}
             </div>
             <div className="gmvmax-card__header-actions gmvmax-card__header-actions--wrap">
               <div className="gmvmax-date-filters">
@@ -2082,12 +2287,12 @@ export default function GmvMaxOverviewPage() {
                   </div>
                 ) : null}
               </div>
-              {overviewSummaryQuery.isLoading ? <Loading text="汇总指标加载中…" /> : null}
+              {overviewSummaryQuery.isLoading ? <Loading text="整体表现加载中…" /> : null}
             </div>
           </header>
           <div className="gmvmax-card__body">
             {!hasValidOverviewRange ? (
-              <p className="gmvmax-placeholder">请选择完整的日期范围以查看系列整体表现。</p>
+              <p className="gmvmax-placeholder">请选择完整日期范围以查看整体投放表现。</p>
             ) : (
               <>
                 <div className="gmvmax-overview-summary">
@@ -2122,8 +2327,17 @@ export default function GmvMaxOverviewPage() {
                     </strong>
                   </div>
                 </div>
+                {overviewFreshness ? (
+                  <div className={`gmvmax-data-freshness gmvmax-data-freshness--${overviewFreshness.state}`}>
+                    <strong>{overviewFreshness.label}</strong>
+                    <span>{overviewFreshness.detail}</span>
+                    <span>
+                      {hasAdvertiserTimezone ? '广告主时区' : '浏览器时区'} {advertiserTimezone || 'UTC'}
+                    </span>
+                  </div>
+                ) : null}
                 {overviewSummaryQuery.error ? (
-                  <p className="gmvmax-placeholder">汇总指标加载失败，请稍后重试。</p>
+                  <p className="gmvmax-placeholder">整体表现加载失败，请稍后重试。</p>
                 ) : null}
               </>
             )}
@@ -2131,9 +2345,141 @@ export default function GmvMaxOverviewPage() {
         </section>
       ) : null}
 
-      <section className="gmvmax-card">
+      {isScopeReady ? (
+        <section className="gmvmax-card gmvmax-hermes-report">
+          <header className="gmvmax-card__header">
+            <div>
+              <h2>每日投放报告</h2>
+              <p>Hermes 会汇总 GMV Max 消耗、ROI、商品与素材策略，形成每日复盘和调优建议。</p>
+            </div>
+            <div className="gmvmax-card__header-actions">
+              {hermesDailyReportsQuery.isFetching ? <Loading text="报告加载中…" /> : null}
+              {selectedDailyReport?.updated_at ? (
+                <span className="gmvmax-muted-text">
+                  更新于 {formatISODate(selectedDailyReport.updated_at)}
+                </span>
+              ) : null}
+            </div>
+          </header>
+          <div className="gmvmax-card__body">
+            {hermesDailyReportsQuery.error ? (
+              <p className="gmvmax-placeholder">日报加载失败：{formatError(hermesDailyReportsQuery.error)}</p>
+            ) : null}
+            {!hermesDailyReportsQuery.isLoading && hermesDailyReports.length === 0 ? (
+              <p className="gmvmax-placeholder">
+                暂无日报。后台会在收集到当天投放数据后生成 Hermes 每日复盘。
+              </p>
+            ) : null}
+            {hermesDailyReports.length > 0 ? (
+              <div className="gmvmax-hermes-report__layout">
+                <aside className="gmvmax-hermes-report__dates" aria-label="日报日期">
+                  {hermesDailyReports.map((report) => (
+                    <button
+                      key={`${report.id}-${report.report_date}`}
+                      type="button"
+                      className={`gmvmax-hermes-report__date ${
+                        selectedDailyReport?.id === report.id ? 'gmvmax-hermes-report__date--active' : ''
+                      }`}
+                      onClick={() => setSelectedDailyReportDate(report.report_date || '')}
+                    >
+                      <span>{report.report_date || '未知日期'}</span>
+                      <small>{formatDailyReportStatus(report.status)}</small>
+                    </button>
+                  ))}
+                </aside>
+                <article className="gmvmax-hermes-report__content">
+                  <div className="gmvmax-hermes-report__meta">
+                    <span>{selectedDailyReport?.report_date || '—'}</span>
+                    {selectedDailyReport?.advertiser_timezone ? (
+                      <span>{`广告主时区：${selectedDailyReport.advertiser_timezone}`}</span>
+                    ) : null}
+                  </div>
+                  {selectedDailyReportRecommendations.length > 0 ? (
+                    <div className="gmvmax-hermes-report__recommendations">
+                      <h3>调优建议</h3>
+                      <ul>
+                        {selectedDailyReportRecommendations.slice(0, 6).map((item, index) => (
+                          <li key={`${selectedDailyReport?.id || 'report'}-rec-${index}`}>
+                            {formatRecommendationText(item)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {selectedDailyPlanDefaults.length > 0 ? (
+                    <div className="gmvmax-hermes-report__recommendations">
+                      <h3>Hermes 已批准的明日建计划参数</h3>
+                      <ul>
+                        {selectedDailyPlanDefaults.map((item, index) => {
+                          const params = item?.params || {};
+                          const summary = [
+                            params.budget !== undefined ? `预算 ${params.budget}` : '',
+                            params.roas_bid !== undefined ? `ROAS ${params.roas_bid}` : '',
+                            params.min_roi !== undefined ? `最低 ROI ${params.min_roi}` : '',
+                            params.monitor_interval_minutes !== undefined
+                              ? `监控 ${params.monitor_interval_minutes} 分钟`
+                              : '',
+                            params.cooldown_minutes !== undefined ? `冷却 ${params.cooldown_minutes} 分钟` : '',
+                          ].filter(Boolean).join('，');
+                          return (
+                            <li key={`${selectedDailyReport?.id || 'report'}-default-${index}`}>
+                              {item.item_group_id ? `商品 ${item.item_group_id}` : '店铺默认'}：
+                              {summary || '参数待生成'}；生效日 {item.effective_date || '—'}，
+                              置信度 {item.confidence || 'low'}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <pre className="gmvmax-hermes-report__markdown">
+                    {selectedDailyReport?.report_markdown || '该日报暂无正文。'}
+                  </pre>
+                </article>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      <OrderIntelligencePanel
+        workspaceId={workspaceId}
+        provider={provider}
+        authId={authId}
+        advertiserId={advertiserId}
+        storeId={storeId}
+        advertiserTimezone={advertiserTimezone}
+        enabled={Boolean(isScopeReady && bindingReady)}
+      />
+
+      <ProductAutomationPanel
+        workspaceId={workspaceId}
+        provider={provider}
+        authId={authId}
+        advertiserId={advertiserId}
+        businessCenterId={businessCenterId}
+        storeId={storeId}
+        advertiserTimezone={advertiserTimezone}
+        bindingConfig={bindingConfig}
+        products={products}
+        productsLoading={productsLoading}
+        productsRefreshing={productsRefreshing}
+        campaignCards={campaignCardsWithMeta}
+        canOperate={Boolean(isScopeReady && bindingReady)}
+        onChanged={refreshScopeQueries}
+        statsRangeKey={automationStatsRangeKey}
+        statsCustomRange={automationStatsCustomRange}
+        statsRangeLabel={automationStatsRangeLabel}
+        onStatsRangeChange={handleAutomationStatsRangeChange}
+        onStatsCustomRangeChange={handleAutomationStatsCustomRangeChange}
+      />
+
+      <section className="gmvmax-card gmvmax-series-section">
         <header className="gmvmax-card__header">
-          <h2>{GmvMaxTexts.gmvMaxSeries}</h2>
+          <div>
+            <h2>{GmvMaxTexts.gmvMaxSeries}</h2>
+            {campaignsRefreshing ? <p className="gmvmax-card__subtitle">正在更新系列表现…</p> : null}
+          </div>
           <div className="gmvmax-card__header-actions gmvmax-card__header-actions--wrap">
             <button
               type="button"
@@ -2141,7 +2487,7 @@ export default function GmvMaxOverviewPage() {
               onClick={handleOpenCreate}
               disabled={!canCreateSeries}
             >
-              {GmvMaxTexts.createSeries}
+              新建投放
             </button>
             <div className="gmvmax-series-filters">
               <div className="gmvmax-series-filters__row">
@@ -2190,6 +2536,9 @@ export default function GmvMaxOverviewPage() {
                     <span>{GmvMaxTexts.sortBy}</span>
                     <select value={sortOption} onChange={(event) => setSortOption(event.target.value)}>
                       <option value="latest">{GmvMaxTexts.sortLatest}</option>
+                      <option value="spend">消耗从高到低</option>
+                      <option value="gmv">GMV 从高到低</option>
+                      <option value="name">系列名称</option>
                     </select>
                   </label>
                 <label className="gmvmax-checkbox gmvmax-checkbox--inline">
@@ -2232,20 +2581,22 @@ export default function GmvMaxOverviewPage() {
                       <th>{GmvMaxTexts.seriesName}</th>
                       <th>{GmvMaxTexts.storeLabel}</th>
                       <th>{GmvMaxTexts.statusLabel}</th>
+                      <th>消耗</th>
+                      <th>GMV</th>
                       <th className="col-actions">{GmvMaxTexts.actionsLabel}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {campaignsLoading ? (
                       <tr>
-                        <td colSpan={4}>
+                        <td colSpan={6}>
                           <Loading text="加载系列数据…" />
                         </td>
                       </tr>
                     ) : null}
                     {!campaignsLoading && sortedSeriesRows.length === 0 ? (
                       <tr>
-                        <td colSpan={4}>{GmvMaxTexts.noSeriesForScope}</td>
+                        <td colSpan={6}>{GmvMaxTexts.noSeriesForScope}</td>
                       </tr>
                     ) : null}
                     {sortedSeriesRows.map((card) => {
@@ -2256,6 +2607,7 @@ export default function GmvMaxOverviewPage() {
                         card.detail?.campaign?.name ||
                         `系列 ${campaignId}`;
                       const statusClass = `gmvmax-status-pill gmvmax-status-pill--${card.statusMeta?.tone || 'muted'}`;
+                      const performance = card.campaign?.performance;
                       return (
                         <tr key={campaignId}>
                           <td>
@@ -2265,6 +2617,8 @@ export default function GmvMaxOverviewPage() {
                           <td>
                             <span className={statusClass}>{card.statusMeta?.label || GmvMaxTexts.statusUnknown}</span>
                           </td>
+                          <td>{performance?.cost !== undefined && performance?.cost !== null ? `$${formatMoney(performance.cost)}` : '—'}</td>
+                          <td>{performance?.gmv !== undefined && performance?.gmv !== null ? `$${formatMoney(performance.gmv)}` : '—'}</td>
                           <td className="col-actions">
                             <div className="gmvmax-series-actions">
                               <button

@@ -1,0 +1,389 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index ae77100f6..fc72d8761 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -490,7 +490,22 @@ class _IdempotencyCache:
+         while len(self._store) > self._max:
+             self._store.popitem(last=False)
+
+-    async def get_or_set(self, key: str, fingerprint: str, compute_coro):
++    async def get_or_set(
++        self,
++        key: str,
++        fingerprint: str,
++        compute_coro,
++        *,
++        should_store=None,
++    ):
++        """Coalesce identical in-flight work and cache only stable results.
++
++        Callers may reject a completed value from the TTL cache with
++        ``should_store``.  Concurrent waiters still share the same execution,
++        but a later retry is allowed to execute again.  This distinction is
++        essential for provider quota, timeout, and transport failures: they
++        are idempotent attempts, not successful idempotency records.
++        """
+         self._purge()
+         item = self._store.get(key)
+         if item and item["fp"] == fingerprint:
+@@ -501,9 +516,10 @@ class _IdempotencyCache:
+         if task is None:
+             async def _compute_and_store():
+                 resp = await compute_coro()
+-                import time as _t
+-                self._store[key] = {"resp": resp, "fp": fingerprint, "ts": _t.time()}
+-                self._purge()
++                if should_store is None or should_store(resp):
++                    import time as _t
++                    self._store[key] = {"resp": resp, "fp": fingerprint, "ts": _t.time()}
++                    self._purge()
+                 return resp
+
+             task = asyncio.create_task(_compute_and_store())
+@@ -521,6 +537,12 @@ class _IdempotencyCache:
+ _idem_cache = _IdempotencyCache()
+
+
++def _agent_run_succeeded(payload: Any) -> bool:
++    """Return whether an agent result is safe to replay as completed work."""
++    result = payload[0] if isinstance(payload, tuple) and payload else payload
++    return not bool(isinstance(result, dict) and result.get("failed"))
++
++
+ def _make_request_fingerprint(body: Dict[str, Any], keys: List[str]) -> str:
+     from hashlib import sha256
+     subset = {k: body.get(k) for k in keys}
+@@ -794,6 +816,7 @@ class APIServerAdapter(BasePlatformAdapter):
+         tool_start_callback=None,
+         tool_complete_callback=None,
+         gateway_session_key: Optional[str] = None,
++        persist_session: bool = True,
+     ) -> Any:
+         """
+         Create an AIAgent instance using the gateway's runtime config.
+@@ -820,6 +843,13 @@ class APIServerAdapter(BasePlatformAdapter):
+
+         user_config = _load_gateway_config()
+         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
++        model_config = user_config.get("model") or {}
++        configured_max_tokens = model_config.get("max_tokens")
++        try:
++            max_tokens = int(configured_max_tokens) if configured_max_tokens is not None else None
++        except (TypeError, ValueError):
++            logger.warning("Ignoring invalid model.max_tokens=%r", configured_max_tokens)
++            max_tokens = None
+
+         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+
+@@ -841,10 +871,12 @@ class APIServerAdapter(BasePlatformAdapter):
+             tool_progress_callback=tool_progress_callback,
+             tool_start_callback=tool_start_callback,
+             tool_complete_callback=tool_complete_callback,
++            max_tokens=max_tokens,
+             session_db=self._ensure_session_db(),
+             fallback_model=fallback_model,
+             reasoning_config=reasoning_config,
+             gateway_session_key=gateway_session_key,
++            persist_session=persist_session,
+         )
+         return agent
+
+@@ -1166,7 +1198,12 @@ class APIServerAdapter(BasePlatformAdapter):
+         if idempotency_key:
+             fp = _make_request_fingerprint(body, keys=["model", "messages", "tools", "tool_choice", "stream"])
+             try:
+-                result, usage = await _idem_cache.get_or_set(idempotency_key, fp, _compute_completion)
++                result, usage = await _idem_cache.get_or_set(
++                    idempotency_key,
++                    fp,
++                    _compute_completion,
++                    should_store=_agent_run_succeeded,
++                )
+             except Exception as e:
+                 logger.error("Error running agent for chat completions: %s", e, exc_info=True)
+                 return web.json_response(
+@@ -2127,6 +2164,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 tool_complete_callback=_on_tool_complete,
+                 agent_ref=agent_ref,
+                 gateway_session_key=gateway_session_key,
++                persist_session=bool(store),
+             ))
+
+             response_id = f"resp_{uuid.uuid4().hex[:28]}"
+@@ -2157,6 +2195,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 ephemeral_system_prompt=instructions,
+                 session_id=session_id,
+                 gateway_session_key=gateway_session_key,
++                persist_session=bool(store),
+             )
+
+         idempotency_key = request.headers.get("Idempotency-Key")
+@@ -2166,7 +2205,12 @@ class APIServerAdapter(BasePlatformAdapter):
+                 keys=["input", "instructions", "previous_response_id", "conversation", "model", "tools"],
+             )
+             try:
+-                result, usage = await _idem_cache.get_or_set(idempotency_key, fp, _compute_response)
++                result, usage = await _idem_cache.get_or_set(
++                    idempotency_key,
++                    fp,
++                    _compute_response,
++                    should_store=_agent_run_succeeded,
++                )
+             except Exception as e:
+                 logger.error("Error running agent for responses: %s", e, exc_info=True)
+                 return web.json_response(
+@@ -2204,10 +2248,15 @@ class APIServerAdapter(BasePlatformAdapter):
+         # Build output items (includes tool calls + final message)
+         output_items = self._extract_output_items(result)
+
++        run_failed = bool(isinstance(result, dict) and result.get("failed"))
+         response_data = {
+             "id": response_id,
+             "object": "response",
+-            "status": "completed",
++            # A provider/auth/quota failure is a completed HTTP exchange, not
++            # a completed model response.  Exposing it as ``failed`` prevents
++            # stateless orchestration clients from parsing the error string as
++            # creative JSON and issuing wasteful contract-repair calls.
++            "status": "failed" if run_failed else "completed",
+             "created_at": created_at,
+             "model": body.get("model", self._model_name),
+             "output": output_items,
+@@ -2217,6 +2266,11 @@ class APIServerAdapter(BasePlatformAdapter):
+                 "total_tokens": usage.get("total_tokens", 0),
+             },
+         }
++        if run_failed:
++            response_data["error"] = {
++                "code": "agent_run_failed",
++                "message": str(result.get("error") or "agent run failed")[:2000],
++            }
+
+         # Store the complete response object for future chaining / GET retrieval
+         if store:
+@@ -2557,6 +2611,7 @@ class APIServerAdapter(BasePlatformAdapter):
+         tool_complete_callback=None,
+         agent_ref: Optional[list] = None,
+         gateway_session_key: Optional[str] = None,
++        persist_session: bool = True,
+     ) -> tuple:
+         """
+         Create an agent and run a conversation in a thread executor.
+@@ -2580,6 +2635,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 tool_start_callback=tool_start_callback,
+                 tool_complete_callback=tool_complete_callback,
+                 gateway_session_key=gateway_session_key,
++                persist_session=persist_session,
+             )
+             if agent_ref is not None:
+                 agent_ref[0] = agent
+diff --git a/run_agent.py b/run_agent.py
+index 0b69a1717..6b48036b9 100644
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -968,6 +968,7 @@ class AIAgent:
+         checkpoints_enabled: bool = False,
+         checkpoint_max_snapshots: int = 50,
+         pass_session_id: bool = False,
++        persist_session: bool = True,
+     ):
+         """
+         Initialize the AI Agent.
+@@ -1043,6 +1044,7 @@ class AIAgent:
+         self.skip_context_files = skip_context_files
+         self.load_soul_identity = load_soul_identity
+         self.pass_session_id = pass_session_id
++        self.persist_session = bool(persist_session)
+         self._credential_pool = credential_pool
+         self.log_prefix_chars = log_prefix_chars
+         self.log_prefix = f"{log_prefix} " if log_prefix else ""
+@@ -1673,7 +1675,8 @@ class AIAgent:
+         # Session logs go into ~/.hermes/sessions/ alongside gateway sessions
+         hermes_home = get_hermes_home()
+         self.logs_dir = hermes_home / "sessions"
+-        self.logs_dir.mkdir(parents=True, exist_ok=True)
++        if self.persist_session:
++            self.logs_dir.mkdir(parents=True, exist_ok=True)
+         self.session_log_file = self.logs_dir / f"session_{self.session_id}.json"
+
+         # Track conversation messages for session logging
+@@ -1692,7 +1695,7 @@ class AIAgent:
+         )
+
+         # SQLite session store (optional -- provided by CLI or gateway)
+-        self._session_db = session_db
++        self._session_db = session_db if self.persist_session else None
+         self._parent_session_id = parent_session_id
+         self._last_flushed_db_idx = 0  # tracks DB-write cursor to prevent duplicate writes
+         self._session_db_created = False  # DB row deferred to run_conversation()
+@@ -4241,6 +4244,8 @@ class AIAgent:
+         like timeout). Intended for debugging provider-side 4xx failures where
+         retries are not useful.
+         """
++        if not self.persist_session:
++            return None
+         try:
+             body = copy.deepcopy(api_kwargs)
+             body.pop("timeout", None)
+@@ -4331,6 +4336,8 @@ class AIAgent:
+         REASONING_SCRATCHPAD tags are converted to <think> blocks for consistency.
+         Overwritten after each turn so it always reflects the latest state.
+         """
++        if not self.persist_session:
++            return
+         messages = messages or self._session_messages
+         if not messages:
+             return
+diff --git a/tests/gateway/test_api_server.py b/tests/gateway/test_api_server.py
+index 2bf539041..8d96f81d7 100644
+--- a/tests/gateway/test_api_server.py
++++ b/tests/gateway/test_api_server.py
+@@ -194,6 +194,59 @@ class TestIdempotencyCache:
+         gate.set()
+         assert await second == "response"
+
++    @pytest.mark.asyncio
++    async def test_rejected_result_is_shared_inflight_but_not_replayed(self):
++        cache = _IdempotencyCache()
++        gate = asyncio.Event()
++        started = asyncio.Event()
++        calls = 0
++
++        async def compute():
++            nonlocal calls
++            calls += 1
++            started.set()
++            await gate.wait()
++            return ({"failed": True, "error": "temporary"}, {})
++
++        should_store = lambda payload: not payload[0].get("failed", False)
++        first = asyncio.create_task(cache.get_or_set(
++            "idem-key", "fp-1", compute, should_store=should_store,
++        ))
++        second = asyncio.create_task(cache.get_or_set(
++            "idem-key", "fp-1", compute, should_store=should_store,
++        ))
++
++        await started.wait()
++        assert calls == 1
++        gate.set()
++        assert await first == await second
++
++        await cache.get_or_set(
++            "idem-key", "fp-1", compute, should_store=should_store,
++        )
++        assert calls == 2
++
++    @pytest.mark.asyncio
++    async def test_accepted_result_remains_cached_with_store_predicate(self):
++        cache = _IdempotencyCache()
++        calls = 0
++
++        async def compute():
++            nonlocal calls
++            calls += 1
++            return ({"final_response": "ok"}, {})
++
++        should_store = lambda payload: not payload[0].get("failed", False)
++        first = await cache.get_or_set(
++            "idem-key", "fp-1", compute, should_store=should_store,
++        )
++        second = await cache.get_or_set(
++            "idem-key", "fp-1", compute, should_store=should_store,
++        )
++
++        assert first == second
++        assert calls == 1
++
+
+ # ---------------------------------------------------------------------------
+ # Adapter initialization
+@@ -1214,6 +1267,36 @@ class TestDeriveChatSessionId:
+
+
+ class TestResponsesEndpoint:
++    @pytest.mark.asyncio
++    async def test_failed_agent_run_is_not_reported_as_completed(self, adapter):
++        app = _create_app(adapter)
++        with patch.object(
++            adapter,
++            "_run_agent",
++            new=AsyncMock(return_value=({
++                "failed": True,
++                "error": "insufficient_user_quota",
++                "messages": [],
++            }, {
++                "input_tokens": 0,
++                "output_tokens": 0,
++                "total_tokens": 0,
++            })),
++        ):
++            async with TestClient(TestServer(app)) as cli:
++                resp = await cli.post("/v1/responses", json={
++                    "model": "test",
++                    "input": "hello",
++                    "store": False,
++                })
++                assert resp.status == 200
++                data = await resp.json()
++        assert data["status"] == "failed"
++        assert data["error"] == {
++            "code": "agent_run_failed",
++            "message": "insufficient_user_quota",
++        }
++
+     @pytest.mark.asyncio
+     async def test_missing_input_returns_400(self, adapter):
+         app = _create_app(adapter)
+@@ -1437,6 +1520,7 @@ class TestResponsesEndpoint:
+             data = await resp.json()
+             # The response has an ID but it shouldn't be retrievable
+             assert adapter._response_store.get(data["id"]) is None
++            assert mock_run.await_args.kwargs["persist_session"] is False
+
+     @pytest.mark.asyncio
+     async def test_instructions_inherited_from_previous(self, adapter):
+@@ -1501,6 +1585,38 @@ class TestResponsesEndpoint:
+
+
+ class TestResponsesStreaming:
++    @pytest.mark.asyncio
++    async def test_stream_store_false_disables_session_persistence(self, adapter):
++        app = _create_app(adapter)
++        async with TestClient(TestServer(app)) as cli:
++            async def _mock_run_agent(**kwargs):
++                cb = kwargs.get("stream_delta_callback")
++                if cb:
++                    cb("Ephemeral")
++                return (
++                    {"final_response": "Ephemeral", "messages": [], "api_calls": 1},
++                    {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
++                )
++
++            with patch.object(
++                adapter,
++                "_run_agent",
++                side_effect=_mock_run_agent,
++            ) as mock_run:
++                resp = await cli.post(
++                    "/v1/responses",
++                    json={
++                        "model": "hermes-agent",
++                        "input": "ephemeral",
++                        "stream": True,
++                        "store": False,
++                    },
++                )
++                assert resp.status == 200
++                await resp.text()
++
++            assert mock_run.await_args.kwargs["persist_session"] is False
++
+     @pytest.mark.asyncio
+     async def test_stream_true_returns_responses_sse(self, adapter):
+         app = _create_app(adapter)
+@@ -2749,4 +2865,3 @@ class TestSessionKeyHeader:
+             assert resp.status == 200
+             data = await resp.json()
+             assert data["features"]["session_key_header"] == "X-Hermes-Session-Key"
+-

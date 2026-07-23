@@ -32,8 +32,6 @@ BATCH_LIMIT = 500  # 一次扫描的计划数量上限
 
 _GMVMAX_TASKS = {
     "gmvmax.sync_campaigns",
-    "gmvmax.sync_metrics",
-    "gmvmax.apply_action",
     "gmvmax.sync_creative_metrics_10min",
     "gmvmax.sync_creative_metrics_10min_for_campaign",
     "gmvmax.creative_heating_cycle",
@@ -56,29 +54,30 @@ def _build_gmvmax_kwargs(row: Schedule, idem: str, now_utc: datetime) -> dict:
     if task_name == "gmvmax.sync_campaigns":
         kwargs.setdefault("filters", params.get("filters") or {})
 
-    if task_name == "gmvmax.sync_metrics":
-        gran = str(kwargs.get("granularity") or "HOUR").upper()
-        kwargs["granularity"] = gran
-        if gran == "HOUR":
-            lookback_val = params.get("lookback_hours")
-            try:
-                lookback_hours = max(1, int(lookback_val))
-            except (TypeError, ValueError):
-                lookback_hours = 6
-            end_dt = now_utc
-            kwargs.setdefault("end_date", _isoformat(end_dt))
-            kwargs.setdefault("start_date", _isoformat(end_dt - timedelta(hours=lookback_hours)))
-        else:
-            lookback_val = params.get("lookback_days")
-            try:
-                lookback_days = max(1, int(lookback_val))
-            except (TypeError, ValueError):
-                lookback_days = 7
-            today = now_utc.date()
-            kwargs.setdefault("end_date", today.isoformat())
-            kwargs.setdefault("start_date", (today - timedelta(days=lookback_days)).isoformat())
-
     return kwargs
+
+
+def _build_ttb_sync_kwargs(row: Schedule, idem: str) -> dict:
+    params = dict(row.params_json or {})
+    raw_envelope = params.get("envelope")
+    envelope = dict(raw_envelope) if isinstance(raw_envelope, dict) else {}
+    envelope.setdefault("workspace_id", int(params.get("workspace_id") or row.workspace_id))
+    envelope.setdefault("auth_id", params.get("auth_id"))
+    envelope.setdefault("scope", params.get("scope") or row.task_name.rsplit(".", 1)[-1])
+    envelope.setdefault("provider", params.get("provider") or "tiktok-business")
+    envelope.setdefault("options", dict(params.get("options") or {}))
+    envelope.setdefault("envelope_version", 1)
+    meta = dict(envelope.get("meta") or {})
+    meta.setdefault("schedule_id", int(row.id))
+    meta.setdefault("idempotency_key", idem)
+    envelope["meta"] = meta
+    return {
+        "workspace_id": int(envelope["workspace_id"]),
+        "auth_id": int(envelope["auth_id"]),
+        "scope": str(envelope["scope"]),
+        "params": {"envelope": envelope},
+        "idempotency_key": idem,
+    }
 
 
 def _now_utc() -> datetime:
@@ -115,6 +114,8 @@ def _calc_next_fire(row: Schedule, start: datetime) -> datetime | None:
     计算下次触发时间，返回的是「UTC aware」时间（tzinfo=UTC）。
     """
     tz = ZoneInfo(row.timezone or "UTC")
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
     # 这里用 aware → aware 的转换逻辑
     start_local = start.astimezone(tz)
 
@@ -381,12 +382,32 @@ class DBScheduler(Scheduler):
             now_cmp - timedelta(seconds=mis_grace)
         ):
             # 超过容忍窗口，跳过这个触发窗口，推进 next
-            next_fire = _calc_next_fire(row, fire_at)
-            db.execute(
-                update(Schedule)
-                .where(Schedule.id == row.id)
-                .values(next_fire_at=next_fire),
-            )
+            if row.schedule_type == "interval":
+                interval_seconds = int(row.interval_seconds or 0)
+                elapsed_seconds = max(0, int((now_cmp - fire_at_cmp).total_seconds()))
+                steps = (elapsed_seconds // interval_seconds) + 1
+                next_fire = (
+                    fire_at_cmp.replace(tzinfo=timezone.utc)
+                    + timedelta(seconds=steps * interval_seconds)
+                )
+                db.execute(
+                    update(Schedule)
+                    .where(Schedule.id == row.id)
+                    .values(next_fire_at=next_fire),
+                )
+            elif row.schedule_type == "crontab":
+                next_fire = _calc_next_fire(row, now_utc)
+                db.execute(
+                    update(Schedule)
+                    .where(Schedule.id == row.id)
+                    .values(next_fire_at=next_fire),
+                )
+            else:
+                db.execute(
+                    update(Schedule)
+                    .where(Schedule.id == row.id)
+                    .values(next_fire_at=None, enabled=False),
+                )
             self._append_run(
                 db,
                 row,
@@ -430,6 +451,8 @@ class DBScheduler(Scheduler):
         # 入队 Celery
         if row.task_name in _GMVMAX_TASKS:
             payload = _build_gmvmax_kwargs(row, idem, now_utc)
+        elif row.task_name.startswith("ttb.sync."):
+            payload = _build_ttb_sync_kwargs(row, idem)
         else:
             payload = {
                 "workspace_id": int(row.workspace_id),
@@ -447,6 +470,18 @@ class DBScheduler(Scheduler):
         ) or settings.CELERY_TASK_DEFAULT_QUEUE
 
         task_id = celery_uuid()
+        self._append_run(
+            db,
+            row,
+            fire_at,
+            status="enqueued",
+            broker_msg_id=str(task_id),
+            idem=idem,
+        )
+        db.flush()
+        # Workers resolve the run by idempotency key. Commit before publishing
+        # so a fast worker cannot race an uncommitted ScheduleRun.
+        db.commit()
         r = celery_app.send_task(
             task_name,
             args=(),
@@ -515,6 +550,18 @@ class DBScheduler(Scheduler):
         idem: str | None = None,
         reason: str | None = None,
     ):
+        if idem:
+            existing = db.execute(
+                select(ScheduleRun)
+                .where(
+                    ScheduleRun.schedule_id == int(row.id),
+                    ScheduleRun.idempotency_key == idem,
+                )
+                .order_by(ScheduleRun.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if existing is not None:
+                return existing
         run = ScheduleRun(
             schedule_id=int(row.id),
             workspace_id=int(row.workspace_id),
@@ -534,5 +581,5 @@ class DBScheduler(Scheduler):
             ),
         )
         db.add(run)
+        return run
         # 让调用者决定何时 commit（上层有批量 commit）
-

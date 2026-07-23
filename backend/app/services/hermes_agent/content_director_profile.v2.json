@@ -1,0 +1,224 @@
+{
+  "schema_version": "2.0",
+  "profile_id": "universal-short-video-v4",
+  "speech_rate_wpm": 150,
+  "display_reading_rate_wpm": 120,
+  "edit_headroom_seconds": 2,
+  "aspect_ratio": "9:16",
+  "creative_constraints": [
+    "Choose the content type, opening structure, segment count, reveal architecture, visual grammar, and audio mode from the project objective; do not use a server mother template.",
+    "The complete script and any configured engagement or conversion logic must be approved before any image or video generation.",
+    "Treat supplied truth and every configured policy boundary as authoritative; apply product, offer, CTA, cast, or presentation rules only when the project supplies them."
+  ],
+  "structured_intent_contract_required": false,
+  "series_page_review_criteria": [
+    {
+      "criterion_id": "intent_objective_audience_fit",
+      "instruction": "Each intent must be a feasible plan for the supplied project objective and intended audience without requiring hidden context.",
+      "minimum_score": 88,
+      "blocking": true
+    },
+    {
+      "criterion_id": "intent_truth_boundary",
+      "instruction": "The intent must stay inside supplied truth and every project-configured policy or outcome boundary.",
+      "minimum_score": 100,
+      "blocking": true
+    },
+    {
+      "criterion_id": "requested_stakes_calibration",
+      "instruction": "Calibrate the intent's human stakes to the exact series objective and audience. When they explicitly request emotionally sharp, deep, urgent, painful, or high-stakes communication, a workload count, routine inconvenience, procedural friction, generic stress, or merely staying busy is only setup and cannot be the felt loss. The pain_hypothesis and episode objective must expose a concrete valued loss, identity conflict, relationship or professional cost, repeated consequence, missed life moment, or fear of no longer feeling like oneself that this audience can recognize. For neutral instructional, educational, entertainment, reporting, or product-first objectives, do not manufacture emotional pain. Never diagnose, shame, threaten, or make the product responsible for preventing the opening loss.",
+      "minimum_score": 92,
+      "blocking": true
+    }
+  ],
+  "product_series_page_review_criteria": [
+    {
+      "criterion_id": "product_conversion_feasibility",
+      "instruction": "For a product-required video, the planned viewer decision, question, comparison, demonstration, or use case must form one causal or psychological progression to a truthful bounded product role, and supplied truth must support a clear reason to choose or consider it. Human agency may resolve part of the opening problem, but the intent may not jump afterward to a newly invented, unrelated product preference or question. Saying the product comes after the decision, can fit, is part of a routine, or is the next step is adjacency rather than a bridge. An attribute preference can explain why this product may be chosen among alternatives, but it cannot by itself establish why the product category or use case enters the story; that category-level need must already be relevant and understandable. In story-led or delayed-reveal work, a relevant selection requirement must be established before reveal and a confirmed attribute must match it; inventing the preference inside the reveal is circular. Product-first demonstrations and comparisons may establish the decision basis in their opening format. Do not force every video into the same pain or attribute-preference formula.",
+      "minimum_score": 92,
+      "blocking": true
+    },
+    {
+      "criterion_id": "bounded_product_change_feasibility",
+      "instruction": "The intent must support one concrete bounded viewer action, decision, understanding, use case, or behavior change appropriate to the project without making the product responsible for preventing an unrelated opening loss or causing an unconfirmed outcome.",
+      "minimum_score": 90,
+      "blocking": true
+    }
+  ],
+  "series_global_review_criteria": [
+    {
+      "criterion_id": "semantic_intent_distinctness",
+      "instruction": "Inside each Director-declared content family, compact fingerprints must represent materially distinct viewer moments, evidence, content forms, or execution logic rather than renamed props, characters, hooks, or format labels. Different families must perform materially different campaign jobs.",
+      "minimum_score": 90,
+      "blocking": true
+    },
+    {
+      "criterion_id": "response_or_action_route_diversity",
+      "instruction": "Judge viewer-value and any configured action coverage at content-family level, not by demanding one new fact or premise per episode. A finite source-truth set may deliberately repeat within a family. Reject unjustified families that perform the same strategic job and episodes that add no new viewer moment, evidence, form, or execution.",
+      "minimum_score": 90,
+      "blocking": true
+    },
+    {
+      "criterion_id": "series_coverage_balance",
+      "instruction": "The declared content-family allocation must cover the project objective and audience without accidental overconcentration in one strategic job, audience need, content form, or response route. Intentional repetition must be bounded and explained by the family plan.",
+      "minimum_score": 88,
+      "blocking": true
+    },
+    {
+      "criterion_id": "series_truth_boundary",
+      "instruction": "Every compact intent fingerprint must remain inside the supplied truth and policy boundary.",
+      "minimum_score": 100,
+      "blocking": true
+    }
+  ],
+  "copy_review_criteria": [
+    {
+      "criterion_id": "objective_fit",
+      "instruction": "The complete video must fulfill the supplied project objective instead of merely mentioning its topic.",
+      "minimum_score": 82,
+      "blocking": true
+    },
+    {
+      "criterion_id": "audience_comprehension",
+      "instruction": "The intended audience must understand the premise, progression, and point on one viewing without hidden context.",
+      "minimum_score": 82,
+      "blocking": true
+    },
+    {
+      "criterion_id": "complete_coherence",
+      "instruction": "Every beat must belong to one complete video; transitions may not feel like separately generated fragments.",
+      "minimum_score": 85,
+      "blocking": true
+    },
+    {
+      "criterion_id": "natural_locale_language",
+      "instruction": "Spoken or displayed language must sound natural in the configured locale and must not read like a literal translation or model outline.",
+      "minimum_score": 82,
+      "blocking": true
+    },
+    {
+      "criterion_id": "audio_mode_program_consistency",
+      "instruction": "The structured program audio mode, script delivery modes, primary speaker, and any audio strategy prose must describe one compatible design: silent means no audible sound, music-only means no voice or sound effects, sound-design means display copy with non-voice audio, and spoken requires spoken copy.",
+      "minimum_score": 100,
+      "blocking": true
+    },
+    {
+      "criterion_id": "truth_and_policy",
+      "instruction": "Every factual or outcome statement, plus any configured product, offer, or action statement, must remain inside supplied truth and policy boundaries.",
+      "minimum_score": 100,
+      "blocking": true
+    },
+    {
+      "criterion_id": "requested_stakes_strength",
+      "instruction": "Match the exact emotional or informational intensity requested by the supplied series objective, episode objective, audience, and pain hypothesis. When the project explicitly requests emotionally sharp, deep, urgent, painful, or high-stakes communication, generic stress, tiredness, workload, counts, interruptions, procedural friction, or an unfinished routine is setup only: the exact audience-facing copy must reveal a concrete valued loss, identity conflict, relationship or professional cost, repeated consequence, missed life moment, or fear of no longer feeling like oneself. For neutral instructional, educational, entertainment, reporting, or product-first work, appropriate clarity may satisfy this criterion without manufactured pain. Do not diagnose, shame, threaten, use unsupported fear, or imply that the product prevents or repairs the opening loss.",
+      "minimum_score": 90,
+      "blocking": true
+    }
+  ],
+  "product_copy_review_criteria": [
+    {
+      "criterion_id": "product_relevance_bridge",
+      "instruction": "The product introduction must be earned by one causal or psychological progression already established in the exact audience-facing copy: a need, question, comparison, demonstration, decision, or use case must make the product's truthful bounded role relevant before the product is revealed. Human agency may resolve part of the opening problem, but the copy may not jump to a newly invented, unrelated product preference or question afterward. An attribute preference may establish why this product is considered among alternatives only after the product category or use case has already become a relevant viewer decision; asking whether the viewer wants a confirmed attribute cannot create that category-level need. Product adjacency, a generic routine label, and transition phrases such as then, so, next, or next step are not an earned bridge by themselves. Product-first demonstrations and comparisons remain valid when their relevance is self-evident in the opening format.",
+      "minimum_score": 88,
+      "blocking": true
+    },
+    {
+      "criterion_id": "reason_to_choose",
+      "instruction": "The video must state or clearly show a supplied-truth-supported reason to choose or consider this product over doing nothing or choosing an unspecified alternative, and connect that confirmed attribute to an audience decision basis rather than merely list it. The copy must keep two questions distinct: why this product category or use case is relevant now, and why this confirmed product attribute may be preferred within that decision. In story-led or delayed-reveal copy, the relevant preference, selection requirement, comparison basis, or use-case need must be completed in an earlier audience-facing line or beat before the product identity appears; wording earlier in the same reveal sentence or line does not count. A preference invented only during reveal by asking whether the viewer wants the matching attribute, or by saying the speaker wanted, chose, liked, or added it, is circular. Product-first demonstrations and comparisons may establish the decision basis through the opening demonstration itself.",
+      "minimum_score": 85,
+      "blocking": true
+    },
+    {
+      "criterion_id": "expected_viewer_change",
+      "instruction": "The ending must make the intended bounded viewer action, decision, understanding, use, or behavior change concrete without promising an unsupported or guaranteed result.",
+      "minimum_score": 85,
+      "blocking": true
+    },
+    {
+      "criterion_id": "offer_and_action_clarity",
+      "instruction": "When an offer or CTA is supplied, preserve it exactly and make the next action understandable without replacing the story with a sales list.",
+      "minimum_score": 100,
+      "blocking": true
+    }
+  ],
+  "production_plan_review_criteria": [
+    {
+      "criterion_id": "visual_script_alignment",
+      "instruction": "Every visual beat must make the approved script easier to understand without changing its meaning, adding unsupported claims, or turning separate beats into unrelated clips.",
+      "minimum_score": 90,
+      "blocking": true
+    },
+    {
+      "criterion_id": "visual_continuity_and_reference_efficiency",
+      "instruction": "Character, scene, product, action, and transition continuity must be achievable with the declared references; references must be sufficient and relevant without sending an unrelated project-wide asset dump.",
+      "minimum_score": 88,
+      "blocking": true
+    },
+    {
+      "criterion_id": "audio_and_copy_delivery_fit",
+      "instruction": "Voice identity, sound design, silence, local overlays, and dialogue delivery must fit the approved content form and keep every approved line intelligible in its declared time. Every display line must use a deliberately chosen readable placement that supports rather than obscures the visual beat; reject accidental full-script top banners or one-position-for-all layouts.",
+      "minimum_score": 90,
+      "blocking": true
+    },
+    {
+      "criterion_id": "production_plan_truth_boundary",
+      "instruction": "The visual and audio plan must preserve project truth, asset authority, and every configured presentation, action, or outcome boundary without inventing evidence or asset details.",
+      "minimum_score": 100,
+      "blocking": true
+    }
+  ],
+  "quality_rubric": [
+    "One complete idea per video.",
+    "No dropped, duplicated, or reordered approved script lines.",
+    "Creative form follows the project objective rather than a fixed campaign formula.",
+    "Visual planning must explain the approved copy rather than rewrite it."
+  ],
+  "diversity_dimensions": [
+    {
+      "dimension_id": "content_type",
+      "instruction": "Use meaningfully different content types appropriate to the project, such as narrative, demonstration, explanation, comparison, interview, list, montage, or another Director-chosen form.",
+      "minimum_unique": 1,
+      "target_fraction": 0.2,
+      "maximum_unique": 10,
+      "product_only": false
+    },
+    {
+      "dimension_id": "opening_structure",
+      "instruction": "Vary the actual opening mechanism, not merely the first sentence wording.",
+      "minimum_unique": 1,
+      "target_fraction": 0.2,
+      "maximum_unique": 12,
+      "product_only": false
+    },
+    {
+      "dimension_id": "visual_grammar",
+      "instruction": "Vary how meaning is visually organized, including staging, information density, point of view, motion, and edit grammar.",
+      "minimum_unique": 1,
+      "target_fraction": 0.16,
+      "maximum_unique": 8,
+      "product_only": false
+    },
+    {
+      "dimension_id": "audio_strategy",
+      "instruction": "Select an appropriate audio strategy and vary it when the project supports spoken, silent, music-only, or sound-design-led videos.",
+      "minimum_unique": 1,
+      "target_fraction": 0.04,
+      "maximum_unique": 3,
+      "product_only": false
+    },
+    {
+      "dimension_id": "conversion_architecture",
+      "instruction": "Vary the legitimate route from viewer value to product relevance and action; do not bolt the same final product paragraph onto every video.",
+      "minimum_unique": 1,
+      "target_fraction": 0.1,
+      "maximum_unique": 5,
+      "product_only": true
+    }
+  ],
+  "default_loop_policy": {
+    "maximum_revisions": 4,
+    "maximum_series_revisions": 5,
+    "maximum_contract_repairs_per_revision": 1,
+    "series_page_size": 10
+  }
+}

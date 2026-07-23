@@ -8,6 +8,11 @@ export async function listMonitoringStrategies(params = {}) {
   return res?.data ?? res
 }
 
+export async function getAutomationControlCenter() {
+  const res = await http.get(`${basePath}/control-center`)
+  return res?.data ?? res
+}
+
 export async function createMonitoringStrategy(payload) {
   const res = await http.post(basePath, payload)
   return res?.data ?? res
@@ -34,6 +39,7 @@ export async function disableMonitoringStrategy(id) {
 }
 
 export default {
+  getAutomationControlCenter,
   listMonitoringStrategies,
   createMonitoringStrategy,
   updateMonitoringStrategy,

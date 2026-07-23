@@ -8,10 +8,11 @@ from app.services.gmvmax_heating import evaluate_heating_rule
 def _make_heating(**overrides):
     base = {
         "workspace_id": 1,
-        "provider": "tiktok-business",
         "auth_id": 1,
+        "advertiser_id": "adv",
         "campaign_id": "cmp",
         "creative_id": "cr",
+        "promotion_type": "PRODUCT",
         "evaluation_window_minutes": overrides.get("evaluation_window_minutes", 60),
         "auto_stop_enabled": overrides.get("auto_stop_enabled", True),
         "is_heating_active": overrides.get("is_heating_active", True),
@@ -25,6 +26,7 @@ def _make_heating(**overrides):
 def _metrics(clicks=0, ctr=None, revenue=None):
     return CreativeMetricsAggregate(
         creative_id="cr",
+        item_group_id="spu",
         clicks=clicks,
         ad_click_rate=ctr,
         gross_revenue=revenue,
@@ -55,6 +57,7 @@ def test_evaluate_heating_rule_ready_to_heat_with_roi_and_orders():
     heating = _make_heating(min_clicks=1, min_ctr=0.01, min_gross_revenue=1)
     metrics = CreativeMetricsAggregate(
         creative_id="cr",
+        item_group_id="spu",
         clicks=5,
         ad_click_rate=0.05,
         gross_revenue=100,

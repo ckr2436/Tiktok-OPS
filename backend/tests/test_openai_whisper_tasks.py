@@ -1,3 +1,4 @@
+import importlib.machinery
 import types
 import sys
 
@@ -12,6 +13,8 @@ sys.modules.setdefault("whisper", _dummy_whisper)
 sys.modules.setdefault("whisper.tokenizer", _dummy_tokenizer)
 
 _dummy_transformers = types.ModuleType("transformers")
+_dummy_transformers.AutoModelForSeq2SeqLM = object
+_dummy_transformers.AutoTokenizer = object
 _dummy_transformers.MarianMTModel = object
 _dummy_transformers.MarianTokenizer = object
 
@@ -34,6 +37,7 @@ sys.modules.setdefault("transformers", _dummy_transformers)
 sys.modules.setdefault("transformers.pipelines", _dummy_pipelines)
 
 _dummy_yt_dlp = types.ModuleType("yt_dlp")
+_dummy_yt_dlp.__spec__ = importlib.machinery.ModuleSpec("yt_dlp", loader=None)
 _dummy_yt_dlp.YoutubeDL = None  # placeholder, patched per-test
 sys.modules.setdefault("yt_dlp", _dummy_yt_dlp)
 
@@ -61,6 +65,26 @@ def test_transcribe_video_reports_auth_required(monkeypatch, tmp_path):
     monkeypatch.setattr(storage, "BASE_DIR", tmp_path)
     monkeypatch.setattr(tasks.storage, "BASE_DIR", tmp_path)
     monkeypatch.setattr(tasks, "YoutubeDL", _AuthErrorYDL)
+    task_globals = tasks.transcribe_video.run.__globals__
+    auth_error_type = task_globals["DownloadRequiresAuthError"]
+
+    def _auth_required(*_args, **_kwargs):
+        raise auth_error_type("Log in for access")
+
+    # Celery keeps the first registered task object when modules are reloaded
+    # during the full suite. Patch the registered task function's globals too,
+    # so this test never reaches the network regardless of import order.
+    monkeypatch.setitem(task_globals, "YoutubeDL", _AuthErrorYDL)
+    monkeypatch.setitem(
+        task_globals,
+        "_download_shared_video",
+        _auth_required,
+    )
+    monkeypatch.setitem(
+        task_globals["_ensure_local_video"].__globals__,
+        "_download_shared_video",
+        _auth_required,
+    )
 
     workspace_id = 1
     job_id = "job123"

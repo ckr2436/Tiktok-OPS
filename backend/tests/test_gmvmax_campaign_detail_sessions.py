@@ -9,7 +9,10 @@ from app.core.deps import require_tenant_admin, require_tenant_member
 from app.core.errors import install_exception_handlers
 from app.features.tenants.ttb.gmv_max import router_provider
 from app.features.tenants.ttb.router import router as ttb_router
-from app.data.models.gmv_restructured import GmvCampaign, PromotionTypeEnum
+from app.data.models.gmvmax_campaign_catalog import (
+    GmvmaxProductCampaignCatalog,
+    GmvmaxProductCampaignItemGroup,
+)
 from app.data.models.oauth_ttb import OAuthAccountTTB, OAuthProviderApp
 from app.data.models.workspaces import Workspace
 from app.providers.tiktok_business.gmvmax_client import (
@@ -79,17 +82,38 @@ def campaign_detail_client(db_session):
         access_token_cipher=b"cipher",
         token_fingerprint=b"f" * 32,
     )
-    campaign = GmvCampaign(
+    campaign = GmvmaxProductCampaignCatalog(
         id=1,
         workspace_id=workspace.id,
         auth_id=account.id,
         advertiser_id="adv-1",
-        campaign_id="cmp-1",
+        campaign_id="1001",
         store_id="store-1",
-        name="Primary",
-        promotion_type=PromotionTypeEnum.PRODUCT,
+        campaign_name="Primary",
+        operation_status="ENABLE",
+        shopping_ads_type="PRODUCT",
     )
     db_session.add_all([workspace, provider_app, account, campaign])
+    db_session.add_all(
+        [
+            GmvmaxProductCampaignItemGroup(
+                workspace_id=workspace.id,
+                auth_id=account.id,
+                advertiser_id="adv-1",
+                store_id="store-1",
+                campaign_id="1001",
+                item_group_id="product-2",
+            ),
+            GmvmaxProductCampaignItemGroup(
+                workspace_id=workspace.id,
+                auth_id=account.id,
+                advertiser_id="adv-1",
+                store_id="store-1",
+                campaign_id="1001",
+                item_group_id="product-1",
+            ),
+        ]
+    )
     db_session.flush()
 
     stub_client = StubSessionClient()
@@ -122,7 +146,7 @@ def test_campaign_detail_fetches_sessions_on_demand(campaign_detail_client):
     stub: StubSessionClient = campaign_detail_client["stub"]
 
     response = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/1001",
         params={"include_sessions": "true"},
     )
 
@@ -139,7 +163,7 @@ def test_campaign_detail_skips_sessions_when_flag_false(campaign_detail_client):
     stub: StubSessionClient = campaign_detail_client["stub"]
 
     response = client.get(
-        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
+        "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/1001",
         params={"include_sessions": "false"},
     )
 
@@ -149,6 +173,7 @@ def test_campaign_detail_skips_sessions_when_flag_false(campaign_detail_client):
     assert body["sessions_page_info"] is None
     assert body["sessions_request_id"] is None
     assert stub.session_requests == []
+    assert body["campaign"]["item_group_ids"] == ["product-1", "product-2"]
 
 
 def test_campaign_detail_continues_on_session_error(campaign_detail_client, caplog):
@@ -158,7 +183,7 @@ def test_campaign_detail_continues_on_session_error(campaign_detail_client, capl
 
     with caplog.at_level(logging.WARNING):
         response = client.get(
-            "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/cmp-1",
+            "/api/v1/tenants/1/providers/tiktok-business/accounts/1/gmvmax/1001",
             params={"include_sessions": "true"},
         )
 

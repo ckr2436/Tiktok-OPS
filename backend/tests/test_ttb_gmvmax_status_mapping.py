@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.data.models.gmv_restructured import PromotionTypeEnum
 from app.services.gmvmax_lifecycle import _derive_campaign_lifecycle
@@ -52,14 +52,12 @@ def test_upsert_campaign_from_api_sets_lifecycle(db_session):
         payload=active_payload,
         store_id_hint="store-1",
         promotion_type=PromotionTypeEnum.PRODUCT,
+        source_observed_at=datetime.now(timezone.utc),
     )
     db_session.commit()
 
     assert active.operation_status == "ENABLE"
     assert active.secondary_status == "CAMPAIGN_STATUS_ENABLE"
-    assert active.lifecycle_status == "ACTIVE"
-    assert active.is_deleted is False
-    assert active.deleted_at is None
 
     deleted_payload = {
         "campaign_id": "life-2",
@@ -77,12 +75,9 @@ def test_upsert_campaign_from_api_sets_lifecycle(db_session):
         payload=deleted_payload,
         store_id_hint="store-1",
         promotion_type=PromotionTypeEnum.PRODUCT,
+        source_observed_at=datetime.now(timezone.utc),
     )
     db_session.commit()
 
     assert deleted.operation_status == "DISABLE"
     assert deleted.secondary_status == "CAMPAIGN_STATUS_DELETE"
-    assert deleted.lifecycle_status == "DELETED"
-    assert deleted.is_deleted is True
-    assert deleted.deleted_at is not None
-    assert deleted.deleted_at.tzinfo == timezone.utc

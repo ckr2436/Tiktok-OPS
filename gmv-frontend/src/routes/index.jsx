@@ -1,6 +1,6 @@
 // src/routes/index.jsx
 import { Suspense, lazy } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 // 布局
 import AppLayout from '../components/layout/AppLayout.jsx';
@@ -27,7 +27,7 @@ import TenantCreate from '../features/platform/tenants/pages/TenantCreate.jsx';
 // 平台管理员 · API 文档
 import ApiDocsView from '../features/platform/admin/pages/ApiDocsView.jsx';
 import PlatformPolicies from '../features/platform/admin/pages/PlatformPolicies.jsx';
-import MonitoringStrategiesPage from '../features/platform/gmvmax/pages/MonitoringStrategiesPage.jsx';
+import AutomationControlCenterPage from '../features/platform/gmvmax/pages/AutomationControlCenterPage.jsx';
 // 平台管理员 · 列表页
 import AdminList from '../features/platform/admin/pages/AdminList.jsx';
 // 平台管理员 · OAuth Provider Apps
@@ -35,7 +35,7 @@ import OAuthAppsPage from '../features/platform/oauth/pages/OAuthAppsPage.jsx';
 // 平台管理员 · 邮件服务器
 import EmailServerSettings from '../features/platform/email/pages/EmailServerSettings.jsx';
 
-// 平台 - KIE AI Key 管理
+// 平台 - API Key 管理
 import PlatformKieKeyPage from '../features/platform/kie_ai/pages/PlatformKieKeyPage.jsx';
 // 平台 - yt-dlp Cookies 管理
 import YtDlpCookiesPage from '../features/platform/yt_dlp_cookies/pages/YtDlpCookiesPage.jsx';
@@ -49,6 +49,7 @@ import UserEdit from '../features/tenants/users/pages/UserEdit.jsx';
 // 公司域：TikTok Business 授权 + GMV Max
 import TbAuthList from '../features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx';
 import TbAuthDetail from '../features/tenants/integrations/tiktok_business/pages/TbAuthDetail.jsx';
+import TiktokShopAuthList from '../features/tenants/integrations/tiktok_shop/pages/TiktokShopAuthList.jsx';
 import Loading from '../components/ui/Loading.jsx';
 import GmvMaxErrorBoundary from '../features/tenants/gmv_max/components/GmvMaxErrorBoundary.jsx';
 
@@ -58,14 +59,29 @@ const GmvMaxOverviewPage = lazy(() =>
 const GmvMaxCampaignDetailPage = lazy(() =>
   import('../features/tenants/gmv_max/pages/GmvMaxCampaignDetailPage.jsx'),
 );
+const WebsiteAdsPage = lazy(() =>
+  import('../features/tenants/website_ads/WebsiteAdsPage.jsx'),
+);
+const CommerceOverviewPage = lazy(() =>
+  import('../features/tenants/commerce/CommerceOverviewPage.jsx'),
+);
+const ProductSettingsPage = lazy(() =>
+  import('../features/tenants/commerce/ProductSettingsPage.jsx'),
+);
+const TiktokShopVideoAnalyticsPage = lazy(() =>
+  import('../features/tenants/integrations/tiktok_shop/pages/TiktokShopVideoAnalyticsPage.jsx'),
+);
 
-// 租户 - KIE Sora2 页面 + Whisper 工具
-import Sora2ImageToVideoPage from '../features/tenants/kie_ai/pages/Sora2ImageToVideoPage.jsx';
+// 租户 - AI 视频页面 + Whisper 工具
+import GenerateVideoPage from '../features/tenants/kie_ai/pages/GenerateVideoPage.jsx';
+import AiVideoMemberTasksPage from '../features/tenants/kie_ai/pages/AiVideoMemberTasksPage.jsx';
 import SubtitleRecognitionPage from '../features/tenants/openai_whisper/pages/SubtitleRecognitionPage.jsx';
 import SeoPage from '../features/tenants/hermes_agent/pages/SeoPage.jsx';
 import GeoPage from '../features/tenants/hermes_agent/pages/GeoPage.jsx';
 import VideoAnalysisPage from '../features/tenants/hermes_agent/pages/VideoAnalysisPage.jsx';
 import ScriptPage from '../features/tenants/hermes_agent/pages/ScriptPage.jsx';
+import ContentFactoryPage from '../features/tenants/hermes_agent/pages/ContentFactoryPage.jsx';
+import ContentFactoryMemberProjectsPage from '../features/tenants/hermes_agent/pages/ContentFactoryMemberProjectsPage.jsx';
 
 const router = createBrowserRouter([
   // 登录页
@@ -89,6 +105,31 @@ const router = createBrowserRouter([
           { index: true, element: <Dashboard /> },
           { path: 'dashboard', element: <Dashboard /> },
 
+          {
+            path: 'tenants/:wid/overview',
+            element: (
+              <TenantGuard>
+                <Suspense fallback={<Loading text="经营数据加载中…" />}>
+                  <CommerceOverviewPage />
+                </Suspense>
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/products',
+            element: (
+              <TenantGuard>
+                <Suspense fallback={<Loading text="商品设置加载中…" />}>
+                  <ProductSettingsPage />
+                </Suspense>
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/settings',
+            element: <Navigate to="../products" replace />,
+          },
+
           // 平台控制台（仅平台管理员）
           {
             path: 'platform',
@@ -99,12 +140,12 @@ const router = createBrowserRouter([
               { path: 'tenants', element: <TenantList /> },
               { path: 'tenants/create', element: <TenantCreate /> },
               { path: 'policies', element: <PlatformPolicies /> },
-              { path: 'gmvmax/monitoring-strategies', element: <MonitoringStrategiesPage /> },
+              { path: 'gmvmax/monitoring-strategies', element: <AutomationControlCenterPage /> },
               { path: 'apis', element: <ApiDocsView /> },
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
               { path: 'email', element: <EmailServerSettings /> },
-              // ★ 新增：平台 - KIE AI Key 管理
-              { path: 'kie-ai', element: <PlatformKieKeyPage /> },
+              // 平台 - API Key 管理
+              { path: 'api-keys', element: <PlatformKieKeyPage /> },
               // ★ 新增：平台 - yt-dlp Cookies 管理
               { path: 'yt-dlp-cookies', element: <YtDlpCookiesPage /> },
               { path: 'webshell', element: <PlatformWebShellPage /> },
@@ -155,6 +196,25 @@ const router = createBrowserRouter([
             ),
           },
 
+          {
+            path: 'tenants/:wid/tiktok-shop',
+            element: (
+              <TenantGuard>
+                <TiktokShopAuthList />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/tiktok-shop/videos',
+            element: (
+              <TenantGuard>
+                <Suspense fallback={<Loading text="短视频分析加载中…" />}>
+                  <TiktokShopVideoAnalyticsPage />
+                </Suspense>
+              </TenantGuard>
+            ),
+          },
+
           // 公司域 - GMV Max
           {
             path: 'tenants/:wid/gmvmax',
@@ -178,18 +238,52 @@ const router = createBrowserRouter([
             ),
             errorElement: <GmvMaxErrorBoundary />,
           },
-
-          // ★ 新增：公司域 - KIE Sora2 视频
           {
-            path: 'tenants/:wid/kie-ai/sora2',
+            path: 'tenants/:wid/website-ads',
             element: (
               <TenantGuard>
-                <Sora2ImageToVideoPage />
+                <Suspense fallback={<Loading text="独立站广告加载中…" />}>
+                  <WebsiteAdsPage />
+                </Suspense>
+              </TenantGuard>
+            ),
+          },
+
+          // 公司域 - 按模型生成视频
+          {
+            path: 'tenants/:wid/ai-video',
+            element: (
+              <TenantGuard>
+                <GenerateVideoPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/ai-video/member-tasks',
+            element: (
+              <TenantGuard>
+                <AiVideoMemberTasksPage />
               </TenantGuard>
             ),
           },
 
 
+          {
+            path: 'tenants/:wid/hermes-agent/content-factory',
+            element: (
+              <TenantGuard>
+                <ContentFactoryPage />
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/hermes-agent/member-content-factory',
+            element: (
+              <TenantGuard>
+                <ContentFactoryMemberProjectsPage />
+              </TenantGuard>
+            ),
+          },
           {
             path: 'tenants/:wid/hermes-agent/seo',
             element: (
@@ -242,4 +336,3 @@ const router = createBrowserRouter([
 ]);
 
 export default router;
-

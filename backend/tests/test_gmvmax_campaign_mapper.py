@@ -111,6 +111,7 @@ def test_select_active_campaigns_filters_and_limits(db_session):
                 campaign_id=str(i),
                 promotion_type=PromotionTypeEnum.PRODUCT,
                 status="ACTIVE",
+                lifecycle_status="ACTIVE",
                 operation_status="ENABLE",
                 ext_updated_time=base_time + timedelta(minutes=i),
                 is_deleted=False,
@@ -126,6 +127,7 @@ def test_select_active_campaigns_filters_and_limits(db_session):
             campaign_id="inactive",
             promotion_type=PromotionTypeEnum.PRODUCT,
             status="INACTIVE",
+            lifecycle_status="INACTIVE",
             operation_status="ENABLE",
             ext_updated_time=base_time + timedelta(hours=1),
             is_deleted=False,
@@ -140,6 +142,7 @@ def test_select_active_campaigns_filters_and_limits(db_session):
             campaign_id="deleted",
             promotion_type=PromotionTypeEnum.PRODUCT,
             status="DELETED",
+            lifecycle_status="DELETED",
             operation_status="DISABLE",
             ext_updated_time=base_time + timedelta(hours=2),
             is_deleted=True,
@@ -155,6 +158,8 @@ def test_select_active_campaigns_filters_and_limits(db_session):
         advertiser_id=None,
         store_id=None,
         level="CREATIVE_10MIN",
+        category="GMVMAX",
+        task_name="gmvmax.creative_metrics_10min",
         interval_minutes=10,
         enabled=True,
         promotion_type="PRODUCT",
@@ -162,9 +167,11 @@ def test_select_active_campaigns_filters_and_limits(db_session):
     )
 
     campaigns = service._select_active_campaigns(db_session, strategy)
-    assert len(campaigns) == 30
+    # No explicit strategy cap means all matching campaigns.  A hidden
+    # default limit here caused older campaigns to be starved indefinitely.
+    assert len(campaigns) == 35
     # Ordered by ext_updated_time desc, so the highest numeric campaign_id is first
     assert campaigns[0].campaign_id == "34"
-    assert campaigns[-1].campaign_id == "5"
+    assert campaigns[-1].campaign_id == "0"
     assert all(c.operation_status in {None, "ENABLE"} for c in campaigns)
     assert all(c.status == "ACTIVE" for c in campaigns)

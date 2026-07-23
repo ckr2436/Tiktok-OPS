@@ -1,7 +1,7 @@
 # app/features/tenants/oauth_ttb/router.py
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Request, Response, Query, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -14,9 +14,13 @@ from app.data.db import get_db
 from app.data.models.oauth_ttb import (
     OAuthProviderApp,
     OAuthAccountTTB,
+    OAuthTikTokAccount,
 )
 from app.services.oauth_ttb import (
     create_authz_session,
+    create_tiktok_account_authz_session,
+    ensure_tiktok_account_oauth_tables,
+    revoke_tiktok_account_oauth,
     update_oauth_account_alias,
     revoke_oauth_account,
 )
@@ -108,6 +112,152 @@ def create_authz(
         auth_url=url,
         expires_at=sess.expires_at.isoformat() if sess.expires_at else "",
     )
+
+
+class TikTokAccountAuthzCreateReq(BaseModel):
+    provider_app_id: int = Field(gt=0)
+    return_to: str | None = Field(default=None, max_length=512)
+    alias: str | None = Field(default=None, max_length=128)
+    scopes: list[str] | None = Field(default=None)
+
+
+class TikTokAccountAuthzCreateResp(BaseModel):
+    state: str
+    auth_url: str
+    expires_at: str
+
+
+@router.post("/tiktok-accounts/authz", response_model=TikTokAccountAuthzCreateResp)
+def create_tiktok_account_authz(
+    workspace_id: int,
+    req: TikTokAccountAuthzCreateReq,
+    http: Request,
+    response: Response,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    sess, url = create_tiktok_account_authz_session(
+        db=db,
+        workspace_id=int(workspace_id),
+        provider_app_id=int(req.provider_app_id),
+        created_by_user_id=int(me.id),
+        client_ip=client_ip(http),
+        user_agent=http.headers.get("user-agent"),
+        return_to=req.return_to,
+        alias=req.alias,
+        scopes=req.scopes,
+    )
+    response.set_cookie(
+        "gmv_tiktok_account_oauth_state",
+        sess.state,
+        max_age=int(getattr(settings, "OAUTH_SESSION_TTL_SECONDS", 3600)),
+        path="/api/oauth/tiktok-business/callback",
+        secure=bool(getattr(settings, "COOKIE_SECURE", True)),
+        httponly=True,
+        samesite=str(getattr(settings, "COOKIE_SAMESITE", "lax") or "lax"),
+    )
+    return TikTokAccountAuthzCreateResp(
+        state=sess.state,
+        auth_url=url,
+        expires_at=sess.expires_at.isoformat() if sess.expires_at else "",
+    )
+
+
+class TikTokAccountItem(BaseModel):
+    account_id: int
+    provider_app_id: int
+    alias: str | None
+    open_id: str
+    creator_id: str | None = None
+    status: str
+    scope: str | None = None
+    expires_at: str | None = None
+    refresh_expires_at: str | None = None
+    created_at: str
+
+
+class TikTokAccountListResp(BaseModel):
+    items: list[TikTokAccountItem]
+
+
+@router.get("/tiktok-accounts", response_model=TikTokAccountListResp)
+def list_tiktok_accounts(
+    workspace_id: int,
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    ensure_tiktok_account_oauth_tables(db)
+    accounts = (
+        db.execute(
+            select(OAuthTikTokAccount)
+            .where(
+                OAuthTikTokAccount.workspace_id == int(workspace_id),
+                OAuthTikTokAccount.status == "active",
+            )
+            .order_by(OAuthTikTokAccount.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    items: list[TikTokAccountItem] = []
+    for acc in accounts:
+        scope_json = acc.scope_json if isinstance(acc.scope_json, dict) else {}
+        items.append(
+            TikTokAccountItem(
+                account_id=int(acc.id),
+                provider_app_id=int(acc.provider_app_id),
+                alias=acc.alias,
+                open_id=str(acc.open_id),
+                creator_id=acc.creator_id,
+                status=acc.status,
+                scope=scope_json.get("value") if isinstance(scope_json, dict) else None,
+                expires_at=acc.expires_at.isoformat() if acc.expires_at else None,
+                refresh_expires_at=acc.refresh_expires_at.isoformat() if acc.refresh_expires_at else None,
+                created_at=acc.created_at.isoformat() if acc.created_at else "",
+            )
+        )
+    return TikTokAccountListResp(items=items)
+
+
+class TikTokAccountRevokeResp(BaseModel):
+    removed_accounts: int
+
+
+@router.post("/tiktok-accounts/{account_id}/revoke", response_model=TikTokAccountRevokeResp)
+async def revoke_tiktok_account(
+    workspace_id: int,
+    account_id: int,
+    remote: bool = Query(True),
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    result = await revoke_tiktok_account_oauth(
+        db=db,
+        workspace_id=int(workspace_id),
+        account_id=int(account_id),
+        remote=bool(remote),
+    )
+    return TikTokAccountRevokeResp(**result)
+
+
+@router.delete("/tiktok-accounts/{account_id}", response_model=TikTokAccountRevokeResp)
+def hard_delete_tiktok_account(
+    workspace_id: int,
+    account_id: int,
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    ensure_tiktok_account_oauth_tables(db)
+    removed = (
+        db.execute(
+            delete(OAuthTikTokAccount).where(
+                OAuthTikTokAccount.id == int(account_id),
+                OAuthTikTokAccount.workspace_id == int(workspace_id),
+            )
+        ).rowcount
+        or 0
+    )
+    return TikTokAccountRevokeResp(removed_accounts=int(removed))
 
 
 # ----------- 绑定列表（仅租户管理员）-----------
@@ -311,4 +461,3 @@ def hard_delete_all_bindings(
     ).rowcount or 0
 
     return HardDeleteResp(removed_advertisers=int(del_advs), removed_accounts=int(del_acc))
-

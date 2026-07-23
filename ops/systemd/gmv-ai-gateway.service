@@ -1,0 +1,24 @@
+[Unit]
+Description=GMV AI provider routing gateway
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gmv
+Group=gmv
+WorkingDirectory=/opt/gmv/GMV-OPS/backend
+EnvironmentFile=-/opt/gmv/GMV-OPS/backend/.env
+EnvironmentFile=/etc/gmv/ai-gateway.env
+ExecStart=/opt/gmv/python3.13/bin/python -m uvicorn app.services.ai_routing.gateway_server:app --host 127.0.0.1 --port 8650 --workers 2 --no-access-log
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+TasksMax=128
+MemoryHigh=768M
+MemoryMax=1024M
+
+[Install]
+WantedBy=multi-user.target

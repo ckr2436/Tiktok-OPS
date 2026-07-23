@@ -149,10 +149,10 @@ async def create_job(
     translate: bool,
     target_language: Optional[str],
     show_bilingual: bool,
-    do_subtitle: bool,
-    do_contact_sheet: bool,
-    contact_interval: Optional[float],
-    do_download_only: bool,
+    do_subtitle: bool = True,
+    do_contact_sheet: bool = False,
+    contact_interval: Optional[float] = None,
+    do_download_only: bool = False,
     db: Session,
 ) -> TranscriptionJobCreatedResponse:
     share_url = (share_url or "").strip()

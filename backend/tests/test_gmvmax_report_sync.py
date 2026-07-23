@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 from app.data.db import SessionLocal
+from app.data.models.gmv_restructured import GmvCreativeMetrics10Min
 from app.data.models.gmvmax_campaign_metrics import (
     GmvmaxProductCampaignMetricsDaily,
     GmvmaxProductCampaignMetricsHourly,
@@ -12,6 +13,7 @@ from app.data.models.gmvmax_campaign_snapshots import (
     GmvmaxProductCampaignSnapshotBatch,
     GmvmaxProductCampaignSnapshotRow,
 )
+from app.data.models.gmvmax_sync_state import GmvCreative10MinBatchManifest
 from app.gmvmax.services.campaign_report_sync import (
     SyncIdentifiers,
     sync_campaign_metrics,
@@ -23,7 +25,7 @@ from app.gmvmax.services.gmvmax_value_parser import (
     parse_stat_time_hour,
     to_decimal,
 )
-from app.providers.tiktok_business.gmvmax_client import GMVMaxReportData
+from app.providers.tiktok_business.gmvmax_client import GMVMaxReportData, PageInfo
 
 
 class DummyReportClient:
@@ -31,7 +33,17 @@ class DummyReportClient:
         self.rows = rows
 
     async def gmv_max_report_get(self, request):  # noqa: D401
-        return SimpleNamespace(data=GMVMaxReportData(list=self.rows))
+        return SimpleNamespace(
+            data=GMVMaxReportData(
+                list=self.rows,
+                page_info=PageInfo(
+                    page=int(request.page or 1),
+                    page_size=50,
+                    total_page=1,
+                    has_more=False,
+                ),
+            )
+        )
 
 
 def test_fact_upsert_idempotent(db_session):
@@ -218,6 +230,7 @@ def test_metrics_concurrent_workers():
                     end_date=date(2024, 1, 1),
                 )
             )
+            session.commit()
         finally:
             session.close()
 
@@ -309,21 +322,88 @@ def test_cleanup_campaign_tables(db_session):
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
-    db_session.add_all([old_batch, recent_batch])
+    old_creative_metric = GmvCreativeMetrics10Min(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        store_id="store",
+        campaign_id="c1",
+        item_group_id="product-1",
+        creative_id="creative-old",
+        stat_time_day=old_batch_time.date(),
+        snapshot_at=old_batch_time,
+    )
+    recent_creative_metric = GmvCreativeMetrics10Min(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        store_id="store",
+        campaign_id="c1",
+        item_group_id="product-1",
+        creative_id="creative-recent",
+        stat_time_day=recent_batch_time.date(),
+        snapshot_at=recent_batch_time,
+    )
+    old_creative_manifest = GmvCreative10MinBatchManifest(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        store_id="store",
+        campaign_id="c1",
+        stat_time_day=old_batch_time.date(),
+        snapshot_at=old_batch_time,
+        complete=True,
+        row_count=1,
+        source_observed_at=old_batch_time,
+    )
+    recent_creative_manifest = GmvCreative10MinBatchManifest(
+        workspace_id=1,
+        auth_id=2,
+        advertiser_id="adv",
+        store_id="store",
+        campaign_id="c1",
+        stat_time_day=recent_batch_time.date(),
+        snapshot_at=recent_batch_time,
+        complete=True,
+        row_count=1,
+        source_observed_at=recent_batch_time,
+    )
+    db_session.add_all(
+        [
+            old_batch,
+            recent_batch,
+            old_creative_metric,
+            recent_creative_metric,
+            old_creative_manifest,
+            recent_creative_manifest,
+        ]
+    )
     db_session.commit()
 
-    cleanup_campaign_tables(
+    summary = cleanup_campaign_tables(
         db_session,
         now=datetime.utcnow(),
         hourly_retention_days=90,
         daily_retention_days=730,
         snapshot_retention_days=90,
+        creative_10min_retention_days=90,
     )
 
     remaining_hours = db_session.query(GmvmaxProductCampaignMetricsHourly).all()
     remaining_batches = db_session.query(GmvmaxProductCampaignSnapshotBatch).all()
+    remaining_creative_metrics = db_session.query(GmvCreativeMetrics10Min).all()
+    remaining_creative_manifests = db_session.query(
+        GmvCreative10MinBatchManifest
+    ).all()
     assert len(remaining_hours) == 1
     assert remaining_hours[0].stat_time_hour == recent_hour
     assert len(remaining_batches) == 1
     assert remaining_batches[0].snapshot_at == recent_batch_time
-
+    assert [row.creative_id for row in remaining_creative_metrics] == [
+        "creative-recent"
+    ]
+    assert [row.snapshot_at for row in remaining_creative_manifests] == [
+        recent_batch_time
+    ]
+    assert summary["creative_10min_metrics"] == 1
+    assert summary["creative_10min_manifests"] == 1

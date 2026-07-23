@@ -49,10 +49,15 @@ def _mark_mutated(sess: ORMSession) -> None:
     sess.info["has_writes"] = True
 
 
-# 每个事务一开始就重置，避免上一事务的标记串味
-@event.listens_for(ORMSession, "after_begin")
-def _on_tx_begin(sess: ORMSession, tx, connection) -> None:
-    _reset_mutation_flag(sess)
+# 根事务结束后重置，避免上一事务的标记串味，同时保留嵌套事务中的写入标记。
+@event.listens_for(ORMSession, "after_transaction_end")
+def _on_tx_end(sess: ORMSession, tx) -> None:
+    # Keep the write marker across root transaction startup and nested
+    # savepoints. Reset it only after the root transaction has actually ended.
+    # Otherwise a first-statement DML or DML inside begin_nested() can be
+    # mistaken for a read-only request and rolled back by get_db().
+    if getattr(tx, "parent", None) is None:
+        _reset_mutation_flag(sess)
 
 
 # ORM flush 产生 new/dirty/deleted 即认为有写
@@ -123,4 +128,3 @@ def get_db() -> Generator[ORMSession, None, None]:
             raise
     finally:
         db.close()
-

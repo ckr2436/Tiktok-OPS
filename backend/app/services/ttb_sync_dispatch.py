@@ -251,10 +251,12 @@ def dispatch_sync(
         "run_id": run_id,
         "idempotency_key": run.idempotency_key,
     }
-    from app.celery_app import celery_app  # noqa: WPS433 (lazy import to avoid cycles)
+    from app.celery_app import (  # noqa: WPS433 (lazy import to avoid cycles)
+        TTB_SYNC_QUEUE,
+        celery_app,
+    )
 
-    queue_name = "gmvmax"
-    task = celery_app.send_task(task_name, kwargs=payload, queue=queue_name)
+    task = celery_app.send_task(task_name, kwargs=payload, queue=TTB_SYNC_QUEUE)
 
     persisted_run = db.get(ScheduleRun, run_id)
     if persisted_run:

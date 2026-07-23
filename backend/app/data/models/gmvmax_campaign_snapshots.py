@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint, text
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
 from sqlalchemy.dialects.mysql import DATETIME as MySQL_DATETIME
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,13 +26,13 @@ class _SnapshotRowMixin:
     cost_per_order: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
@@ -66,13 +66,13 @@ class GmvmaxProductCampaignSnapshotBatch(Base):
     snapshot_at: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 
@@ -128,13 +128,13 @@ class GmvmaxLiveCampaignSnapshotBatch(Base):
     snapshot_at: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        MySQL_DATETIME(fsp=6), nullable=False, server_default="CURRENT_TIMESTAMP(6)"
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
     updated_at: Mapped[datetime] = mapped_column(
         MySQL_DATETIME(fsp=6),
         nullable=False,
-        server_default="CURRENT_TIMESTAMP(6)",
-        server_onupdate="CURRENT_TIMESTAMP(6)",
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
 

@@ -117,7 +117,8 @@ GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
         "max_range": timedelta(days=30),
     },
     GMVMaxReportLevel.PRODUCT: {
-        "dimensions": ("campaign_id", "item_group_id", "stat_time_day"),
+        # campaign_id is a filter at PRODUCT level, not a supported dimension.
+        "dimensions": ("item_group_id", "stat_time_day"),
         "metrics": (
             "cost",
             "orders",
@@ -128,7 +129,7 @@ GMV_REPORT_CONFIG: Final[dict[GMVMaxReportLevel, dict[str, object]]] = {
         "max_range": timedelta(days=30),
     },
     GMVMaxReportLevel.CREATIVE: {
-        "dimensions": ("campaign_id", "item_group_id", "item_id"),
+        "dimensions": ("campaign_id", "item_group_id", "item_id", "stat_time_day"),
         "metrics": GMVMAX_CREATIVE_METRICS,
         "max_range": timedelta(days=30),
     },

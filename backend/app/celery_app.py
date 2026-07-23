@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import json
+import importlib
 import logging
 import os
-import threading
 from typing import Sequence
 from urllib.parse import urlparse
 
@@ -48,6 +48,13 @@ BACKEND_URL = (
 celery_app = Celery("gmv")
 celery_app.conf.broker_url = BROKER_URL
 celery_app.conf.result_backend = BACKEND_URL
+TTB_SYNC_QUEUE = "gmv.tasks.events"
+TIKTOK_SHOP_TASK_QUEUE = "tiktok_shop"
+VIDEO_ANALYSIS_TASK_QUEUE = getattr(
+    settings,
+    "HERMES_VIDEO_ANALYSIS_TASK_QUEUE",
+    "gmv.tasks.video_analysis",
+)
 
 if _use_ssl(celery_app.conf.broker_url):
     celery_app.conf.broker_use_ssl = True
@@ -83,13 +90,26 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
 
     required_queues = [
         default_q,
-        "gmv.tasks.events",
+        TTB_SYNC_QUEUE,
         "gmv.tasks.maintenance",
-        "gmv.tasks.kie_ai",
+        getattr(settings, "AI_VIDEO_TASK_QUEUE", "gmv.tasks.ai_video"),
         getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent"),
         "gmvmax",
+        "gmvmax_control",
         "gmvmax_sync",
+        getattr(settings, "WEBSITE_ADS_TASK_QUEUE", "website_ads"),
+        getattr(settings, "WEBSITE_ADS_MEDIA_TASK_QUEUE", "website_ads_media"),
+        TIKTOK_SHOP_TASK_QUEUE,
+        VIDEO_ANALYSIS_TASK_QUEUE,
     ]
+    try:
+        hermes_slots = max(1, min(8, int(os.getenv("HERMES_BROWSER_SLOTS", "1"))))
+    except ValueError:
+        hermes_slots = 1
+    hermes_base_q = str(getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent"))
+    legacy_slot_queues = str(os.getenv("HERMES_ENABLE_LEGACY_SLOT_QUEUES", "")).lower() in {"1", "true", "yes"}
+    if legacy_slot_queues and hermes_slots > 1:
+        required_queues.extend(f"{hermes_base_q}.slot{slot}" for slot in range(hermes_slots))
     whisper_q = getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None)
     if whisper_q:
         required_queues.append(str(whisper_q))
@@ -103,6 +123,9 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
 default_queue_name, queue_objs = _load_queues()
 WHISPER_TASK_QUEUE = getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None) or default_queue_name
 HERMES_AGENT_TASK_QUEUE = getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent")
+AI_VIDEO_TASK_QUEUE = getattr(settings, "AI_VIDEO_TASK_QUEUE", "gmv.tasks.ai_video")
+WEBSITE_ADS_MEDIA_TASK_QUEUE = getattr(settings, "WEBSITE_ADS_MEDIA_TASK_QUEUE", "website_ads_media")
+WEBSITE_ADS_TASK_QUEUE = getattr(settings, "WEBSITE_ADS_TASK_QUEUE", "website_ads")
 
 celery_app.conf.update(
     task_serializer="json",
@@ -129,11 +152,24 @@ celery_app.conf.update(
 )
 
 celery_app.conf.task_routes = {
+    "openai_whisper.website_ads_asset_media_cache": {"queue": WEBSITE_ADS_MEDIA_TASK_QUEUE},
+    "gmvmax.creative_asset_media_cache": {"queue": WEBSITE_ADS_MEDIA_TASK_QUEUE},
+    "website_ads.upload_video": {"queue": WEBSITE_ADS_MEDIA_TASK_QUEUE},
     "openai_whisper.*": {"queue": WHISPER_TASK_QUEUE},
-    "kie_ai.sora2.*": {"queue": "gmv.tasks.kie_ai"},
+    "ai_video.result.*": {"queue": AI_VIDEO_TASK_QUEUE},
+    "bandianwa.video.*": {"queue": AI_VIDEO_TASK_QUEUE},
+    "globalaiopc.video.*": {"queue": AI_VIDEO_TASK_QUEUE},
+    "hermes_content_factory.*": {"queue": HERMES_AGENT_TASK_QUEUE},
     "hermes_agent.*": {"queue": HERMES_AGENT_TASK_QUEUE},
-    "ttb.sync.*": {"queue": "gmv.tasks.events"},
+    "ttb.sync.*": {"queue": TTB_SYNC_QUEUE},
+    "tiktok_shop.*": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    "tiktok_shop_video_analysis.*": {"queue": VIDEO_ANALYSIS_TASK_QUEUE},
+    # Operator pauses must never sit behind scheduled reporting or Guard work.
+    # Website Ads control-plane work has its own worker and queue.
+    "gmvmax.execute_campaign_pause_intent": {"queue": "gmvmax_control"},
+    "gmvmax.recover_campaign_pause_intents": {"queue": "gmvmax_control"},
     "gmvmax.*": {"queue": "gmvmax"},
+    "website_ads.*": {"queue": WEBSITE_ADS_TASK_QUEUE},
 }
 celery_app.conf.task_routes.update(
     {
@@ -144,10 +180,170 @@ celery_app.conf.task_routes.update(
 
 beat_schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
 beat_schedule.setdefault(
+    "ai_provider_model_discovery",
+    {
+        "task": "ai_provider.discover_all",
+        "schedule": 6 * 60 * 60,
+        "options": {"queue": default_queue_name},
+    },
+)
+beat_schedule.setdefault(
+    "tiktok_shop_fast_syncs",
+    {
+        "task": "tiktok_shop.dispatch_fast_syncs",
+        "schedule": int(getattr(settings, "TT_SHOP_FAST_SYNC_INTERVAL_SECONDS", 5 * 60)),
+        "options": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "tiktok_shop_catalog_syncs",
+    {
+        "task": "tiktok_shop.dispatch_catalog_syncs",
+        "schedule": int(getattr(settings, "TT_SHOP_CATALOG_SYNC_INTERVAL_SECONDS", 15 * 60)),
+        "options": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "tiktok_shop_finance_syncs",
+    {
+        "task": "tiktok_shop.dispatch_finance_syncs",
+        "schedule": int(getattr(settings, "TT_SHOP_FINANCE_SYNC_INTERVAL_SECONDS", 60 * 60)),
+        "options": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "tiktok_shop_refresh_tokens",
+    {
+        "task": "tiktok_shop.refresh_tokens",
+        "schedule": int(getattr(settings, "TT_SHOP_TOKEN_REFRESH_INTERVAL_SECONDS", 6 * 60 * 60)),
+        "options": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "tiktok_shop_flash_sale_reconciliation",
+    {
+        "task": "tiktok_shop.reconcile_flash_sales",
+        "schedule": int(
+            getattr(
+                settings,
+                "TT_SHOP_FLASH_SALE_AUTOMATION_INTERVAL_SECONDS",
+                15 * 60,
+            )
+        ),
+        "options": {"queue": TIKTOK_SHOP_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_monitor_cycle",
+    {
+        "task": "website_ads.monitor_cycle",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_MONITOR_INTERVAL_SECONDS", 180)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_daily_report_cycle",
+    {
+        "task": "website_ads.daily_report_cycle",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_DAILY_REPORT_INTERVAL_SECONDS", 10 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_asset_library_cycle",
+    {
+        "task": "website_ads.asset_library_cycle",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_ASSET_SYNC_INTERVAL_SECONDS", 10 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_targeting_catalog_sync",
+    {
+        "task": "website_ads.targeting_catalog_sync",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_TARGETING_CATALOG_SYNC_INTERVAL_SECONDS", 24 * 60 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_asset_media_cache_dispatch",
+    {
+        "task": "website_ads.asset_media_cache_dispatch",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_MEDIA_CACHE_INTERVAL_SECONDS", 2 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_creative_asset_media_cache_dispatch",
+    {
+        "task": "gmvmax.creative_asset_media_cache_dispatch",
+        "schedule": int(getattr(settings, "GMVMAX_MEDIA_CACHE_INTERVAL_SECONDS", 2 * 60)),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_asset_analysis_dispatch",
+    {
+        "task": "website_ads.asset_analysis_dispatch",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_ASSET_ANALYSIS_INTERVAL_SECONDS", 2 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "website_ads_asset_expansion_cycle",
+    {
+        "task": "website_ads.asset_expansion_cycle",
+        "schedule": int(getattr(settings, "WEBSITE_ADS_ASSET_EXPANSION_INTERVAL_SECONDS", 5 * 60)),
+        "options": {"queue": WEBSITE_ADS_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
     "gmvmax_creative_heating_cycle",
     {
         "task": "gmvmax.creative_heating_cycle",
         "schedule": int(getattr(settings, "GMVMAX_HEATING_CYCLE_INTERVAL", 15 * 60)),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_smart_guard_cycle",
+    {
+        "task": "gmvmax.smart_guard_cycle",
+        "schedule": int(getattr(settings, "GMVMAX_SMART_GUARD_INTERVAL", 60)),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_creative_guard_cycle",
+    {
+        "task": "gmvmax.creative_guard_cycle",
+        "schedule": int(getattr(settings, "GMVMAX_CREATIVE_GUARD_INTERVAL", 60)),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_hermes_advisor_cycle",
+    {
+        "task": "gmvmax.hermes_advisor_cycle",
+        "schedule": int(getattr(settings, "GMVMAX_HERMES_ADVISOR_INTERVAL", 10 * 60)),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_hermes_daily_report",
+    {
+        "task": "gmvmax.hermes_daily_report",
+        "schedule": crontab(
+            minute=int(getattr(settings, "GMVMAX_HERMES_DAILY_REPORT_LOCAL_MINUTE", 30)),
+        ),
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_creative_metrics_10min",
+    {
+        "task": "gmvmax.sync_creative_metrics_10min",
+        "schedule": int(getattr(settings, "GMVMAX_CREATIVE_METRICS_10MIN_INTERVAL", 60)),
         "options": {"queue": "gmvmax"},
     },
 )
@@ -182,6 +378,22 @@ beat_schedule.setdefault(
     },
 )
 beat_schedule.setdefault(
+    "ai_video_recover_stale_result_downloads",
+    {
+        "task": "ai_video.result.recover_stale_downloads",
+        "schedule": 5 * 60,
+        "options": {"queue": AI_VIDEO_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "bandianwa_recover_stale_video_polling",
+    {
+        "task": "bandianwa.video.recover_stale_polling",
+        "schedule": 5 * 60,
+        "options": {"queue": AI_VIDEO_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
     "openai_whisper_cleanup_jobs",
     {
         "task": "openai_whisper.cleanup_jobs",
@@ -189,55 +401,124 @@ beat_schedule.setdefault(
         "options": {"queue": WHISPER_TASK_QUEUE},
     },
 )
+beat_schedule.setdefault(
+    "hermes_content_factory_self_heal",
+    {
+        "task": "hermes_content_factory.self_heal",
+        "schedule": 60,
+        "options": {"queue": HERMES_AGENT_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_account_sync_dispatch",
+    {
+        "task": "gmvmax.dispatch_account_syncs",
+        "schedule": 60,
+        "options": {"queue": "gmvmax"},
+    },
+)
+beat_schedule.setdefault(
+    "gmvmax_recover_campaign_pause_intents",
+    {
+        "task": "gmvmax.recover_campaign_pause_intents",
+        "schedule": 30,
+        "options": {"queue": "gmvmax_control"},
+    },
+)
 celery_app.conf.beat_schedule = beat_schedule
 
 GMVMAX_SYNC_INTERVAL_OPTIONS = (10, 15, 20, 30)
-GMVMAX_SYNC_TASK_NAME = "ttb.sync_gmvmax"
+
+_CORE_TASK_MODULES = (
+    "app.tasks.ai_provider_tasks",
+    "app.tasks.oauth_tasks",
+    "app.tasks.tiktok_shop_tasks",
+    "app.tasks.tiktok_shop_video_analysis_tasks",
+    "app.tasks.ttb_sync_tasks",
+    "app.tasks.kie_ai.video_result_download_tasks",
+    "app.tasks.bandianwa.video_tasks",
+    "app.tasks.globalaiopc.video_tasks",
+    "app.tasks.ttb_gmvmax_tasks",
+    "app.tasks.website_ads_tasks",
+    "app.tasks.hermes_agent.tasks",
+    "app.tasks.hermes_agent.content_factory_tasks",
+    "app.gmvmax.tasks_sync",
+)
+_TIKTOK_SHOP_TASK_MODULE = "app.tasks.tiktok_shop_tasks"
+_VIDEO_ANALYSIS_TASK_MODULE = "app.tasks.tiktok_shop_video_analysis_tasks"
+_HERMES_TASK_MODULES = (
+    "app.tasks.hermes_agent.tasks",
+    "app.tasks.hermes_agent.content_factory_tasks",
+)
+_AI_VIDEO_TASK_MODULES = (
+    "app.tasks.kie_ai.video_result_download_tasks",
+    "app.tasks.bandianwa.video_tasks",
+    "app.tasks.globalaiopc.video_tasks",
+)
+_WHISPER_TASK_MODULE = "app.features.tenants.openai_whisper.tasks"
+_VIDEO_TRANSCRIPT_TASK_MODULE = "app.tasks.tiktok_shop_video_transcript_tasks"
+_WHISPER_TASK_MODULES = (_WHISPER_TASK_MODULE, _VIDEO_TRANSCRIPT_TASK_MODULE)
 
 
-def _gmvmax_schedule_key(minutes: int) -> str:
-    return f"gmvmax-sync-{int(minutes)}min"
+def task_modules_for_worker_queue(worker_queue: str | None) -> tuple[str, ...]:
+    """Return the smallest task registry needed by one queue-owned worker.
+
+    An empty queue means API, Beat, tests, or an unspecialized worker and keeps
+    the complete registry for backwards compatibility. Queue names themselves
+    remain deployment configuration, not campaign behavior.
+    """
+
+    queue = str(worker_queue or "").strip()
+    hermes_queue = str(HERMES_AGENT_TASK_QUEUE)
+    if queue == hermes_queue or queue.startswith(f"{hermes_queue}.slot"):
+        return _HERMES_TASK_MODULES
+    if queue == str(AI_VIDEO_TASK_QUEUE):
+        return _AI_VIDEO_TASK_MODULES
+    if queue == str(WHISPER_TASK_QUEUE):
+        return _WHISPER_TASK_MODULES
+    if queue == TIKTOK_SHOP_TASK_QUEUE:
+        return (_TIKTOK_SHOP_TASK_MODULE,)
+    if queue == str(VIDEO_ANALYSIS_TASK_QUEUE):
+        return (_VIDEO_ANALYSIS_TASK_MODULE,)
+    return _CORE_TASK_MODULES + _WHISPER_TASK_MODULES
 
 
-_gmvmax_schedule_lock = threading.Lock()
+def task_modules_for_runtime(
+    worker_queue: str | None,
+    runtime_role: str | None,
+) -> tuple[str, ...]:
+    """Avoid consumer registries in API producers and the Beat scheduler."""
+    role = str(runtime_role or "").strip().lower()
+    if role in {"producer", "beat", "scheduler"}:
+        return ()
+    return task_modules_for_worker_queue(worker_queue)
 
 
-def set_gmvmax_sync_interval(interval_minutes: int) -> int:
-    normalized = interval_minutes if interval_minutes in GMVMAX_SYNC_INTERVAL_OPTIONS else GMVMAX_SYNC_INTERVAL_OPTIONS[0]
-    with _gmvmax_schedule_lock:
-        schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
-        for minutes in GMVMAX_SYNC_INTERVAL_OPTIONS:
-            schedule.pop(_gmvmax_schedule_key(minutes), None)
-        schedule[_gmvmax_schedule_key(normalized)] = {
-            "task": GMVMAX_SYNC_TASK_NAME,
-            "schedule": float(normalized) * 60.0,
-            "options": {"queue": "gmvmax"},
-        }
-        celery_app.conf.beat_schedule = schedule
-        celery_app.conf.gmvmax_sync_interval_minutes = normalized
-    return normalized
+def _register_task_modules(
+    worker_queue: str | None,
+    runtime_role: str | None,
+) -> None:
+    modules = task_modules_for_runtime(worker_queue, runtime_role)
+    for module_name in modules:
+        if module_name != _WHISPER_TASK_MODULE:
+            importlib.import_module(module_name)
+            continue
+        try:
+            importlib.import_module(module_name)
+            from app.features.tenants.openai_whisper import runtime_patches
+
+            runtime_patches.apply()
+        except ModuleNotFoundError as exc:
+            if exc.name == "yt_dlp":
+                logging.getLogger(__name__).warning(
+                    "skip registering Whisper tasks: missing optional dependency %s",
+                    exc.name,
+                )
+                continue
+            raise
 
 
-def get_gmvmax_sync_interval() -> int:
-    return int(getattr(celery_app.conf, "gmvmax_sync_interval_minutes", GMVMAX_SYNC_INTERVAL_OPTIONS[0]))
-
-
-set_gmvmax_sync_interval(int(getattr(settings, "GMVMAX_SYNC_INTERVAL_MINUTES", GMVMAX_SYNC_INTERVAL_OPTIONS[0])))
-
-import app.tasks.oauth_tasks  # noqa: F401
-import app.tasks.ttb_sync_tasks  # noqa: F401
-import app.tasks.kie_ai.sora.sora2_image_to_video_tasks  # noqa: F401
-import app.tasks.ttb_gmvmax_tasks  # noqa: F401
-import app.tasks.hermes_agent.tasks  # noqa: F401
-import app.gmvmax.tasks_sync  # noqa: F401
-
-try:
-    import app.features.tenants.openai_whisper.tasks  # noqa: F401
-    from app.features.tenants.openai_whisper import runtime_patches as openai_whisper_runtime_patches
-
-    openai_whisper_runtime_patches.apply()
-except ModuleNotFoundError as exc:
-    if exc.name == "yt_dlp":
-        logging.getLogger(__name__).warning("skip registering Whisper tasks: missing optional dependency %s", exc.name)
-    else:
-        raise
+_register_task_modules(
+    os.getenv("GMV_CELERY_WORKER_QUEUE"),
+    os.getenv("GMV_CELERY_RUNTIME_ROLE"),
+)

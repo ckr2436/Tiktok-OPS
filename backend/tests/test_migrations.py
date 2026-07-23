@@ -13,6 +13,7 @@ BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
 MIGRATIONS_DIR = BACKEND_DIR / "migrations"
 BASE_REVISION = "0007_platform_policy_v1"
+TARGET_REVISION = "0008_ttb_sync_schedule_stats"
 
 
 def _make_config(db_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> alembic.config.Config:
@@ -100,7 +101,7 @@ def _fetch_task_names(db_path: pathlib.Path) -> set[str]:
         engine.dispose()
 
 
-@pytest.mark.parametrize("target", ["head"])
+@pytest.mark.parametrize("target", [TARGET_REVISION])
 def test_migration_0008_creates_stats_column(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
@@ -115,7 +116,7 @@ def test_migration_0008_creates_stats_column(
     assert "stats_json" in column_names
 
     seeded = _fetch_task_names(db_path)
-    assert {"ttb.sync.bc", "ttb.sync.advertisers", "ttb.sync.stores", "ttb.sync.products", "ttb.sync.all"}.issubset(seeded)
+    assert {"ttb.sync.bc", "ttb.sync.advertisers", "ttb.sync.shops", "ttb.sync.products", "ttb.sync.all"}.issubset(seeded)
 
 
 def test_migration_0008_skips_existing_column(
@@ -147,7 +148,7 @@ def test_migration_0008_skips_existing_column(
         engine.dispose()
 
     cfg = _make_config(db_path, monkeypatch)
-    alembic.command.upgrade(cfg, "head")
+    alembic.command.upgrade(cfg, TARGET_REVISION)
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     try:
@@ -168,7 +169,7 @@ def test_migration_0008_downgrade_and_reupgrade(
     _prepare_schema(db_path)
     cfg = _make_config(db_path, monkeypatch)
 
-    alembic.command.upgrade(cfg, "head")
+    alembic.command.upgrade(cfg, TARGET_REVISION)
 
     columns = _get_columns(db_path)
     assert any(col["name"] == "stats_json" for col in columns)
@@ -178,6 +179,6 @@ def test_migration_0008_downgrade_and_reupgrade(
     columns = _get_columns(db_path)
     assert not any(col["name"] == "stats_json" for col in columns)
 
-    alembic.command.upgrade(cfg, "head")
+    alembic.command.upgrade(cfg, TARGET_REVISION)
     columns = _get_columns(db_path)
     assert any(col["name"] == "stats_json" for col in columns)

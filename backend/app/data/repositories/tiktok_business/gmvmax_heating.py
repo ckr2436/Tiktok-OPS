@@ -13,10 +13,10 @@ def _find_cached_instance(
     db: Session,
     *,
     workspace_id: int,
-    provider: str,
     auth_id: int,
     campaign_id: str,
     creative_id: str,
+    promotion_type: str,
 ) -> TTBGmvMaxCreativeHeating | None:
     for obj in db.identity_map.values():
         if not isinstance(obj, TTBGmvMaxCreativeHeating):
@@ -26,6 +26,7 @@ def _find_cached_instance(
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
+            and getattr(obj.promotion_type, "value", str(obj.promotion_type)) == promotion_type
         ):
             return obj
     for obj in list(db.new):
@@ -36,6 +37,7 @@ def _find_cached_instance(
             and obj.auth_id == auth_id
             and obj.campaign_id == campaign_id
             and obj.creative_id == creative_id
+            and getattr(obj.promotion_type, "value", str(obj.promotion_type)) == promotion_type
         ):
             return obj
     return None
@@ -77,6 +79,7 @@ async def upsert_creative_heating(
         auth_id=auth_id,
         campaign_id=campaign_key,
         creative_id=creative_key,
+        promotion_type=promotion_type_key,
     )
     if instance is None:
         stmt: Select[TTBGmvMaxCreativeHeating] = (
@@ -85,8 +88,10 @@ async def upsert_creative_heating(
             .where(TTBGmvMaxCreativeHeating.auth_id == auth_id)
             .where(TTBGmvMaxCreativeHeating.campaign_id == campaign_key)
             .where(TTBGmvMaxCreativeHeating.creative_id == creative_key)
+            .where(TTBGmvMaxCreativeHeating.promotion_type == promotion_type_key)
         )
         instance = db.execute(stmt).scalars().first()
+    is_new = instance is None
     if instance is None:
         instance = TTBGmvMaxCreativeHeating(
             workspace_id=workspace_id,
@@ -98,20 +103,31 @@ async def upsert_creative_heating(
         )
         db.add(instance)
     else:
+        if str(instance.advertiser_id) != advertiser_key:
+            raise ValueError(
+                "creative heating config belongs to a different advertiser scope"
+            )
         instance.campaign_id = campaign_key
         instance.creative_id = creative_key
-        instance.advertiser_id = advertiser_key
         instance.promotion_type = promotion_type_key
 
-    instance.mode = mode
-    instance.target_daily_budget = target_daily_budget
-    instance.budget_delta = budget_delta
-    instance.currency = currency
-    instance.max_duration_minutes = max_duration_minutes
-    instance.note = note
-    instance.creative_name = creative_name
-    instance.product_id = product_id
-    instance.item_id = item_id
+    # Partial actions (especially STOP) must not erase the identifiers and
+    # reusable boost settings persisted by the original start action.  Only
+    # overwrite optional fields that were actually supplied.
+    for field_name, field_value in (
+        ("mode", mode),
+        ("target_daily_budget", target_daily_budget),
+        ("budget_delta", budget_delta),
+        ("currency", currency),
+        ("max_duration_minutes", max_duration_minutes),
+        ("note", note),
+        ("creative_name", creative_name),
+        ("product_id", product_id),
+        ("item_group_id", product_id),
+        ("item_id", item_id),
+    ):
+        if is_new or field_value is not None:
+            setattr(instance, field_name, field_value)
 
     if evaluation_window_minutes is not None:
         instance.evaluation_window_minutes = int(evaluation_window_minutes)
@@ -155,7 +171,7 @@ async def update_heating_action_result(
 
     instance.status = status
     instance.last_action_type = action_type
-    instance.last_action_time = action_time
+    instance.last_action_at = action_time
     instance.last_action_request = dict(request_payload) if request_payload else None
     instance.last_action_response = dict(response_payload) if response_payload else None
     instance.last_error = error_message
@@ -164,9 +180,22 @@ async def update_heating_action_result(
     normalized_status = (status or "").upper()
     if normalized_type == "APPLY_BOOST" and normalized_status == "APPLIED":
         instance.is_heating_active = True
-    elif normalized_type in {"STOP_CREATIVE", "STOP_BOOST", "STOP_HEATING"}:
+    elif normalized_type in {
+        "STOP_CREATIVE",
+        "STOP_BOOST",
+        "STOP_HEATING",
+        "REMOVE_CREATIVE",
+        "EXCLUDE_CREATIVE",
+    }:
         if normalized_status in {"APPLIED", "CANCELLED"}:
             instance.is_heating_active = False
+        if normalized_status in {"APPLIED", "EXCLUDED"}:
+            instance.is_heating_active = False
+            instance.auto_stop_enabled = False
+    elif normalized_type in {"ADD_BACK_CREATIVE", "RESTORE_CREATIVE"}:
+        if normalized_status in {"APPLIED", "AVAILABLE", "IDLE"}:
+            instance.is_heating_active = False
+            instance.auto_stop_enabled = True
 
     db.add(instance)
     return instance
@@ -200,6 +229,7 @@ def _apply_required_filters(
     provider: str,
     auth_id: int,
 ) -> Select[TTBGmvMaxCreativeHeating]:
+    del provider
     return (
         query.where(TTBGmvMaxCreativeHeating.workspace_id == workspace_id)
         .where(TTBGmvMaxCreativeHeating.auth_id == auth_id)
@@ -215,7 +245,7 @@ async def list_heating_configs(
     campaign_id: str | None = None,
     status: str | None = None,
     creative_ids: Iterable[str] | None = None,
-    limit: int = 100,
+    limit: int | None = None,
     offset: int = 0,
 ) -> list[TTBGmvMaxCreativeHeating]:
     db.flush()
@@ -238,7 +268,11 @@ async def list_heating_configs(
     query = query.order_by(
         TTBGmvMaxCreativeHeating.created_at.desc(),
         TTBGmvMaxCreativeHeating.id.desc(),
-    ).limit(limit).offset(offset)
+    )
+    if limit is not None:
+        query = query.limit(int(limit))
+    if offset:
+        query = query.offset(int(offset))
 
     return list(db.execute(query).scalars().all())
 

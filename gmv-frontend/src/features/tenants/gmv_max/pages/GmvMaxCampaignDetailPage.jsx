@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -9,8 +9,13 @@ import Modal from '@/components/ui/Modal.jsx';
 
 import {
   useApplyGmvMaxActionMutation,
-  useGmvMaxCampaignCreativesQuery,
+  useStartGmvMaxCreativeHeatingMutation,
+  useStopGmvMaxCreativeHeatingMutation,
+  useGmvMaxCreativeAssetsQuery,
   useGmvMaxCampaignQuery,
+  useAccountsQuery,
+  useAdvertisersQuery,
+  useStoresQuery,
   useProductsQuery,
   useGmvMaxCreativeHeatingQuery,
   useGmvMaxStrategyQuery,
@@ -50,9 +55,10 @@ const ALL_CREATIVE_STATUS_KEYS = [
   'EXCLUDED',
   'REJECTED',
   'UNAVAILABLE',
+  'CANDIDATE',
 ];
 
-const MIN_MONITORING_INTERVAL = 10;
+const MIN_MONITORING_INTERVAL = 3;
 const METRIC_CHOICES = [
   { value: 'roi', label: 'ROAS' },
   { value: 'spend', label: '消耗' },
@@ -60,6 +66,23 @@ const METRIC_CHOICES = [
   { value: 'orders', label: '订单' },
   { value: 'ctr', label: 'CTR' },
   { value: 'cpc', label: 'CPC' },
+];
+const TREND_METRIC_OPTIONS = [
+  { key: 'spend', label: '消耗', color: '#2563eb', money: true },
+  { key: 'gmv', label: 'GMV', color: '#059669', money: true },
+  { key: 'orders', label: '订单', color: '#d97706' },
+  { key: 'roas', label: 'ROAS', color: '#7c3aed' },
+];
+const CREATIVE_SORT_OPTIONS = [
+  { value: 'spend', label: '消耗' },
+  { value: 'gmv', label: 'GMV' },
+  { value: 'orders', label: '转化' },
+  { value: 'roas', label: 'ROAS' },
+  { value: 'ctr', label: 'CTR' },
+  { value: 'cpc', label: 'CPC' },
+  { value: 'cpm', label: 'CPM' },
+  { value: 'impressions', label: '曝光' },
+  { value: 'clicks', label: '点击' },
 ];
 const HEATABLE_CREATIVE_STATUSES = new Set(['DELIVERING', 'LEARNING', 'IN_QUEUE']);
 const SEED_MIN_CONVERSIONS = 3;
@@ -104,6 +127,74 @@ function formatRoas(value) {
   return num.toFixed(2);
 }
 
+function formatRate(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${num.toFixed(num >= 10 ? 1 : 2)}%`;
+}
+
+function formatDataFreshness(freshness) {
+  if (!freshness) return null;
+  const seconds = Number(freshness.age_seconds);
+  const age = Number.isFinite(seconds)
+    ? seconds < 60
+      ? `${Math.max(0, Math.round(seconds))} 秒`
+      : `${Math.max(1, Math.round(seconds / 60))} 分钟`
+    : '未知';
+  const labels = {
+    fresh: '新鲜',
+    stale: '已滞后',
+    missing: '无快照',
+    historical: '历史完整日',
+  };
+  const rawSource = String(freshness.source || '');
+  const sourceLabel = rawSource.includes('gmv_creative_metrics_10min')
+    ? '素材实时数据'
+    : rawSource.includes('creative')
+      ? '素材日级数据'
+      : rawSource.includes('campaign')
+        ? '系列日级数据'
+        : rawSource.includes('overview')
+          ? '整体投放数据'
+          : '数据库快照';
+  return {
+    state: freshness.state || 'missing',
+    label: labels[freshness.state] || '未知',
+    detail: `${sourceLabel} · ${age}前更新`,
+  };
+}
+
+function formatChineseDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value || '—';
+  return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`;
+}
+
+function formatDateRangeLabel(range) {
+  const start = range?.start_date;
+  const end = range?.end_date;
+  if (!start || !end) return '统计日期待确定';
+  if (start === end) return `统计日期：${formatChineseDate(start)}`;
+  return `统计范围：${formatChineseDate(start)} — ${formatChineseDate(end)}`;
+}
+
+function extractResourceItems(data) {
+  return ensureArray(data?.items ?? data?.list ?? data?.data?.items ?? data?.data?.list ?? data);
+}
+
+function readableResourceName(value, id) {
+  const normalized = String(value || '').trim();
+  if (!normalized || normalized === String(id || '') || /^\d+$/.test(normalized)) return '';
+  return normalized;
+}
+
+function truncateText(value, maxLength = 42) {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
 function parseOptionalNumber(value) {
   if (value === '' || value === undefined || value === null) return undefined;
   const parsed = Number(value);
@@ -125,9 +216,21 @@ function parseCreativeMetrics(metrics) {
       gmv: 0,
       orders: 0,
       ctr: 0,
-      cpc: 0,
-      roas: 0,
-    };
+      productClickRate: null,
+      adClickRate: null,
+      video2sRate: null,
+      video6sRate: null,
+      video25Rate: null,
+      video50Rate: null,
+	      video75Rate: null,
+	      completionRate: null,
+	      cpm: 0,
+	      adFlowShare: null,
+	      organicFlowShare: null,
+	      cpc: 0,
+	      conversionRate: null,
+	      roas: 0,
+	    };
   }
   const resolvedMetrics = metrics.metrics ?? metrics.metrics_data ?? metrics.metricsData ?? metrics;
   const spend = Number(resolvedMetrics.cost ?? resolvedMetrics.net_cost ?? resolvedMetrics.spend ?? 0) || 0;
@@ -141,13 +244,208 @@ function parseCreativeMetrics(metrics) {
     Number(resolvedMetrics.product_impressions ?? resolvedMetrics.impressions ?? resolvedMetrics.views ?? 0) || 0;
   const orders = Number(resolvedMetrics.orders ?? resolvedMetrics.total_orders ?? resolvedMetrics.conversions ?? 0) || 0;
   const ctr =
+    resolvedMetrics.product_click_rate ??
+    resolvedMetrics.ad_click_rate ??
     resolvedMetrics.ctr ??
     resolvedMetrics.click_through_rate ??
-    (impressions > 0 ? clicks / impressions : 0);
-  const cpc = resolvedMetrics.cpc ?? resolvedMetrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
-  const roasValue = resolvedMetrics.roas ?? resolvedMetrics.roi ?? (spend > 0 ? gmv / spend : 0);
-  const roas = Number(roasValue) || 0;
-  return { impressions, clicks, spend, gmv, orders, ctr, cpc, roas };
+    (impressions > 0 ? (clicks / impressions) * 100 : 0);
+  const productClickRate =
+    resolvedMetrics.product_click_rate ?? (impressions > 0 ? (clicks / impressions) * 100 : null);
+  const adClickRate = resolvedMetrics.ad_click_rate ?? resolvedMetrics.ctr ?? resolvedMetrics.click_through_rate ?? null;
+  const video2sRate = resolvedMetrics.ad_video_view_rate_2s ?? resolvedMetrics.video_view_rate_2s ?? null;
+  const video6sRate = resolvedMetrics.ad_video_view_rate_6s ?? resolvedMetrics.video_view_rate_6s ?? null;
+  const video25Rate =
+    resolvedMetrics.ad_video_view_rate_p25 ?? resolvedMetrics.video_view_rate_25 ?? resolvedMetrics.video_view_rate_p25 ?? null;
+  const video50Rate =
+    resolvedMetrics.ad_video_view_rate_p50 ?? resolvedMetrics.video_view_rate_50 ?? resolvedMetrics.video_view_rate_p50 ?? null;
+  const video75Rate =
+    resolvedMetrics.ad_video_view_rate_p75 ?? resolvedMetrics.video_view_rate_75 ?? resolvedMetrics.video_view_rate_p75 ?? null;
+  const completionRate =
+    resolvedMetrics.ad_video_view_rate_p100 ??
+    resolvedMetrics.video_view_rate_100 ??
+    resolvedMetrics.video_view_rate_p100 ??
+    resolvedMetrics.completion_rate ??
+    null;
+	  const cpc = resolvedMetrics.cpc ?? resolvedMetrics.cost_per_click ?? (clicks > 0 ? spend / clicks : 0);
+	  const cpm = resolvedMetrics.cpm ?? resolvedMetrics.cost_per_mille ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
+	  const adConversionRateRaw =
+	    resolvedMetrics.ad_conversion_rate ??
+	    resolvedMetrics.conversion_rate ??
+	    resolvedMetrics.cvr ??
+	    resolvedMetrics.ad_cvr ??
+	    null;
+	  const adConversionRateNumber = Number(adConversionRateRaw);
+	  const adConversionRate =
+	    adConversionRateRaw === null || adConversionRateRaw === undefined || adConversionRateRaw === '' ||
+	    !Number.isFinite(adConversionRateNumber)
+	      ? null
+	      : Math.max(0, adConversionRateNumber);
+	  const estimatedAdOrders = adConversionRate === null ? null : clicks * (adConversionRate / 100);
+	  const adFlowShareFraction =
+	    orders > 0 && estimatedAdOrders !== null ? Math.min(1, Math.max(0, estimatedAdOrders / orders)) : null;
+	  const adFlowShare = adFlowShareFraction === null ? null : adFlowShareFraction * 100;
+	  const organicFlowShare = adFlowShareFraction === null ? null : (1 - adFlowShareFraction) * 100;
+	  const roasValue = resolvedMetrics.roas ?? resolvedMetrics.roi ?? (spend > 0 ? gmv / spend : 0);
+	  const roas = Number(roasValue) || 0;
+	  return {
+    impressions,
+    clicks,
+    spend,
+    gmv,
+    orders,
+    ctr,
+    productClickRate,
+    adClickRate,
+    video2sRate,
+    video6sRate,
+    video25Rate,
+    video50Rate,
+	    video75Rate,
+	    completionRate,
+	    cpm,
+	    adFlowShare,
+	    organicFlowShare,
+	    cpc,
+	    conversionRate: adConversionRate,
+	    roas,
+	  };
+}
+
+function mergeCreativeMetrics(current, incoming) {
+  const left = current || parseCreativeMetrics({});
+  const right = incoming || parseCreativeMetrics({});
+  const impressions = (Number(left.impressions) || 0) + (Number(right.impressions) || 0);
+  const clicks = (Number(left.clicks) || 0) + (Number(right.clicks) || 0);
+  const spend = (Number(left.spend) || 0) + (Number(right.spend) || 0);
+  const gmv = (Number(left.gmv) || 0) + (Number(right.gmv) || 0);
+  const orders = (Number(left.orders) || 0) + (Number(right.orders) || 0);
+  const weightedRate = (key, leftWeight, rightWeight) => {
+    const leftValue = Number(left[key]);
+    const rightValue = Number(right[key]);
+    let numerator = 0;
+    let denominator = 0;
+    if (left[key] !== null && left[key] !== undefined && Number.isFinite(leftValue) && leftWeight > 0) {
+      numerator += leftValue * leftWeight;
+      denominator += leftWeight;
+    }
+    if (right[key] !== null && right[key] !== undefined && Number.isFinite(rightValue) && rightWeight > 0) {
+      numerator += rightValue * rightWeight;
+      denominator += rightWeight;
+    }
+    return denominator > 0 ? numerator / denominator : null;
+  };
+  const merged = {
+    ...left,
+    impressions,
+    clicks,
+    spend,
+    gmv,
+    orders,
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    cpc: clicks > 0 ? spend / clicks : 0,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+    roas: spend > 0 ? gmv / spend : 0,
+    conversionRate: clicks > 0 ? (orders / clicks) * 100 : null,
+  };
+  ['productClickRate', 'adClickRate', 'video2sRate', 'video6sRate', 'video25Rate', 'video50Rate', 'video75Rate', 'completionRate']
+    .forEach((key) => {
+      merged[key] = weightedRate(
+        key,
+        Number(left.impressions) || 0,
+        Number(right.impressions) || 0,
+      );
+    });
+  merged.adFlowShare = weightedRate(
+    'adFlowShare',
+    Number(left.orders) || 0,
+    Number(right.orders) || 0,
+  );
+  merged.organicFlowShare = weightedRate(
+    'organicFlowShare',
+    Number(left.orders) || 0,
+    Number(right.orders) || 0,
+  );
+  return merged;
+}
+
+function summarizeCreativeMetrics(creatives) {
+  const totals = {
+    impressions: 0,
+    clicks: 0,
+    spend: 0,
+    gmv: 0,
+    orders: 0,
+  };
+  const weightedRates = {
+    video2sRate: { numerator: 0, denominator: 0 },
+    video6sRate: { numerator: 0, denominator: 0 },
+    completionRate: { numerator: 0, denominator: 0 },
+  };
+  let estimatedAdOrders = 0;
+  let conversionRateClicks = 0;
+
+  ensureArray(creatives).forEach((creative) => {
+    const metrics = creative?.metrics || {};
+    const impressions = Number(metrics.impressions) || 0;
+    const clicks = Number(metrics.clicks) || 0;
+    const orders = Number(metrics.orders) || 0;
+    totals.impressions += impressions;
+    totals.clicks += clicks;
+    totals.spend += Number(metrics.spend) || 0;
+    totals.gmv += Number(metrics.gmv) || 0;
+    totals.orders += orders;
+
+    const rawConversionRate = metrics.conversionRate;
+    const conversionRate = Number(rawConversionRate);
+    if (
+      clicks > 0 &&
+      rawConversionRate !== null &&
+      rawConversionRate !== undefined &&
+      rawConversionRate !== '' &&
+      Number.isFinite(conversionRate)
+    ) {
+      estimatedAdOrders += clicks * (Math.max(0, conversionRate) / 100);
+      conversionRateClicks += clicks;
+    }
+
+    Object.keys(weightedRates).forEach((key) => {
+      const rawRate = metrics[key];
+      const rate = Number(rawRate);
+      if (
+        impressions > 0 &&
+        rawRate !== null &&
+        rawRate !== undefined &&
+        rawRate !== '' &&
+        Number.isFinite(rate)
+      ) {
+        weightedRates[key].numerator += impressions * rate;
+        weightedRates[key].denominator += impressions;
+      }
+    });
+  });
+
+  const rateValue = (key) => {
+    const aggregate = weightedRates[key];
+    return aggregate.denominator > 0 ? aggregate.numerator / aggregate.denominator : null;
+  };
+  const adFlowShare =
+    totals.orders > 0 && conversionRateClicks > 0
+      ? Math.min(100, Math.max(0, (estimatedAdOrders / totals.orders) * 100))
+      : null;
+
+  return {
+    ...totals,
+    cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
+    cpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
+    roas: totals.spend > 0 ? totals.gmv / totals.spend : 0,
+    ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
+    conversionRate: totals.clicks > 0 ? (totals.orders / totals.clicks) * 100 : null,
+    video2sRate: rateValue('video2sRate'),
+    video6sRate: rateValue('video6sRate'),
+    completionRate: rateValue('completionRate'),
+    adFlowShare,
+    organicFlowShare: adFlowShare === null ? null : 100 - adFlowShare,
+  };
 }
 
 function getMetricValue(entry, key) {
@@ -159,7 +457,7 @@ function getMetricValue(entry, key) {
     gmv: ['gross_revenue', 'gmv', 'revenue', 'total_gross_revenue'],
     clicks: ['product_clicks', 'clicks', 'total_clicks', 'ad_clicks'],
     impressions: ['product_impressions', 'impressions', 'views'],
-    ctr: ['product_click_rate', 'ctr', 'click_through_rate'],
+    ctr: ['product_click_rate', 'ad_click_rate', 'ctr', 'click_through_rate'],
   };
   const candidates = aliasMap[normalizedKey] || [key];
   const value = candidates.reduce((result, candidate) => {
@@ -179,8 +477,12 @@ function getMetricValue(entry, key) {
 
 function extractDateLabel(entry) {
   if (!entry) return '';
+  const dimensions = entry.dimensions || entry.dimension || {};
   return (
     entry.stat_time_day ||
+    dimensions.stat_time_day ||
+    dimensions.date ||
+    dimensions.interval_start ||
     entry.date ||
     entry.interval_start ||
     entry.intervalStart ||
@@ -254,19 +556,34 @@ function resolveMetricsError(error, defaultMessage = '数据加载失败') {
   return error?.response?.data?.message || error?.message || defaultMessage;
 }
 
+function resolveActionError(error, defaultMessage) {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object' && detail.message) return detail.message;
+  return error?.response?.data?.message || error?.message || defaultMessage;
+}
+
 function normalizeStrategyResponse(data) {
   if (!data || typeof data !== 'object') {
     return {
       enabled: true,
       autoHeatingEnabled: true,
-      cooldownMinutes: 30,
-      minRuntimeMinutes: 120,
+      cooldownMinutes: 60,
+      monitorIntervalMinutes: 3,
+      evaluationWindowMinutes: 60,
+      minSpendDollars: 3,
+      pacingEnabled: true,
+      hermesEnabled: false,
+      minRuntimeMinutes: 30,
       thresholds: {},
       rules: [],
+      smartGuardState: {},
       raw: data,
     };
   }
   const config = data.config_json || data.configJson || {};
+  const smartGuard = config.smart_guard || config.smartGuard || {};
+  const smartGuardState = config.smart_guard_state || config.smartGuardState || {};
   const rules = ensureArray(config.rules).map((rule, index) => ({
     id: rule?.id || `rule-${index}`,
     metric: rule?.metric || 'roi',
@@ -292,20 +609,46 @@ function normalizeStrategyResponse(data) {
     max_roas_step_per_adjust:
       data.max_roas_step_per_adjust ?? data.maxRoasStepPerAdjust ?? '',
     auto_pause_roi_threshold:
-      data.auto_pause_roi_threshold ?? config.auto_pause_roi_threshold ?? '',
+      data.auto_pause_roi_threshold ??
+      config.auto_pause_roi_threshold ??
+      smartGuard.min_roi ??
+      smartGuard.minRoi ??
+      '',
   };
   return {
     enabled: Boolean(data.enabled ?? true),
     autoHeatingEnabled: Boolean(
       data.auto_heating_enabled ?? config.auto_heating_enabled ?? data.autoHeatingEnabled ?? true,
     ),
-    cooldownMinutes: data.cooldown_minutes ?? data.cooldownMinutes ?? 30,
+    cooldownMinutes:
+      data.cooldown_minutes ??
+      data.cooldownMinutes ??
+      smartGuard.pause_cooldown_minutes ??
+      smartGuard.pauseCooldownMinutes ??
+      60,
+    monitorIntervalMinutes:
+      smartGuard.monitor_interval_minutes ?? smartGuard.monitorIntervalMinutes ?? 3,
+    evaluationWindowMinutes:
+      smartGuard.evaluation_window_minutes ?? smartGuard.evaluationWindowMinutes ?? 60,
+    minSpendDollars:
+      smartGuard.min_spend_dollars ??
+      smartGuard.minSpendDollars ??
+      (smartGuard.min_spend_cents || smartGuard.minSpendCents
+        ? Number(smartGuard.min_spend_cents || smartGuard.minSpendCents) / 100
+        : 3),
+    pacingEnabled: Boolean(
+      smartGuard.daily_budget_pacing ?? smartGuard.dailyBudgetPacing ?? true,
+    ),
+    hermesEnabled: Boolean(
+      smartGuard.hermes_enabled ?? smartGuard.hermesEnabled ?? config.hermes_enabled ?? false,
+    ),
     minRuntimeMinutes:
       data.min_runtime_minutes_before_first_change ??
       data.minRuntimeMinutesBeforeFirstChange ??
-      120,
+      30,
     thresholds: normalizedThresholds,
     rules,
+    smartGuardState,
     raw: data,
   };
 }
@@ -345,6 +688,25 @@ function buildStrategyPayload(draft) {
     max_budget_cut_pct_per_day: parseOptionalNumber(thresholds.max_budget_cut_pct_per_day),
     max_roas_step_per_adjust: parseOptionalNumber(thresholds.max_roas_step_per_adjust),
     config_json: {
+      smart_guard: {
+        enabled: Boolean(draft.enabled),
+        monitor_interval_minutes: Math.max(
+          MIN_MONITORING_INTERVAL,
+          Number.parseInt(draft.monitorIntervalMinutes, 10) || MIN_MONITORING_INTERVAL,
+        ),
+        evaluation_window_minutes: Math.max(
+          MIN_MONITORING_INTERVAL,
+          Number.parseInt(draft.evaluationWindowMinutes, 10) || 60,
+        ),
+        pause_cooldown_minutes: Math.max(
+          MIN_MONITORING_INTERVAL,
+          Number.parseInt(draft.cooldownMinutes, 10) || 60,
+        ),
+        min_roi: parseOptionalNumber(thresholds.auto_pause_roi_threshold ?? thresholds.min_roi),
+        min_spend_cents: Math.round((parseOptionalNumber(draft.minSpendDollars) ?? 3) * 100),
+        daily_budget_pacing: Boolean(draft.pacingEnabled),
+        hermes_enabled: Boolean(draft.hermesEnabled),
+      },
       rules: (draft.rules || []).map((rule) => ({
         id: rule.id,
         metric: rule.metric,
@@ -366,6 +728,28 @@ function buildStrategyPayload(draft) {
 }
 
 function summarizeMetrics(report) {
+  const summary = report?.summary;
+  if (
+    summary &&
+    typeof summary === 'object' &&
+    ['spend', 'cost', 'gmv', 'gross_revenue', 'orders'].some((key) =>
+      Object.prototype.hasOwnProperty.call(summary, key),
+    )
+  ) {
+    const entry = { metrics: summary };
+    const ctr = getMetricValue(entry, 'ctr');
+    const cpc = getMetricValue(entry, 'cpc');
+    const cpm = getMetricValue(entry, 'cpm');
+    return {
+      spend: getMetricValue(entry, 'spend'),
+      gmv: getMetricValue(entry, 'gmv'),
+      orders: getMetricValue(entry, 'orders'),
+      ctrValues: ctr > 0 ? [ctr] : [],
+      cpcValues: cpc > 0 ? [cpc] : [],
+      cpmValues: cpm > 0 ? [cpm] : [],
+    };
+  }
+
   const entries = ensureArray(report?.list);
   return entries.reduce(
     (acc, entry) => {
@@ -390,19 +774,39 @@ function summarizeMetrics(report) {
   );
 }
 
-function buildTrendSeries(report) {
+function buildTrendSeries(report, range) {
   const entries = ensureArray(report?.list);
-  return entries
-    .map((entry) => ({
-      label: extractDateLabel(entry),
-      spend: getMetricValue(entry, 'spend'),
-      roas: (() => {
-        const spend = getMetricValue(entry, 'spend');
-        const gmv = getMetricValue(entry, 'gmv');
-        return spend > 0 ? gmv / spend : 0;
-      })(),
+  const byDate = new Map();
+  entries.forEach((entry) => {
+    const label = String(extractDateLabel(entry) || '').slice(0, 10);
+    if (!label) return;
+    const current = byDate.get(label) || { label, spend: 0, gmv: 0, orders: 0, roas: 0 };
+    current.spend += getMetricValue(entry, 'spend');
+    current.gmv += getMetricValue(entry, 'gmv');
+    current.orders += getMetricValue(entry, 'orders');
+    byDate.set(label, current);
+  });
+
+  const start = String(range?.start_date || '').slice(0, 10);
+  const end = String(range?.end_date || '').slice(0, 10);
+  if (start && end) {
+    const cursor = new Date(`${start}T00:00:00Z`);
+    const endDate = new Date(`${end}T00:00:00Z`);
+    while (cursor <= endDate) {
+      const label = cursor.toISOString().slice(0, 10);
+      if (!byDate.has(label)) {
+        byDate.set(label, { label, spend: 0, gmv: 0, orders: 0, roas: 0 });
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+  }
+
+  return Array.from(byDate.values())
+    .map((point) => ({
+      ...point,
+      roas: point.spend > 0 ? point.gmv / point.spend : 0,
     }))
-    .filter((item) => item.label);
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function buildDimensionTable(report, dimensionKey, extraKeys = []) {
@@ -459,10 +863,68 @@ function buildDimensionTable(report, dimensionKey, extraKeys = []) {
   return Array.from(groups.values());
 }
 
-function deriveCampaignMetadata(campaignData) {
+function extractCampaignProductIds(campaignData) {
+  const detail = campaignData || {};
+  const campaign = detail.campaign || detail;
+  const rawDetail = campaign.detail_raw_json || detail.detail_raw_json || {};
+  const sources = [
+    detail.item_group_id,
+    detail.itemGroupId,
+    campaign.item_group_id,
+    campaign.itemGroupId,
+    rawDetail.item_group_id,
+    rawDetail.itemGroupId,
+    detail.item_group_ids,
+    detail.itemGroupIds,
+    campaign.item_group_ids,
+    campaign.itemGroupIds,
+    rawDetail.item_group_ids,
+    rawDetail.itemGroupIds,
+  ];
+  const ids = [];
+  for (const source of sources) {
+    ensureArray(source).forEach((value) => {
+      if (value !== undefined && value !== null && String(value).trim()) {
+        ids.push(String(value).trim());
+      }
+    });
+  }
+  const sessions = ensureArray(detail.sessions || detail.session_list);
+  for (const session of sessions) {
+    ensureArray(session?.item_group_ids || session?.itemGroupIds).forEach((value) => {
+      if (value !== undefined && value !== null && String(value).trim()) ids.push(String(value).trim());
+    });
+    ensureArray(session?.product_list || session?.products).forEach((product) => {
+      const id = product?.item_group_id || product?.itemGroupId || product?.product_id || product?.spu_id || product?.id;
+      if (id !== undefined && id !== null && String(id).trim()) ids.push(String(id).trim());
+    });
+  }
+  return Array.from(new Set(ids));
+}
+
+function getProductImage(product) {
+  return (
+    product?.image_url ||
+    product?.product_image_url ||
+    product?.cover_image ||
+    product?.thumbnail_url ||
+    product?.imageUrl ||
+    product?.coverImage ||
+    product?.main_image ||
+    product?.image ||
+    null
+  );
+}
+
+function deriveCampaignMetadata(campaignData, productCatalog = []) {
   if (!campaignData) return {};
   const campaign = campaignData.campaign || campaignData;
   const sessions = ensureArray(campaignData.sessions || campaignData.session_list);
+  const productCatalogMap = new Map();
+  ensureArray(productCatalog).forEach((product) => {
+    const id = getProductIdentifier(product);
+    if (id) productCatalogMap.set(String(id), product);
+  });
   const products = [];
   for (const session of sessions) {
     const list = ensureArray(session?.product_list || session?.products);
@@ -473,12 +935,35 @@ function deriveCampaignMetadata(campaignData) {
         product.spu_id ||
         product.id ||
         product.item_group_id;
+      const catalogProduct = id ? productCatalogMap.get(String(id)) || {} : {};
       products.push({
         id: id ? String(id) : undefined,
-        name: product.product_name || product.title || product.name || product.item_name,
-        image: product.image_url || product.cover_url || product.thumbnail_url,
+        name:
+          product.product_name ||
+          product.title ||
+          product.name ||
+          product.item_name ||
+          catalogProduct.product_name ||
+          catalogProduct.title ||
+          catalogProduct.name ||
+          catalogProduct.item_name,
+        image: getProductImage(product) || getProductImage(catalogProduct),
       });
     }
+  }
+  for (const id of extractCampaignProductIds(campaignData)) {
+    if (products.some((product) => product.id === id)) continue;
+    const catalogProduct = productCatalogMap.get(id) || {};
+    products.push({
+      id,
+      name:
+        catalogProduct.product_name ||
+        catalogProduct.title ||
+        catalogProduct.name ||
+        catalogProduct.item_name ||
+        `商品 ${id}`,
+      image: getProductImage(catalogProduct),
+    });
   }
   const uniqueProducts = products.filter((item, index, list) => {
     if (!item.id) return index === list.findIndex((entry) => !entry.id);
@@ -487,9 +972,14 @@ function deriveCampaignMetadata(campaignData) {
   return {
     id: campaign.campaign_id || campaign.id,
     name: campaign.name || campaign.campaign_name || campaign.session_name,
-    status: campaign.status || campaign.delivery_status || campaign.campaign_status,
-    advertiserName: campaign.advertiser_name || campaign.advertiser || campaign.advertiserId,
-    storeName: campaign.store_name || campaign.storeName || campaign.store_id,
+    status:
+      campaign.status ||
+      campaign.delivery_status ||
+      campaign.campaign_status ||
+      campaign.operation_status ||
+      campaignData.operation_status,
+    advertiserName: campaign.advertiser_name || campaign.advertiser_display_name || campaign.advertiser,
+    storeName: campaign.store_name || campaign.storeName,
     businessCenterName: campaign.business_center_name || campaign.bc_name,
     shoppingAdsType: campaign.shopping_ads_type,
     optimizationGoal: campaign.optimization_goal,
@@ -510,27 +1000,115 @@ function determineStatusLabel(status) {
 }
 
 function normalizeCreativeStatus(status) {
-  if (!status) return 'UNKNOWN';
+  if (!status) return 'CANDIDATE';
   const normalized = String(status).toUpperCase();
+  if (normalized.includes('NOT_DELIVER')) return 'NOT_DELIVERING';
+  if (normalized.includes('NOT_ACTIVE') || normalized.includes('INACTIVE')) return 'NOT_ACTIVE';
+  if (normalized.includes('AUTH')) return 'AUTHORIZATION_NEEDED';
+  if (normalized.includes('EXCLUD') || normalized.includes('REMOVE')) return 'EXCLUDED';
+  if (normalized.includes('REJECT')) return 'REJECTED';
+  if (normalized.includes('UNAVAILABLE')) return 'UNAVAILABLE';
   if (normalized.includes('QUEUE')) return 'IN_QUEUE';
+  if (normalized.includes('CANDIDATE')) return 'CANDIDATE';
   if (normalized.includes('LEARN')) return 'LEARNING';
   if (normalized.includes('DELIVER')) return 'DELIVERING';
-  if (normalized.includes('NOT_DELIVER')) return 'NOT_DELIVERING';
-  return normalized;
+  return 'CANDIDATE';
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && String(value) !== '');
+}
+
+function localCreativeMediaUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (text.startsWith('/api/v1/')) return text;
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = new URL(text, window.location.origin);
+    if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/v1/')) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function firstLocalCreativeMedia(...values) {
+  for (const value of values) {
+    const local = localCreativeMediaUrl(value);
+    if (local) return local;
+  }
+  return null;
+}
+
+function extractCreativeThumbnail(source, fallback = null) {
+  const videoInfo = source?.video_info || source?.videoInfo || {};
+  return (
+    firstLocalCreativeMedia(
+      source?.local_cover_url,
+      source?.localCoverUrl,
+      source?.video_cover_url,
+      source?.videoCoverUrl,
+      source?.cover_url,
+      source?.coverUrl,
+      source?.thumbnail_url,
+      source?.thumbnailUrl,
+      source?.thumbnail,
+      source?.image,
+      videoInfo?.video_cover_url,
+      videoInfo?.videoCoverUrl,
+      videoInfo?.cover_url,
+      videoInfo?.coverUrl,
+      fallback,
+    )
+  );
+}
+
+function extractCreativePreviewUrl(source, fallback = null) {
+  const videoInfo = source?.video_info || source?.videoInfo || {};
+  return (
+    firstLocalCreativeMedia(
+      source?.local_preview_url,
+      source?.localPreviewUrl,
+      source?.preview_url,
+      source?.previewUrl,
+      source?.video_preview_url,
+      source?.videoPreviewUrl,
+      source?.play_url,
+      source?.playUrl,
+      videoInfo?.preview_url,
+      videoInfo?.previewUrl,
+      videoInfo?.play_url,
+      videoInfo?.playUrl,
+      fallback,
+    )
+  );
 }
 
 function normalizeCreativesData(creativesData, metricsData, heatingData) {
   const rows = new Map();
 
-  const ensureRow = (creativeId) => {
-    const key = String(creativeId);
+  const ensureRow = (creativeId, productId = null) => {
+    const creativeKey = String(creativeId);
+    const productKey = String(productId || '').trim();
+    const key =
+      creativeKey === '-1' && productKey
+        ? `${creativeKey}:${productKey}`
+        : creativeKey;
     if (!rows.has(key)) {
       rows.set(key, {
-        creativeId: key,
-        name: key,
+        rowKey: key,
+        creativeId: creativeKey,
+        name: creativeKey,
         thumbnail: null,
-        status: 'UNKNOWN',
+        previewUrl: null,
+        videoId: null,
+        duration: null,
+        status: 'CANDIDATE',
         metrics: parseCreativeMetrics({}),
+        historicalMetrics: parseCreativeMetrics({}),
         heating: null,
         metadata: {},
       });
@@ -548,7 +1126,14 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
       item?.creative?.id ||
       item?.creativeCode;
     if (!creativeId) continue;
-    const row = ensureRow(creativeId);
+    const row = ensureRow(
+      creativeId,
+      firstPresent(
+        item?.product_id,
+        item?.item_group_id,
+        item?.itemGroupId,
+      ),
+    );
     row.name =
       item?.title ||
       item?.creative_name ||
@@ -558,11 +1143,13 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
       item?.title ||
       row.name ||
       creativeId;
-    row.thumbnail = item?.thumbnail || item?.image || item?.cover_url || item?.coverUrl || row.thumbnail;
-    row.status = normalizeCreativeStatus(
-      item?.creative_delivery_status || item?.creative_status || item?.status || item?.state || row.status,
-    );
-    row.metrics = parseCreativeMetrics(item?.metrics || row.metrics);
+    row.thumbnail = extractCreativeThumbnail(item, row.thumbnail);
+    row.previewUrl = extractCreativePreviewUrl(item, row.previewUrl);
+    row.videoId = firstPresent(item?.video_id, item?.videoId, item?.video_info?.video_id, row.videoId) || null;
+    row.duration = firstPresent(item?.duration, item?.video_info?.duration, row.duration) || null;
+    const assetStatus = item?.creative_delivery_status || item?.creative_status || item?.status || item?.state;
+    row.status = assetStatus ? normalizeCreativeStatus(assetStatus) : 'CANDIDATE';
+    row.historicalMetrics = parseCreativeMetrics(item?.metrics || {});
     row.metadata = { ...row.metadata, ...item };
   }
 
@@ -580,7 +1167,17 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
         entry?.metrics?.creative_id ||
         entry?.metrics?.item_id;
       if (!creativeId) continue;
-      const row = ensureRow(creativeId);
+      const row = ensureRow(
+        creativeId,
+        firstPresent(
+          entry?.product_id,
+          entry?.item_group_id,
+          entry?.itemGroupId,
+          entry?.metrics?.product_id,
+          entry?.metrics?.item_group_id,
+          entry?.metrics?.itemGroupId,
+        ),
+      );
       row.name =
         entry?.title ||
         entry?.creative_name ||
@@ -593,7 +1190,11 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
       row.status = normalizeCreativeStatus(
         entry?.creative_delivery_status || entry?.creative_status || entry?.status || entry?.state || row.status,
       );
-      row.metrics = parseCreativeMetrics(entry?.metrics || entry);
+      row.thumbnail = extractCreativeThumbnail(entry?.metrics || entry, row.thumbnail);
+      row.previewUrl = extractCreativePreviewUrl(entry?.metrics || entry, row.previewUrl);
+      row.videoId = firstPresent(entry?.video_id, entry?.videoId, entry?.metrics?.video_id, row.videoId) || null;
+      row.duration = firstPresent(entry?.duration, entry?.metrics?.duration, row.duration) || null;
+      row.metrics = mergeCreativeMetrics(row.metrics, parseCreativeMetrics(entry?.metrics || entry));
       row.metadata = { ...row.metadata, ...entry, ...(entry?.metrics || {}) };
     }
   }
@@ -610,7 +1211,17 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
         dimensions.id ||
         dimensions.code;
       if (!creativeId) continue;
-      const row = ensureRow(creativeId);
+      const row = ensureRow(
+        creativeId,
+        firstPresent(
+          dimensions.product_id,
+          dimensions.item_group_id,
+          dimensions.itemGroupId,
+          entry?.metrics?.product_id,
+          entry?.metrics?.item_group_id,
+          entry?.metrics?.itemGroupId,
+        ),
+      );
       row.name =
         entry.metrics?.title ||
         dimensions.title ||
@@ -626,7 +1237,12 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
           dimensions.status ||
           row.status,
       );
-      row.metrics = parseCreativeMetrics(entry.metrics || entry);
+      row.thumbnail = extractCreativeThumbnail(entry.metrics || dimensions, row.thumbnail);
+      row.previewUrl = extractCreativePreviewUrl(entry.metrics || dimensions, row.previewUrl);
+      row.videoId =
+        firstPresent(entry.metrics?.video_id, dimensions.video_id, dimensions.videoId, row.videoId) || null;
+      row.duration = firstPresent(entry.metrics?.duration, dimensions.duration, row.duration) || null;
+      row.metrics = mergeCreativeMetrics(row.metrics, parseCreativeMetrics(entry.metrics || entry));
       const seedFlag =
         entry.is_seed || entry.isSeed || dimensions.is_seed || dimensions.isSeed || entry.metrics?.is_seed || false;
       row.metadata = {
@@ -642,7 +1258,14 @@ function normalizeCreativesData(creativesData, metricsData, heatingData) {
     const creativeId =
       entry?.creative_id || entry?.creativeId || entry?.id || entry?.code || entry?.creative?.id || entry?.creativeId;
     if (!creativeId) continue;
-    const row = ensureRow(creativeId);
+    const row = ensureRow(
+      creativeId,
+      firstPresent(
+        entry?.product_id,
+        entry?.item_group_id,
+        entry?.itemGroupId,
+      ),
+    );
     row.heating = entry;
     row.status = normalizeCreativeStatus(entry?.creative_status || entry?.status || row.status);
     row.metadata = { ...row.metadata, ...entry };
@@ -659,6 +1282,71 @@ function isCreativeBoosting(creative) {
   return Boolean(
     creative?.metadata?.is_boosting || creative?.metadata?.isBoosting || creative?.metadata?.boosting || false,
   );
+}
+
+function buildCreativeHeatingIdentityPayload(creative, fallbackItemGroupId) {
+  const heating = creative?.heating || {};
+  const metadata = creative?.metadata || {};
+  const productId =
+    heating.product_id ||
+    heating.item_group_id ||
+    metadata.product_id ||
+    metadata.item_group_id ||
+    metadata.itemGroupId ||
+    fallbackItemGroupId;
+  const itemId =
+    heating.item_id ||
+    metadata.item_id ||
+    metadata.itemId ||
+    creative?.creativeId ||
+    metadata.creative_id;
+  return {
+    ...(productId ? { product_id: String(productId) } : {}),
+    ...(itemId ? { item_id: String(itemId) } : {}),
+  };
+}
+
+function buildCreativeHeatingPayload(creative, fallbackItemGroupId) {
+  const heating = creative?.heating || {};
+  const metadata = creative?.metadata || {};
+  const spend = Number(creative?.metrics?.spend || creative?.metrics?.cost || 0);
+  const rawMode = String(heating.mode || '').trim().toUpperCase();
+  const mode = ['STOP', 'STOP_CREATIVE', 'STOP_BOOST'].includes(rawMode)
+    ? 'MANUAL'
+    : (heating.mode || 'MANUAL');
+  const configuredDelta = Number(
+    heating.budget_delta ??
+    heating.budgetDelta ??
+    heating.default_budget_delta ??
+    heating.defaultBudgetDelta,
+  );
+  const configuredTarget = Number(
+    heating.target_daily_budget ?? heating.targetDailyBudget,
+  );
+  const hasPositiveTarget = Number.isFinite(configuredTarget) && configuredTarget > 0;
+  const hasPositiveDelta = Number.isFinite(configuredDelta) && configuredDelta > 0;
+  return {
+    mode,
+    ...buildCreativeHeatingIdentityPayload(creative, fallbackItemGroupId),
+    ...(heating.currency || metadata.currency
+      ? { currency: heating.currency || metadata.currency }
+      : {}),
+    ...(heating.max_duration_minutes || heating.maxDurationMinutes
+      ? {
+          max_duration_minutes:
+            heating.max_duration_minutes || heating.maxDurationMinutes,
+        }
+      : {}),
+    ...(heating.note ? { note: heating.note } : {}),
+    ...(hasPositiveTarget
+      ? { target_daily_budget: configuredTarget }
+      : {
+          budget_delta:
+            hasPositiveDelta
+              ? configuredDelta
+              : Math.max(Number.isFinite(spend) ? spend * 0.1 : 0, 1),
+        }),
+  };
 }
 
 function isSeedCreative(creative) {
@@ -689,47 +1377,98 @@ function resolveLastEvaluated(creative) {
   );
 }
 
-function TrendChart({ data }) {
+function TrendChart({ data, selectedMetrics }) {
   if (!data || data.length === 0) {
-    return <div className="gmvmax-chart gmvmax-chart--empty">暂无可用数据。</div>;
+    return <div className="gmvmax-chart gmvmax-chart--empty">所选日期范围内暂无趋势数据。</div>;
   }
-  const padding = 16;
-  const width = 600;
-  const height = 240;
+  const activeOptions = TREND_METRIC_OPTIONS.filter((option) => selectedMetrics.has(option.key));
+  const width = 760;
+  const height = 260;
+  const padding = { top: 18, right: 18, bottom: 34, left: 54 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
   const maxValue = Math.max(
-    ...data.map((point) => Math.max(point.spend || 0, point.roas || 0)),
+    ...data.flatMap((point) => activeOptions.map((option) => Number(point[option.key]) || 0)),
     1,
   );
-  const xStep = (width - padding * 2) / Math.max(data.length - 1, 1);
-  const scaleY = (value) => height - padding - (value / maxValue) * (height - padding * 2);
+  const xStep = chartWidth / Math.max(data.length - 1, 1);
+  const scaleY = (value) => padding.top + chartHeight - ((Number(value) || 0) / maxValue) * chartHeight;
   const buildPath = (key) =>
     data
       .map((point, index) => {
-        const x = padding + index * xStep;
+        const x = padding.left + index * xStep;
         const y = scaleY(point[key] || 0);
         return `${index === 0 ? 'M' : 'L'}${x},${y}`;
       })
       .join(' ');
-  const spendPath = buildPath('spend');
-  const roasPath = buildPath('roas');
   const xLabels = data.map((point, index) => ({
-    x: padding + index * xStep,
-    label: point.label,
+    x: padding.left + index * xStep,
+    label: String(point.label || '').slice(5).replace('-', '/'),
   }));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+    ratio,
+    value: maxValue * ratio,
+    y: padding.top + chartHeight - chartHeight * ratio,
+  }));
+  const allMoney = activeOptions.every((option) => option.money);
+  const formatAxisValue = (value) => {
+    const compact = Number(value).toLocaleString(undefined, {
+      maximumFractionDigits: value < 10 ? 1 : 0,
+      notation: value >= 1000 ? 'compact' : 'standard',
+    });
+    return allMoney ? `$${compact}` : compact;
+  };
+  const formatPointValue = (option, value) => {
+    if (option.money) return `$${formatMoney(value)}`;
+    if (option.key === 'roas') return formatRoas(value);
+    return formatNumber(value, { maximumFractionDigits: 2 });
+  };
   return (
-    <svg className="gmvmax-chart" viewBox={`0 0 ${width} ${height}`} role="img">
-      <g className="gmvmax-chart__grid">
-        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
-        <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
-      </g>
-      <path d={spendPath} className="gmvmax-chart__line gmvmax-chart__line--spend" />
-      <path d={roasPath} className="gmvmax-chart__line gmvmax-chart__line--roas" />
-      {xLabels.map((item) => (
-        <text key={item.x} x={item.x} y={height - 4} textAnchor="middle" className="gmvmax-chart__label">
-          {item.label}
-        </text>
-      ))}
-    </svg>
+    <div className="gmvmax-trend-visual">
+      <div className="gmvmax-trend-legend" aria-label="趋势图图例">
+        {activeOptions.map((option) => (
+          <span key={option.key}>
+            <i style={{ backgroundColor: option.color }} />
+            {option.label}
+          </span>
+        ))}
+      </div>
+      <svg className="gmvmax-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="投放趋势图">
+        <title>投放趋势图</title>
+        <g className="gmvmax-chart__grid">
+          {yTicks.map((tick) => (
+            <Fragment key={tick.ratio}>
+              <line x1={padding.left} y1={tick.y} x2={width - padding.right} y2={tick.y} />
+              <text x={padding.left - 8} y={tick.y + 4} textAnchor="end">
+                {formatAxisValue(tick.value)}
+              </text>
+            </Fragment>
+          ))}
+        </g>
+        {activeOptions.map((option) => (
+          <g key={option.key}>
+            <path d={buildPath(option.key)} className="gmvmax-chart__line" style={{ stroke: option.color }} />
+            {data.map((point, index) => (
+              <circle
+                key={`${option.key}-${point.label}`}
+                cx={padding.left + index * xStep}
+                cy={scaleY(point[option.key])}
+                r="3.5"
+                fill={option.color}
+                className="gmvmax-chart__point"
+              >
+                <title>{`${formatChineseDate(point.label)} · ${option.label} ${formatPointValue(option, point[option.key])}`}</title>
+              </circle>
+            ))}
+          </g>
+        ))}
+        {xLabels.map((item) => (
+          <text key={item.x} x={item.x} y={height - 8} textAnchor="middle" className="gmvmax-chart__label">
+            {item.label}
+          </text>
+        ))}
+      </svg>
+    </div>
   );
 }
 
@@ -862,16 +1601,14 @@ function BudgetDialog({ open, mode, onClose, onSubmit }) {
 
 export default function GmvMaxCampaignDetailPage() {
   const { wid: workspaceId, campaignId } = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const provider = searchParams.get('provider') || '';
   const authId = searchParams.get('authId') || '';
   const advertiserId = searchParams.get('advertiserId') || '';
   const storeIdFromQuery = searchParams.get('storeId') || '';
-  const advertiserTimezone = useMemo(
-    () => resolveTimezoneLabel(searchParams.get('timezone') || ''),
-    [searchParams],
-  );
+  const advertiserTimezoneFromQuery = searchParams.get('timezone') || '';
 
   const resolveTab = useCallback((params) => {
     const value = params.get('tab');
@@ -880,7 +1617,7 @@ export default function GmvMaxCampaignDetailPage() {
   }, []);
 
   const [activeTab, setActiveTab] = useState(() => resolveTab(searchParams));
-  const [timeRange, setTimeRange] = useState(searchParams.get('range') || 'today');
+  const [timeRange, setTimeRange] = useState(searchParams.get('range') || '7d');
   const [customRange, setCustomRange] = useState({
     start: searchParams.get('start_date') || '',
     end: searchParams.get('end_date') || '',
@@ -892,11 +1629,13 @@ export default function GmvMaxCampaignDetailPage() {
   const [lastSaveMessage, setLastSaveMessage] = useState('');
   const [showAdvancedRules, setShowAdvancedRules] = useState(false);
   const [creativeStatusFilters, setCreativeStatusFilters] = useState(
-    () => new Set([...ALL_CREATIVE_STATUS_KEYS, 'UNKNOWN']),
+    () => new Set(ALL_CREATIVE_STATUS_KEYS),
   );
   const [showOnlyHeated, setShowOnlyHeated] = useState(false);
   const [showSeedOnly, setShowSeedOnly] = useState(false);
   const [creativeSortKey, setCreativeSortKey] = useState('spend');
+  const [creativeSortDirection, setCreativeSortDirection] = useState('desc');
+  const [trendMetrics, setTrendMetrics] = useState(() => new Set(['spend', 'gmv']));
   const [productSelection, setProductSelection] = useState(() => new Set());
   const [productSearch, setProductSearch] = useState('');
   const [productMessage, setProductMessage] = useState('');
@@ -905,6 +1644,55 @@ export default function GmvMaxCampaignDetailPage() {
   useEffect(() => {
     setActiveTab(resolveTab(searchParams));
   }, [resolveTab, searchParams]);
+
+  const commonEnabled = Boolean(workspaceId && provider && authId && campaignId);
+
+  const accountsQuery = useAccountsQuery(
+    workspaceId,
+    provider,
+    { page_size: 100 },
+    { enabled: Boolean(workspaceId && provider), staleTime: 5 * 60 * 1000 },
+  );
+  const advertisersQuery = useAdvertisersQuery(
+    workspaceId,
+    provider,
+    authId,
+    {},
+    { enabled: commonEnabled, staleTime: 5 * 60 * 1000 },
+  );
+  const storesQuery = useStoresQuery(
+    workspaceId,
+    provider,
+    authId,
+    { advertiserId: advertiserId || undefined },
+    { enabled: commonEnabled, staleTime: 5 * 60 * 1000 },
+  );
+  const advertiserTimezoneFromMetadata = useMemo(() => {
+    const advertisers = ensureArray(
+      advertisersQuery.data?.items ??
+        advertisersQuery.data?.list ??
+        advertisersQuery.data,
+    );
+    const selected = advertisers.find((item) => {
+      const id = item?.advertiser_id || item?.advertiserId || item?.id;
+      return advertiserId && String(id || '') === String(advertiserId);
+    });
+    return (
+      selected?.display_timezone ||
+      selected?.displayTimezone ||
+      selected?.timezone ||
+      selected?.time_zone ||
+      selected?.timeZone ||
+      ''
+    );
+  }, [advertiserId, advertisersQuery.data]);
+  const advertiserTimezoneSource =
+    advertiserTimezoneFromQuery || advertiserTimezoneFromMetadata;
+  const advertiserTimezone = useMemo(
+    () => resolveTimezoneLabel(advertiserTimezoneSource),
+    [advertiserTimezoneSource],
+  );
+  const hasAdvertiserTimezone = Boolean(advertiserTimezoneSource);
 
   const metricsParams = useMemo(
     () => computeTimeRange(timeRange, customRange, advertiserTimezone),
@@ -922,8 +1710,6 @@ export default function GmvMaxCampaignDetailPage() {
     [metricsParams, storeIdFromQuery],
   );
 
-  const commonEnabled = Boolean(workspaceId && provider && authId && campaignId);
-
   const campaignQuery = useGmvMaxCampaignQuery(workspaceId, provider, authId, campaignId, {
     enabled: commonEnabled,
   });
@@ -934,86 +1720,38 @@ export default function GmvMaxCampaignDetailPage() {
     return resolvedId ? String(resolvedId) : '';
   }, [campaignId, campaignQuery.data]);
 
-  const itemGroupId = useMemo(() => {
-    const detail = campaignQuery.data;
-    const campaign = detail?.campaign || detail;
-    const directId =
-      detail?.item_group_id ||
-      detail?.itemGroupId ||
-      campaign?.item_group_id ||
-      campaign?.itemGroupId;
-    if (directId !== undefined && directId !== null && String(directId) !== '') {
-      return String(directId);
-    }
+  const campaignStoreId = useMemo(() => {
+    const campaign = campaignQuery.data?.campaign || campaignQuery.data;
+    return campaign?.store_id || campaign?.storeId || storeIdFromQuery || '';
+  }, [campaignQuery.data, storeIdFromQuery]);
 
-    const listCandidates = [
-      detail?.item_group_ids || detail?.itemGroupIds,
-      campaign?.item_group_ids || campaign?.itemGroupIds,
-    ];
-    for (const candidate of listCandidates) {
-      const first = ensureArray(candidate).find(
-        (value) => value !== undefined && value !== null && String(value) !== '',
-      );
-      if (first !== undefined && first !== null && String(first) !== '') {
-        return String(first);
-      }
-    }
-
-    const sessions = ensureArray(detail?.sessions || detail?.session_list);
-    for (const session of sessions) {
-      const sessionItemGroup = ensureArray(session?.item_group_ids || session?.itemGroupIds).find(
-        (value) => value !== undefined && value !== null && String(value) !== '',
-      );
-      if (sessionItemGroup !== undefined && sessionItemGroup !== null && String(sessionItemGroup) !== '') {
-        return String(sessionItemGroup);
-      }
-      const products = ensureArray(session?.product_list || session?.products);
-      for (const product of products) {
-        const productItemGroupId = product?.item_group_id || product?.itemGroupId;
-        if (
-          productItemGroupId !== undefined &&
-          productItemGroupId !== null &&
-          String(productItemGroupId) !== ''
-        ) {
-          return String(productItemGroupId);
-        }
-      }
-    }
-
-    return '';
-  }, [campaignQuery.data]);
+  const itemGroupIds = useMemo(
+    () => extractCampaignProductIds(campaignQuery.data),
+    [campaignQuery.data],
+  );
+  // Heating actions remain single-creative/single-product operations. The
+  // creative report and manual sync use the complete campaign binding below.
+  const itemGroupId = itemGroupIds[0] || '';
 
   const productFiltersReady = Boolean(campaignFilterId);
-  const creativeFiltersReady = Boolean(campaignFilterId && itemGroupId);
+  const creativeFiltersReady = Boolean(
+    campaignQuery.isSuccess && campaignFilterId && campaignStoreId && itemGroupIds.length > 0,
+  );
 
   const campaignIdsForSync = useMemo(() => {
-    const ids = new Set();
-    const detail = campaignQuery.data;
-    const campaign = detail?.campaign || detail;
-    const primaryId = campaign?.campaign_id || campaign?.campaignId || campaignId;
-    if (primaryId) {
-      ids.add(String(primaryId));
-    }
-    const extraIds = ensureArray(
-      detail?.campaign_ids || detail?.campaignIds || campaign?.campaign_ids || campaign?.campaignIds,
-    );
-    extraIds.forEach((value) => {
-      if (value === undefined || value === null) return;
-      const normalized = String(value);
-      if (normalized) {
-        ids.add(normalized);
-      }
-    });
-    return Array.from(ids);
-  }, [campaignId, campaignQuery.data]);
+    const currentCampaignId = String(campaignFilterId || campaignId || '').trim();
+    return currentCampaignId ? [currentCampaignId] : [];
+  }, [campaignFilterId, campaignId]);
 
   const { ensureFresh, isSyncing: isEnsuringFresh } = useEnsureFreshGmvData({
     workspaceId,
     provider,
     authId,
+    campaignId: campaignFilterId || campaignId,
     reportParams: syncReportParams,
     levels: ['CAMPAIGN', 'PRODUCT', 'CREATIVE'],
     campaignIds: campaignIdsForSync,
+    itemGroupIds: itemGroupIds.length > 0 ? itemGroupIds : undefined,
   });
 
   const isDashboardTab = activeTab === 'dashboard';
@@ -1029,7 +1767,7 @@ export default function GmvMaxCampaignDetailPage() {
       { key: 'EXCLUDED', label: GmvMaxTexts.creativeStatusExcluded },
       { key: 'REJECTED', label: GmvMaxTexts.creativeStatusRejected },
       { key: 'UNAVAILABLE', label: GmvMaxTexts.creativeStatusUnavailable },
-      { key: 'UNKNOWN', label: GmvMaxTexts.creativeStatusUnknown },
+      { key: 'CANDIDATE', label: '候选素材' },
     ],
     [],
   );
@@ -1047,24 +1785,36 @@ export default function GmvMaxCampaignDetailPage() {
     metricsParams,
     campaignFilterId,
     itemGroupId,
+    itemGroupIds,
     enabled: commonEnabled && productFiltersReady,
     creativeEnabled: commonEnabled && isDashboardTab && creativeFiltersReady,
   });
+  const campaignFreshness = useMemo(
+    () => formatDataFreshness(campaignMetricsQuery.data?.freshness),
+    [campaignMetricsQuery.data?.freshness],
+  );
+  const creativeFreshness = useMemo(
+    () => formatDataFreshness(creativeMetricsQuery.data?.freshness),
+    [creativeMetricsQuery.data?.freshness],
+  );
 
-  const creativesQuery = useGmvMaxCampaignCreativesQuery(
+  const creativesQuery = useGmvMaxCreativeAssetsQuery(
     workspaceId,
     provider,
     authId,
     campaignId,
     {
-      ...metricsParams,
+      store_id: campaignStoreId || undefined,
       advertiser_id: advertiserId || undefined,
-      level: 'creative',
-      campaign_id: campaignFilterId || undefined,
-      item_group_id: itemGroupId || undefined,
+      item_group_ids: itemGroupIds.length > 0 ? itemGroupIds : undefined,
+      lookback_days: 30,
+      page_size: 100,
+      fetch_all_pages: true,
+      refresh: false,
     },
     {
       enabled: commonEnabled && isDashboardTab && creativeFiltersReady,
+      refetchInterval: 60 * 1000,
     },
   );
 
@@ -1083,10 +1833,6 @@ export default function GmvMaxCampaignDetailPage() {
     () => ensureArray(campaignQuery.data?.sessions || campaignQuery.data?.session_list),
     [campaignQuery.data],
   );
-  const campaignStoreId = useMemo(() => {
-    const campaign = campaignQuery.data?.campaign || campaignQuery.data;
-    return campaign?.store_id || campaign?.storeId || '';
-  }, [campaignQuery.data]);
   const campaignStoreBcId = useMemo(() => {
     const campaign = campaignQuery.data?.campaign || campaignQuery.data || {};
     const store = campaign?.store || {};
@@ -1110,12 +1856,15 @@ export default function GmvMaxCampaignDetailPage() {
   }, [sessionList]);
   const initialProductSet = useMemo(() => {
     const set = new Set();
+    extractCampaignProductIds(campaignQuery.data).forEach((id) => {
+      if (id) set.add(String(id));
+    });
     sessionProducts.forEach((product) => {
       const id = getProductIdentifier(product);
       if (id) set.add(String(id));
     });
     return set;
-  }, [sessionProducts]);
+  }, [campaignQuery.data, sessionProducts]);
 
   useEffect(() => {
     setProductSelection(new Set(initialProductSet));
@@ -1129,11 +1878,14 @@ export default function GmvMaxCampaignDetailPage() {
       store_id: storeIdFromQuery || campaignStoreId || undefined,
       advertiser_id: advertiserId || undefined,
       owner_bc_id: campaignStoreBcId,
-      gmv_max_ads_status: 'UNOCCUPIED',
-      page_size: 50,
+      page_size: 500,
     },
     {
-      enabled: Boolean(commonEnabled && isProductsTab && (storeIdFromQuery || campaignStoreId)),
+      enabled: Boolean(commonEnabled && campaignQuery.isSuccess && (storeIdFromQuery || campaignStoreId)),
+      staleTime: 30 * 1000,
+      refetchInterval: 60 * 1000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   );
 
@@ -1216,19 +1968,35 @@ export default function GmvMaxCampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['gmvMax', 'action-logs'] });
     },
   });
-  const creativeActionMutation = useApplyGmvMaxActionMutation(workspaceId, provider, authId, campaignId, {
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
-        exact: false,
-      });
-      queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-heating'] });
-      queryClient.invalidateQueries({
-        queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
-        exact: false,
-      });
+  const creativeActionSuccess = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: composeMetricsQueryBaseKey(workspaceId, provider, authId, campaignId),
+      exact: false,
+    });
+    queryClient.invalidateQueries({ queryKey: ['gmvMax', 'creative-heating'] });
+  }, [authId, campaignId, provider, queryClient, workspaceId]);
+  const startCreativeHeatingMutation = useStartGmvMaxCreativeHeatingMutation(
+    workspaceId,
+    provider,
+    authId,
+    campaignId,
+    {
+      onSuccess: creativeActionSuccess,
     },
-  });
+  );
+  const stopCreativeHeatingMutation = useStopGmvMaxCreativeHeatingMutation(
+    workspaceId,
+    provider,
+    authId,
+    campaignId,
+    {
+      onSuccess: creativeActionSuccess,
+    },
+  );
+  const creativeActionPending =
+    startCreativeHeatingMutation.isPending || stopCreativeHeatingMutation.isPending;
+  const creativeActionError =
+    startCreativeHeatingMutation.error || stopCreativeHeatingMutation.error;
   const updateProductsMutation = useUpdateGmvMaxStrategyMutation(workspaceId, provider, authId, campaignId, {
     onSuccess: () => {
       setProductMessage('商品已更新');
@@ -1257,8 +2025,8 @@ export default function GmvMaxCampaignDetailPage() {
   }, [strategyDirty, strategyQuery.data]);
 
   const campaignMetadata = useMemo(
-    () => deriveCampaignMetadata(campaignQuery.data),
-    [campaignQuery.data],
+    () => deriveCampaignMetadata(campaignQuery.data, mergedProducts),
+    [campaignQuery.data, mergedProducts],
   );
   const isDeleted = useMemo(
     () => isCampaignDeleted(campaignQuery.data?.campaign || campaignQuery.data),
@@ -1266,17 +2034,79 @@ export default function GmvMaxCampaignDetailPage() {
   );
   const isReadOnly = isDeleted;
 
+  const accountDisplayName = useMemo(() => {
+    const account = extractResourceItems(accountsQuery.data).find(
+      (item) => String(item?.id ?? item?.auth_id ?? item?.authId ?? '') === String(authId),
+    );
+    return (
+      readableResourceName(
+        account?.label ||
+          account?.account_name ||
+          account?.accountName ||
+          account?.alias ||
+          account?.display_name ||
+          account?.displayName ||
+          account?.name,
+        authId,
+      ) || '名称待同步'
+    );
+  }, [accountsQuery.data, authId]);
+  const advertiserDisplayName = useMemo(() => {
+    const advertiser = extractResourceItems(advertisersQuery.data).find(
+      (item) =>
+        String(item?.advertiser_id ?? item?.advertiserId ?? item?.id ?? '') === String(advertiserId),
+    );
+    return (
+      readableResourceName(
+        campaignMetadata.advertiserName ||
+          advertiser?.display_name ||
+          advertiser?.displayName ||
+          advertiser?.name ||
+          advertiser?.advertiser_name,
+        advertiserId,
+      ) || '名称待同步'
+    );
+  }, [advertiserId, advertisersQuery.data, campaignMetadata.advertiserName]);
+  const storeDisplayName = useMemo(() => {
+    const storeId = campaignStoreId || storeIdFromQuery;
+    const store = extractResourceItems(storesQuery.data).find(
+      (item) => String(item?.store_id ?? item?.storeId ?? item?.id ?? '') === String(storeId),
+    );
+    return (
+      readableResourceName(
+        campaignMetadata.storeName || store?.store_name || store?.storeName || store?.name,
+        storeId,
+      ) || '名称待同步'
+    );
+  }, [campaignMetadata.storeName, campaignStoreId, storeIdFromQuery, storesQuery.data]);
+
   const metricsSummary = useMemo(
     () => summarizeMetrics(campaignMetricsQuery.data?.report),
     [campaignMetricsQuery.data],
   );
   const trendSeries = useMemo(
-    () => buildTrendSeries(creativeMetricsQuery.data?.report),
-    [creativeMetricsQuery.data],
+    () => buildTrendSeries(campaignMetricsQuery.data?.report, metricsParams),
+    [campaignMetricsQuery.data, metricsParams],
   );
   const productTable = useMemo(
-    () => buildDimensionTable(productMetricsQuery.data?.report, 'product_id'),
-    [productMetricsQuery.data],
+    () => {
+      const rows = buildDimensionTable(productMetricsQuery.data?.report, 'product_id');
+      const boundProducts = ensureArray(campaignMetadata.products);
+      return rows.map((row) => {
+        const isUnknown = !row.id || String(row.id).toLowerCase() === 'unknown';
+        const matched =
+          (!isUnknown && boundProducts.find((product) => String(product.id) === String(row.id))) ||
+          (isUnknown && boundProducts.length === 1 ? boundProducts[0] : null);
+        if (!matched) return row;
+        return {
+          ...row,
+          id: matched.id || row.id,
+          name: matched.name || row.name,
+          image: matched.image || row.image,
+        };
+      });
+    },
+    [campaignMetadata.products, productMetricsQuery.data],
   );
   const creatives = useMemo(
     () =>
@@ -1285,6 +2115,14 @@ export default function GmvMaxCampaignDetailPage() {
       ),
     [creativeHeatingQuery.data, creativeMetricsQuery.data, creativesQuery.data],
   );
+  const creativeStatusCounts = useMemo(() => {
+    const counts = new Map();
+    creatives.forEach((creative) => {
+      const key = creative.status || 'CANDIDATE';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }, [creatives]);
   const seedCreatives = useMemo(
     () =>
       creatives
@@ -1294,7 +2132,7 @@ export default function GmvMaxCampaignDetailPage() {
   );
   const filteredCreatives = useMemo(() => {
     return creatives.filter((creative) => {
-      if (!creativeStatusFilters.has(creative.status || 'UNKNOWN')) return false;
+      if (!creativeStatusFilters.has(creative.status || 'CANDIDATE')) return false;
       if (showOnlyHeated && !isCreativeBoosting(creative)) return false;
       if (showSeedOnly && !isSeedCreative(creative)) return false;
       return true;
@@ -1305,28 +2143,34 @@ export default function GmvMaxCampaignDetailPage() {
     const list = [...filteredCreatives];
     const getValue = (creative) => {
       const metrics = creative.metrics || {};
-      if (creativeSortKey === 'roas') return metrics.roas || 0;
-      if (creativeSortKey === 'conversions') return metrics.orders || 0;
-      return metrics.spend || 0;
+      return Number(metrics[creativeSortKey]) || 0;
     };
-    return list.sort((a, b) => getValue(b) - getValue(a));
-  }, [creativeSortKey, filteredCreatives]);
+    const multiplier = creativeSortDirection === 'asc' ? 1 : -1;
+    return list.sort((a, b) => (getValue(a) - getValue(b)) * multiplier);
+  }, [creativeSortDirection, creativeSortKey, filteredCreatives]);
+
+  const creativeMetricsTotals = useMemo(
+    () => summarizeCreativeMetrics(sortedCreatives),
+    [sortedCreatives],
+  );
 
   const creativesByStatus = useMemo(() => {
     const groups = new Map();
     sortedCreatives.forEach((creative) => {
-      const key = creative.status || 'UNKNOWN';
+      const key = creative.status || 'CANDIDATE';
       if (!groups.has(key)) {
         groups.set(key, []);
       }
       groups.get(key).push(creative);
     });
     const visibleStatuses = creativeStatusOptions.filter((option) => creativeStatusFilters.has(option.key));
-    return visibleStatuses.map((option) => ({
-      key: option.key,
-      label: option.label,
-      items: groups.get(option.key) || [],
-    }));
+    return visibleStatuses
+      .map((option) => ({
+        key: option.key,
+        label: option.label,
+        items: groups.get(option.key) || [],
+      }))
+      .filter((group) => group.items.length > 0);
   }, [creativeStatusFilters, creativeStatusOptions, sortedCreatives]);
 
   const creativeStatusLabelMap = useMemo(
@@ -1455,11 +2299,11 @@ export default function GmvMaxCampaignDetailPage() {
   const handleSyncMetrics = useCallback(async () => {
     if (isReadOnly || metricsSync.isSyncing) return;
     try {
-      await ensureFresh();
       await metricsSync.startSyncAsync({
         start_date: metricsParams.start_date,
         end_date: metricsParams.end_date,
         campaign_ids: campaignIdsForSync,
+        item_group_ids: itemGroupIds.length > 0 ? itemGroupIds : undefined,
         levels: ['CAMPAIGN', 'PRODUCT', 'CREATIVE'],
       });
     } catch (error) {
@@ -1468,9 +2312,9 @@ export default function GmvMaxCampaignDetailPage() {
     }
   }, [
     campaignIdsForSync,
-    ensureFresh,
     isReadOnly,
     metricsSync,
+    itemGroupIds,
     metricsParams.end_date,
     metricsParams.start_date,
   ]);
@@ -1493,48 +2337,90 @@ export default function GmvMaxCampaignDetailPage() {
     });
   }, []);
 
+  const handleToggleTrendMetric = useCallback((metric) => {
+    setTrendMetrics((prev) => {
+      const next = new Set(prev);
+      if (next.has(metric)) {
+        if (next.size === 1) return prev;
+        next.delete(metric);
+      } else {
+        next.add(metric);
+      }
+      return next;
+    });
+  }, []);
+
   const handleBoostCreative = useCallback(
     async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
-      if (!creativeId || creativeActionMutation.isPending) return;
+      if (!creativeId || creativeActionPending) return;
       if (isReadOnly) return;
-      await ensureFresh();
-      creativeActionMutation.mutate({ type: 'boost', creative_id: creativeId });
+      const fresh = await ensureFresh();
+      if (!fresh) {
+        message.warning('实时数据尚未同步完成，本次加热未执行，请稍后重试。');
+        return;
+      }
+      startCreativeHeatingMutation.mutate({
+        creativeId,
+        payload: buildCreativeHeatingPayload(creative, itemGroupId),
+      });
     },
-    [creativeActionMutation, ensureFresh, isReadOnly],
+    [creativeActionPending, ensureFresh, isReadOnly, itemGroupId, startCreativeHeatingMutation],
   );
 
   const handleStopHeat = useCallback(
     async (creative) => {
       const creativeId = creative?.creativeId || creative?.metadata?.id;
-      if (!creativeId || creativeActionMutation.isPending) return;
+      if (!creativeId || creativeActionPending) return;
       if (isReadOnly) return;
-      await ensureFresh();
-      creativeActionMutation.mutate({ type: 'stop_heat', creative_id: creativeId });
+      const fresh = await ensureFresh();
+      if (!fresh) {
+        message.warning('实时数据尚未同步完成，本次停止操作未执行，请稍后重试。');
+        return;
+      }
+      stopCreativeHeatingMutation.mutate({
+        creativeId,
+        payload: buildCreativeHeatingIdentityPayload(creative, itemGroupId),
+      });
     },
-    [creativeActionMutation, ensureFresh, isReadOnly],
+    [creativeActionPending, ensureFresh, isReadOnly, itemGroupId, stopCreativeHeatingMutation],
   );
 
   const handlePause = useCallback(async () => {
     if (isReadOnly) return;
-    await ensureFresh();
-    await applyActionMutation.mutateAsync({ type: 'pause' });
-  }, [applyActionMutation, ensureFresh, isReadOnly]);
+    try {
+      const result = await applyActionMutation.mutateAsync({ type: 'pause' });
+      if (result?.status === 'queued') {
+        message.info('暂停请求已接管，正以最高优先级执行；仅等待当前同账户请求结束。');
+      } else {
+        message.success('系列已暂停。');
+      }
+    } catch (error) {
+      message.error(resolveActionError(error, '暂停系列失败，请稍后重试。'));
+    }
+  }, [applyActionMutation, isReadOnly]);
 
   const handleResume = useCallback(async () => {
     if (isReadOnly) return;
-    await ensureFresh();
-    await applyActionMutation.mutateAsync({ type: 'resume' });
-  }, [applyActionMutation, ensureFresh, isReadOnly]);
+    try {
+      await applyActionMutation.mutateAsync({ type: 'resume' });
+      message.success('系列已启用。');
+    } catch (error) {
+      message.error(resolveActionError(error, '启用系列失败，请稍后重试。'));
+    }
+  }, [applyActionMutation, isReadOnly]);
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     if (isReadOnly) return;
     const confirmed = window.confirm('确定删除该系列？此操作无法恢复。');
     if (!confirmed) return;
-    ensureFresh()
-      .then(() => applyActionMutation.mutateAsync({ type: 'delete' }))
-      .catch(() => {});
-  }, [applyActionMutation, ensureFresh, isReadOnly]);
+    try {
+      await applyActionMutation.mutateAsync({ type: 'delete' });
+      message.success('系列已删除。');
+    } catch (error) {
+      message.error(resolveActionError(error, '删除系列失败，请稍后重试。'));
+    }
+  }, [applyActionMutation, isReadOnly]);
 
   const openBudgetDialog = useCallback((mode) => {
     setBudgetDialog({ open: true, mode });
@@ -1545,7 +2431,7 @@ export default function GmvMaxCampaignDetailPage() {
   }, []);
 
   const handleBudgetSubmit = useCallback(
-    (percent) => {
+    async (percent) => {
       if (isReadOnly) return;
       const payload = {
         type: 'update_budget',
@@ -1554,10 +2440,17 @@ export default function GmvMaxCampaignDetailPage() {
           percent,
         },
       };
-      ensureFresh()
-        .then(() => applyActionMutation.mutateAsync(payload))
-        .catch(() => {});
-      closeBudgetDialog();
+      const fresh = await ensureFresh();
+      if (!fresh) {
+        message.warning('实时数据尚未同步完成，预算未修改，请稍后重试。');
+        return;
+      }
+      try {
+        await applyActionMutation.mutateAsync(payload);
+        closeBudgetDialog();
+      } catch (error) {
+        message.error(resolveActionError(error, '预算调整失败，请稍后重试。'));
+      }
     },
     [applyActionMutation, budgetDialog.mode, closeBudgetDialog, ensureFresh, isReadOnly],
   );
@@ -1638,15 +2531,37 @@ export default function GmvMaxCampaignDetailPage() {
 
   const latestPreviewResult = previewStrategyMutation.data;
 
+  const remoteStatusLabel = determineStatusLabel(campaignMetadata.status);
+  const isCampaignRunning = remoteStatusLabel === '运行中';
+  const automationEnabled = Boolean(
+    strategyQuery.data && normalizeStrategyResponse(strategyQuery.data).enabled,
+  );
   const statusLabel = isDeleted
     ? GmvMaxTexts.statusDeleted || '已删除'
-    : determineStatusLabel(campaignMetadata.status);
+    : remoteStatusLabel === '已暂停'
+      ? '已暂停'
+      : isCampaignRunning
+        ? strategyQuery.isLoading
+          ? '状态确认中'
+          : automationEnabled
+            ? '自动投放中'
+            : '手动投放中'
+        : remoteStatusLabel;
+  const statusTone = isDeleted
+    ? 'muted'
+    : isCampaignRunning
+      ? 'success'
+      : statusLabel === '已暂停'
+        ? 'warning'
+        : 'muted';
+  const primaryProduct = campaignMetadata.products?.[0] || null;
+  const selectedDateLabel = formatDateRangeLabel(metricsParams);
   const spend = metricsSummary.spend || 0;
   const gmv = metricsSummary.gmv || 0;
   const roas = spend > 0 ? gmv / spend : null;
 
   const summaryCards = [
-    { label: '花费', value: `$${formatMoney(spend)}` },
+    { label: '消耗', value: `$${formatMoney(spend)}` },
     { label: 'GMV', value: `$${formatMoney(gmv)}` },
     { label: '订单', value: formatNumber(metricsSummary.orders) },
     { label: 'ROAS', value: formatRoas(roas) },
@@ -1669,99 +2584,131 @@ export default function GmvMaxCampaignDetailPage() {
     : '商品维度数据需要系列配置完成后才能展示。';
   const missingCreativeFiltersMessage = creativeFiltersReady
     ? ''
-    : '创意维度数据需要广告系列和商品组配置。';
+    : campaignQuery.isSuccess && campaignFilterId && campaignStoreId
+      ? '商品关联未解析，已停止加载创意报表，避免将缺失数据错误显示为 0。请先同步系列详情。'
+      : '创意维度数据需要广告系列和商品组配置。';
 
   return (
     <div className="gmvmax-campaign-detail">
       <header className="gmvmax-campaign-detail__header">
-        <div className="gmvmax-campaign-detail__header-main">
-          <h1>{campaignMetadata.name || `系列 ${campaignId}`}</h1>
-          <span className={`gmvmax-status gmvmax-status--${statusLabel?.toLowerCase?.()}`}>
-            {statusLabel}
-          </span>
+        <div className="gmvmax-campaign-detail__topbar">
+          <button
+            type="button"
+            className="gmvmax-button gmvmax-button--ghost gmvmax-campaign-detail__back"
+            onClick={() => navigate(-1)}
+          >
+            <span aria-hidden="true">←</span>
+            {GmvMaxTexts.back}
+          </button>
+          <div className="gmvmax-campaign-detail__actions">
+            {!isDeleted ? (
+              <button
+                type="button"
+                className={`gmvmax-button ${isCampaignRunning ? 'gmvmax-button--secondary' : 'gmvmax-button--primary'}`}
+                onClick={isCampaignRunning ? handlePause : handleResume}
+                disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
+              >
+                {isCampaignRunning ? '暂停投放' : '启用投放'}
+              </button>
+            ) : null}
+            <details className="gmvmax-campaign-detail__more">
+              <summary className="gmvmax-button gmvmax-button--ghost">更多操作</summary>
+              <div className="gmvmax-campaign-detail__more-menu">
+                <button
+                  type="button"
+                  onClick={() => openBudgetDialog('increase')}
+                  disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
+                >
+                  提升预算
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openBudgetDialog('decrease')}
+                  disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
+                >
+                  降低预算
+                </button>
+                <button type="button" onClick={openActionLogs}>
+                  {GmvMaxTexts.actionLogs}
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={handleDelete}
+                  disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
+                >
+                  删除系列
+                </button>
+              </div>
+            </details>
+          </div>
         </div>
-        <div className="gmvmax-campaign-detail__info">
-          <dl>
-            <div>
-              <dt>工作区</dt>
-              <dd>{workspaceId}</dd>
+
+        <div className="gmvmax-campaign-detail__identity">
+          <div className="gmvmax-campaign-detail__header-main">
+            <span className={`gmvmax-status-pill gmvmax-status-pill--${statusTone}`}>
+              <span className="gmvmax-status-pill__dot" aria-hidden="true" />
+              {statusLabel}
+            </span>
+            <h1 title={campaignMetadata.name || `系列 ${campaignId}`}>
+              {campaignMetadata.name || `系列 ${campaignId}`}
+            </h1>
+            <span className="gmvmax-campaign-detail__campaign-id">ID {campaignId}</span>
+          </div>
+
+          <div className="gmvmax-campaign-detail__product-summary">
+            <div className="gmvmax-campaign-detail__product-image">
+              {primaryProduct?.image ? (
+                <img src={primaryProduct.image} alt={primaryProduct.name || '商品'} />
+              ) : (
+                <span>暂无图片</span>
+              )}
             </div>
             <div>
-              <dt>渠道</dt>
-              <dd>{provider || '—'}</dd>
-            </div>
-            <div>
-              <dt>账户</dt>
-              <dd>{authId || '—'}</dd>
-            </div>
-            <div>
-              <dt>广告主</dt>
-              <dd>{campaignMetadata.advertiserName || advertiserId || '—'}</dd>
-            </div>
-            <div>
-              <dt>店铺</dt>
-              <dd>{campaignMetadata.storeName || storeIdFromQuery || '—'}</dd>
-            </div>
-            <div>
-              <dt>商家中心</dt>
-              <dd>{campaignMetadata.businessCenterName || '—'}</dd>
-            </div>
-          </dl>
-          <div className="gmvmax-campaign-detail__products">
-            <span>{campaignMetadata.products?.length || 0} 个商品</span>
-            <div className="gmvmax-product-thumbnails">
-              {campaignMetadata.products?.slice(0, 6).map((product) => (
-                <div key={product.id || product.name} className="gmvmax-product-thumbnail">
-                  {product.image ? <img src={product.image} alt={product.name || '商品'} /> : '📦'}
-                </div>
-              ))}
-              {(campaignMetadata.products?.length || 0) > 6 ? (
-                <span className="gmvmax-product-thumbnail gmvmax-product-thumbnail--more">
-                  +{campaignMetadata.products.length - 6}
-                </span>
-              ) : null}
+              <span>{campaignMetadata.products?.length || 0} 个商品</span>
+              <strong title={primaryProduct?.name || ''}>
+                {primaryProduct?.name || '未获取商品信息'}
+              </strong>
             </div>
           </div>
         </div>
-        <div className="gmvmax-campaign-detail__actions">
-          <button
-            type="button"
-            onClick={handlePause}
-            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
-          >
-            暂停
-          </button>
-          <button
-            type="button"
-            onClick={handleResume}
-            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
-          >
-            启用
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
-          >
-            删除
-          </button>
-          <button
-            type="button"
-            onClick={() => openBudgetDialog('increase')}
-            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
-          >
-            提升预算
-          </button>
-          <button
-            type="button"
-            onClick={() => openBudgetDialog('decrease')}
-            disabled={applyActionMutation.isPending || isEnsuringFresh || isReadOnly}
-          >
-            降低预算
-          </button>
-          <button type="button" onClick={openActionLogs}>
-            {GmvMaxTexts.actionLogs}
-          </button>
+
+        <div className="gmvmax-campaign-detail__info">
+          <dl>
+            <div>
+              <dt>店铺</dt>
+              <dd>{storeDisplayName}</dd>
+            </div>
+            <div>
+              <dt>广告主</dt>
+              <dd>{advertiserDisplayName}</dd>
+            </div>
+            <div>
+              <dt>授权账户</dt>
+              <dd>{accountDisplayName}</dd>
+            </div>
+          </dl>
+          <details className="gmvmax-campaign-detail__technical">
+            <summary>查看技术信息</summary>
+            <dl>
+              <div>
+                <dt>店铺 ID</dt>
+                <dd>{campaignStoreId || storeIdFromQuery || '—'}</dd>
+              </div>
+              <div>
+                <dt>广告主 ID</dt>
+                <dd>{advertiserId || '—'}</dd>
+              </div>
+              <div>
+                <dt>授权账户 ID</dt>
+                <dd>{authId || '—'}</dd>
+              </div>
+              <div>
+                <dt>工作区 / 渠道</dt>
+                <dd>{workspaceId} / {provider || '—'}</dd>
+              </div>
+            </dl>
+          </details>
         </div>
         {applyActionMutation.error ? (
           <div className="gmvmax-error">{applyActionMutation.error.message || '操作失败'}</div>
@@ -1777,9 +2724,6 @@ export default function GmvMaxCampaignDetailPage() {
           </button>
         </div>
       ) : null}
-      {notifications.error ? (
-        <div className="gmvmax-error">{notifications.error.message || '通知刷新失败'}</div>
-      ) : null}
 
       {isReadOnly ? (
         <div className="gmvmax-status-banner gmvmax-status-banner--muted">
@@ -1788,7 +2732,10 @@ export default function GmvMaxCampaignDetailPage() {
       ) : null}
 
       <section className="gmvmax-summary">
-        <h2>{GmvMaxTexts.performanceSummary}</h2>
+        <div className="gmvmax-summary__heading">
+          <h2>{GmvMaxTexts.performanceSummary}</h2>
+          <span>{selectedDateLabel}</span>
+        </div>
         <div className="gmvmax-summary__cards">
           {summaryCards.map((card) => (
             <div key={card.label} className="gmvmax-summary__card">
@@ -1824,70 +2771,93 @@ export default function GmvMaxCampaignDetailPage() {
       </div>
 
       {activeTab === 'automation' ? (
-        <section className="gmvmax-automation">
+        <section className="gmvmax-automation gmvmax-automation--pro">
           <div className="gmvmax-automation__header">
-            <h2>策略自动化</h2>
-            {strategyQuery.isFetching ? <Loading text="策略加载中…" /> : null}
+            <div>
+              <h2>智能策略</h2>
+              <p className="gmvmax-automation__hint">
+                每 3 分钟监控 GMV Max 表现，按 ROI、消耗和订单自动执行暂停、恢复和预算调整。
+              </p>
+            </div>
+            {strategyQuery.isFetching ? <Loading text="策略加载中" /> : null}
             {strategyQuery.error ? (
               <div className="gmvmax-error">{strategyQuery.error.message || '策略加载失败'}</div>
             ) : null}
           </div>
-          <div className="gmvmax-automation__summary">
+
+          <div className="gmvmax-automation__summary gmvmax-automation__summary--pro">
             <div>
-              <strong>策略状态：</strong>
+              <strong>当前状态</strong>
               <span>{strategyHighlights.automation}</span>
-              <span> · {strategyHighlights.autoHeating}</span>
+              <span>{strategyHighlights.autoHeating}</span>
             </div>
             <div className="gmvmax-automation__summary-details">
               <span>{strategyHighlights.heatingRule}</span>
-              <span> · {strategyHighlights.pauseRule}</span>
+              <span>{strategyHighlights.pauseRule}</span>
             </div>
+            {strategyDraft.smartGuardState?.last_decision ? (
+              <div className="gmvmax-automation__decision">
+                <span>最近决策</span>
+                <strong>{strategyDraft.smartGuardState.last_decision.action || 'HOLD'}</strong>
+                <em>{strategyDraft.smartGuardState.last_decision.reason || '暂无原因'}</em>
+              </div>
+            ) : null}
           </div>
-          <div className="gmvmax-automation__grid">
+
+          <div className="gmvmax-automation__grid gmvmax-automation__grid--pro">
             <div className="gmvmax-automation__column">
-              <FormField label="启用自动化">
+              <FormField label="启用策略">
                 <input
                   type="checkbox"
                   checked={Boolean(strategyDraft.enabled)}
                   onChange={(event) => handleStrategyFieldChange('enabled', event.target.checked)}
                 />
               </FormField>
-              <FormField label={<span title="达到触发条件后自动申请加热">自动加热</span>}>
+              <FormField label="自动加热">
                 <input
                   type="checkbox"
                   checked={Boolean(strategyDraft.autoHeatingEnabled)}
                   onChange={(event) => handleStrategyFieldChange('autoHeatingEnabled', event.target.checked)}
                 />
               </FormField>
-              <FormField label="监测频率（分钟）">
+              <FormField label="监控间隔（分钟）">
                 <input
                   type="number"
                   min={MIN_MONITORING_INTERVAL}
-                  value={strategyDraft.cooldownMinutes}
+                  value={strategyDraft.monitorIntervalMinutes}
                   onChange={(event) =>
                     handleStrategyFieldChange(
-                      'cooldownMinutes',
+                      'monitorIntervalMinutes',
                       Math.max(MIN_MONITORING_INTERVAL, Number(event.target.value) || MIN_MONITORING_INTERVAL),
                     )
                   }
                 />
               </FormField>
-              <FormField label="首次调整前的最短运行时间（分钟）">
+              <FormField label="冷却时间（分钟）">
                 <input
                   type="number"
-                  min="0"
-                  value={strategyDraft.minRuntimeMinutes ?? ''}
-                  onChange={(event) => handleStrategyFieldChange('minRuntimeMinutes', event.target.value)}
+                  min={MIN_MONITORING_INTERVAL}
+                  value={strategyDraft.cooldownMinutes}
+                  onChange={(event) => handleStrategyFieldChange('cooldownMinutes', event.target.value)}
+                />
+              </FormField>
+              <FormField label="评估窗口（分钟）">
+                <input
+                  type="number"
+                  min={MIN_MONITORING_INTERVAL}
+                  value={strategyDraft.evaluationWindowMinutes}
+                  onChange={(event) => handleStrategyFieldChange('evaluationWindowMinutes', event.target.value)}
                 />
               </FormField>
             </div>
+
             <div className="gmvmax-automation__column">
-              <FormField label="目标 ROAS">
+              <FormField label="自动暂停 ROI 阈值">
                 <input
                   type="number"
                   step="0.01"
-                  value={strategyDraft.thresholds.target_roi ?? ''}
-                  onChange={(event) => handleThresholdChange('target_roi', event.target.value)}
+                  value={strategyDraft.thresholds.auto_pause_roi_threshold ?? ''}
+                  onChange={(event) => handleThresholdChange('auto_pause_roi_threshold', event.target.value)}
                 />
               </FormField>
               <FormField label="最低 ROAS">
@@ -1898,33 +2868,49 @@ export default function GmvMaxCampaignDetailPage() {
                   onChange={(event) => handleThresholdChange('min_roi', event.target.value)}
                 />
               </FormField>
-              <FormField label={<span title="ROI 低于该值时自动暂停系列">自动暂停 ROI 阈值</span>}>
+              <FormField label="目标 ROAS">
                 <input
                   type="number"
                   step="0.01"
-                  value={strategyDraft.thresholds.auto_pause_roi_threshold ?? ''}
-                  onChange={(event) => handleThresholdChange('auto_pause_roi_threshold', event.target.value)}
+                  value={strategyDraft.thresholds.target_roi ?? ''}
+                  onChange={(event) => handleThresholdChange('target_roi', event.target.value)}
                 />
               </FormField>
-              <FormField label="最高 ROAS">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={strategyDraft.thresholds.max_roi ?? ''}
-                  onChange={(event) => handleThresholdChange('max_roi', event.target.value)}
-                />
-              </FormField>
-            </div>
-            <div className="gmvmax-automation__column">
-              <FormField label="每次评估最少曝光">
+              <FormField label="最小有效消耗（美元）">
                 <input
                   type="number"
                   min="0"
-                  value={strategyDraft.thresholds.min_impressions ?? ''}
-                  onChange={(event) => handleThresholdChange('min_impressions', event.target.value)}
+                  step="0.5"
+                  value={strategyDraft.minSpendDollars ?? ''}
+                  onChange={(event) => handleStrategyFieldChange('minSpendDollars', event.target.value)}
                 />
               </FormField>
-              <FormField label={<span title="达到最少点击后才会评估是否加热">触发加热最少点击</span>}>
+              <FormField label="首次调整前运行分钟">
+                <input
+                  type="number"
+                  min="0"
+                  value={strategyDraft.minRuntimeMinutes ?? ''}
+                  onChange={(event) => handleStrategyFieldChange('minRuntimeMinutes', event.target.value)}
+                />
+              </FormField>
+            </div>
+
+            <div className="gmvmax-automation__column">
+              <FormField label="预算节奏">
+                <input
+                  type="checkbox"
+                  checked={Boolean(strategyDraft.pacingEnabled)}
+                  onChange={(event) => handleStrategyFieldChange('pacingEnabled', event.target.checked)}
+                />
+              </FormField>
+              <FormField label="Hermes 智能建议">
+                <input
+                  type="checkbox"
+                  checked={Boolean(strategyDraft.hermesEnabled)}
+                  onChange={(event) => handleStrategyFieldChange('hermesEnabled', event.target.checked)}
+                />
+              </FormField>
+              <FormField label="最小点击数">
                 <input
                   type="number"
                   min="0"
@@ -1932,7 +2918,7 @@ export default function GmvMaxCampaignDetailPage() {
                   onChange={(event) => handleThresholdChange('min_clicks', event.target.value)}
                 />
               </FormField>
-              <FormField label="单日最高预算提升比例 (%)">
+              <FormField label="每日最大提预算 (%)">
                 <input
                   type="number"
                   min="0"
@@ -1941,7 +2927,7 @@ export default function GmvMaxCampaignDetailPage() {
                   onChange={(event) => handleThresholdChange('max_budget_raise_pct_per_day', event.target.value)}
                 />
               </FormField>
-              <FormField label="单日最高预算降低比例 (%)">
+              <FormField label="每日最大降预算 (%)">
                 <input
                   type="number"
                   min="0"
@@ -1950,23 +2936,14 @@ export default function GmvMaxCampaignDetailPage() {
                   onChange={(event) => handleThresholdChange('max_budget_cut_pct_per_day', event.target.value)}
                 />
               </FormField>
-              <FormField label="单次调整最大 ROAS 变化">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={strategyDraft.thresholds.max_roas_step_per_adjust ?? ''}
-                  onChange={(event) => handleThresholdChange('max_roas_step_per_adjust', event.target.value)}
-                />
-              </FormField>
             </div>
           </div>
 
           <section className="gmvmax-automation__rules">
             <div className="gmvmax-automation__rules-header">
               <div>
-                <h3>高级规则（可选）</h3>
-                <p className="gmvmax-automation__hint">基础阈值已生效，如需更复杂的逻辑可展开编辑。</p>
+                <h3>高级规则</h3>
+                <p className="gmvmax-automation__hint">可按消耗、订单、点击、ROAS 等指标组合设置自动操作。</p>
               </div>
               <button type="button" onClick={() => setShowAdvancedRules((prev) => !prev)}>
                 {showAdvancedRules ? '收起' : '展开'}
@@ -1975,12 +2952,10 @@ export default function GmvMaxCampaignDetailPage() {
             {showAdvancedRules ? (
               <div className="gmvmax-automation__rules-list">
                 <div className="gmvmax-automation__rules-actions">
-                  <button type="button" onClick={handleAddRule}>
-                    新增规则
-                  </button>
+                  <button type="button" onClick={handleAddRule}>添加规则</button>
                 </div>
                 {(strategyDraft.rules || []).length === 0 ? (
-                  <p>尚未配置规则，请添加以启动自动化。</p>
+                  <p>暂无自定义规则，系统将按默认智能策略执行。</p>
                 ) : (
                   strategyDraft.rules.map((rule, index) => (
                     <StrategyRuleEditor
@@ -1992,9 +2967,7 @@ export default function GmvMaxCampaignDetailPage() {
                   ))
                 )}
               </div>
-            ) : (
-              <p>已隐藏高级规则，当前仅使用基础阈值配置。</p>
-            )}
+            ) : null}
           </section>
 
           <div className="gmvmax-automation__footer">
@@ -2002,31 +2975,21 @@ export default function GmvMaxCampaignDetailPage() {
               {lastSaveMessage ? <span>{lastSaveMessage}</span> : null}
             </div>
             <div className="gmvmax-automation__footer-actions">
-              <button type="button" onClick={handleStrategyReset} disabled={isReadOnly || !strategyDirty}>
-                重置
-              </button>
-              <button
-                type="button"
-                onClick={handleStrategyPreview}
-                disabled={previewStrategyMutation.isPending || isReadOnly}
-              >
-                预览
-              </button>
+              <button type="button" onClick={handleStrategyReset} disabled={isReadOnly || !strategyDirty}>重置</button>
+              <button type="button" onClick={handleStrategyPreview} disabled={previewStrategyMutation.isPending || isReadOnly}>预览</button>
               <button
                 type="button"
                 className="primary"
                 onClick={handleStrategySave}
                 disabled={updateStrategyMutation.isPending || !strategyDirty || isReadOnly}
               >
-                {updateStrategyMutation.isPending ? '保存中…' : '保存配置'}
+                {updateStrategyMutation.isPending ? '保存中...' : '保存策略'}
               </button>
             </div>
           </div>
 
           {previewStrategyMutation.error ? (
-            <div className="gmvmax-error">
-              {previewStrategyMutation.error.message || '预览失败'}
-            </div>
+            <div className="gmvmax-error">{previewStrategyMutation.error.message || '预览失败'}</div>
           ) : null}
           {latestPreviewResult ? (
             <div className="gmvmax-preview-result">
@@ -2083,53 +3046,88 @@ export default function GmvMaxCampaignDetailPage() {
           </div>
         </section>
       ) : null}
-
       {activeTab === 'dashboard' ? (
         <section className="gmvmax-dashboard">
           <div className="gmvmax-dashboard__controls">
-            <div className="gmvmax-dashboard__range">
-              {[{ key: 'today', label: '今日' }, { key: '7d', label: '近 7 日' }, { key: '30d', label: '近 30 日' }, { key: 'custom', label: '自定义' }].map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`gmvmax-chip ${timeRange === option.key ? 'gmvmax-chip--active' : ''}`}
-                  onClick={() => handleTimeRangeChange(option.key)}
-                >
-                  {option.label}
-                </button>
-              ))}
-              {timeRange === 'custom' ? (
-                <div className="gmvmax-dashboard__custom-range">
-                  <input
-                    type="date"
-                    value={customRange.start}
-                    onChange={(event) => handleCustomRangeChange('start', event.target.value)}
-                  />
-                  <span>至</span>
-                  <input
-                    type="date"
-                    value={customRange.end}
-                    onChange={(event) => handleCustomRangeChange('end', event.target.value)}
-                  />
-                </div>
-              ) : null}
+            <div className="gmvmax-dashboard__range-block">
+              <div className="gmvmax-dashboard__range">
+                {[
+                  { key: 'today', label: '今日' },
+                  { key: '7d', label: '近 7 日' },
+                  { key: '30d', label: '近 30 日' },
+                  { key: 'custom', label: '自定义' },
+                ].map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`gmvmax-chip ${timeRange === option.key ? 'gmvmax-chip--active' : ''}`}
+                    onClick={() => handleTimeRangeChange(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                {timeRange === 'custom' ? (
+                  <div className="gmvmax-dashboard__custom-range">
+                    <input
+                      type="date"
+                      aria-label="开始日期"
+                      value={customRange.start}
+                      onChange={(event) => handleCustomRangeChange('start', event.target.value)}
+                    />
+                    <span>至</span>
+                    <input
+                      type="date"
+                      aria-label="结束日期"
+                      value={customRange.end}
+                      onChange={(event) => handleCustomRangeChange('end', event.target.value)}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <strong className="gmvmax-dashboard__selected-dates">{selectedDateLabel}</strong>
             </div>
             <div className="gmvmax-dashboard__controls-right">
-              {advertiserTimezone ? (
-                <div className="gmvmax-dashboard__timezone">按广告主时区：{advertiserTimezone}</div>
-              ) : null}
+              <div className="gmvmax-dashboard__timezone">
+                {hasAdvertiserTimezone ? '按广告主时区' : '广告主时区未知，暂按浏览器时区'}：
+                {advertiserTimezone}
+              </div>
               <button
                 type="button"
                 className="gmvmax-button gmvmax-button--secondary"
                 onClick={handleSyncMetrics}
                 disabled={metricsSync.isSyncing || isReadOnly}
               >
-                {metricsSync.isSyncing ? '同步中…' : '同步数据'}
+                {metricsSync.isSyncing
+                  ? metricsSync.syncState === 'RETRY'
+                    ? '等待同步…'
+                    : '同步中…'
+                  : '同步数据'}
               </button>
+              {metricsSync.isSyncing && metricsSync.syncMessage ? (
+                <span className="gmvmax-dashboard__sync-progress" role="status" aria-live="polite">
+                  {metricsSync.syncMessage}
+                </span>
+              ) : null}
             </div>
           </div>
+          {(campaignFreshness || creativeFreshness) ? (
+            <div className="gmvmax-data-freshness-list">
+              {campaignFreshness ? (
+                <div className={`gmvmax-data-freshness gmvmax-data-freshness--${campaignFreshness.state}`}>
+                  <strong>系列数据：{campaignFreshness.label}</strong>
+                  <span>{campaignFreshness.detail}</span>
+                </div>
+              ) : null}
+              {creativeFreshness ? (
+                <div className={`gmvmax-data-freshness gmvmax-data-freshness--${creativeFreshness.state}`}>
+                  <strong>素材数据：{creativeFreshness.label}</strong>
+                  <span>{creativeFreshness.detail}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {campaignMetricsQuery.isFetching || productMetricsQuery.isFetching ? (
-            <Loading text="数据加载中…" />
+            <Loading text="数据加载中..." />
           ) : null}
           {!productFiltersReady ? (
             <div className="gmvmax-text-muted">{missingProductFiltersMessage}</div>
@@ -2150,10 +3148,28 @@ export default function GmvMaxCampaignDetailPage() {
 
           <div className="gmvmax-dashboard__chart">
             <div className="gmvmax-dashboard__chart-header">
-              <h3>消耗 / ROAS 趋势</h3>
-              <span className="gmvmax-dashboard__chart-caption">按所选时间范围</span>
+              <div>
+                <h3>投放趋势</h3>
+                <span className="gmvmax-dashboard__chart-caption">{selectedDateLabel}</span>
+              </div>
+              <div className="gmvmax-trend-metrics" aria-label="趋势指标">
+                {TREND_METRIC_OPTIONS.map((option) => (
+                  <label
+                    key={option.key}
+                    className={`gmvmax-trend-metric ${trendMetrics.has(option.key) ? 'is-active' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={trendMetrics.has(option.key)}
+                      onChange={() => handleToggleTrendMetric(option.key)}
+                    />
+                    <i style={{ backgroundColor: option.color }} />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <TrendChart data={trendSeries} />
+            <TrendChart data={trendSeries} selectedMetrics={trendMetrics} />
           </div>
 
           <div className="gmvmax-dashboard__table gmvmax-dashboard__table--creatives">
@@ -2161,8 +3177,7 @@ export default function GmvMaxCampaignDetailPage() {
               <div className="gmvmax-seed-panel">
                 <div className="gmvmax-seed-panel__header">
                   <div className="gmvmax-seed-panel__title">
-                    <span role="img" aria-label="seed">⭐</span>
-                    <span>种子视频 ({seedCreatives.length})</span>
+                    <span>种子创意 ({seedCreatives.length})</span>
                   </div>
                   <span className="gmvmax-seed-panel__hint" title={SEED_RULE_TEXT}>
                     规则：{SEED_RULE_TEXT}
@@ -2170,9 +3185,9 @@ export default function GmvMaxCampaignDetailPage() {
                 </div>
                 <div className="gmvmax-seed-panel__grid">
                   {seedCreatives.slice(0, 6).map((creative) => (
-                    <div key={creative.creativeId} className="gmvmax-seed-card">
+                    <div key={creative.rowKey || creative.creativeId} className="gmvmax-seed-card">
                       <div className="gmvmax-seed-card__name" title={creative.name}>
-                        ⭐ {creative.name}
+                        种子：{creative.name}
                       </div>
                       <div className="gmvmax-seed-card__meta">
                         <span>ROAS {formatNumber(creative.metrics?.roas, { maximumFractionDigits: 2 })}</span>
@@ -2194,6 +3209,7 @@ export default function GmvMaxCampaignDetailPage() {
                     onClick={() => handleToggleCreativeStatus(option.key)}
                   >
                     {option.label}
+                    <span className="gmvmax-chip__count">{creativeStatusCounts.get(option.key) || 0}</span>
                   </button>
                 ))}
               </div>
@@ -2214,19 +3230,34 @@ export default function GmvMaxCampaignDetailPage() {
                   />
                   <span>仅种子创意</span>
                 </label>
-                <label className="gmvmax-select gmvmax-select--inline">
-                  <span>排序</span>
-                  <select value={creativeSortKey} onChange={(event) => setCreativeSortKey(event.target.value)}>
-                    <option value="spend">按消耗</option>
-                    <option value="conversions">按转化</option>
-                    <option value="roas">按 ROAS</option>
-                  </select>
-                </label>
+                <div className="gmvmax-sort-control">
+                  <span className="gmvmax-sort-control__label">排序指标</span>
+                  <label className="gmvmax-sort-control__select">
+                    <select
+                      aria-label="排序指标"
+                      value={creativeSortKey}
+                      onChange={(event) => setCreativeSortKey(event.target.value)}
+                    >
+                      {CREATIVE_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="gmvmax-sort-control__direction"
+                    onClick={() => setCreativeSortDirection((current) => (current === 'desc' ? 'asc' : 'desc'))}
+                    aria-label={creativeSortDirection === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
+                  >
+                    <span aria-hidden="true">{creativeSortDirection === 'desc' ? '↓' : '↑'}</span>
+                    {creativeSortDirection === 'desc' ? '降序' : '升序'}
+                  </button>
+                </div>
               </div>
             </div>
-            {creativesLoading ? <Loading text="创意加载中…" /> : null}
+            {creativesLoading ? <Loading text="创意加载中..." /> : null}
             {!creativeFiltersReady ? (
-              <div className="gmvmax-text-muted">{missingCreativeFiltersMessage}</div>
+              <div className="gmvmax-error">{missingCreativeFiltersMessage}</div>
             ) : creativesErrorMessage ? (
               <div
                 className={
@@ -2236,59 +3267,142 @@ export default function GmvMaxCampaignDetailPage() {
                 创意数据加载失败：{creativesErrorMessage}
               </div>
             ) : null}
-            {creativeActionMutation.error ? (
+            {creativeActionError ? (
               <div className="gmvmax-error">
-                创意操作失败：{creativeActionMutation.error.message || '请稍后重试'}
+                创意操作失败：{creativeActionError.message || '请稍后重试'}
               </div>
             ) : null}
-            <div className="table-wrap">
+            <div className="table-wrap table-wrap--creatives">
               <table className="gmvmax-table gmvmax-creatives-table">
                 <thead>
                   <tr>
                     <th>创意</th>
                     <th>状态</th>
-                    <th>曝光</th>
-                    <th>点击</th>
-                    <th>转化</th>
-                    <th>花费</th>
-                    <th>GMV</th>
-                    <th>ROAS</th>
+	                    <th className="gmvmax-metric-group-start">消耗</th>
+	                    <th>CPM</th>
+	                    <th>CPC</th>
+	                    <th className="gmvmax-metric-group-start">GMV</th>
+	                    <th>ROAS</th>
+	                    <th>曝光</th>
+	                    <th>点击</th>
+	                    <th>CTR</th>
+	                    <th>转化</th>
+	                    <th>转化率</th>
+	                    <th className="gmvmax-metric-group-start">2秒观看率</th>
+	                    <th>6秒观看率</th>
+	                    <th>完播率</th>
+	                    <th className="gmvmax-metric-group-start">广告流占比</th>
+	                    <th>自然流占比</th>
                     <th>标签</th>
                     <th className="col-actions">操作</th>
                   </tr>
+                  <tr className="gmvmax-creatives__totals-row">
+                    <th>当前筛选合计（{sortedCreatives.length}）</th>
+                    <th>全部状态</th>
+                    <th className="gmvmax-metric-group-start">${formatMoney(creativeMetricsTotals.spend)}</th>
+                    <th>${formatMoney(creativeMetricsTotals.cpm)}</th>
+                    <th>{creativeMetricsTotals.clicks > 0 ? `$${formatMoney(creativeMetricsTotals.cpc)}` : '—'}</th>
+                    <th className="gmvmax-metric-group-start">${formatMoney(creativeMetricsTotals.gmv)}</th>
+                    <th>{formatRoas(creativeMetricsTotals.roas)}</th>
+                    <th>{formatNumber(creativeMetricsTotals.impressions)}</th>
+                    <th>{formatNumber(creativeMetricsTotals.clicks)}</th>
+                    <th>{formatRate(creativeMetricsTotals.ctr)}</th>
+                    <th>{formatNumber(creativeMetricsTotals.orders)}</th>
+                    <th>{formatRate(creativeMetricsTotals.conversionRate)}</th>
+                    <th className="gmvmax-metric-group-start">{formatRate(creativeMetricsTotals.video2sRate)}</th>
+                    <th>{formatRate(creativeMetricsTotals.video6sRate)}</th>
+                    <th>{formatRate(creativeMetricsTotals.completionRate)}</th>
+                    <th className="gmvmax-metric-group-start">{formatRate(creativeMetricsTotals.adFlowShare)}</th>
+                    <th>{formatRate(creativeMetricsTotals.organicFlowShare)}</th>
+                    <th>—</th>
+                    <th className="col-actions">—</th>
+                  </tr>
                 </thead>
                 <tbody>
+                  {creativesByStatus.length === 0 ? (
+                    <tr>
+                      <td colSpan={19}>
+                        {creativesLoading
+                          ? '创意数据同步中...'
+                          : creatives.length === 0
+                            ? '暂无创意级数据。请点击同步数据，系统会读取最新素材表现快照。'
+                            : '当前筛选条件下暂无素材。'}
+                      </td>
+                    </tr>
+                  ) : null}
                   {creativesByStatus.map((group) => (
                     <Fragment key={group.key}>
                       <tr className="gmvmax-creatives__group-row">
-                        <td colSpan={10}>{group.label}</td>
+                        <td colSpan={19}>
+                          {group.label} <span className="gmvmax-text-muted">({group.items.length})</span>
+                        </td>
                       </tr>
-                      {group.items.length === 0 ? (
-                        <tr>
-                          <td colSpan={10}>该状态暂无创意。</td>
-                        </tr>
-                      ) : null}
                       {group.items.map((creative) => {
                         const metrics = creative.metrics || {};
                         const boosting = isCreativeBoosting(creative);
                         const isSeed = isSeedCreative(creative);
+                        const historicalMetrics = creative.historicalMetrics || {};
+                        const hasHistoricalPerformance =
+                          creative.status === 'CANDIDATE' && Number(historicalMetrics.spend || 0) > 0;
                         const isProductCard = creative.creativeId === '-1' || creative.creativeId === -1;
                         const displayCreativeId = isProductCard ? '商品卡' : creative.creativeId;
+                        const boundProducts = ensureArray(campaignMetadata.products);
+                        const creativeProductId = String(
+                          creative.metadata?.product_id ||
+                            creative.metadata?.item_group_id ||
+                            creative.metadata?.itemGroupId ||
+                            '',
+                        );
+                        const fallbackProduct = isProductCard
+                          ? boundProducts.find(
+                              (product) =>
+                                creativeProductId &&
+                                String(getProductIdentifier(product)) === creativeProductId,
+                            ) || boundProducts[0]
+                          : null;
+                        // TikTok reports the product card as creative_id=-1. It is
+                        // not a video creative, so never let cached video media
+                        // override the product catalog thumbnail.
+                        const thumbnail = isProductCard
+                          ? fallbackProduct?.image || null
+                          : creative.thumbnail;
+                        const previewUrl = isProductCard ? null : creative.previewUrl;
+                        const fullCreativeName =
+                          isProductCard && fallbackProduct?.name ? `商品卡 · ${fallbackProduct.name}` : creative.name;
+                        const creativeName = truncateText(fullCreativeName, isProductCard ? 34 : 44);
+                        const coverNode = thumbnail ? (
+                          <img
+                            src={thumbnail}
+                            alt={fullCreativeName || '创意封面'}
+                            className="gmvmax-creatives__thumb"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <span className="gmvmax-creatives__thumb gmvmax-creatives__thumb--placeholder">封面</span>
+                        );
                         return (
-                          <tr key={creative.creativeId}>
+                          <tr key={creative.rowKey || creative.creativeId}>
                             <td>
                               <div className="gmvmax-creatives__name">
-                                {creative.thumbnail ? (
-                                  <img
-                                    src={creative.thumbnail}
-                                    alt={creative.name || '创意封面'}
-                                    className="gmvmax-creatives__thumb"
-                                  />
+                                {previewUrl ? (
+                                  <a
+                                    className="gmvmax-creatives__preview-link"
+                                    href={previewUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="打开视频预览"
+                                  >
+                                    {coverNode}
+                                  </a>
                                 ) : (
-                                  <span className="gmvmax-creatives__thumb gmvmax-creatives__thumb--placeholder">🎞️</span>
+                                  coverNode
                                 )}
                                 <div>
-                                  <div className="gmvmax-creatives__label">{creative.name}</div>
+                                  <div className="gmvmax-creatives__label" title={fullCreativeName}>
+                                    {creativeName}
+                                  </div>
                                   <div className="gmvmax-creatives__id">ID: {displayCreativeId}</div>
                                   {creative.metadata?.product_id ? (
                                     <div className="gmvmax-creatives__id">
@@ -2300,25 +3414,47 @@ export default function GmvMaxCampaignDetailPage() {
                             </td>
                             <td>
                               <span className="gmvmax-status-pill gmvmax-status-pill--muted">
-                                {creativeStatusLabelMap.get(creative.status || 'UNKNOWN') || creative.status}
+                                {creativeStatusLabelMap.get(creative.status || 'CANDIDATE') || '候选素材'}
                               </span>
                             </td>
-                            <td>{formatNumber(metrics.impressions)}</td>
-                            <td>{formatNumber(metrics.clicks)}</td>
-                            <td>{formatNumber(metrics.orders)}</td>
-                            <td>${formatMoney(metrics.spend)}</td>
-                            <td>${formatMoney(metrics.gmv)}</td>
-                            <td>{formatRoas(metrics.roas)}</td>
+	                            <td className="gmvmax-metric-group-start">${formatMoney(metrics.spend)}</td>
+	                            <td>${formatMoney(metrics.cpm)}</td>
+	                            <td>{Number(metrics.clicks || 0) > 0 ? `$${formatMoney(metrics.cpc)}` : '—'}</td>
+	                            <td className="gmvmax-metric-group-start">${formatMoney(metrics.gmv)}</td>
+	                            <td>{formatRoas(metrics.roas)}</td>
+	                            <td>{formatNumber(metrics.impressions)}</td>
+	                            <td>{formatNumber(metrics.clicks)}</td>
+	                            <td>{formatRate(metrics.ctr)}</td>
+	                            <td>{formatNumber(metrics.orders)}</td>
+	                            <td>{formatRate(metrics.conversionRate)}</td>
+	                            <td className="gmvmax-metric-group-start">{formatRate(metrics.video2sRate)}</td>
+	                            <td>{formatRate(metrics.video6sRate)}</td>
+	                            <td>{formatRate(metrics.completionRate)}</td>
+	                            <td className="gmvmax-metric-group-start">{formatRate(metrics.adFlowShare)}</td>
+	                            <td>{formatRate(metrics.organicFlowShare)}</td>
                             <td>
                               <div className="gmvmax-tag-list">
                                 {boosting ? (
                                   <span className="gmvmax-tag gmvmax-tag--heat" title="加热中">
-                                    🔥 加热中
+                                    加热中
                                   </span>
                                 ) : null}
                                 {isSeed ? (
                                   <span className="gmvmax-tag" title={SEED_RULE_TEXT}>
-                                    ⭐ 种子
+                                    种子
+                                  </span>
+                                ) : null}
+                                {hasHistoricalPerformance ? (
+                                  <span
+                                    className="gmvmax-tag"
+                                    title={`近30天跨系列历史消耗 $${formatMoney(historicalMetrics.spend)}，历史 ROAS ${formatRoas(historicalMetrics.roas)}`}
+                                  >
+                                    近30天 ROAS {formatRoas(historicalMetrics.roas)}
+                                  </span>
+                                ) : null}
+                                {creative.metadata?.historically_excluded ? (
+                                  <span className="gmvmax-tag" title="该素材曾在其他系列中被策略排除">
+                                    历史排除
                                   </span>
                                 ) : null}
                               </div>
@@ -2331,7 +3467,7 @@ export default function GmvMaxCampaignDetailPage() {
                                       type="button"
                                       className="gmvmax-button gmvmax-button--ghost"
                                       onClick={() => handleStopHeat(creative)}
-                                      disabled={creativeActionMutation.isPending || isReadOnly}
+                                      disabled={creativeActionPending || isReadOnly}
                                     >
                                       停止加热
                                     </button>
@@ -2340,7 +3476,7 @@ export default function GmvMaxCampaignDetailPage() {
                                       type="button"
                                       className="gmvmax-button gmvmax-button--ghost"
                                       onClick={() => handleBoostCreative(creative)}
-                                      disabled={creativeActionMutation.isPending || isReadOnly}
+                                      disabled={creativeActionPending || isReadOnly}
                                     >
                                       加热
                                     </button>
@@ -2365,8 +3501,8 @@ export default function GmvMaxCampaignDetailPage() {
             <table>
               <thead>
                 <tr>
-                  <th>商品 ID</th>
-                  <th>花费</th>
+                  <th>商品</th>
+                  <th>消耗</th>
                   <th>GMV</th>
                   <th>订单</th>
                   <th>点击</th>
@@ -2387,10 +3523,17 @@ export default function GmvMaxCampaignDetailPage() {
                       return (
                         <tr key={row.id}>
                           <td>
-                            <div>ID: {row.id}</div>
-                            {row.name && row.name !== row.id ? (
-                              <div className="gmvmax-text-muted">{row.name}</div>
-                            ) : null}
+                            <div className="gmvmax-product-cell">
+                              {row.image ? (
+                                <img className="gmvmax-product-cell__image" src={row.image} alt={row.name || row.id} />
+                              ) : null}
+                              <div>
+                                <div title={row.name && row.name !== row.id ? row.name : ''}>
+                                  {row.name && row.name !== row.id ? truncateText(row.name, 38) : `商品 ${row.id}`}
+                                </div>
+                                <div className="gmvmax-text-muted">ID: {row.id}</div>
+                              </div>
+                            </div>
                           </td>
                           <td>${formatMoney(row.spend)}</td>
                           <td>${formatMoney(row.gmv)}</td>
@@ -2406,7 +3549,6 @@ export default function GmvMaxCampaignDetailPage() {
           </div>
         </section>
       ) : null}
-
       <BudgetDialog
         open={budgetDialog.open}
         mode={budgetDialog.mode}

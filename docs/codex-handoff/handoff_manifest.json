@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-07-23T00:00:00+08:00",
+  "repository": "/opt/gmv/GMV-OPS",
+  "runtime": {
+    "python": "/opt/gmv/python3.13/bin/python",
+    "codex": [
+      "/opt/apps/codex/codex",
+      "/usr/local/bin/codex"
+    ],
+    "ffmpeg": "/opt/apps/bin/ffmpeg",
+    "frontend_source": "/opt/gmv/GMV-OPS/gmv-frontend",
+    "frontend_deployed": "/opt/gmv/GMV-OPS/frontend",
+    "content_storage": "/data/gmv_ops/hermes_content_factory",
+    "bridge_executable": "/opt/gmv/GMV-OPS/backend/assets/MYUPONA-HermesBridge.exe"
+  },
+  "services": [
+    "gmv-api.service",
+    "gmv-nginx.service",
+    "gmv-celerybeat.service",
+    "gmv-celery-worker@gmv.tasks.hermes_agent.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.service",
+    "gmv-celery-worker@openai_whisper.service",
+    "gmv-celery-worker@gmvmax.service",
+    "gmv-celery-worker@gmvmax_sync.service",
+    "gmv-celery-worker@website_ads_media.service"
+  ],
+  "content_factory": {
+    "active_variant_stages": [
+      "CREATIVE",
+      "VISUAL_PREVIEW",
+      "CREATIVE_REVIEW",
+      "FINAL_ASSETS",
+      "VIDEO_PROMPTS"
+    ],
+        "asynchronous_completion": [
+            "PROVIDER_POLL",
+            "LOCAL_DOWNLOAD",
+            "SEGMENT_COMPOSITION",
+            "EDIT_PACKAGE",
+            "TARGET_RECONCILIATION"
+        ],
+        "completion_authority": "project_owned_local_video_assets_with_existing_raid_files",
+        "parallel_mode": "browser_serial_api_video_bounded_parallel",
+        "segment_parallel_mode": "director_owned_dependency_graph",
+        "segment_release_quality_gate": [
+            "local_file",
+            "duration",
+            "dimensions_and_aspect",
+            "required_audio",
+            "product_visual_when_required"
+        ],
+        "producer_intake": "api_only_digest_confirmed_single_project",
+        "producer_browser_authorized": false,
+        "producer_media_authorized_before_confirmation": false,
+        "project_deletion": "durable_tombstone_then_provider_drain_and_physical_cleanup",
+        "provider_task_recovery_scope": "workspace_user_and_project_ledger",
+        "browser_local_draft_scope": "workspace_and_user",
+        "upload_limit_authority": "server_counted_stream_bytes",
+        "asset_download_scope": "resolved_content_repository_path_only",
+        "complete_waiting_bridge_repair": "normalize_to_complete_without_deletion",
+        "provider_terminal_states": "success_failure_cancel_superseded_or_downloaded",
+        "test_storage_isolation": "CONTENT_FACTORY_STORAGE_ROOT_must_point_to_disposable_test_directory",
+        "manual_resume_restores_global_video_waiter": "pending_tasks_only",
+        "api_only_browser_slot_mode": "dormant",
+        "api_slot_dormancy_uses_latest_active_stage_backend": true,
+        "browser_fallback_return_to_api_rehibernates_sticky_slot": true,
+        "semantic_exhaustion_policy": "api_only_replan_then_automatic_quality_pause",
+        "self_heal_policy_version": 70,
+        "creative_replay_context_includes_diversity_lane": true,
+        "partial_visual_repair_preserves_passed_references": true,
+        "partial_visual_repair_uses_reference_one_identity_anchor": true,
+        "editor_guidance_authority": "matching_completed_local_video_and_existing_local_guide",
+    "semantic_exhaustion_browser_fallback": false,
+    "legacy_compatibility_stages": [
+      "FACTS",
+      "QA",
+      "VIDEO_QA",
+      "WAITING_VISUAL_APPROVAL",
+      "WAITING_VIDEO_APPROVAL"
+    ]
+  },
+  "providers": {
+    "bandianwa": {
+      "models": ["omni_flash", "gpt-image-2"],
+      "omni_priority": 10,
+      "omni_reference_limit": 7
+    },
+    "google-gemini": {
+      "models": ["omni_flash"],
+      "omni_priority": 20,
+      "omni_reference_limit": 7
+    },
+    "kyy": {
+      "models": ["omni_flash"],
+      "omni_priority": 30,
+      "omni_reference_limit": 5
+    },
+    "toapis": {
+      "models": ["omni_flash"],
+      "omni_priority": 40,
+      "omni_reference_limit": 3,
+      "omni_default_enabled": false
+    },
+    "volcengine": {
+      "models": ["seedance_2_0_mini"]
+    },
+    "openrouter": {
+      "models": [],
+      "capabilities": ["text", "image", "multimodal"]
+    }
+  },
+  "high_risk_files": [
+    "backend/app/tasks/hermes_agent/content_factory_tasks.py",
+    "backend/app/services/hermes_agent/direct_browser.py",
+    "backend/app/services/hermes_agent/content_factory.py",
+    "backend/app/services/hermes_agent/content_factory_api.py",
+    "backend/app/features/tenants/hermes_agent/router.py",
+    "backend/app/tasks/bandianwa/video_tasks.py",
+    "backend/app/services/kie_api/accounts.py",
+    "backend/app/data/models/hermes_agent.py",
+    "backend/app/data/models/kie_api.py",
+    "gmv-frontend/src/features/tenants/hermes_agent/pages/ContentFactoryPage.jsx"
+  ],
+  "focused_tests": [
+    "backend/tests/test_content_factory_api_prompts.py",
+    "backend/tests/test_content_factory_stage_routing.py",
+    "backend/tests/test_content_factory_variant_cleanup.py",
+    "backend/tests/test_content_factory_video_dependency_guard.py",
+    "backend/tests/test_hermes_browser_devices.py",
+    "backend/tests/test_hermes_browser_recovery.py",
+    "backend/tests/test_hermes_chatgpt_popups.py",
+    "backend/tests/test_hermes_segment_only_prompts.py",
+    "backend/tests/test_hermes_self_heal_state.py",
+    "backend/tests/test_hermes_slot_wait_recovery_contract.py",
+    "backend/tests/test_storyboard_split.py",
+    "backend/tests/test_ai_video_adapters.py",
+    "backend/tests/test_ai_video_download_state_machine.py",
+    "backend/tests/test_ai_video_legacy_cleanup.py",
+    "backend/tests/test_ai_video_model_routing.py",
+    "backend/tests/test_bandianwa_video.py"
+  ],
+  "latest_verified_incident": {
+    "project_id": 166,
+    "project_key": "cf_e64eaf7b1b894012b893",
+    "workspace_id": 3,
+    "user_id": 6,
+    "status": "automatic_quality_paused_after_drain",
+    "completed_indices": [1],
+    "target_count": 2,
+    "local_video": "模仿1-1-v01-1.mp4",
+    "local_guide": "模仿1-1-v01-1-editor-guide.md"
+  }
+}

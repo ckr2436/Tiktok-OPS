@@ -1,0 +1,122 @@
+{
+  "title": "Remove or add back creatives in a GMV Max Campaign",
+  "url": "https://business-api.tiktok.com/portal/docs/remove-or-add-back-creatives-in-a-gmv-max-campaign/v1.3",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/creative/update/",
+  "method": "POST",
+  "grabbedAt": "2026-07-17T12:54:04.799533Z",
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed value: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "campaign_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Campaign ID. Note : The campaign must be in an active status. To retrieve active GMV Max Campaigns in your ad account, use /gmv_max/report/get/ with filtering set to {\"campaign_statuses\":[\"STATUS_DELIVERY_OK\"]} . If the campaign is a Product GMV Max Campaign, the product_video_specific_type of the campaign must be AUTO_SELECTION ."
+      },
+      {
+        "name": "action",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of action to perform. Enum values: REMOVE : To remove creatives from a GMV Max Campaign. ADD : To add previously removed creatives back into a GMV Max Campaign. Note : Once the action is performed, wait 20 minutes before verifying the updated statuses using /gmv_max/report/get/ . If a creative is successfully removed from a Product GMV Max Campaign, its creative_delivery_status in /gmv_max/report/get/ will be EXCLUDED ."
+      },
+      {
+        "name": "item_list",
+        "required": true,
+        "type": "array",
+        "raw_type": "object[]",
+        "description": "The list of TikTok posts (videos) to be operated on. Max size: 400. Note : This endpoint allows for the removal of up to 10,000 posts from a GMV Max Campaign, with a limit of 400 posts per request. For example, if you need to exclude 800 posts, send a first request with 400 posts in this field, followed by a second request with the remaining 400."
+      },
+      {
+        "name": "item_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The ID of the TikTok post to operate on. When action is REMOVE , use /gmv_max/report/get/ with filtering set to {\"creative_delivery_statuses\":[\"IN_QUEUE\",\"LEARNING\",\"DELIVERING\",\"NOT_DELIVERYING\",\"UNAVAILABLE\",\"NOT_ACTIVE\"]} to retrieve eligible creatives. When action is ADD , use /gmv_max/report/get/ with filtering set to {\"creative_delivery_statuses\":[\"EXCLUDED\"]} to retrieve previously removed creatives. Note : Currently, you can only obtain the item_id of TikTok posts in Live GMV Max Campaigns on TikTok Ads Manager."
+      },
+      {
+        "name": "spu_id_list Conditional",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "Required for a Product GMV Max Campaign. The list of Product SPU IDs that the TikTok post is associated with. To obtain the list of Product SPU IDs associated with a TikTok post in a Product GMV Max Campaign, use /campaign/gmv_max/info/ ."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Remove creatives",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/creative/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_id\": \"{{campaign_id}}\",\n    \"item_list\": [\n        {\n            \"item_id\": \"{{item_id}}\",\n            \"spu_id_list\": [\"{{spu_id}}\"]\n        },\n        {\n            \"item_id\": \"{{item_id}}\",\n            \"spu_id_list\": [\"{{spu_id}}\"]\n        }\n    ],\n    \"action\": \"REMOVE\"\n}'"
+      },
+      {
+        "title": "Add back creatives",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/campaign/gmv_max/creative/update/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"advertiser_id\": \"{{advertiser_id}}\",\n    \"campaign_id\": \"{{campaign_id}}\",\n    \"item_list\": [\n        {\n            \"item_id\": \"{{item_id}}\",\n            \"spu_id_list\": [\"{{spu_id}}\"]\n        },\n        {\n            \"item_id\": \"{{item_id}}\",\n            \"spu_id_list\": [\"{{spu_id}}\"]\n        }\n    ],\n    \"action\": \"ADD\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of the request, which uniquely identifies a request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {}\n}"
+    }
+  }
+}

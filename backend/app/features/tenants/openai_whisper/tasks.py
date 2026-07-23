@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import mimetypes
@@ -47,6 +48,50 @@ def _utcnow() -> datetime:
 
 def _cutoff_days(days: int) -> datetime:
     return _utcnow() - timedelta(days=max(0, int(days)))
+
+
+def _producer_attachment_source(path_value: str) -> Path:
+    root = (
+        Path(
+            getattr(
+                settings,
+                "CONTENT_FACTORY_STORAGE_ROOT",
+                "/data/gmv_ops/hermes_content_factory",
+            )
+        ).expanduser()
+        / "producer_intake"
+    ).resolve()
+    path = Path(path_value).resolve()
+    if path == root or root not in path.parents or not path.is_file():
+        raise RuntimeError("producer attachment is outside the intake storage scope")
+    return path
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _has_audio_stream(path: Path) -> bool:
+    command = [
+        "/opt/apps/bin/ffprobe",
+        "-v", "error",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=index",
+        "-of", "csv=p=0",
+        str(path),
+    ]
+    completed = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return bool(str(completed.stdout or "").strip())
 
 
 def _pick_entry(info: dict) -> dict:
@@ -470,6 +515,118 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
     return job_id
 
 
+@celery_app.task(
+    name="openai_whisper.analyze_content_producer_reference",
+    bind=True,
+    queue=WHISPER_TASK_QUEUE,
+)
+def analyze_content_producer_reference(self, *, attachment_id: int) -> dict:
+    """Add speech evidence to a staged Content Factory benchmark video.
+
+    The API process prepares a small visual contact sheet.  The dedicated
+    Whisper worker owns the expensive audio pass so uploads never load the
+    speech model into Gunicorn or a Hermes worker.
+    """
+
+    from app.data.models.hermes_agent import HermesContentProducerAttachment
+
+    with SessionLocal() as db:
+        row = db.get(HermesContentProducerAttachment, int(attachment_id))
+        if row is None:
+            return {"status": "missing", "attachment_id": int(attachment_id)}
+        if row.kind != "reference_video":
+            return {"status": "ignored", "attachment_id": int(attachment_id)}
+        if row.analysis_status == "ready" and dict(row.analysis_json or {}).get(
+            "transcript_status"
+        ) in {"success", "no_speech"}:
+            return {"status": "ready", "attachment_id": int(attachment_id)}
+
+        analysis = dict(row.analysis_json or {})
+        analysis["transcript_status"] = "processing"
+        analysis["transcript_started_at"] = _utcnow().isoformat()
+        row.analysis_status = "processing"
+        row.analysis_json = analysis
+        db.commit()
+
+        try:
+            source = _producer_attachment_source(row.file_path)
+            if _sha256_file(source) != str(row.sha256 or ""):
+                raise RuntimeError("producer attachment checksum changed")
+            if not _has_audio_stream(source):
+                analysis.update(
+                    {
+                        "transcript_status": "no_speech",
+                        "detected_language": None,
+                        "transcript": "",
+                        "segments": [],
+                    }
+                )
+            else:
+                result = transcriber.transcribe(
+                    source,
+                    source_language=None,
+                    translate=False,
+                )
+                segments = [
+                    {
+                        "index": int(segment.get("index") or index),
+                        "start": round(float(segment.get("start") or 0), 2),
+                        "end": round(float(segment.get("end") or 0), 2),
+                        "text": str(segment.get("text") or "").strip()[:600],
+                    }
+                    for index, segment in enumerate(
+                        list(result.get("segments") or [])[:160],
+                        1,
+                    )
+                    if str(segment.get("text") or "").strip()
+                ]
+                transcript = "\n".join(
+                    f"{item['start']:.1f}-{item['end']:.1f}s {item['text']}"
+                    for item in segments
+                )
+                analysis.update(
+                    {
+                        "transcript_status": "success" if segments else "no_speech",
+                        "detected_language": result.get("detected_language")
+                        or result.get("source_language"),
+                        "transcript": transcript[:24000],
+                        "segments": segments,
+                    }
+                )
+            analysis["transcript_completed_at"] = _utcnow().isoformat()
+            row.analysis_status = "ready"
+            row.analysis_json = analysis
+            db.commit()
+            return {"status": "ready", "attachment_id": int(attachment_id)}
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            row = db.get(HermesContentProducerAttachment, int(attachment_id))
+            if row is None:
+                return {"status": "missing", "attachment_id": int(attachment_id)}
+            analysis = dict(row.analysis_json or {})
+            analysis.update(
+                {
+                    "transcript_status": "failed",
+                    "transcript_error": type(exc).__name__[:120],
+                    "transcript_completed_at": _utcnow().isoformat(),
+                }
+            )
+            # The validated contact sheet remains useful visual evidence.  Do
+            # not strand the conversation solely because speech extraction
+            # failed; expose the bounded status to the producer instead.
+            row.analysis_status = "ready"
+            row.analysis_json = analysis
+            db.commit()
+            logger.exception(
+                "producer reference transcription failed attachment_id=%s",
+                attachment_id,
+            )
+            return {
+                "status": "ready_with_transcript_failure",
+                "attachment_id": int(attachment_id),
+            }
+
+
 @celery_app.task(name="openai_whisper.download_shared_video", bind=True, queue=WHISPER_TASK_QUEUE)
 def download_shared_video(self, *, workspace_id: int, job_id: str) -> str:
     with SessionLocal() as db:
@@ -617,4 +774,3 @@ def cleanup_jobs(self) -> dict:
     stats["elapsed_ms"] = int((time.monotonic() - started) * 1000)
     logger.info("openai whisper cleanup completed", extra=stats)
     return stats
-

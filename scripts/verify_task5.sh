@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PYTHON_BIN=${PYTHON_BIN:-python}
+
 echo "=== Task5 自检开始 ==="
 
 # 0) 环境信息
 echo "[0] 环境信息"
-python -V || true
-pytest --version || true
+"$PYTHON_BIN" -V || true
+"$PYTHON_BIN" -m pytest --version || true
 echo "当前分支：$(git rev-parse --abbrev-ref HEAD)"
 echo
 
@@ -54,11 +56,10 @@ echo
 
 # 7) 运行最小单测集
 echo "[7] 运行关键单测文件"
-pytest -q backend/tests/test_ttb_client_factory.py
-pytest -q backend/tests/test_gmvmax_actions.py
-pytest -q backend/tests/test_gmvmax_metrics_idempotent.py
+"$PYTHON_BIN" -m pytest -q backend/tests/test_ttb_client_factory.py
+"$PYTHON_BIN" -m pytest -q backend/tests/test_gmvmax_action_schemas.py
+"$PYTHON_BIN" -m pytest -q backend/tests/test_gmvmax_create_idempotency.py
 echo "OK: 关键单测通过"
 echo
 
 echo "=== Task5 自检通过: 工厂统一 / 路由 async / 唯一约束提示 / 单测通过 ==="
-
