@@ -6,6 +6,7 @@ import hashlib
 import logging
 import math
 import mimetypes
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,10 +20,17 @@ from app.celery_app import celery_app
 from app.core.config import settings
 from app.data.db import SessionLocal
 from app.services import video_site_cookies
+from sqlalchemy import func, select
+from sqlalchemy.orm.attributes import flag_modified
 
 from yt_dlp import YoutubeDL
 
 from . import repository, storage, transcriber
+from .url_security import (
+    UnsafeShareURLError,
+    resolve_safe_share_url,
+    validate_extracted_media_urls,
+)
 
 logger = logging.getLogger("gmv.tasks.openai_whisper")
 WHISPER_TASK_QUEUE = (
@@ -42,8 +50,98 @@ class DownloadRequiresAuthError(RuntimeError):
     """Raised when a share link requires authentication to download."""
 
 
+class DownloadTooLargeError(RuntimeError):
+    """Raised when a remote file exceeds a byte or workspace quota."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _ensure_producer_analysis_ready_notification(db, row, analysis: dict) -> bool:
+    """Persist one user-visible Producer notification for imported analyses.
+
+    Public benchmark links carry an explicit pending Producer turn and are
+    continued by ``continue_producer_benchmark_turn``.  TikTok Shop analysis
+    handoffs are different: the user may already have discussed the partial
+    report while pixel-level analysis was still running, so there is no
+    pending turn to resume.  Persist a scoped assistant event for that path so
+    an open page receives it on the next poll and a closed page sees it when
+    the user returns.  ``run_id`` makes recovery and late worker completion
+    idempotent.
+    """
+
+    from app.data.models.hermes_agent import (
+        HermesAgentConversation,
+        HermesAgentMessage,
+    )
+    from app.services.hermes_agent import repository as hermes_repository
+
+    attachment_meta = dict(row.meta_json or {})
+    if str(attachment_meta.get("analysis_request_context") or "").strip():
+        return False
+    conversation = db.scalar(
+        select(HermesAgentConversation)
+        .where(
+            HermesAgentConversation.id == int(row.conversation_id),
+            HermesAgentConversation.workspace_id == int(row.workspace_id),
+            HermesAgentConversation.user_id == int(row.user_id),
+        )
+        .with_for_update()
+    )
+    if conversation is None:
+        return False
+    conversation_meta = dict(conversation.meta_json or {})
+    if str(conversation_meta.get("source_type") or "") != "tiktok_shop_video_analysis":
+        return False
+
+    event_run_id = f"benchmark_ready_{int(row.id)}"
+    existing = db.scalar(
+        select(HermesAgentMessage.id).where(
+            HermesAgentMessage.conversation_id == int(conversation.id),
+            HermesAgentMessage.workspace_id == int(row.workspace_id),
+            HermesAgentMessage.user_id == int(row.user_id),
+            HermesAgentMessage.role == "assistant",
+            HermesAgentMessage.run_id == event_run_id,
+        )
+    )
+    if existing is not None:
+        return False
+
+    hermes_repository.add_message(
+        db,
+        conversation=conversation,
+        workspace_id=int(row.workspace_id),
+        user_id=int(row.user_id),
+        role="assistant",
+        content_text=(
+            "对标视频的完整多模态分析已经完成：关键画面、口播、开场钩子、"
+            "节奏、叙事推进、产品进入和转化结构均已形成可用结论。现在可以继续"
+            "让我基于这份完整分析补全并确认优化方案；在你确认前，我不会自动创建"
+            "制作项目。"
+        ),
+        content_json={
+            "event_type": "benchmark_multimodal_analysis_ready",
+            "attachment_id": int(row.id),
+            "analysis_status": "ready",
+            "multimodal_status": "success",
+        },
+        run_id=event_run_id,
+    )
+    analysis["producer_notification_status"] = "success"
+    analysis["producer_notification_completed_at"] = _utcnow().isoformat()
+    analysis["producer_notification_run_id"] = event_run_id
+    row.analysis_json = analysis
+    flag_modified(row, "analysis_json")
+    conversation_meta["last_producer_event"] = {
+        "type": "benchmark_multimodal_analysis_ready",
+        "attachment_id": int(row.id),
+        "run_id": event_run_id,
+        "completed_at": analysis["producer_notification_completed_at"],
+    }
+    conversation.meta_json = conversation_meta
+    db.add(conversation)
+    return True
 
 
 def _cutoff_days(days: int) -> datetime:
@@ -65,6 +163,103 @@ def _producer_attachment_source(path_value: str) -> Path:
     if path == root or root not in path.parents or not path.is_file():
         raise RuntimeError("producer attachment is outside the intake storage scope")
     return path
+
+
+def _producer_attachment_target(path_value: str) -> Path:
+    root = (
+        Path(
+            getattr(
+                settings,
+                "CONTENT_FACTORY_STORAGE_ROOT",
+                "/data/gmv_ops/hermes_content_factory",
+            )
+        ).expanduser()
+        / "producer_intake"
+    ).resolve()
+    path = Path(path_value).resolve(strict=False)
+    if path == root or root not in path.parents:
+        raise RuntimeError("producer attachment target is outside intake storage")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _download_producer_reference_url(row) -> Path:
+    meta = dict(row.meta_json or {})
+    share_url = str(meta.get("source_url") or "").strip()
+    if not share_url:
+        raise RuntimeError("producer benchmark URL is missing")
+    site = _detect_site_from_url(share_url)
+    cookiefile_path = _load_cookiefile_for_share(
+        share_url,
+        str(getattr(row, "attachment_key", "producer-benchmark")),
+    )
+    try:
+        entry, _ext = _probe_downloadable(
+            share_url,
+            cookiefile_path,
+            site=site,
+        )
+    except Exception:
+        if cookiefile_path:
+            Path(cookiefile_path).unlink(missing_ok=True)
+        raise
+    target = _producer_attachment_target(row.file_path)
+    base = target.with_suffix("")
+    byte_limit = min(
+        200 * 1024 * 1024,
+        int(settings.OPENAI_WHISPER_MAX_REMOTE_DOWNLOAD_BYTES),
+    )
+
+    def enforce_size(status: dict) -> None:
+        downloaded = int(status.get("downloaded_bytes") or 0)
+        total = int(
+            status.get("total_bytes")
+            or status.get("total_bytes_estimate")
+            or 0
+        )
+        if max(downloaded, total) > byte_limit:
+            raise DownloadTooLargeError("远程对标视频超过 200 MB 限制。")
+
+    options = {
+        "outtmpl": f"{base}.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+        "format": "bestvideo*+bestaudio/best",
+        "merge_output_format": "mp4",
+        "max_filesize": byte_limit,
+        "progress_hooks": [enforce_size],
+        "http_headers": _site_headers(site),
+    }
+    if cookiefile_path:
+        options["cookiefile"] = cookiefile_path
+    for stale in target.parent.glob(f"{base.name}.*"):
+        if stale.is_file():
+            stale.unlink(missing_ok=True)
+    try:
+        with YoutubeDL(options) as ydl:
+            download_entry = dict(entry)
+            download_entry.pop("_gmv_safe_share_url", None)
+            ydl.process_ie_result(download_entry, download=True)
+    except Exception:
+        for partial in target.parent.glob(f"{base.name}.*"):
+            partial.unlink(missing_ok=True)
+        raise
+    finally:
+        if cookiefile_path:
+            Path(cookiefile_path).unlink(missing_ok=True)
+    candidates = [
+        path
+        for path in target.parent.glob(f"{base.name}.*")
+        if path.is_file() and not path.name.endswith((".part", ".ytdl"))
+    ]
+    if not candidates:
+        raise RuntimeError("benchmark video download did not produce a file")
+    downloaded = max(candidates, key=lambda path: path.stat().st_size)
+    if downloaded.stat().st_size <= 1024 or downloaded.stat().st_size > byte_limit:
+        downloaded.unlink(missing_ok=True)
+        raise DownloadTooLargeError("远程对标视频为空或超过 200 MB 限制。")
+    downloaded.chmod(0o664)
+    return downloaded
 
 
 def _sha256_file(path: Path) -> str:
@@ -120,15 +315,41 @@ def _is_authentication_required(error: Exception) -> bool:
 def _detect_site_from_url(url: str) -> str | None:
     try:
         parsed = urlparse(url)
-        host = (parsed.netloc or parsed.path).lower()
+        host = str(parsed.hostname or "").rstrip(".").lower()
     except Exception:
         return None
-    if any(token in host for token in ("douyin.com", "iesdouyin.com", "amemv.com", "snssdk.com")):
+    def matches(suffix: str) -> bool:
+        return host == suffix or host.endswith(f".{suffix}")
+
+    if any(matches(token) for token in ("douyin.com", "iesdouyin.com", "amemv.com", "snssdk.com")):
         return "douyin"
-    if "tiktok.com" in host:
+    if matches("tiktok.com"):
         return "tiktok"
-    if "youtube.com" in host or "youtu.be" in host:
+    if matches("youtube.com") or matches("youtu.be"):
         return "youtube"
+    if matches("kuaishou.com") or matches("gifshow.com") or matches("kwai.com"):
+        return "kuaishou"
+    if matches("facebook.com") or matches("fb.watch"):
+        return "facebook"
+    site_suffixes = {
+        "instagram": ("instagram.com",),
+        "twitter": ("x.com", "twitter.com"),
+        "bilibili": ("bilibili.com", "b23.tv"),
+        "xiaohongshu": ("xiaohongshu.com", "xhslink.com"),
+        "weibo": ("weibo.com", "weibo.cn"),
+        "vimeo": ("vimeo.com", "vimeo.app.link"),
+        "reddit": ("reddit.com", "redd.it"),
+        "twitch": ("twitch.tv",),
+        "dailymotion": ("dailymotion.com", "dai.ly"),
+        "pinterest": ("pinterest.com", "pin.it"),
+        "linkedin": ("linkedin.com",),
+        "nicovideo": ("nicovideo.jp", "nico.ms"),
+        "youku": ("youku.com",),
+        "iqiyi": ("iqiyi.com", "iq.com"),
+    }
+    for site, suffixes in site_suffixes.items():
+        if any(matches(suffix) for suffix in suffixes):
+            return site
     return None
 
 
@@ -146,11 +367,18 @@ def _site_headers(site: str | None) -> dict[str, str]:
     elif site == "youtube":
         headers["Referer"] = "https://www.youtube.com/"
         headers["Origin"] = "https://www.youtube.com"
+    elif site == "kuaishou":
+        headers["Referer"] = "https://www.kuaishou.com/"
+        headers["Origin"] = "https://www.kuaishou.com"
+    elif site == "facebook":
+        headers["Referer"] = "https://www.facebook.com/"
+        headers["Origin"] = "https://www.facebook.com"
     return headers
 
 
 def _probe_downloadable(share_url: str, cookiefile_path: str | None = None, site: str | None = None) -> Tuple[dict, str]:
-    site = site or _detect_site_from_url(share_url)
+    safe_share_url = resolve_safe_share_url(share_url)
+    site = site or _detect_site_from_url(safe_share_url)
     options = {
         "quiet": True,
         "skip_download": True,
@@ -161,13 +389,18 @@ def _probe_downloadable(share_url: str, cookiefile_path: str | None = None, site
         options["cookiefile"] = cookiefile_path
     try:
         with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(share_url, download=False)
+            info = ydl.extract_info(safe_share_url, download=False)
     except Exception as exc:  # noqa: BLE001
         if _is_authentication_required(exc):
             raise DownloadRequiresAuthError(str(exc)) from exc
         raise
 
     entry = _pick_entry(info or {})
+    validate_extracted_media_urls(entry)
+    expected_size = int(entry.get("filesize") or entry.get("filesize_approx") or 0)
+    if expected_size > int(settings.OPENAI_WHISPER_MAX_REMOTE_DOWNLOAD_BYTES):
+        raise DownloadTooLargeError("远程视频超过允许大小。")
+    entry["_gmv_safe_share_url"] = safe_share_url
     download_url = entry.get("url")
     if not download_url:
         for fmt in reversed(entry.get("formats") or []):
@@ -185,7 +418,7 @@ def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video
     site = _detect_site_from_url(share_url)
     entry, ext = _probe_downloadable(share_url, cookiefile_path, site=site)
     directory = storage.job_dir(workspace_id, job_id)
-    filename = entry.get("title") or entry.get("id") or "shared-video"
+    filename = _safe_display_filename(entry.get("title") or entry.get("id") or "shared-video", ext)
 
     target_path = video_path or directory / f"input.{ext}"
     if target_path.suffix:
@@ -195,12 +428,28 @@ def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video
 
     content_type, _ = mimetypes.guess_type(f"{filename}.{ext}")
 
+    remaining = storage.workspace_remaining_bytes(
+        workspace_id,
+        int(settings.OPENAI_WHISPER_WORKSPACE_STORAGE_QUOTA_BYTES),
+    )
+    byte_limit = min(int(settings.OPENAI_WHISPER_MAX_REMOTE_DOWNLOAD_BYTES), remaining)
+    if byte_limit <= 0:
+        raise DownloadTooLargeError("工作区文件空间已用完。")
+
+    def enforce_size(status: dict) -> None:
+        downloaded = int(status.get("downloaded_bytes") or 0)
+        total = int(status.get("total_bytes") or status.get("total_bytes_estimate") or 0)
+        if max(downloaded, total) > byte_limit:
+            raise DownloadTooLargeError("远程视频超过允许大小或工作区剩余空间。")
+
     options = {
         "outtmpl": str(target_path),
         "quiet": True,
         "noplaylist": True,
         "merge_output_format": ext,
-        "nopart": True,
+        "nopart": False,
+        "max_filesize": byte_limit,
+        "progress_hooks": [enforce_size],
         "http_headers": _site_headers(site),
     }
     if cookiefile_path:
@@ -208,8 +457,14 @@ def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video
 
     try:
         with YoutubeDL(options) as ydl:
-            ydl.download([share_url])
+            download_entry = dict(entry)
+            download_entry.pop("_gmv_safe_share_url", None)
+            ydl.process_ie_result(download_entry, download=True)
     except Exception as exc:  # noqa: BLE001
+        target_path.unlink(missing_ok=True)
+        target_path.with_name(target_path.name + ".part").unlink(missing_ok=True)
+        if isinstance(exc, DownloadTooLargeError):
+            raise
         if _is_authentication_required(exc):
             raise DownloadRequiresAuthError(str(exc)) from exc
         raise
@@ -217,8 +472,24 @@ def _download_shared_video(workspace_id: int, job_id: str, share_url: str, video
     if not target_path.exists():
         raise RuntimeError("视频下载失败，请稍后重试或更换链接。")
 
-    final_name = f"{filename}.{ext}" if not filename.endswith(ext) else filename
-    return target_path, final_name, content_type
+    if target_path.stat().st_size > byte_limit:
+        target_path.unlink(missing_ok=True)
+        raise DownloadTooLargeError("远程视频超过允许大小或工作区剩余空间。")
+
+    return target_path, filename, content_type
+
+
+def _safe_display_filename(title: object, ext: object) -> str:
+    suffix = re.sub(r"[^a-zA-Z0-9]+", "", str(ext or "mp4").lstrip("."))[:12] or "mp4"
+    base = re.sub(r"[\\/:*?\"<>|\x00-\x1f\x7f]+", " ", str(title or "shared-video"))
+    base = re.sub(r"\s+", " ", base).strip(" .") or "shared-video"
+    ending = f".{suffix}"
+    if base.lower().endswith(ending.lower()):
+        base = base[: -len(ending)].rstrip(" .") or "shared-video"
+    max_base = 240 - len(ending)
+    if len(base) > max_base:
+        base = base[: max_base - 1].rstrip(" .") + "…"
+    return f"{base}{ending}"
 
 
 def _format_timestamp_ms(seconds: float) -> str:
@@ -245,6 +516,9 @@ def _segments_to_srt(segments: Iterable[dict]) -> str:
 
 
 def _mark_download_status(db: SessionLocal, *, workspace_id: int, job_id: str, status: str, message: str | None = None, download_url: str | None = None, video_path: Path | None = None, filename: str | None = None, size: int | None = None, content_type: str | None = None) -> dict:
+    if filename:
+        filename = _safe_display_filename(filename, Path(filename).suffix or "mp4")
+
     def _apply(meta: dict) -> dict:
         meta["download_status"] = status
         meta["download_error"] = message
@@ -262,10 +536,18 @@ def _mark_download_status(db: SessionLocal, *, workspace_id: int, job_id: str, s
         return meta
 
     metadata = storage.update_metadata(workspace_id, job_id, _apply)
-    repository.update_download_status(db, workspace_id=workspace_id, job_id=job_id, status=status, message=message, download_url=download_url)
-    if status == "success":
-        repository.update_downloaded_file(db, workspace_id=workspace_id, job_id=job_id, filename=metadata.get("filename"), file_size=size, content_type=content_type, video_path=str(video_path) if video_path else None, download_url=download_url)
-    db.flush()
+    try:
+        repository.update_download_status(db, workspace_id=workspace_id, job_id=job_id, status=status, message=message, download_url=download_url)
+        if status == "success":
+            repository.update_downloaded_file(db, workspace_id=workspace_id, job_id=job_id, filename=metadata.get("filename"), file_size=size, content_type=content_type, video_path=str(video_path) if video_path else None, download_url=download_url)
+        db.flush()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "failed to persist Whisper download status",
+            extra={"workspace_id": workspace_id, "job_id": job_id, "status": status},
+        )
+        raise
     return metadata
 
 
@@ -360,8 +642,11 @@ def _load_cookiefile_for_share(share_url: str, job_id: str) -> str | None:
 
 
 def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> tuple[dict | None, Path | None, str | None]:
-    raw_video_path = metadata.get("video_path")
-    video_path = Path(raw_video_path) if raw_video_path else None
+    video_path = storage.resolve_job_artifact_path(
+        workspace_id,
+        job_id,
+        metadata.get("video_path"),
+    )
     share_url = (metadata.get("share_url") or "").strip()
     download_url = f"/api/v1/tenants/{workspace_id}/openai-whisper/jobs/{job_id}/video"
 
@@ -381,6 +666,7 @@ def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> t
             db.commit()
             return metadata, video_path, None
         except DownloadRequiresAuthError as exc:
+            db.rollback()
             site = _detect_site_from_url(share_url)
             if site == "douyin":
                 message = "该抖音分享视频仍被平台判定需要新鲜 Cookies。请在同一浏览器打开这条视频并确认能播放，然后重新导出完整 douyin.com Cookies 后再试。"
@@ -390,10 +676,28 @@ def _ensure_local_video(db, workspace_id: int, job_id: str, metadata: dict) -> t
             db.commit()
             logger.warning("whisper download requires auth", extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc), "site": site})
             return None, None, message
-        except Exception as exc:  # noqa: BLE001
-            message = "视频下载失败，请稍后重试或更换链接。"
+        except (UnsafeShareURLError, DownloadTooLargeError) as exc:
+            db.rollback()
+            message = str(exc)
             _mark_download_status(db, workspace_id=workspace_id, job_id=job_id, status="failed", message=message)
             db.commit()
+            logger.warning(
+                "whisper download blocked by security boundary",
+                extra={"workspace_id": workspace_id, "job_id": job_id, "error": message},
+            )
+            return None, None, message
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            message = "视频下载失败，请稍后重试或更换链接。"
+            try:
+                _mark_download_status(db, workspace_id=workspace_id, job_id=job_id, status="failed", message=message)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "failed to persist failed Whisper download status",
+                    extra={"workspace_id": workspace_id, "job_id": job_id},
+                )
             logger.exception("whisper download failed", extra={"workspace_id": workspace_id, "job_id": job_id, "error": str(exc)})
             return None, None, message
 
@@ -516,9 +820,127 @@ def transcribe_video(self, *, workspace_id: int, job_id: str) -> str:
 
 
 @celery_app.task(
+    name="openai_whisper.ingest_content_producer_reference_url",
+    bind=True,
+    queue=WHISPER_TASK_QUEUE,
+    max_retries=3,
+)
+def ingest_content_producer_reference_url(self, *, attachment_id: int) -> dict:
+    """Safely download a producer benchmark URL before multimodal analysis."""
+
+    from app.data.models.hermes_agent import HermesContentProducerAttachment
+    from app.services.hermes_agent.content_producer import (
+        _probe_reference_video,
+        _render_video_preview,
+    )
+
+    with SessionLocal() as db:
+        row = db.get(HermesContentProducerAttachment, int(attachment_id))
+        if row is None:
+            return {"status": "missing", "attachment_id": int(attachment_id)}
+        if row.kind != "reference_video":
+            return {"status": "ignored", "attachment_id": int(attachment_id)}
+        analysis = dict(row.analysis_json or {})
+        if (
+            int(row.size_bytes or 0) > 0
+            and analysis.get("download_status") == "success"
+        ):
+            analyze_content_producer_reference.apply_async(
+                kwargs={"attachment_id": int(row.id)},
+                queue=WHISPER_TASK_QUEUE,
+            )
+            return {"status": "downloaded", "attachment_id": int(row.id)}
+        analysis.update({
+            "download_status": "processing",
+            "download_started_at": _utcnow().isoformat(),
+        })
+        row.analysis_status = "processing"
+        row.analysis_json = analysis
+        flag_modified(row, "analysis_json")
+        db.commit()
+        try:
+            source = _download_producer_reference_url(row)
+            preview = _producer_attachment_target(row.preview_path)
+            probe = _probe_reference_video(source)
+            _render_video_preview(
+                source,
+                preview,
+                duration_seconds=float(probe["duration_seconds"]),
+            )
+            analysis = dict(row.analysis_json or {})
+            analysis.update(probe)
+            analysis.update({
+                "download_status": "success",
+                "download_completed_at": _utcnow().isoformat(),
+                "preview_available": True,
+                "transcript_status": "queued",
+                "multimodal_status": "queued",
+            })
+            row.file_path = str(source)
+            row.preview_path = str(preview)
+            row.mime_type = mimetypes.guess_type(source.name)[0] or "video/mp4"
+            row.size_bytes = int(source.stat().st_size)
+            row.sha256 = _sha256_file(source)
+            row.original_name = _safe_display_filename(
+                entry_title := dict(row.meta_json or {}).get("source_title")
+                or Path(row.original_name).stem,
+                source.suffix.lstrip("."),
+            )
+            row.analysis_status = "processing"
+            row.analysis_json = analysis
+            flag_modified(row, "analysis_json")
+            db.commit()
+            analyze_content_producer_reference.apply_async(
+                kwargs={"attachment_id": int(row.id)},
+                queue=WHISPER_TASK_QUEUE,
+            )
+            return {"status": "downloaded", "attachment_id": int(row.id)}
+        except (UnsafeShareURLError, DownloadTooLargeError, DownloadRequiresAuthError) as exc:
+            db.rollback()
+            row = db.get(HermesContentProducerAttachment, int(attachment_id))
+            if row is None:
+                return {"status": "missing", "attachment_id": int(attachment_id)}
+            analysis = dict(row.analysis_json or {})
+            analysis.update({
+                "download_status": "failed",
+                "download_error": type(exc).__name__[:120],
+                "download_completed_at": _utcnow().isoformat(),
+                "multimodal_status": "failed",
+            })
+            row.analysis_status = "failed"
+            row.analysis_json = analysis
+            flag_modified(row, "analysis_json")
+            db.commit()
+            return {"status": "failed", "attachment_id": int(attachment_id)}
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            if int(self.request.retries or 0) < int(self.max_retries or 3):
+                raise self.retry(exc=exc, countdown=15 * (2 ** int(self.request.retries or 0)))
+            row = db.get(HermesContentProducerAttachment, int(attachment_id))
+            if row is not None:
+                analysis = dict(row.analysis_json or {})
+                analysis.update({
+                    "download_status": "failed",
+                    "download_error": type(exc).__name__[:120],
+                    "download_completed_at": _utcnow().isoformat(),
+                    "multimodal_status": "failed",
+                })
+                row.analysis_status = "failed"
+                row.analysis_json = analysis
+                flag_modified(row, "analysis_json")
+                db.commit()
+            logger.exception(
+                "producer benchmark URL download failed attachment_id=%s",
+                attachment_id,
+            )
+            return {"status": "failed", "attachment_id": int(attachment_id)}
+
+
+@celery_app.task(
     name="openai_whisper.analyze_content_producer_reference",
     bind=True,
     queue=WHISPER_TASK_QUEUE,
+    max_retries=3,
 )
 def analyze_content_producer_reference(self, *, attachment_id: int) -> dict:
     """Add speech evidence to a staged Content Factory benchmark video.
@@ -531,28 +953,91 @@ def analyze_content_producer_reference(self, *, attachment_id: int) -> dict:
     from app.data.models.hermes_agent import HermesContentProducerAttachment
 
     with SessionLocal() as db:
-        row = db.get(HermesContentProducerAttachment, int(attachment_id))
+        row = db.scalar(
+            select(HermesContentProducerAttachment)
+            .where(HermesContentProducerAttachment.id == int(attachment_id))
+            .with_for_update()
+        )
         if row is None:
             return {"status": "missing", "attachment_id": int(attachment_id)}
         if row.kind != "reference_video":
             return {"status": "ignored", "attachment_id": int(attachment_id)}
-        if row.analysis_status == "ready" and dict(row.analysis_json or {}).get(
-            "transcript_status"
-        ) in {"success", "no_speech"}:
+        if (
+            row.analysis_status == "ready"
+            and dict(row.analysis_json or {}).get("transcript_status")
+            in {"success", "no_speech"}
+            and dict(row.analysis_json or {}).get("multimodal_status")
+            == "success"
+        ):
             return {"status": "ready", "attachment_id": int(attachment_id)}
 
         analysis = dict(row.analysis_json or {})
-        analysis["transcript_status"] = "processing"
-        analysis["transcript_started_at"] = _utcnow().isoformat()
+        multimodal_started_at = str(analysis.get("multimodal_started_at") or "")
+        try:
+            multimodal_started = datetime.fromisoformat(multimodal_started_at).replace(
+                tzinfo=None
+            )
+        except (TypeError, ValueError):
+            multimodal_started = None
+        if (
+            str(analysis.get("multimodal_status") or "") == "processing"
+            and multimodal_started is not None
+            and multimodal_started > _utcnow() - timedelta(minutes=45)
+        ):
+            return {"status": "processing", "attachment_id": int(attachment_id)}
+
+        # Transcription and visual analysis are independent durable phases.
+        # If the latter fails, a Celery retry must reuse the transcript that
+        # was committed immediately above rather than spending another full
+        # Whisper pass on the same immutable source video.
+        reuse_transcript = str(
+            analysis.get("transcript_status") or ""
+        ) in {"ready", "success", "no_speech"}
+        if not reuse_transcript:
+            analysis["transcript_status"] = "processing"
+            analysis["transcript_started_at"] = _utcnow().isoformat()
+        analysis["multimodal_status"] = "processing"
+        analysis["multimodal_started_at"] = _utcnow().isoformat()
+        analysis["multimodal_task_id"] = str(self.request.id or "")[:80]
+        analysis.pop("multimodal_error", None)
+        analysis.pop("multimodal_completed_at", None)
+        analysis.pop("multimodal_retry_scheduled_at", None)
         row.analysis_status = "processing"
         row.analysis_json = analysis
+        flag_modified(row, "analysis_json")
         db.commit()
 
         try:
             source = _producer_attachment_source(row.file_path)
             if _sha256_file(source) != str(row.sha256 or ""):
                 raise RuntimeError("producer attachment checksum changed")
-            if not _has_audio_stream(source):
+            if reuse_transcript:
+                reused_segments = [
+                    dict(item)
+                    for item in list(
+                        analysis.get("segments")
+                        or analysis.get("transcript_segments")
+                        or []
+                    )[:160]
+                    if isinstance(item, dict)
+                ]
+                reused_text = str(
+                    analysis.get("transcript")
+                    or analysis.get("transcript_text")
+                    or ""
+                ).strip()
+                analysis.update(
+                    {
+                        "transcript_status": (
+                            "success" if reused_text or reused_segments else "no_speech"
+                        ),
+                        "detected_language": analysis.get("detected_language")
+                        or analysis.get("transcript_language"),
+                        "transcript": reused_text[:24000],
+                        "segments": reused_segments,
+                    }
+                )
+            elif not _has_audio_stream(source):
                 analysis.update(
                     {
                         "transcript_status": "no_speech",
@@ -594,37 +1079,283 @@ def analyze_content_producer_reference(self, *, attachment_id: int) -> dict:
                     }
                 )
             analysis["transcript_completed_at"] = _utcnow().isoformat()
+            row.analysis_json = analysis
+            flag_modified(row, "analysis_json")
+            db.commit()
+
+            from app.services.hermes_agent.content_factory_api import (
+                analyze_benchmark_storyboard_api,
+            )
+            from app.tasks.hermes_agent.content_factory_tasks import (
+                _render_benchmark_contact_sheets,
+            )
+
+            output_dir = source.parent / f"{row.attachment_key}_benchmark_analysis"
+            duration = float(analysis.get("duration_seconds") or 0)
+            sheet_rows = _render_benchmark_contact_sheets(
+                source,
+                output_dir,
+                source_asset_id=int(row.id),
+                duration_seconds=duration,
+            )
+            request_context = str(
+                dict(row.meta_json or {}).get("analysis_request_context") or ""
+            ).strip()
+            visual_semantic_analysis = analyze_benchmark_storyboard_api(
+                db,
+                contact_sheet_paths=[str(item["path"]) for item in sheet_rows],
+                transcript=str(analysis.get("transcript") or ""),
+                project_requirement=(
+                    request_context[:4000]
+                    or "Analyze this benchmark before discussing an original short-video adaptation with the user."
+                ),
+                transformation_contract={
+                    "fidelity": "adaptive",
+                    "transfer_mode": "semantic_structure",
+                    "source_media_reuse": "forbidden",
+                    "analysis_phase": "producer_discussion",
+                },
+                execution_id=f"producer:{int(row.conversation_id)}:{int(row.id)}",
+            )
+            shutil.rmtree(output_dir, ignore_errors=True)
+            analysis = dict(row.analysis_json or {})
+            analysis.update({
+                "visual_semantic_analysis": visual_semantic_analysis,
+                "multimodal_status": "success",
+                "multimodal_completed_at": _utcnow().isoformat(),
+                "frame_count": sum(
+                    int(item.get("frame_count") or 0) for item in sheet_rows
+                ),
+                "keyframe_sheets": [
+                    {
+                        key: item[key]
+                        for key in (
+                            "board_index", "frame_start", "frame_end",
+                            "start_second", "end_second", "frame_count",
+                            "interval_seconds",
+                        )
+                    }
+                    for item in sheet_rows
+                ],
+            })
+            analysis.pop("multimodal_error", None)
+            analysis.pop("multimodal_retry_scheduled_at", None)
             row.analysis_status = "ready"
             row.analysis_json = analysis
+            meta = dict(row.meta_json or {})
+            has_pending_producer_turn = bool(
+                str(meta.get("analysis_request_context") or "").strip()
+            )
+            if has_pending_producer_turn:
+                # Publish the durable handoff state in the same transaction as
+                # analysis completion.  The browser must never observe
+                # ``ready`` without knowing that the Producer reply is still
+                # in flight and stop polling in that narrow commit gap.
+                analysis["producer_turn_status"] = "queued"
+                row.analysis_json = analysis
+            else:
+                _ensure_producer_analysis_ready_notification(db, row, analysis)
+            # ``analysis`` is the same dict that was assigned before the
+            # intermediate commit.  SQLAlchemy's committed JSON snapshot can
+            # therefore share that object, and the in-place ``update`` above
+            # is otherwise invisible to dirty tracking.  Explicitly mark the
+            # JSON column so a successful transcription cannot remain stuck
+            # at ``transcript_status=processing`` in durable state.
+            flag_modified(row, "analysis_json")
             db.commit()
+            if has_pending_producer_turn:
+                try:
+                    celery_app.send_task(
+                        "hermes_content_factory.continue_producer_benchmark_turn",
+                        kwargs={"attachment_id": int(row.id)},
+                        queue=str(settings.HERMES_AGENT_TASK_QUEUE),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    analysis = dict(row.analysis_json or {})
+                    analysis.update({
+                        "producer_turn_status": "failed",
+                        "producer_turn_error": type(exc).__name__[:120],
+                        "producer_turn_completed_at": _utcnow().isoformat(),
+                    })
+                    row.analysis_json = analysis
+                    flag_modified(row, "analysis_json")
+                    db.commit()
             return {"status": "ready", "attachment_id": int(attachment_id)}
         except Exception as exc:  # noqa: BLE001
+            if "output_dir" in locals():
+                shutil.rmtree(output_dir, ignore_errors=True)
             db.rollback()
             row = db.get(HermesContentProducerAttachment, int(attachment_id))
             if row is None:
                 return {"status": "missing", "attachment_id": int(attachment_id)}
             analysis = dict(row.analysis_json or {})
-            analysis.update(
-                {
-                    "transcript_status": "failed",
-                    "transcript_error": type(exc).__name__[:120],
-                    "transcript_completed_at": _utcnow().isoformat(),
-                }
-            )
-            # The validated contact sheet remains useful visual evidence.  Do
-            # not strand the conversation solely because speech extraction
-            # failed; expose the bounded status to the producer instead.
-            row.analysis_status = "ready"
+            retries = int(self.request.retries or 0)
+            if retries < int(self.max_retries or 3):
+                if analysis.get("transcript_status") == "processing":
+                    analysis["transcript_status"] = "queued"
+                analysis.update({
+                    "multimodal_status": "queued",
+                    "multimodal_error": type(exc).__name__[:120],
+                    "multimodal_retry_scheduled_at": _utcnow().isoformat(),
+                })
+                row.analysis_status = "processing"
+                row.analysis_json = analysis
+                flag_modified(row, "analysis_json")
+                db.commit()
+                raise self.retry(
+                    exc=exc,
+                    countdown=min(180, 15 * (2 ** retries)),
+                )
+            if analysis.get("transcript_status") == "processing":
+                analysis.update(
+                    {
+                        "transcript_status": "failed",
+                        "transcript_error": type(exc).__name__[:120],
+                        "transcript_completed_at": _utcnow().isoformat(),
+                    }
+                )
+            analysis.update({
+                "multimodal_status": "failed",
+                "multimodal_error": type(exc).__name__[:120],
+                "multimodal_completed_at": _utcnow().isoformat(),
+            })
+            row.analysis_status = "failed"
             row.analysis_json = analysis
+            flag_modified(row, "analysis_json")
             db.commit()
             logger.exception(
-                "producer reference transcription failed attachment_id=%s",
+                "producer reference analysis failed attachment_id=%s",
                 attachment_id,
             )
-            return {
-                "status": "ready_with_transcript_failure",
-                "attachment_id": int(attachment_id),
-            }
+            return {"status": "failed", "attachment_id": int(attachment_id)}
+
+
+@celery_app.task(
+    name="openai_whisper.recover_content_producer_reference_analyses",
+    queue=WHISPER_TASK_QUEUE,
+)
+def recover_content_producer_reference_analyses(
+    *,
+    stale_seconds: int = 120,
+    processing_stale_minutes: int = 45,
+    limit: int = 100,
+) -> dict:
+    """Re-dispatch orphaned Producer benchmark analyses.
+
+    The database row is the durable source of truth.  This repairs the narrow
+    commit-to-broker gap without polling browsers or creating duplicate model
+    work; the analysis task itself owns the processing lease.
+    """
+
+    from app.data.models.hermes_agent import HermesContentProducerAttachment
+
+    utc_now = _utcnow()
+    processing_cutoff = utc_now - timedelta(
+        minutes=max(1, int(processing_stale_minutes))
+    )
+    with SessionLocal() as db:
+        # ``created_at`` is populated by the database.  Production MySQL uses
+        # the server session's local wall clock while task JSON timestamps are
+        # UTC-naive.  Compare database-owned timestamps with database time so
+        # an orphan cannot be mistaken for a row created hours in the future.
+        database_now = db.scalar(select(func.now())) or datetime.now()
+        queued_cutoff = database_now.replace(tzinfo=None) - timedelta(
+            seconds=max(0, int(stale_seconds))
+        )
+        candidates = list(
+            db.scalars(
+                select(HermesContentProducerAttachment)
+                .where(HermesContentProducerAttachment.kind == "reference_video")
+                .order_by(HermesContentProducerAttachment.id.desc())
+                .limit(max(1, min(int(limit), 500)))
+            ).all()
+        )
+        attachment_ids: list[int] = []
+        normalized_success = 0
+        notified_ready = 0
+        for row in candidates:
+            meta = dict(row.meta_json or {})
+            if meta.get("active_for_current_requirement", True) is False:
+                continue
+            analysis = dict(row.analysis_json or {})
+            status = str(analysis.get("multimodal_status") or "")
+            if status == "success":
+                if _ensure_producer_analysis_ready_notification(db, row, analysis):
+                    notified_ready += 1
+                if any(
+                    key in analysis
+                    for key in ("multimodal_error", "multimodal_retry_scheduled_at")
+                ):
+                    analysis.pop("multimodal_error", None)
+                    analysis.pop("multimodal_retry_scheduled_at", None)
+                    row.analysis_json = analysis
+                    flag_modified(row, "analysis_json")
+                    normalized_success += 1
+                continue
+            if row.analysis_status == "failed":
+                continue
+            try:
+                started_at = datetime.fromisoformat(
+                    str(analysis.get("multimodal_started_at") or "")
+                ).replace(tzinfo=None)
+            except (TypeError, ValueError):
+                started_at = None
+            try:
+                retry_at = datetime.fromisoformat(
+                    str(analysis.get("multimodal_retry_scheduled_at") or "")
+                ).replace(tzinfo=None)
+            except (TypeError, ValueError):
+                retry_at = None
+            if retry_at is not None and retry_at > utc_now - timedelta(minutes=10):
+                continue
+            orphaned = (
+                status == "queued"
+                and (row.created_at or database_now).replace(tzinfo=None)
+                <= queued_cutoff
+            ) or (
+                status == "processing"
+                and (started_at is None or started_at <= processing_cutoff)
+            )
+            if not orphaned:
+                continue
+            analysis.update(
+                {
+                    "multimodal_status": "queued",
+                    "multimodal_recovery_dispatched_at": utc_now.isoformat(),
+                    "multimodal_recovery_count": int(
+                        analysis.get("multimodal_recovery_count") or 0
+                    )
+                    + 1,
+                }
+            )
+            row.analysis_status = "processing"
+            row.analysis_json = analysis
+            flag_modified(row, "analysis_json")
+            attachment_ids.append(int(row.id))
+        db.commit()
+
+    dispatched: list[int] = []
+    for attachment_id in attachment_ids:
+        try:
+            celery_app.send_task(
+                "openai_whisper.analyze_content_producer_reference",
+                kwargs={"attachment_id": int(attachment_id)},
+                queue=str(WHISPER_TASK_QUEUE),
+            )
+            dispatched.append(int(attachment_id))
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "producer benchmark recovery dispatch failed attachment_id=%s",
+                attachment_id,
+            )
+    return {
+        "checked": len(candidates),
+        "eligible": len(attachment_ids),
+        "dispatched": len(dispatched),
+        "normalized_success": normalized_success,
+        "notified_ready": notified_ready,
+        "attachment_ids": dispatched,
+    }
 
 
 @celery_app.task(name="openai_whisper.download_shared_video", bind=True, queue=WHISPER_TASK_QUEUE)
@@ -767,7 +1498,13 @@ def cleanup_jobs(self) -> dict:
         expired_rows = repository.list_expired_terminal_jobs(db, success_cutoff=success_cutoff, failed_cutoff=failed_cutoff, limit=batch_size)
         for row in expired_rows:
             storage.delete_job_files(row.workspace_id, row.job_id)
-        stats["expired_jobs_deleted"] = repository.delete_jobs_by_ids(db, [row.job_id for row in expired_rows])
+        expired_by_workspace: dict[int, list[str]] = {}
+        for row in expired_rows:
+            expired_by_workspace.setdefault(int(row.workspace_id), []).append(str(row.job_id))
+        stats["expired_jobs_deleted"] = sum(
+            repository.delete_jobs_by_ids(db, workspace_id, job_ids)
+            for workspace_id, job_ids in expired_by_workspace.items()
+        )
         db.commit()
 
     stats["uploads_deleted"] = storage.delete_uploads_older_than(None, upload_cutoff_ts, limit=batch_size)

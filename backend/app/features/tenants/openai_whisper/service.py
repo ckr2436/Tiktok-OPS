@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -23,21 +24,51 @@ from .schemas import (
     TranscriptionJobSummary,
     UploadedVideoResponse,
 )
+from .url_security import UnsafeShareURLError, validate_share_url
 
 ALLOWED_CONTACT_INTERVALS = {0.5, 1.0, 1.5, 2.0}
 TERMINAL_STATUSES = {"success", "failed"}
 ACTIVE_STATUSES = {"pending", "processing"}
 
 
-async def _save_upload_file(dest: Path, upload: UploadFile) -> None:
+async def _save_upload_file(
+    dest: Path,
+    upload: UploadFile,
+    *,
+    max_bytes: int,
+    remaining_workspace_bytes: int,
+) -> None:
+    byte_limit = min(max(1, int(max_bytes)), max(0, int(remaining_workspace_bytes)))
+    if byte_limit <= 0:
+        raise APIError("WORKSPACE_STORAGE_QUOTA_EXCEEDED", "工作区文件空间已用完。", 413)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("wb") as buffer:
-        while True:
-            chunk = await upload.read(1024 * 1024)
-            if not chunk:
-                break
-            buffer.write(chunk)
-    await upload.seek(0)
+    written = 0
+    try:
+        with dest.open("wb") as buffer:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > byte_limit:
+                    if byte_limit < int(max_bytes):
+                        raise APIError(
+                            "WORKSPACE_STORAGE_QUOTA_EXCEEDED",
+                            "上传文件超过工作区剩余空间。",
+                            413,
+                        )
+                    raise APIError("FILE_TOO_LARGE", "上传文件超过允许大小。", 413)
+                buffer.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    finally:
+        await upload.seek(0)
+
+
+def _remaining_workspace_bytes(workspace_id: int) -> int:
+    quota = int(settings.OPENAI_WHISPER_WORKSPACE_STORAGE_QUOTA_BYTES)
+    return storage.workspace_remaining_bytes(workspace_id, quota)
 
 
 def _normalize_language_or_error(value: Optional[str], field: str) -> Optional[str]:
@@ -123,7 +154,12 @@ async def upload_video(
     directory = storage.upload_dir(workspace_id, upload_id)
     video_path = directory / f"upload{ext}"
 
-    await _save_upload_file(video_path, upload)
+    await _save_upload_file(
+        video_path,
+        upload,
+        max_bytes=int(settings.OPENAI_WHISPER_MAX_UPLOAD_BYTES),
+        remaining_workspace_bytes=_remaining_workspace_bytes(workspace_id),
+    )
 
     payload: Dict[str, object] = {
         "upload_id": upload_id,
@@ -156,6 +192,11 @@ async def create_job(
     db: Session,
 ) -> TranscriptionJobCreatedResponse:
     share_url = (share_url or "").strip()
+    if share_url:
+        try:
+            share_url = validate_share_url(share_url)
+        except UnsafeShareURLError as exc:
+            raise APIError("INVALID_SHARE_URL", str(exc), 422) from exc
     if share_url and (upload or upload_id):
         raise APIError("FILE_REQUIRED", "请仅上传文件或粘贴分享链接中的一种。", 422)
     if not upload and not upload_id and not share_url:
@@ -206,21 +247,35 @@ async def create_job(
         original_name = os.path.basename(upload.filename or "video.mp4")
         ext = Path(original_name).suffix or ".mp4"
         video_path = directory / f"input{ext}"
-        await _save_upload_file(video_path, upload)
+        await _save_upload_file(
+            video_path,
+            upload,
+            max_bytes=int(settings.OPENAI_WHISPER_MAX_UPLOAD_BYTES),
+            remaining_workspace_bytes=_remaining_workspace_bytes(workspace_id),
+        )
         content_type = upload.content_type
     else:
+        if not re.fullmatch(r"[0-9a-f]{32}", str(upload_id or "")):
+            raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
         try:
             upload_meta = storage.load_upload_metadata(workspace_id, upload_id)
         except FileNotFoundError as exc:
             raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404) from exc
+
+        if int(upload_meta.get("user_id") or 0) != int(user_id):
+            raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
 
         raw_path = upload_meta.get("path")
         if not raw_path:
             storage.delete_upload(workspace_id, upload_id)
             raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
 
-        source_path = Path(str(raw_path))
-        if not source_path.exists():
+        source_path = storage.resolve_upload_artifact_path(
+            workspace_id,
+            str(upload_id),
+            str(raw_path),
+        )
+        if source_path is None:
             storage.delete_upload(workspace_id, upload_id)
             raise APIError("UPLOAD_NOT_FOUND", "上传文件不存在或已失效，请重新上传。", 404)
 
@@ -324,8 +379,14 @@ async def create_job(
     return TranscriptionJobCreatedResponse.from_metadata(updated_meta)
 
 
-def get_job(workspace_id: int, job_id: str, db: Session) -> TranscriptionJobStatusResponse:
-    db_job = repository.get_job(db, workspace_id, job_id)
+def get_job(
+    workspace_id: int,
+    job_id: str,
+    db: Session,
+    *,
+    user_id: int | None,
+) -> TranscriptionJobStatusResponse:
+    db_job = repository.get_job(db, workspace_id, job_id, user_id=user_id)
     if not db_job:
         raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
     try:
@@ -338,8 +399,14 @@ def get_job(workspace_id: int, job_id: str, db: Session) -> TranscriptionJobStat
     return TranscriptionJobStatusResponse.from_metadata(meta)
 
 
-def list_jobs(workspace_id: int, limit: int, db: Session) -> TranscriptionJobListResponse:
-    rows = repository.list_jobs(db, workspace_id, limit)
+def list_jobs(
+    workspace_id: int,
+    limit: int,
+    db: Session,
+    *,
+    user_id: int | None,
+) -> TranscriptionJobListResponse:
+    rows = repository.list_jobs(db, workspace_id, limit, user_id=user_id)
     return TranscriptionJobListResponse(
         jobs=[
             TranscriptionJobSummary(
@@ -369,20 +436,35 @@ def list_jobs(workspace_id: int, limit: int, db: Session) -> TranscriptionJobLis
     )
 
 
-def delete_job(workspace_id: int, job_id: str, db: Session, *, force: bool = False) -> dict:
-    row = repository.get_job(db, workspace_id, job_id)
+def delete_job(
+    workspace_id: int,
+    job_id: str,
+    db: Session,
+    *,
+    force: bool = False,
+    user_id: int | None,
+) -> dict:
+    row = repository.get_job(db, workspace_id, job_id, user_id=user_id)
     if not row:
         raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
     if row.status in ACTIVE_STATUSES and not (force or settings.OPENAI_WHISPER_MANUAL_DELETE_ACTIVE_ALLOWED):
         raise APIError("JOB_ACTIVE", "任务仍在处理中，请等待完成后再删除。", 409)
 
     storage.delete_job_files(workspace_id, job_id)
-    repository.delete_job(db, workspace_id, job_id)
+    repository.delete_job(db, workspace_id, job_id, user_id=user_id)
     db.commit()
     return {"deleted": 1, "job_id": job_id}
 
 
-def clear_jobs(workspace_id: int, db: Session, *, scope: str = "terminal", force: bool = False, limit: int = 500) -> dict:
+def clear_jobs(
+    workspace_id: int,
+    db: Session,
+    *,
+    scope: str = "terminal",
+    force: bool = False,
+    limit: int = 500,
+    user_id: int | None,
+) -> dict:
     scope = (scope or "terminal").lower()
     include_active = bool(force and scope == "all")
     if scope not in {"terminal", "failed", "success", "all"}:
@@ -393,6 +475,7 @@ def clear_jobs(workspace_id: int, db: Session, *, scope: str = "terminal", force
         workspace_id,
         include_active=include_active,
         limit=max(1, min(int(limit or 500), 1000)),
+        user_id=user_id,
     )
     selected = []
     for row in rows:
@@ -408,14 +491,28 @@ def clear_jobs(workspace_id: int, db: Session, *, scope: str = "terminal", force
 
     for row in selected:
         storage.delete_job_files(row.workspace_id, row.job_id)
-    deleted = repository.delete_jobs_by_ids(db, [row.job_id for row in selected])
+    deleted = repository.delete_jobs_by_ids(
+        db,
+        workspace_id,
+        [row.job_id for row in selected],
+        user_id=user_id,
+    )
     db.commit()
     return {"deleted": deleted, "scope": scope}
 
 
-def build_download(workspace_id: int, job_id: str, variant: str) -> Path:
+def build_download(
+    workspace_id: int,
+    job_id: str,
+    variant: str,
+    db: Session,
+    *,
+    user_id: int | None,
+) -> Path:
     if variant not in {"source", "translation"}:
         raise APIError("INVALID_VARIANT", "variant must be source or translation", 422)
+    if repository.get_job(db, workspace_id, job_id, user_id=user_id) is None:
+        raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
     try:
         path = storage.resolve_download_path(workspace_id, job_id, variant)
     except FileNotFoundError as exc:
@@ -423,21 +520,40 @@ def build_download(workspace_id: int, job_id: str, variant: str) -> Path:
     return path
 
 
-def build_contact_sheet_download(workspace_id: int, job_id: str) -> Path:
+def build_contact_sheet_download(
+    workspace_id: int,
+    job_id: str,
+    db: Session,
+    *,
+    user_id: int | None,
+) -> Path:
+    if repository.get_job(db, workspace_id, job_id, user_id=user_id) is None:
+        raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
     try:
         return storage.resolve_contact_sheet_path(workspace_id, job_id)
     except FileNotFoundError as exc:
         raise APIError("CONTACT_SHEET_NOT_READY", "拆解图片尚未生成，请稍后再试。", 404) from exc
 
 
-def build_video_download(workspace_id: int, job_id: str) -> tuple[Path, str, str]:
+def build_video_download(
+    workspace_id: int,
+    job_id: str,
+    db: Session,
+    *,
+    user_id: int | None,
+) -> tuple[Path, str, str]:
+    if repository.get_job(db, workspace_id, job_id, user_id=user_id) is None:
+        raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404)
     try:
         metadata = storage.load_metadata(workspace_id, job_id)
     except FileNotFoundError as exc:
         raise APIError("JOB_NOT_FOUND", "任务不存在或已删除。", 404) from exc
-    raw_video_path = metadata.get("video_path")
-    path = Path(str(raw_video_path)) if raw_video_path else None
-    if not path or not path.exists():
+    path = storage.resolve_job_artifact_path(
+        workspace_id,
+        job_id,
+        metadata.get("video_path"),
+    )
+    if path is None:
         raise APIError("VIDEO_NOT_READY", "视频尚未下载完成或已被自动清理。", 404)
     filename = metadata.get("filename") or f"{job_id}.mp4"
     content_type = metadata.get("content_type") or "application/octet-stream"

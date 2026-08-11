@@ -17,11 +17,19 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _ensure_job(db: Session, workspace_id: int, job_id: str) -> OpenAIWhisperJob | None:
+def _ensure_job(
+    db: Session,
+    workspace_id: int,
+    job_id: str,
+    *,
+    user_id: int | None = None,
+) -> OpenAIWhisperJob | None:
     stmt = select(OpenAIWhisperJob).where(
         OpenAIWhisperJob.workspace_id == int(workspace_id),
         OpenAIWhisperJob.job_id == job_id,
     )
+    if user_id is not None:
+        stmt = stmt.where(OpenAIWhisperJob.user_id == int(user_id))
     return db.execute(stmt).scalar_one_or_none()
 
 
@@ -246,13 +254,21 @@ def clear_large_artifact_refs(db: Session, workspace_id: int, job_id: str) -> Op
     return job
 
 
-def list_jobs(db: Session, workspace_id: int, limit: int) -> Iterable[OpenAIWhisperJob]:
-    stmt = (
-        select(OpenAIWhisperJob)
-        .where(OpenAIWhisperJob.workspace_id == int(workspace_id))
-        .order_by(OpenAIWhisperJob.created_at.desc(), OpenAIWhisperJob.id.desc())
-        .limit(limit)
+def list_jobs(
+    db: Session,
+    workspace_id: int,
+    limit: int,
+    *,
+    user_id: int | None = None,
+) -> Iterable[OpenAIWhisperJob]:
+    stmt = select(OpenAIWhisperJob).where(
+        OpenAIWhisperJob.workspace_id == int(workspace_id)
     )
+    if user_id is not None:
+        stmt = stmt.where(OpenAIWhisperJob.user_id == int(user_id))
+    stmt = stmt.order_by(
+        OpenAIWhisperJob.created_at.desc(), OpenAIWhisperJob.id.desc()
+    ).limit(limit)
     return db.execute(stmt).scalars().all()
 
 
@@ -262,8 +278,11 @@ def list_jobs_for_workspace(
     *,
     include_active: bool = False,
     limit: int | None = None,
+    user_id: int | None = None,
 ) -> list[OpenAIWhisperJob]:
     stmt = select(OpenAIWhisperJob).where(OpenAIWhisperJob.workspace_id == int(workspace_id))
+    if user_id is not None:
+        stmt = stmt.where(OpenAIWhisperJob.user_id == int(user_id))
     if not include_active:
         stmt = stmt.where(OpenAIWhisperJob.status.in_(TERMINAL_STATUSES))
     stmt = stmt.order_by(OpenAIWhisperJob.created_at.desc(), OpenAIWhisperJob.id.desc())
@@ -321,18 +340,35 @@ def list_expired_terminal_jobs(
     return list(db.execute(stmt).scalars().all())
 
 
-def delete_job(db: Session, workspace_id: int, job_id: str) -> OpenAIWhisperJob | None:
-    job = _ensure_job(db, workspace_id, job_id)
+def delete_job(
+    db: Session,
+    workspace_id: int,
+    job_id: str,
+    *,
+    user_id: int | None = None,
+) -> OpenAIWhisperJob | None:
+    job = _ensure_job(db, workspace_id, job_id, user_id=user_id)
     if not job:
         return None
     db.delete(job)
     return job
 
 
-def delete_jobs_by_ids(db: Session, job_ids: list[str]) -> int:
+def delete_jobs_by_ids(
+    db: Session,
+    workspace_id: int,
+    job_ids: list[str],
+    *,
+    user_id: int | None = None,
+) -> int:
     if not job_ids:
         return 0
-    stmt = delete(OpenAIWhisperJob).where(OpenAIWhisperJob.job_id.in_(job_ids))
+    stmt = delete(OpenAIWhisperJob).where(
+        OpenAIWhisperJob.workspace_id == int(workspace_id),
+        OpenAIWhisperJob.job_id.in_(job_ids),
+    )
+    if user_id is not None:
+        stmt = stmt.where(OpenAIWhisperJob.user_id == int(user_id))
     result = db.execute(stmt)
     return int(result.rowcount or 0)
 
@@ -345,5 +381,11 @@ def ensure_aware(dt: datetime | None) -> datetime | None:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def get_job(db: Session, workspace_id: int, job_id: str) -> OpenAIWhisperJob | None:
-    return _ensure_job(db, workspace_id, job_id)
+def get_job(
+    db: Session,
+    workspace_id: int,
+    job_id: str,
+    *,
+    user_id: int | None = None,
+) -> OpenAIWhisperJob | None:
+    return _ensure_job(db, workspace_id, job_id, user_id=user_id)

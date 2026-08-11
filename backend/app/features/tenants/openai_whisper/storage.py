@@ -65,6 +65,25 @@ def workspace_dir(workspace_id: int) -> Path:
     return _ensure_dir(BASE_DIR / f"workspace_{workspace_id}")
 
 
+def workspace_storage_bytes(workspace_id: int) -> int:
+    """Return the current on-disk footprint for one tenant workspace."""
+    root = BASE_DIR / f"workspace_{int(workspace_id)}"
+    if not root.exists():
+        return 0
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file():
+                total += int(path.stat().st_size)
+        except FileNotFoundError:
+            continue
+    return total
+
+
+def workspace_remaining_bytes(workspace_id: int, quota_bytes: int) -> int:
+    return max(0, int(quota_bytes) - workspace_storage_bytes(workspace_id))
+
+
 def job_dir(workspace_id: int, job_id: str) -> Path:
     return _ensure_dir(workspace_dir(workspace_id) / job_id)
 
@@ -124,6 +143,30 @@ def load_upload_metadata(workspace_id: int, upload_id: str) -> Dict[str, Any]:
     directory = uploads_dir(workspace_id) / upload_id
     metadata_file = upload_metadata_path(directory)
     return _read_json_file(metadata_file)
+
+
+def resolve_upload_artifact_path(
+    workspace_id: int,
+    upload_id: str,
+    path_value: str | Path | None,
+) -> Path | None:
+    if not path_value:
+        return None
+    base = BASE_DIR / f"workspace_{int(workspace_id)}" / "uploads" / str(upload_id)
+    safe = _safe_child_path(base, Path(path_value))
+    return safe if safe is not None and safe.is_file() else None
+
+
+def resolve_job_artifact_path(
+    workspace_id: int,
+    job_id: str,
+    path_value: str | Path | None,
+) -> Path | None:
+    if not path_value:
+        return None
+    base = BASE_DIR / f"workspace_{int(workspace_id)}" / str(job_id)
+    safe = _safe_child_path(base, Path(path_value))
+    return safe if safe is not None and safe.is_file() else None
 
 
 def delete_upload(workspace_id: int, upload_id: str) -> None:
@@ -348,4 +391,3 @@ def update_component_status(
         return meta
 
     return update_metadata(workspace_id, job_id, _apply)
-

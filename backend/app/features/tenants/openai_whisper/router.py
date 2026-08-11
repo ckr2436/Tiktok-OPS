@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.deps import SessionUser, require_tenant_member
+from app.core.deps import ADMIN_ROLES, SessionUser, require_tenant_member
 from app.data.db import get_db
 
 from . import service
@@ -20,6 +20,11 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/tenants/{workspace_id}/openai-whisper", tags=["Tenant / openai-whisper"])
+
+
+def _owner_filter(me: SessionUser) -> int | None:
+    """Admins manage the workspace; ordinary members can only see themselves."""
+    return None if str(me.role) in ADMIN_ROLES else int(me.id)
 
 
 @router.get("/languages", response_model=LanguageListResponse)
@@ -80,10 +85,10 @@ async def enqueue_job(
 def list_jobs(
     workspace_id: int,
     limit: int = Query(20, ge=1, le=100),
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    return service.list_jobs(workspace_id, limit, db)
+    return service.list_jobs(workspace_id, limit, db, user_id=_owner_filter(me))
 
 
 @router.delete("/jobs")
@@ -92,20 +97,27 @@ def clear_jobs(
     scope: str = Query("terminal", pattern="^(terminal|failed|success|all)$"),
     force: bool = Query(False),
     limit: int = Query(500, ge=1, le=1000),
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    return service.clear_jobs(workspace_id, db, scope=scope, force=force, limit=limit)
+    return service.clear_jobs(
+        workspace_id,
+        db,
+        scope=scope,
+        force=force,
+        limit=limit,
+        user_id=_owner_filter(me),
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=TranscriptionJobStatusResponse)
 def get_job_status(
     workspace_id: int,
     job_id: str,
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    return service.get_job(workspace_id, job_id, db)
+    return service.get_job(workspace_id, job_id, db, user_id=_owner_filter(me))
 
 
 @router.delete("/jobs/{job_id}")
@@ -113,10 +125,16 @@ def delete_job(
     workspace_id: int,
     job_id: str,
     force: bool = Query(False),
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
     db: Session = Depends(get_db),
 ):
-    return service.delete_job(workspace_id, job_id, db, force=force)
+    return service.delete_job(
+        workspace_id,
+        job_id,
+        db,
+        force=force,
+        user_id=_owner_filter(me),
+    )
 
 
 @router.get("/jobs/{job_id}/subtitles")
@@ -124,9 +142,16 @@ def download_subtitles(
     workspace_id: int,
     job_id: str,
     variant: str = "source",
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
-    path = service.build_download(workspace_id, job_id, variant)
+    path = service.build_download(
+        workspace_id,
+        job_id,
+        variant,
+        db,
+        user_id=_owner_filter(me),
+    )
     filename = f"{job_id}-{variant}.srt"
     return FileResponse(path, filename=filename, media_type="text/plain")
 
@@ -135,9 +160,15 @@ def download_subtitles(
 def download_contact_sheet(
     workspace_id: int,
     job_id: str,
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
-    path = service.build_contact_sheet_download(workspace_id, job_id)
+    path = service.build_contact_sheet_download(
+        workspace_id,
+        job_id,
+        db,
+        user_id=_owner_filter(me),
+    )
     filename = f"{job_id}-contact-sheet.png"
     return FileResponse(path, filename=filename, media_type="image/png")
 
@@ -146,8 +177,13 @@ def download_contact_sheet(
 def download_video(
     workspace_id: int,
     job_id: str,
-    _: SessionUser = Depends(require_tenant_member),
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
 ):
-    path, filename, content_type = service.build_video_download(workspace_id, job_id)
+    path, filename, content_type = service.build_video_download(
+        workspace_id,
+        job_id,
+        db,
+        user_id=_owner_filter(me),
+    )
     return FileResponse(path, filename=filename, media_type=content_type)
-

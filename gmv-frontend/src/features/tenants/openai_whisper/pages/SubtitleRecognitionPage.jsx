@@ -417,7 +417,7 @@ export default function SubtitleRecognitionPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>或粘贴短视频分享链接</label>
-                <input type="text" value={shareLink} onChange={(e) => { setErrorMessage(''); setShareLink(e.target.value) }} placeholder="支持抖音、快手等平台的公开分享链接" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db' }} disabled={loading} />
+                <input type="text" value={shareLink} onChange={(e) => { setErrorMessage(''); setShareLink(e.target.value) }} placeholder="支持 TikTok、抖音、快手、YouTube、Facebook 的 HTTPS 公开链接" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db' }} disabled={loading} />
               </div>
               <button type="button" onClick={handlePasteShareLink} disabled={loading || isPasting} style={{ whiteSpace: 'nowrap', padding: '10px 16px', borderRadius: 10, border: '1px solid #2563eb', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', height: 44, alignSelf: 'flex-end' }}>{isPasting ? '读取中…' : '一键粘贴'}</button>
             </div>
