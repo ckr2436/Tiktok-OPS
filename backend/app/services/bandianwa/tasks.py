@@ -5,11 +5,9 @@ import json
 import mimetypes
 from pathlib import Path
 from typing import Any, Mapping, Optional
-from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.data.models.kie_api import KieApiKey, KieFile, KieTask
 from app.services.audit import log_event
 from app.services.bandianwa.client import (
@@ -21,12 +19,11 @@ from app.services.bandianwa.client import (
     extract_video_urls,
     normalize_submit_path,
 )
-from app.services.kie_api.accounts import BANDIANWA_PROVIDER_KEY, VOLCENGINE_PROVIDER_KEY, decrypt_api_key
-from app.services.kie_api.local_storage import get_local_path, mark_result_file_pending, set_task_local_meta
-from app.services.kie_api.retry_policy import next_retry_meta
+from app.services.ai_video.accounts import BANDIANWA_PROVIDER_KEY, VOLCENGINE_PROVIDER_KEY, decrypt_api_key
+from app.services.ai_video.local_storage import get_local_path, mark_result_file_pending, set_task_local_meta
+from app.services.ai_video.task_state import is_local_task_id
 
 
-LOCAL_TASK_PREFIX = "local-bandianwa-"
 MAX_OMNI_REFERENCE_FILES = 7
 
 
@@ -266,138 +263,6 @@ def _ensure_file(
     return file
 
 
-def create_bandianwa_local_task(
-    db: Session,
-    *,
-    workspace_id: int,
-    key_id: int,
-    input_params: Mapping[str, Any],
-    provider_key: str = BANDIANWA_PROVIDER_KEY,
-    actor_user_id: int | None = None,
-    actor_workspace_id: int | None = None,
-    actor_ip: str | None = None,
-    user_agent: str | None = None,
-) -> KieTask:
-    key = _get_provider_key(db, key_id, provider_key)
-    model = str(input_params.get("model") or "").strip()
-    if not model:
-        raise ValueError("model is required")
-
-    prompt: Optional[str] = None
-    raw_prompt = input_params.get("prompt")
-    raw_prompt = _effective_prompt(input_params) or raw_prompt
-    if isinstance(raw_prompt, str) and raw_prompt.strip():
-        prompt = raw_prompt.strip()[:2000]
-
-    clean_input = {
-        k: v
-        for k, v in dict(input_params or {}).items()
-        if v is not None and not (isinstance(v, str) and not v.strip())
-    }
-
-    task = KieTask(
-        workspace_id=int(workspace_id),
-        key_id=int(key.id),
-        created_by_user_id=int(actor_user_id) if actor_user_id is not None else None,
-        model=model,
-        task_id=f"{LOCAL_TASK_PREFIX}{uuid4().hex}",
-        state="queued_local",
-        prompt=prompt,
-        input_json=clean_input,
-    )
-    db.add(task)
-    db.flush()
-    set_task_local_meta(task, download_name_base=str(int(task.id)))
-    db.add(task)
-    db.flush()
-
-    log_event(
-        db,
-        action="bandianwa.video.create_local_task",
-        resource_type="kie_task",
-        resource_id=int(task.id),
-        actor_user_id=actor_user_id,
-        actor_workspace_id=actor_workspace_id or int(workspace_id),
-        actor_ip=actor_ip,
-        user_agent=user_agent,
-        workspace_id=int(workspace_id),
-        details={
-            "model": model,
-            "task_id": task.task_id,
-            "key_id": int(key.id),
-            "provider_key": key.provider_key,
-            "submit_path": choose_submit_path(clean_input),
-            "request": clean_input,
-        },
-    )
-
-    return task
-
-
-def reset_bandianwa_task_for_retry(
-    db: Session,
-    *,
-    task: KieTask,
-    input_params: Mapping[str, Any] | None = None,
-    retry_kind: str = "manual",
-) -> KieTask:
-    if input_params is not None:
-        source_input = dict(task.input_json or {})
-        source_input.update(dict(input_params or {}))
-        clean_input = {
-            k: v
-            for k, v in source_input.items()
-            if v is not None and not (isinstance(v, str) and not v.strip())
-        }
-        if not clean_input.get("model"):
-            clean_input["model"] = task.model
-        task.input_json = clean_input
-        task.model = str(clean_input.get("model") or task.model)
-        raw_prompt = _effective_prompt(clean_input) or clean_input.get("prompt")
-        task.prompt = raw_prompt.strip()[:2000] if isinstance(raw_prompt, str) and raw_prompt.strip() else None
-
-    meta = next_retry_meta(task, kind=retry_kind)
-    meta.update(
-        {
-            "download_enqueued_at": None,
-            "download_started_at": None,
-            "download_finished_at": None,
-            "download_error": None,
-            "submit_worker_task_id": None,
-            "submit_worker_heartbeat_at": None,
-        }
-    )
-    # A retry has a new local task id and must acquire a new poller lease.
-    # Carrying the previous worker's lease forward makes the new submit task
-    # return early as a duplicate, leaving queued_local permanently stuck.
-    for lease_key in ("poll_owner_task_id", "poll_heartbeat_at", "poll_heartbeat_provider"):
-        meta.pop(lease_key, None)
-    task.task_id = f"{LOCAL_TASK_PREFIX}{uuid4().hex}"
-    task.state = "queued_local"
-    task.result_json = {"__local": meta}
-    task.fail_code = None
-    task.fail_msg = None
-    db.add(task)
-    db.flush()
-
-    log_event(
-        db,
-        action="bandianwa.video.retry_task",
-        resource_type="kie_task",
-        resource_id=int(task.id),
-        actor_workspace_id=int(task.workspace_id),
-        workspace_id=int(task.workspace_id),
-        details={
-            "model": task.model,
-            "task_id": task.task_id,
-            "retry_kind": retry_kind,
-            "key_id": int(task.key_id),
-            "request": task.input_json,
-        },
-    )
-    return task
-
-
 async def submit_bandianwa_task(db: Session, *, task: KieTask) -> KieTask:
     key = _get_bandianwa_key(db, int(task.key_id))
     api_key = decrypt_api_key(key.api_key_ciphertext)
@@ -437,7 +302,7 @@ async def submit_bandianwa_task(db: Session, *, task: KieTask) -> KieTask:
 
     try:
         # ``task.task_id`` is a stable local UUID for one submission
-        # generation and reset_bandianwa_task_for_retry replaces it only when
+        # generation and reset_video_task_for_retry replaces it only when
         # a genuinely new generation is requested. Reusing it across an
         # ambiguous timeout/disconnect lets the provider collapse transport
         # retries instead of charging for duplicate video jobs.
@@ -523,7 +388,7 @@ async def refresh_bandianwa_task_status(
     task: KieTask,
     key: KieApiKey | None = None,
 ) -> KieTask:
-    if str(task.task_id or "").startswith(LOCAL_TASK_PREFIX):
+    if is_local_task_id(task.task_id):
         return task
 
     if key is None:
@@ -637,18 +502,10 @@ async def refresh_bandianwa_task_status_by_task_id(
     return await refresh_bandianwa_task_status(db, task=task)
 
 
-def get_batch_limit() -> int:
-    return max(1, min(int(getattr(settings, "BANDIANWA_BATCH_LIMIT", 50)), 200))
-
-
 __all__ = [
-    "LOCAL_TASK_PREFIX",
     "build_bandianwa_payload",
     "choose_submit_path",
-    "create_bandianwa_local_task",
-    "get_batch_limit",
     "refresh_bandianwa_task_status",
     "refresh_bandianwa_task_status_by_task_id",
-    "reset_bandianwa_task_for_retry",
     "submit_bandianwa_task",
 ]

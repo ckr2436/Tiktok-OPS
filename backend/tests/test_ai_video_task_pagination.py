@@ -4,7 +4,10 @@ from types import SimpleNamespace
 # app does this during startup; importing the router first would expose the
 # intentional Celery task-module cycle only in this isolated unit test.
 from app.celery_app import celery_app as _celery_app  # noqa: F401
-from app.features.tenants.bandianwa_ai.router_videos import _paged_task_rows
+from app.features.tenants.ai_video.router import (
+    _paged_task_rows,
+    _stored_video_model_values,
+)
 
 
 class _FakeQuery:
@@ -60,3 +63,18 @@ def test_task_pagination_returns_empty_without_hydrating_rows():
 
     assert _paged_task_rows(query, offset=20, size=10) == []
     assert query.narrow is True
+
+
+def test_seedance_history_filter_includes_legacy_provider_task_model_alias():
+    assert _stored_video_model_values("seedance_2_0_mini") == (
+        "seedance_2_0_mini",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao_seedance_2_0_mini_260615",
+    )
+
+
+def test_seedance_history_filter_normalizes_provider_alias_to_logical_model():
+    values = _stored_video_model_values("doubao-seedance-2-0-mini-260615")
+
+    assert "seedance_2_0_mini" in values
+    assert "doubao-seedance-2-0-mini-260615" in values

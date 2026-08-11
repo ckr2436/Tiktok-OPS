@@ -10,7 +10,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
-from app.services.kie_api.accounts import (
+from app.services.ai_video.accounts import (
     API_KEY_ENCRYPTION_PREFIX,
     decrypt_api_key,
     encrypt_api_key,

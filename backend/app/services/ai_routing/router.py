@@ -5,9 +5,11 @@ import json
 import time
 import uuid
 from datetime import datetime, timedelta
+from io import BytesIO
 from typing import Any, Mapping
 
 import httpx
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -15,7 +17,8 @@ from app.core.config import settings
 from app.data.models.ai_routing import AiModelRoute, AiProviderModel, AiRouteAttempt
 from app.data.models.kie_api import KieApiKey
 from app.services.ai_routing.catalog import provider_transport
-from app.services.kie_api.accounts import decrypt_api_key
+from app.services.ai_routing.role_groups import SUPPORTED_MANAGERS
+from app.services.ai_video.accounts import decrypt_api_key
 
 
 class AiGatewayError(RuntimeError):
@@ -290,7 +293,7 @@ def _mark_failure(
 
 def _managed_source_route(db: Session, route: AiModelRoute) -> AiModelRoute | None:
     config = dict(route.config_json or {})
-    if config.get("managed_by") != "content_role_model_group_v1":
+    if config.get("managed_by") not in SUPPORTED_MANAGERS:
         return None
     try:
         source_id = int(config.get("source_route_id") or 0)
@@ -313,7 +316,11 @@ async def _call_route(
     timeout_seconds: float,
 ) -> dict[str, Any]:
     spec = provider_transport(route.provider_key)
-    if spec is None or route.adapter_type != "openai_chat_completions":
+    supported_adapters = {
+        "openai_chat_completions",
+        "flow2api_openai_images",
+    }
+    if spec is None or route.adapter_type not in supported_adapters:
         raise AiGatewayError("Route adapter is not implemented", error_class="REQUEST", status_code=400)
     attempt = _attempt(
         db,
@@ -326,6 +333,11 @@ async def _call_route(
     outbound = dict(payload)
     outbound["model"] = route.provider_model_id
     outbound["stream"] = False
+    if route.adapter_type == "flow2api_openai_images":
+        # Flow2API owns durable request claims only when the stable key is in
+        # the request body. The HTTP Idempotency-Key remains useful to proxies
+        # but is not sufficient to prevent a duplicate billable generation.
+        outbound["gmv_idempotency_key"] = str(request_id)[:96]
     started = time.monotonic()
     error: AiGatewayError | None = None
     response_payload: dict[str, Any] | None = None
@@ -364,6 +376,32 @@ async def _call_route(
                     status_code=422 if explicit_class == "POLICY" else 402,
                 )
             raise AiGatewayError("Provider returned an invalid chat completion", error_class="INVALID_RESPONSE")
+        if route.adapter_type == "flow2api_openai_images":
+            # An image route is not healthy merely because the upstream
+            # returned HTTP 200.  Verify the exact result can be downloaded and
+            # decoded before route success is persisted.
+            from app.services.flow2api.client import (
+                Flow2ApiError,
+                Flow2ApiImageClient,
+            )
+
+            try:
+                flow_client = Flow2ApiImageClient(api_key=api_key)
+                image_url = flow_client._extract_url(parsed)
+                image_bytes, _content_type = await flow_client.download(image_url)
+                with Image.open(BytesIO(image_bytes)) as image:
+                    image.verify()
+            except (
+                Flow2ApiError,
+                UnidentifiedImageError,
+                OSError,
+                SyntaxError,
+            ) as exc:
+                raise AiGatewayError(
+                    "Flow2API returned an invalid or unavailable image result",
+                    error_class="INVALID_RESPONSE",
+                    status_code=502,
+                ) from exc
         response_payload = dict(parsed)
     except AiGatewayError as exc:
         error = exc
@@ -585,24 +623,45 @@ async def probe_route(
     if pair is None:
         raise AiGatewayError("Route or active key was not found", error_class="NO_ROUTE", status_code=404)
     route, key = pair
-    if route.adapter_type != "openai_chat_completions":
+    if route.adapter_type not in {
+        "openai_chat_completions",
+        "flow2api_openai_images",
+    }:
         raise AiGatewayError("This route has no safe zero-media probe", error_class="REQUEST", status_code=400)
     original_enabled = bool(route.is_enabled)
     original_verified = bool(route.is_verified)
     try:
+        probe_payload: dict[str, Any]
+        if route.adapter_type == "flow2api_openai_images":
+            probe_payload = {
+                "messages": [{
+                    "role": "user",
+                    "content": "Create a plain blue square with no text.",
+                }],
+                "generationConfig": {
+                    "responseModalities": ["IMAGE"],
+                    "imageConfig": {"aspectRatio": "1:1", "imageSize": "1K"},
+                },
+            }
+        else:
+            probe_payload = {
+                "messages": [{"role": "user", "content": "Reply with OK only."}],
+                "max_tokens": 8,
+                "temperature": 0,
+            }
         response = await _call_route(
             db,
             route=route,
             key=key,
-            payload={
-                "messages": [{"role": "user", "content": "Reply with OK only."}],
-                "max_tokens": 8,
-                "temperature": 0,
-            },
+            payload=probe_payload,
             request_id=f"probe-{route.id}-{uuid.uuid4().hex[:16]}",
             switched_from_route_id=None,
             metadata={"source": "platform_route_probe", "workload": route.workload},
-            timeout_seconds=45,
+            timeout_seconds=(
+                max(45.0, float(settings.FLOW2API_HTTP_TIMEOUT_SECONDS))
+                if route.adapter_type == "flow2api_openai_images"
+                else 45.0
+            ),
         )
     except Exception:
         route = db.get(AiModelRoute, int(route.id)) or route

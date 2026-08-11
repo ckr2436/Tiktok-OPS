@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.kie_api.accounts import (
+from app.services.ai_video.accounts import (
     COULTRA_PROVIDER_KEY,
+    FLOW2API_PROVIDER_KEY,
     OPENROUTER_PROVIDER_KEY,
     TOAPIS_PROVIDER_KEY,
+    SUB2API_PROVIDER_KEY,
     normalize_provider_key,
 )
+from app.core.config import settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +41,14 @@ PROVIDER_TRANSPORTS: dict[str, ProviderTransportSpec] = {
         provider_key=COULTRA_PROVIDER_KEY,
         base_url="https://coultra.blueshirtmap.com/v1",
     ),
+    SUB2API_PROVIDER_KEY: ProviderTransportSpec(
+        provider_key=SUB2API_PROVIDER_KEY,
+        base_url=str(settings.SUB2API_API_BASE_URL).rstrip("/"),
+    ),
+    FLOW2API_PROVIDER_KEY: ProviderTransportSpec(
+        provider_key=FLOW2API_PROVIDER_KEY,
+        base_url=str(settings.FLOW2API_API_BASE_URL).rstrip("/"),
+    ),
 }
 
 
@@ -49,6 +60,13 @@ def model_capabilities(model_id: str) -> list[str]:
     value = str(model_id or "").strip().lower()
     if not value:
         return []
+    if value in {
+        "nano_banana_pro",
+        "nano-banana-pro",
+        "gemini-3.0-pro-image",
+        "gemini-3.1-flash-image",
+    }:
+        return ["image"]
     video_tokens = (
         "video", "veo", "sora", "seedance", "kling", "vidu", "omni",
     )

@@ -1,0 +1,74 @@
+{
+  "roles": {
+    "general": {
+      "display_name": "通用 Hermes",
+      "description": "平台通用助手与工具调用，Terra 主模型、Luna 降级。",
+      "logical_model_id": "gmv-hermes-general-v1",
+      "workload": "general",
+      "capability": "text",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-terra", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-luna", "priority": 2000}
+      ]
+    },
+    "general_aux": {
+      "display_name": "通用 Hermes 辅助任务",
+      "description": "压缩、检索、标题和 Web 提取等低延迟辅助任务。",
+      "logical_model_id": "gmv-hermes-general-aux-v1",
+      "workload": "general",
+      "capability": "text",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-luna", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-terra", "priority": 2000}
+      ]
+    },
+    "general_vision": {
+      "display_name": "通用 Hermes 视觉辅助",
+      "description": "通用助手的图片理解和视觉工具辅助任务。",
+      "logical_model_id": "gmv-hermes-general-vision-v1",
+      "workload": "general",
+      "capability": "multimodal",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-luna", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-terra", "priority": 2000}
+      ]
+    },
+    "ads_realtime": {
+      "display_name": "广告实时分析",
+      "description": "低延迟实时参数审核，不直接执行广告变更。",
+      "logical_model_id": "gmv-ads-realtime-v1",
+      "workload": "ads_realtime",
+      "capability": "text",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-luna", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-terra", "priority": 2000}
+      ]
+    },
+    "ads_review": {
+      "display_name": "广告复核",
+      "description": "高质量广告日报与重大决策复核，Terra 主模型。",
+      "logical_model_id": "gmv-ads-review-v1",
+      "workload": "ads_review",
+      "capability": "text",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-terra", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-luna", "priority": 2000}
+      ]
+    },
+    "shop_video_analyst": {
+      "display_name": "店铺视频分析",
+      "description": "结合本地视频帧、字幕和 Shop 指标生成中文内容诊断。",
+      "logical_model_id": "gmv-shop-video-analyst-v1",
+      "workload": "video_analyst",
+      "capability": "multimodal",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-luna", "priority": 1000},
+        {
+          "logical_model_id": "video-analyst-gpt-5.4-mini",
+          "workload": "video_analyst",
+          "priority": 2000
+        }
+      ]
+    }
+  }
+}

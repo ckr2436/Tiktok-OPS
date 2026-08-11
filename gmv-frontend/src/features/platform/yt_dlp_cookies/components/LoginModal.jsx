@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import Modal from '../../../../components/ui/Modal.jsx'
 import FormField from '../../../../components/ui/FormField.jsx'
-import { SITE_OPTIONS, saveCookies, siteLabel } from '../api.js'
+import {
+  SITE_OPTIONS,
+  cancelBrowserSession,
+  getBrowserOverview,
+  getBrowserSession,
+  saveCookies,
+  siteLabel,
+  startBrowserSession,
+} from '../api.js'
 
 function normalizeCookieItem(item) {
   if (!item || typeof item !== 'object') {
@@ -108,6 +116,10 @@ export default function LoginModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState('browser')
+  const [devices, setDevices] = useState([])
+  const [deviceId, setDeviceId] = useState('')
+  const [browserSession, setBrowserSession] = useState(null)
 
   useEffect(() => {
     if (!open) return
@@ -118,11 +130,60 @@ export default function LoginModal({
       isActive: true,
     })
     setError('')
+    setMode('browser')
+    setBrowserSession(null)
+    getBrowserOverview()
+      .then((data) => {
+        const online = (data?.devices || []).filter((item) => item?.online && item?.bound)
+        setDevices(online)
+        setDeviceId((current) => current || online[0]?.device_id || '')
+      })
+      .catch((err) => setError(err?.message || '读取浏览器桥设备失败'))
   }, [open, defaultSite, defaultLabel])
 
-  const handleClose = () => {
+  useEffect(() => {
+    if (!open || !browserSession?.session_id || !['awaiting_login', 'capture_pending'].includes(browserSession?.state)) return undefined
+    const timer = setInterval(async () => {
+      try {
+        const next = await getBrowserSession(browserSession.session_id)
+        setBrowserSession(next)
+        if (next?.state === 'ready') {
+          onToast?.('Cookies 已通过浏览器桥自动抓取并保存', 'success')
+          await onSuccess?.(next)
+          onClose?.()
+        }
+      } catch (err) {
+        setError(err?.message || '读取抓取状态失败')
+      }
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [open, browserSession?.session_id, browserSession?.state, onClose, onSuccess, onToast])
+
+  const handleClose = async () => {
     if (saving) return
+    if (browserSession?.session_id && ['awaiting_login', 'capture_pending'].includes(browserSession?.state)) {
+      try { await cancelBrowserSession(browserSession.session_id) } catch (_) { /* best-effort stop */ }
+    }
     onClose?.()
+  }
+
+  const handleBrowserStart = async () => {
+    setError('')
+    if (!form.label.trim()) return setError('备注名不能为空')
+    if (!deviceId) return setError('请选择在线 Windows 浏览器桥设备')
+    setSaving(true)
+    try {
+      const session = await startBrowserSession({
+        device_id: deviceId,
+        site: form.site,
+        label: form.label.trim(),
+      })
+      setBrowserSession(session)
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || '启动浏览器抓取失败')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -168,10 +229,14 @@ export default function LoginModal({
   }
 
   return (
-    <Modal open={open} onClose={saving ? undefined : handleClose} title="手动输入 Cookies" escClosable={!saving}>
+    <Modal open={open} onClose={saving ? undefined : handleClose} title="更新 Cookies" escClosable={!saving}>
       <form className="form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="small-muted">
-          请先在真实浏览器中登录对应平台，再使用 Cookie 导出插件导出 JSON 数组并粘贴到这里。支持 TikTok、抖音、YouTube。
+          推荐通过 Windows 浏览器桥自动抓取；也可继续手动粘贴浏览器导出的 JSON。
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className={`btn ${mode === 'browser' ? '' : 'ghost'}`} onClick={() => setMode('browser')}>浏览器自动抓取</button>
+          <button type="button" className={`btn ${mode === 'manual' ? '' : 'ghost'}`} onClick={() => setMode('manual')}>手动输入 JSON</button>
         </div>
         {error && <div className="alert alert--error">{error}</div>}
 
@@ -200,7 +265,31 @@ export default function LoginModal({
           />
         </FormField>
 
-        <FormField label={`${siteLabel(form.site)} Cookies JSON`} required>
+        {mode === 'browser' && <>
+          <FormField label="Windows 浏览器桥" required>
+            <select className="input" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} disabled={saving || !!browserSession}>
+              <option value="">请选择在线设备</option>
+              {devices.map((device) => <option key={device.device_id} value={device.device_id}>{device.device_name || 'Windows device'} · {device.device_id}</option>)}
+            </select>
+          </FormField>
+          {!devices.length && <div className="alert alert--info">当前没有在线且已绑定的 Hermes Bridge 设备。请先运行现有 Windows 浏览器桥。</div>}
+          {browserSession && <div className="alert alert--info">
+            <strong>{browserSession.state === 'capture_pending' ? '正在自动抓取' : '等待浏览器登录'}</strong>
+            <div>{browserSession.message}</div>
+            {browserSession.error && <div className="bad">{browserSession.error}</div>}
+          </div>}
+          <div className="alert alert--info">
+            系统会在所选设备打开独立 Chrome Profile。完成登录并确认站点主页显示已登录后，关闭整个 Chrome 窗口；系统随后使用同一 Profile 短暂启动 CDP，仅抓取所选站点域名的 Cookies。
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button className="btn ghost" type="button" onClick={handleClose} disabled={saving}>取消</button>
+            <button className="btn" type="button" onClick={handleBrowserStart} disabled={saving || !deviceId || !!browserSession}>
+              {saving ? '启动中…' : browserSession ? '浏览器已启动' : '打开 Chrome 登录'}
+            </button>
+          </div>
+        </>}
+
+        {mode === 'manual' && <><FormField label={`${siteLabel(form.site)} Cookies JSON`} required>
           <textarea
             className="input"
             value={form.cookiesText}
@@ -234,7 +323,7 @@ export default function LoginModal({
           <button className="btn" type="submit" disabled={saving}>
             {saving ? '保存中…' : '保存 Cookies'}
           </button>
-        </div>
+        </div></>}
       </form>
     </Modal>
   )

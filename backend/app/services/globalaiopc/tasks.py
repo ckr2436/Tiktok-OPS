@@ -18,9 +18,10 @@ from app.services.globalaiopc.client import (
     extract_video_urls,
     normalize_submit_path,
 )
-from app.services.kie_api.accounts import GLOBALAIOPC_OMNI_FLASH_PROVIDER_KEY, decrypt_api_key
-from app.services.kie_api.local_storage import get_local_path, mark_result_file_pending, set_task_local_meta
-from app.services.kie_api.retry_policy import next_retry_meta
+from app.services.ai_video.accounts import GLOBALAIOPC_OMNI_FLASH_PROVIDER_KEY, decrypt_api_key
+from app.services.ai_video.local_storage import get_local_path, mark_result_file_pending, set_task_local_meta
+from app.services.ai_video.reference_capability import build_reference_capability_query
+from app.services.ai_video.retry_policy import next_retry_meta
 
 
 LOCAL_TASK_PREFIX = "local-globalaiopc-"
@@ -67,7 +68,8 @@ def _public_reference_urls(db: Session, *, task: KieTask) -> list[str]:
     )
     return [
         f"{base}{settings.API_PREFIX}/tenants/{int(task.workspace_id)}"
-        f"/ai-video/videos/public-reference/{int(task.id)}/{int(file.id)}"
+        f"/ai-video/videos/public-reference/{int(task.id)}/{int(file.id)}?"
+        f"{build_reference_capability_query(task.workspace_id, task.id, file.id)}"
         for file in files
     ]
 

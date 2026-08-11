@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.data.models import VideoSiteCookies
 
-SUPPORTED_SITES = {"tiktok", "douyin", "youtube"}
+SUPPORTED_SITES = {
+    "tiktok", "douyin", "youtube", "kuaishou", "facebook", "instagram",
+    "twitter", "bilibili", "xiaohongshu", "weibo", "vimeo", "reddit",
+    "twitch", "dailymotion", "pinterest", "linkedin", "nicovideo", "youku", "iqiyi",
+}
 
 
 def upsert_video_site_cookies(
@@ -63,6 +67,13 @@ def list_cookies(db: Session, site: str | None = None) -> Iterable[VideoSiteCook
         stmt = stmt.where(VideoSiteCookies.site == site.lower())
     stmt = stmt.order_by(VideoSiteCookies.updated_at.desc())
     return db.scalars(stmt).all()
+
+
+def get_cookie_by_site_label(db: Session, *, site: str, label: str) -> Optional[VideoSiteCookies]:
+    stmt = select(VideoSiteCookies).where(
+        VideoSiteCookies.site == site.lower(), VideoSiteCookies.label == label
+    )
+    return db.execute(stmt).scalar_one_or_none()
 
 
 def toggle_cookie(db: Session, cookie_id: str, is_active: bool) -> Optional[VideoSiteCookies]:

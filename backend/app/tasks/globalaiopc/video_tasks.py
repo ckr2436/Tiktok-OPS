@@ -17,14 +17,15 @@ from app.services.globalaiopc.tasks import (
     reset_GlobalAiOpc_task_for_retry,
     submit_GlobalAiOpc_task,
 )
-from app.services.kie_api.accounts import GLOBALAIOPC_OMNI_FLASH_PROVIDER_KEY
-from app.services.kie_api.retry_policy import (
+from app.services.ai_video.accounts import GLOBALAIOPC_OMNI_FLASH_PROVIDER_KEY
+from app.services.ai_video.queues import AI_VIDEO_API_TASK_QUEUE
+from app.services.ai_video.retry_policy import (
     MAX_AUTO_RETRIES,
     delete_task_result_files,
     retry_count,
     should_auto_retry,
 )
-from app.tasks.kie_ai.video_result_download_tasks import queue_task_result_download
+from app.tasks.ai_video.result_download_tasks import queue_task_result_download
 
 logger = get_task_logger(__name__)
 
@@ -90,7 +91,7 @@ def _auto_retry_in_place(db: Session, task: KieTask) -> KieTask:
 @celery_app.task(
     name="globalaiopc.video.submit_and_poll",
     bind=True,
-    queue="gmv.tasks.ai_video",
+    queue=AI_VIDEO_API_TASK_QUEUE,
     max_retries=MAX_AUTO_RETRIES,
     default_retry_delay=15,
 )
@@ -201,7 +202,7 @@ def submit_and_poll_GlobalAiOpc_video_task(
                         "timeout_seconds": int(timeout_seconds),
                     },
                     countdown=30,
-                    queue="gmv.tasks.ai_video",
+                    queue=AI_VIDEO_API_TASK_QUEUE,
                 )
                 return _payload(task)
 

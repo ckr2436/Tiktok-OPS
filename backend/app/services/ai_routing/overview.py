@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.data.models.ai_routing import AiModelRoute, AiProviderModel, AiRouteAttempt
 from app.data.models.kie_api import KieApiKey
-from app.services.kie_api.accounts import normalize_provider_key, provider_catalog
+from app.services.ai_video.accounts import normalize_provider_key, provider_catalog
 
 
 def _iso(value: datetime | None) -> str | None:

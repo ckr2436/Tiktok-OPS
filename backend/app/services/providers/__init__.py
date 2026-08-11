@@ -7,7 +7,6 @@ from app.services.provider_registry import ProviderRegistry
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing aid
     from .tiktok_business import TiktokBusinessProvider
-    from .kie_ai import KieAIProvider  # 新增的KieAIProvider引入
 
 
 def builtin_providers(registry: ProviderRegistry) -> None:
@@ -21,10 +20,4 @@ def builtin_providers(registry: ProviderRegistry) -> None:
     ttb = TiktokBusinessProvider()
     registry.register("tiktok-business", ttb)
     registry.register("tiktok_business", ttb)
-
-    # 注册 KieAIProvider
-    from .kie_ai import KieAIProvider
-    kie_ai_provider = KieAIProvider()
-    registry.register("kie-ai", kie_ai_provider)
-    registry.register("kie_ai", kie_ai_provider)  # 支持两种写法
 

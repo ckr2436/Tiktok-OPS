@@ -42,6 +42,13 @@ function ActiveBadge({ active }) {
   )
 }
 
+function HealthBadge({ item }) {
+  const status = item.reauth_required ? 'reauth_required' : item.health_status
+  const labels = { healthy: '健康', refreshing: '保活中', reauth_required: '需重新登录', unknown: '待验证' }
+  const colors = { healthy: '#16a34a', refreshing: '#2563eb', reauth_required: '#dc2626', unknown: '#6b7280' }
+  return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, color: '#fff', background: colors[status] || colors.unknown, fontSize: 12 }}>{labels[status] || status || '待验证'}</span>
+}
+
 export default function CookiesTable({ items, loading, onToggle, onRefreshLogin, onDelete, deletingId }) {
   return (
     <div className="table-wrap" style={{ border: '1px solid var(--border)', borderRadius: 12 }}>
@@ -50,7 +57,8 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin,
           <tr>
             <Th w={120}>站点</Th>
             <Th w={200}>备注名</Th>
-            <Th w={120}>状态</Th>
+            <Th w={150}>状态</Th>
+            <Th w={220}>自动保活</Th>
             <Th w={200}>最近保存时间</Th>
             <Th w={200}>过期时间</Th>
             <Th w={200}>更新时间</Th>
@@ -60,13 +68,13 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin,
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={7} style={{ padding: 22 }}>
+              <td colSpan={8} style={{ padding: 22 }}>
                 加载中…
               </td>
             </tr>
           ) : items.length === 0 ? (
             <tr>
-              <td colSpan={7} style={{ padding: 18, color: 'var(--muted)' }}>
+              <td colSpan={8} style={{ padding: 18, color: 'var(--muted)' }}>
                 暂无数据
               </td>
             </tr>
@@ -79,6 +87,12 @@ export default function CookiesTable({ items, loading, onToggle, onRefreshLogin,
                   <Td>{item.label || <span className="small-muted">（未设置）</span>}</Td>
                   <Td>
                     <ActiveBadge active={!!item.is_active} />
+                    <div style={{ marginTop: 6 }}><HealthBadge item={item} /></div>
+                  </Td>
+                  <Td>
+                    <div>{item.last_verified_at ? `上次验证：${new Date(item.last_verified_at).toLocaleString()}` : '尚未自动验证'}</div>
+                    <div className="small-muted">{item.next_keepalive_at ? `下次：${new Date(item.next_keepalive_at).toLocaleString()}` : '等待安排'}</div>
+                    {item.keepalive_error && <div style={{ color: '#dc2626' }}>{item.keepalive_error}</div>}
                   </Td>
                   <Td>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : '—'}</Td>
                   <Td>{item.expires_at ? new Date(item.expires_at).toLocaleString() : '—'}</Td>

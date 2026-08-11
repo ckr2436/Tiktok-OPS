@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for GMV logical AI route changes
+
+[Path]
+PathExists=/run/gmv/hermes-provider-sync.request
+Unit=gmv-hermes-provider-sync.service
+
+[Install]
+WantedBy=multi-user.target

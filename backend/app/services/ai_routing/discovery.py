@@ -13,12 +13,16 @@ from app.services.ai_routing.catalog import (
     model_capabilities,
     provider_transport,
 )
-from app.services.kie_api.accounts import (
+from app.services.ai_video.accounts import (
     COULTRA_PROVIDER_KEY,
+    FLOW2API_PROVIDER_KEY,
+    SUB2API_PROVIDER_KEY,
     TOAPIS_PROVIDER_KEY,
     VIDEO_MODEL_CATALOG,
     decrypt_api_key,
+    key_scopes,
     key_model_priorities,
+    key_supports_model,
     normalize_provider_key,
     provider_model_is_enabled,
     supported_models_for_provider,
@@ -35,6 +39,11 @@ COULTRA_TEXT_BACKUP_PRIORITIES = {
 }
 COULTRA_TEXT_BACKUP_ALIASES = {
     "gpt-5.4-mini": ("gpt-5.4-mini-2026-03-17", 20),
+}
+DEFAULT_PROVIDER_PRIORITIES = {
+    SUB2API_PROVIDER_KEY: 1,
+    FLOW2API_PROVIDER_KEY: 5,
+    TOAPIS_PROVIDER_KEY: 10,
 }
 
 
@@ -131,6 +140,8 @@ def ensure_builtin_routes(db: Session, keys: Iterable[KieApiKey] | None = None) 
     for key in rows:
         provider = normalize_provider_key(key.provider_key)
         for model_id in supported_models_for_provider(provider):
+            if not key_supports_model(key, model_id):
+                continue
             enabled = bool(key.is_active) and provider_model_is_enabled(db, provider, model_id)
             _route(
                 db,
@@ -174,6 +185,44 @@ def ensure_builtin_routes(db: Session, keys: Iterable[KieApiKey] | None = None) 
                 enabled=True,
                 verified=True,
                 workload="video_analyst",
+            )
+            created_or_seen += 1
+        if (
+            provider == FLOW2API_PROVIDER_KEY
+            and key.is_active
+            and "image:nano_banana_pro" in set(key_scopes(key))
+        ):
+            # This scope is assigned only to the independent Flow2API image
+            # account-pool credential. Materialize the model into the catalog
+            # as every other platform AI capability, but fail closed until a
+            # real image probe verifies that at least one Gemini account can
+            # render. `_route` preserves an operator-enabled verified row on
+            # subsequent discovery runs.
+            existing = (
+                db.query(AiModelRoute)
+                .filter(
+                    AiModelRoute.key_id == int(key.id),
+                    AiModelRoute.workload == "content_factory_visual",
+                    AiModelRoute.logical_model_id == "nano_banana_pro",
+                    AiModelRoute.provider_model_id == "gemini-3.0-pro-image",
+                    AiModelRoute.capability == "image",
+                )
+                .one_or_none()
+            )
+            _route(
+                db,
+                key=key,
+                logical_model_id="nano_banana_pro",
+                provider_model_id="gemini-3.0-pro-image",
+                capability="image",
+                adapter_type="flow2api_openai_images",
+                priority=key_model_priorities(key).get(
+                    "nano_banana_pro",
+                    5,
+                ),
+                enabled=bool(existing and existing.is_enabled),
+                verified=bool(existing and existing.is_verified),
+                workload="content_factory_visual",
             )
             created_or_seen += 1
     return created_or_seen
@@ -244,11 +293,9 @@ async def discover_models_for_key(
         for capability in capabilities:
             if capability not in {"text", "multimodal"}:
                 continue
-            priority = (
-                COULTRA_TEXT_BACKUP_PRIORITIES.get(model_id, 100)
-                if provider == COULTRA_PROVIDER_KEY and capability == "text"
-                else 100
-            )
+            priority = DEFAULT_PROVIDER_PRIORITIES.get(provider, 100)
+            if provider == COULTRA_PROVIDER_KEY and capability == "text":
+                priority = COULTRA_TEXT_BACKUP_PRIORITIES.get(model_id, priority)
             _route(
                 db,
                 key=key,
@@ -289,6 +336,52 @@ async def discover_models_for_key(
                 enabled=False,
                 verified=False,
             )
+
+    if provider == FLOW2API_PROVIDER_KEY:
+        # Flow publishes aspect/resolution-specific image ids (for example
+        # ``gemini-3.0-pro-image-portrait-2k``), while its OpenAI endpoint
+        # accepts the base alias and derives the concrete variant from
+        # ``generationConfig.imageConfig``. Record that alias as discovered
+        # only when at least one live upstream variant advertises it.
+        provider_model_id = "gemini-3.0-pro-image"
+        source_models = sorted(
+            model_id
+            for model_id in seen
+            if model_id.startswith(f"{provider_model_id}-")
+        )
+        if source_models and provider_model_id not in seen:
+            row = (
+                db.query(AiProviderModel)
+                .filter(
+                    AiProviderModel.provider_key == provider,
+                    AiProviderModel.provider_model_id == provider_model_id,
+                )
+                .one_or_none()
+            )
+            if row is None:
+                row = AiProviderModel(
+                    provider_key=provider,
+                    provider_model_id=provider_model_id,
+                    first_seen_at=now,
+                )
+            row.display_name = "Gemini 3 Pro Image"
+            row.capabilities_json = ["image"]
+            row.endpoint_modes_json = endpoint_modes(["image"])
+            row.raw_json = {
+                "virtual_alias": True,
+                "source_models": source_models,
+            }
+            row.discovery_source = "UPSTREAM_ALIAS"
+            row.lifecycle_status = (
+                "DISCOVERED"
+                if row.last_verified_at is None
+                else "VERIFIED"
+            )
+            row.is_available = True
+            row.discovered_by_key_id = int(key.id)
+            row.last_seen_at = now
+            db.add(row)
+            seen.add(provider_model_id)
 
     stale: list[AiProviderModel] = []
     if mark_stale:

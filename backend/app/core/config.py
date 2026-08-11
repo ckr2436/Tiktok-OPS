@@ -115,6 +115,51 @@ class Settings(BaseSettings):
     ADMIN_DOCS_DIR: Optional[str] = None
 
     # =========================
+    # Sub2API 管理后台单点登录
+    # =========================
+    SUB2API_SSO_ENABLED: bool = False
+    SUB2API_PUBLIC_BASE_PATH: str = "/sub2api"
+    # Internal OpenAI-compatible gateway used by the platform model router.
+    # Keep the credential in the encrypted platform key store; only the
+    # loopback transport address belongs in application configuration.
+    SUB2API_API_BASE_URL: str = "http://127.0.0.1:19080/v1"
+    SUB2API_HTTP_TIMEOUT_SECONDS: float = 180.0
+    # Flow reference capacity is an operator-controlled provider capability.
+    # Keep this outside the task state machine so an upstream limit change does
+    # not require another orchestration-code edit.
+    SUB2API_FLOW_REFERENCE_IMAGE_LIMIT: int = 7
+    SUB2API_OIDC_ISSUER: str = "https://gmv.myupona.com/api/v1/platform/sub2api/oidc"
+    SUB2API_OIDC_CLIENT_ID: str = "gmv-platform-sub2api"
+    SUB2API_OIDC_REDIRECT_URI: str = (
+        "https://gmv.myupona.com/sub2api/api/v1/auth/oauth/oidc/callback"
+    )
+    SUB2API_OIDC_PRIVATE_KEY_FILE: str = "/opt/gmv/secrets/sub2api_oidc_private.pem"
+    SUB2API_OIDC_CODE_TTL_SECONDS: int = 120
+    SUB2API_OIDC_TOKEN_TTL_SECONDS: int = 300
+
+    # Flow2API account-pool administration is exposed only through the GMV
+    # platform-admin API.  The password is supplied with a systemd credential;
+    # it must never be returned to the browser or stored in application config.
+    FLOW2API_ADMIN_BASE_URL: str = "http://127.0.0.1:19082"
+    FLOW2API_API_BASE_URL: str = "http://127.0.0.1:19082/v1"
+    FLOW2API_HTTP_TIMEOUT_SECONDS: float = 300.0
+    FLOW2API_ADMIN_USERNAME: str = "admin"
+    FLOW2API_ADMIN_TIMEOUT_SECONDS: float = 90.0
+    FLOW2API_ACCOUNT_PROXY_POOL: str = ""
+
+    # Loopback-only JiMeng reverse-API experiment. It is intentionally kept
+    # outside the production provider catalog until an operator validates the
+    # browser session and a real four-second Seedance result.
+    JIMENG_LAB_API_URL: str = "http://127.0.0.1:15100"
+    # The synchronous reverse call must finish before the Celery soft limit.
+    # A still-running upstream job is then continued by one-shot status tasks;
+    # it is never submitted a second time.
+    JIMENG_LAB_INITIAL_POLL_TIMEOUT_SECONDS: int = 15 * 60
+    JIMENG_LAB_REQUEST_TIMEOUT_SECONDS: float = 16 * 60
+    JIMENG_LAB_STATUS_MAX_AGE_SECONDS: int = 75 * 60
+    JIMENG_LAB_STATUS_RETRY_SECONDS: int = 60
+
+    # =========================
     # Crypto（主密钥）
     # =========================
     CRYPTO_MASTER_KEY_B64: str = ""  # Base64URL（无 '='），建议 32 字节
@@ -136,20 +181,27 @@ class Settings(BaseSettings):
     # TikTok Shop Open Platform uses an independent app, authorization domain,
     # token lifecycle, and request-signing scheme.
     TT_SHOP_US_AUTH_URL: str = "https://services.tiktokshops.us/open/authorize"
+    TT_SHOP_CREATOR_AUTH_URL: str = "https://shop.tiktok.com/alliance/creator/auth"
     TT_SHOP_TOKEN_URL: str = "https://auth.tiktok-shops.com/api/v2/token/get"
     TT_SHOP_REFRESH_URL: str = "https://auth.tiktok-shops.com/api/v2/token/refresh"
     TT_SHOP_API_BASE: str = "https://open-api.tiktokglobalshop.com"
     TT_SHOP_CALLBACK_PATH: str = "/api/oauth/tiktok-shop/callback"
     TT_SHOP_TOKEN_REFRESH_LEEWAY_SECONDS: int = 24 * 3600
+    TT_SHOP_CONTENT_POSTING_STORAGE_ROOT: str = "/data/gmv_ops/tiktok_shop_content_posting"
+    TT_SHOP_CONTENT_POSTING_MAX_VIDEO_BYTES: int = 100 * 1024 * 1024
+    TT_SHOP_CONTENT_POSTING_POLL_INTERVAL_SECONDS: int = 10
+    TT_SHOP_CONTENT_POSTING_MAX_POLL_ATTEMPTS: int = 90
     # Merchant-confirmed source timezone. Etc/GMT+8 is fixed UTC-8 and does not
     # apply daylight-saving transitions.
     TT_SHOP_DEFAULT_TIMEZONE: str = "Etc/GMT+8"
     TT_SHOP_PROMOTION_WRITES_ENABLED: bool = False
     TT_SHOP_FLASH_SALE_AUTOMATION_INTERVAL_SECONDS: int = 15 * 60
-    TT_SHOP_FLASH_SALE_DURATION_SECONDS: int = 72 * 60 * 60 - 60
+    TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES: int = 72 * 60
+    TT_SHOP_FLASH_SALE_TARGET_COVERAGE_SECONDS: int = 72 * 60 * 60
     TT_SHOP_FLASH_SALE_MIN_COVERAGE_SECONDS: int = 48 * 60 * 60
     TT_SHOP_FLASH_SALE_START_DELAY_SECONDS: int = 3 * 60
-    TT_SHOP_FLASH_SALE_GAP_SECONDS: int = 60
+    TT_SHOP_FLASH_SALE_SLOT_BOUNDARY_SECONDS: int = 1
+    TT_SHOP_FLASH_SALE_MAX_GAP_SECONDS: int = 65
     TT_SHOP_FAST_SYNC_INTERVAL_SECONDS: int = 5 * 60
     TT_SHOP_CATALOG_SYNC_INTERVAL_SECONDS: int = 15 * 60
     TT_SHOP_FINANCE_SYNC_INTERVAL_SECONDS: int = 60 * 60
@@ -167,7 +219,45 @@ class Settings(BaseSettings):
     BANDIANWA_HTTP_TIMEOUT_SECONDS: float = 60.0
     BANDIANWA_POLL_INTERVAL_SECONDS: int = 15
     BANDIANWA_POLL_TIMEOUT_SECONDS: int = 10 * 60
-    BANDIANWA_BATCH_LIMIT: int = 50
+    # Doubao web jobs can remain queued well beyond the generic API timeout.
+    # Once a remote conversation id exists, keep polling that exact paid job
+    # instead of creating a duplicate replacement while the conversation still
+    # reports a genuine pending state.  Production queue evidence has exceeded
+    # thirty minutes without a provider rejection, so retain the accepted job
+    # for one hour before failover.
+    DOUBAO_POLL_TIMEOUT_SECONDS: int = 60 * 60
+    # A Seedance conversation containing only the user's request plus an empty
+    # acknowledgement is not a running generation.  Rotate/fail over after a
+    # bounded grace period instead of polling that shell for an hour.
+    DOUBAO_SILENT_CONVERSATION_TIMEOUT_SECONDS: int = 6 * 60
+    # A non-empty assistant prose reply without any ``video_model`` node means
+    # Doubao answered in chat mode instead of placing the requested Seedance
+    # job in its media queue.  Give the current conversation a short grace
+    # period for eventual consistency, then release the account so unified
+    # routing can retry on another account/provider instead of polling prose
+    # for the full one-hour remote-job deadline.
+    DOUBAO_TEXT_ONLY_RESPONSE_TIMEOUT_SECONDS: int = 6 * 60
+    # Browser startup and composer readiness happen before any paid submit.
+    # Keep these fail-fast so a stale Profile does not hold the production lane
+    # for several minutes before the account pool can rotate safely.
+    DOUBAO_BROWSER_READY_TIMEOUT_SECONDS: int = 45
+    DOUBAO_COMPOSER_PROBE_TIMEOUT_SECONDS: int = 45
+    DOUBAO_SUBMIT_TIMEOUT_SECONDS: int = 150
+    # A numeric Doubao conversation id is the durable paid-submit identity.
+    # Observe the same page only long enough to catch immediate media/progress,
+    # then hand the job to the asynchronous poll worker.
+    DOUBAO_POST_SUBMIT_OBSERVE_SECONDS: int = 5
+    # Keep the exact production Profile alive briefly after the helper returns.
+    # The account lease remains owned by the remote task after this browser-only
+    # hold expires, so closing Chrome cannot cause a duplicate submit.
+    DOUBAO_POST_SUBMIT_BROWSER_HOLD_SECONDS: int = 30
+    # Automatic capability recovery is intentionally low-concurrency.  It
+    # shares the exact account/profile and network-lane leases with production,
+    # so maintenance never opens a Profile that is serving a customer task.
+    DOUBAO_CAPABILITY_PROBE_DISPATCH_INTERVAL_SECONDS: int = 60
+    DOUBAO_CAPABILITY_PROBE_BATCH_SIZE: int = 2
+    DOUBAO_CAPABILITY_RECHECK_SECONDS: int = 15 * 60
+    AI_VIDEO_BATCH_LIMIT: int = 50
     BANDIANWA_UPLOAD_STORAGE_DIR: str = "/data/gmv_ops/bandianwa_uploads"
     BANDIANWA_UPLOAD_MAX_IMAGE_BYTES: int = 20 * 1024 * 1024
 
@@ -399,6 +489,13 @@ class Settings(BaseSettings):
     OPENAI_WHISPER_STALE_ACTIVE_HOURS: int = 24
     OPENAI_WHISPER_CLEANUP_BATCH_SIZE: int = 500
     OPENAI_WHISPER_MANUAL_DELETE_ACTIVE_ALLOWED: bool = False
+    # Enforced while bytes are streamed, not only by the public reverse proxy.
+    OPENAI_WHISPER_MAX_UPLOAD_BYTES: int = 512 * 1024 * 1024
+    OPENAI_WHISPER_MAX_REMOTE_DOWNLOAD_BYTES: int = 512 * 1024 * 1024
+    OPENAI_WHISPER_WORKSPACE_STORAGE_QUOTA_BYTES: int = 20 * 1024 * 1024 * 1024
+
+    # Provider-facing reference images use a narrowly scoped capability URL.
+    AI_VIDEO_REFERENCE_URL_TTL_SECONDS: int = 30 * 60
 
     # =========================
     # Hermes Agent / AI Growth tools
@@ -409,11 +506,15 @@ class Settings(BaseSettings):
     HERMES_AGENT_MODEL: str = "gmv-ops-hermes"
     HERMES_AGENT_TIMEOUT_SECONDS: float = 120.0
     HERMES_AGENT_TASK_QUEUE: str = "gmv.tasks.hermes_agent"
-    AI_VIDEO_TASK_QUEUE: str = "gmv.tasks.ai_video"
+    HERMES_MAINTENANCE_TASK_QUEUE: str = "gmv.tasks.hermes_maintenance"
+    AI_VIDEO_API_TASK_QUEUE: str = "gmv.tasks.ai_video.api"
+    AI_VIDEO_BROWSER_TASK_QUEUE: str = "gmv.tasks.ai_video.browser"
+    AI_VIDEO_BROWSER_POLL_TASK_QUEUE: str = "gmv.tasks.ai_video.browser_poll"
+    AI_VIDEO_DOWNLOAD_TASK_QUEUE: str = "gmv.tasks.ai_video.download"
+    AI_VIDEO_MAINTENANCE_TASK_QUEUE: str = "gmv.tasks.ai_video.maintenance"
     HERMES_AGENT_ALLOW_MEMBER: bool = True
     HERMES_AGENT_REQUIRE_EXPLICIT_PERMISSION: bool = True
     HERMES_AGENT_MAX_INPUT_CHARS: int = 30000
-    HERMES_AGENT_MAX_RESULT_CHARS: int = 200000
     HERMES_AGENT_RUN_SYNC_TIMEOUT_SECONDS: float = 120.0
     # Isolated content roles. Director and Critic remain stateless and fail
     # closed. Producer is a separate conversational gateway whose persisted
@@ -426,11 +527,16 @@ class Settings(BaseSettings):
     HERMES_CONTENT_DIRECTOR_AGENT_ENABLED: bool = False
     HERMES_CONTENT_DIRECTOR_AGENT_BASE_URL: str = "http://127.0.0.1:8645/v1"
     HERMES_CONTENT_DIRECTOR_AGENT_MODEL: str = "gmv-ops-hermes-content-director"
-    HERMES_CONTENT_DIRECTOR_AGENT_TIMEOUT_SECONDS: float = 300.0
+    HERMES_CONTENT_DIRECTOR_AGENT_TIMEOUT_SECONDS: float = 600.0
+    # Shared semantic route used by Director-owned recovery calls that run
+    # inside the API/worker process.  This is deliberately separate from the
+    # model name exposed by the isolated Director HTTP agent above.
+    HERMES_CONTENT_DIRECTOR_ROUTING_MODEL: str = "gmv-content-director-v1"
+    HERMES_CONTENT_DIRECTOR_ROUTING_WORKLOAD: str = "default"
     HERMES_CONTENT_CRITIC_AGENT_ENABLED: bool = False
     HERMES_CONTENT_CRITIC_AGENT_BASE_URL: str = "http://127.0.0.1:8646/v1"
     HERMES_CONTENT_CRITIC_AGENT_MODEL: str = "gmv-ops-hermes-content-critic"
-    HERMES_CONTENT_CRITIC_AGENT_TIMEOUT_SECONDS: float = 300.0
+    HERMES_CONTENT_CRITIC_AGENT_TIMEOUT_SECONDS: float = 600.0
     # Stateless multimodal analyst for TikTok Shop / GMV Max video content.
     # It has its own gateway and queue so visual inference never shares content
     # factory state or blocks the one-minute advertising control loops.

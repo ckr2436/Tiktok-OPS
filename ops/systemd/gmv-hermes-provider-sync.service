@@ -1,0 +1,14 @@
+[Unit]
+Description=Synchronize GMV logical AI role routes
+After=network.target mysql.service
+
+[Service]
+Type=oneshot
+User=gmv
+Group=gmv
+WorkingDirectory=/opt/gmv/GMV-OPS/backend
+EnvironmentFile=-/opt/gmv/GMV-OPS/backend/.env
+ExecStart=/opt/gmv/python3.13/bin/python /opt/gmv/GMV-OPS/backend/scripts/sync_hermes_provider_keys.py
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true

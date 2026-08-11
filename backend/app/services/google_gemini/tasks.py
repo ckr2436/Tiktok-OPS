@@ -11,8 +11,8 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.data.models.kie_api import KieApiKey, KieFile, KieTask
-from app.services.kie_api.accounts import decrypt_api_key
-from app.services.kie_api.local_storage import set_task_local_meta
+from app.services.ai_video.accounts import decrypt_api_key
+from app.services.ai_video.local_storage import set_task_local_meta
 
 
 GEMINI_OMNI_MODEL = "gemini-omni-flash-preview"

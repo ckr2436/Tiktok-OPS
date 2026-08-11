@@ -1,10 +1,34 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 from app.app import create_app
 from app.services.globalaiopc import tasks as kyy_tasks
-from app.services.kie_api.accounts import DEFAULT_PROVIDER_KEY, provider_catalog
+from app.services.ai_video.reference_capability import verify_reference_capability
+from app.services.ai_video.accounts import DEFAULT_PROVIDER_KEY, provider_catalog
+
+
+def test_ai_video_router_import_does_not_enter_celery_task_cycle() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from app.features.tenants.ai_video.router import router; "
+                "print(router.prefix)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "/ai-video/videos" in completed.stdout
 
 
 def test_only_canonical_ai_video_routes_are_registered() -> None:
@@ -51,7 +75,17 @@ def test_kyy_reference_urls_use_canonical_ai_video_endpoint(monkeypatch) -> None
         task=SimpleNamespace(workspace_id=3, id=19),
     )
 
-    assert urls == [
-        "https://gmv.example/api/v1/tenants/3/ai-video/videos/public-reference/19/41",
-        "https://gmv.example/api/v1/tenants/3/ai-video/videos/public-reference/19/42",
-    ]
+    assert len(urls) == 2
+    for file_id, value in zip((41, 42), urls, strict=True):
+        parsed = urlparse(value)
+        query = parse_qs(parsed.query)
+        assert parsed.path == (
+            f"/api/v1/tenants/3/ai-video/videos/public-reference/19/{file_id}"
+        )
+        assert verify_reference_capability(
+            3,
+            19,
+            file_id,
+            expires=int(query["expires"][0]),
+            signature=query["signature"][0],
+        )

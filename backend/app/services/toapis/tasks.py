@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.data.models.kie_api import KieApiKey, KieFile, KieTask
 from app.services.globalaiopc.client import extract_error, extract_status, extract_task_id, extract_video_urls
-from app.services.kie_api.accounts import TOAPIS_PROVIDER_KEY, decrypt_api_key
-from app.services.kie_api.local_storage import mark_result_file_pending, set_task_local_meta
+from app.services.ai_video.accounts import TOAPIS_PROVIDER_KEY, decrypt_api_key
+from app.services.ai_video.local_storage import mark_result_file_pending, set_task_local_meta
 from app.services.toapis.client import ToApisApiError, ToApisVideoClient
 
 

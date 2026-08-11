@@ -1,0 +1,26 @@
+.doubao-lab { display: grid; gap: 18px; }
+.doubao-lab__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.doubao-lab__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.doubao-lab__summary article { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--border-color, #dbe3ef); border-radius: 14px; background: #fff; }
+.doubao-lab__summary span, .doubao-lab__summary small { color: #64748b; }
+.doubao-lab__summary strong { font-size: 20px; }
+.doubao-lab__card { display: grid; gap: 16px; padding: 18px; }
+.doubao-lab__notice { display: grid; gap: 6px; padding: 14px; border-radius: 12px; background: #fff7ed; color: #7c2d12; }
+.doubao-lab__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.doubao-lab label { display: grid; gap: 7px; }
+.doubao-lab__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.doubao-lab__session, .doubao-lab__test { display: grid; gap: 6px; padding: 14px; border: 1px solid #dbe3ef; border-radius: 12px; background: #f8fafc; }
+.doubao-lab__session--ready, .doubao-lab__test--complete { border-color: #86efac; background: #f0fdf4; }
+.doubao-lab__session--failed, .doubao-lab__test--failed, .doubao-lab__test--captcha_required { border-color: #fecaca; background: #fef2f2; }
+.doubao-lab__prompt { display: grid; gap: 7px; }
+.doubao-lab__prompt textarea { resize: vertical; min-height: 116px; }
+.doubao-lab__test video { width: min(100%, 420px); max-height: 640px; border-radius: 12px; background: #0f172a; }
+.doubao-lab__accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.doubao-lab__account { display: grid; gap: 7px; padding: 14px; border: 1px solid #dbe3ef; border-radius: 12px; background: #f8fafc; }
+.doubao-lab__account > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.doubao-lab__account small { color: #64748b; overflow-wrap: anywhere; }
+.doubao-lab__proxy-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.doubao-lab__danger { color: #b91c1c; border-color: #fecaca; background: #fff7f7; }
+.doubao-lab__danger:hover { background: #fee2e2; }
+@media (max-width: 900px) { .doubao-lab__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .doubao-lab__header, .doubao-lab__grid, .doubao-lab__proxy-editor { grid-template-columns: 1fr; display: grid; } .doubao-lab__summary { grid-template-columns: 1fr; } }

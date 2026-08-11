@@ -51,13 +51,7 @@ def load_builtin_providers() -> None:
     避免在此直接引用具体 Provider 实现引发循环导入。
     """
     # 延迟导入，避免循环导入
-    from app.services.providers.kie_ai import KieAIProvider  # 延迟导入 KieAIProvider
     from app.services.providers.tiktok_business import TiktokBusinessProvider  # 延迟导入 TiktokBusinessProvider
-
-    # 注册 KieAI 提供商
-    kie_ai_provider = KieAIProvider()
-    provider_registry.register("kie-ai", kie_ai_provider)
-    provider_registry.register("kie_ai", kie_ai_provider)
 
     # 注册 TiktokBusiness 提供商
     ttb = TiktokBusinessProvider()
@@ -71,4 +65,3 @@ __all__ = [
     "provider_registry",
     "load_builtin_providers",
 ]
-

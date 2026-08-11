@@ -132,7 +132,7 @@ export default function YtDlpCookiesPage() {
             用于手动保存 TikTok / 抖音 / YouTube 等站点的登录 Cookies，供系统内部下载非公开视频使用。仅平台管理员可操作，请使用公司授权账号。
           </div>
         </div>
-        <button className="btn" onClick={handleCreate}>输入 Cookies</button>
+        <button className="btn" onClick={handleCreate}>添加 / 抓取 Cookies</button>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

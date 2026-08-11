@@ -5,15 +5,17 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.deps import require_platform_admin
+from app.core.deps import SessionUser, require_platform_admin
 from app.core.errors import APIError
 from app.data.db import get_db
 from app.services import video_site_cookies
+from app.services.audit import log_event
+from app.core.security import client_ip
 
 logger = logging.getLogger("gmv.ytdlp.cookies")
 
@@ -33,6 +35,12 @@ class VideoSiteCookieOut(BaseModel):
     expires_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    health_status: str = "unknown"
+    last_verified_at: Optional[datetime] = None
+    next_keepalive_at: Optional[datetime] = None
+    keepalive_failure_count: int = 0
+    keepalive_error: Optional[str] = None
+    reauth_required: bool = False
 
 
 class VideoSiteCookieDeleteOut(BaseModel):
@@ -111,7 +119,35 @@ class VideoSiteCookieActivation(BaseModel):
     is_active: bool
 
 
+class VideoSiteBrowserSessionCreate(BaseModel):
+    device_id: str = Field(min_length=1, max_length=128)
+    site: str
+    label: str = Field(min_length=1, max_length=128)
+
+    @field_validator("site")
+    @classmethod
+    def validate_browser_site(cls, value: str) -> str:
+        site = value.lower().strip()
+        if site not in video_site_cookies.SUPPORTED_SITES:
+            raise ValueError(f"Unsupported site: {site}")
+        return site
+
+
+def _audit(db: Session, request: Request, me: SessionUser, *, action: str, details: dict | None = None) -> None:
+    log_event(
+        db,
+        action=action,
+        resource_type="video_site_cookies",
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id),
+        actor_ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details=dict(details or {}),
+    )
+
+
 def _serialize(record) -> VideoSiteCookieOut:
+    extra = dict(record.extra or {})
     return VideoSiteCookieOut(
         id=record.id,
         site=record.site,
@@ -121,6 +157,12 @@ def _serialize(record) -> VideoSiteCookieOut:
         expires_at=record.expires_at,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        health_status=str(extra.get("health_status") or "unknown"),
+        last_verified_at=extra.get("last_verified_at"),
+        next_keepalive_at=extra.get("next_keepalive_at"),
+        keepalive_failure_count=int(extra.get("keepalive_failure_count") or 0),
+        keepalive_error=str(extra.get("keepalive_error") or "") or None,
+        reauth_required=bool(extra.get("reauth_required")),
     )
 
 
@@ -128,6 +170,81 @@ def _serialize(record) -> VideoSiteCookieOut:
 def list_site_cookies(site: Optional[str] = None, db: Session = Depends(get_db)):
     records = video_site_cookies.list_cookies(db, site=site)
     return [_serialize(item) for item in records]
+
+
+@router.get("/browser-overview")
+def browser_overview(
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    from app.services.hermes_agent.content_factory import BRIDGE_AGENT_VERSION, _account_device_rows, _bridge_base_device_id, browser_devices
+    from app.services.yt_dlp_browser_onboarding import list_yt_dlp_browser_sessions
+
+    capable = {
+        _bridge_base_device_id(row)
+        for row in _account_device_rows(db, workspace_id=int(me.workspace_id), user_id=int(me.id))
+        if str(dict(row.meta_json or {}).get("agent_version") or "") == BRIDGE_AGENT_VERSION
+    }
+    return {
+        "devices": [
+            item for item in browser_devices(db, workspace_id=int(me.workspace_id), user_id=int(me.id))
+            if item.get("device_id") in capable
+        ],
+        "sessions": list_yt_dlp_browser_sessions(db, workspace_id=int(me.workspace_id), user_id=int(me.id)),
+    }
+
+
+@router.post("/browser-sessions")
+def create_browser_session(
+    payload: VideoSiteBrowserSessionCreate,
+    request: Request,
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    from app.services.yt_dlp_browser_onboarding import start_yt_dlp_browser_session
+
+    result = start_yt_dlp_browser_session(
+        db,
+        workspace_id=int(me.workspace_id),
+        user_id=int(me.id),
+        device_id=payload.device_id,
+        site=payload.site,
+        label=payload.label,
+    )
+    _audit(db, request, me, action="platform.yt_dlp.browser_capture_start", details={
+        "device_id": payload.device_id, "site": payload.site, "label": payload.label,
+        "capture_id": result.get("session_id"),
+    })
+    db.commit()
+    return result
+
+
+@router.get("/browser-sessions/{capture_id}")
+def get_browser_session(
+    capture_id: str,
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    from app.services.yt_dlp_browser_onboarding import get_yt_dlp_browser_session
+    return get_yt_dlp_browser_session(
+        db, workspace_id=int(me.workspace_id), user_id=int(me.id), capture_id=capture_id
+    )
+
+
+@router.post("/browser-sessions/{capture_id}/cancel")
+def cancel_browser_session(
+    capture_id: str,
+    request: Request,
+    me: SessionUser = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    from app.services.yt_dlp_browser_onboarding import cancel_yt_dlp_browser_session
+    result = cancel_yt_dlp_browser_session(
+        db, workspace_id=int(me.workspace_id), user_id=int(me.id), capture_id=capture_id
+    )
+    _audit(db, request, me, action="platform.yt_dlp.browser_capture_cancel", details={"capture_id": capture_id})
+    db.commit()
+    return result
 
 
 @router.post("/cookies", response_model=VideoSiteCookieOut)

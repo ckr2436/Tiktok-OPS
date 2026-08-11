@@ -3,11 +3,13 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+from app.data.models.kie_api import KieFile, KieTask
+
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-DOWNLOAD_TASKS = BACKEND_ROOT / "app/tasks/kie_ai/video_result_download_tasks.py"
-LOCAL_STORAGE = BACKEND_ROOT / "app/services/kie_api/local_storage.py"
-BANDIANWA_TASKS = BACKEND_ROOT / "app/tasks/bandianwa/video_tasks.py"
+DOWNLOAD_TASKS = BACKEND_ROOT / "app/tasks/ai_video/result_download_tasks.py"
+LOCAL_STORAGE = BACKEND_ROOT / "app/services/ai_video/local_storage.py"
+AI_VIDEO_TASKS = BACKEND_ROOT / "app/tasks/ai_video/video_tasks.py"
 BANDIANWA_SERVICE_TASKS = BACKEND_ROOT / "app/services/bandianwa/tasks.py"
 BANDIANWA_CLIENT = BACKEND_ROOT / "app/services/bandianwa/client.py"
 
@@ -18,7 +20,7 @@ def _source(path: Path) -> str:
 
 def test_download_worker_module_imports_with_runtime_settings_available():
     importlib.import_module("app.celery_app")
-    module = importlib.import_module("app.tasks.kie_ai.video_result_download_tasks")
+    module = importlib.import_module("app.tasks.ai_video.result_download_tasks")
 
     assert int(module.settings.AI_VIDEO_RESULT_DOWNLOAD_TIMEOUT_SECONDS) > 0
 
@@ -33,10 +35,10 @@ def test_download_job_is_registered_before_celery_can_start_it():
     assert registration < registration_commit < enqueue
     assert "task_id=download_task_id" in source[enqueue : enqueue + 1200]
     assert '"remote_task_id": remote_task_id' in source[enqueue : enqueue + 1200]
-    assert 'queue="gmv.tasks.ai_video"' in source[enqueue : enqueue + 1200]
+    assert "queue=AI_VIDEO_DOWNLOAD_TASK_QUEUE" in source[enqueue : enqueue + 1200]
 
 
-def test_download_execution_and_recovery_share_the_ai_video_queue():
+def test_download_execution_isolated_from_recovery_and_generation():
     source = _source(DOWNLOAD_TASKS)
     decorator = source[
         source.index('@celery_app.task(', source.index('def _retry_or_fail'))
@@ -44,7 +46,12 @@ def test_download_execution_and_recovery_share_the_ai_video_queue():
     ]
 
     assert 'name="ai_video.result.download_task_result_files"' in decorator
-    assert 'queue="gmv.tasks.ai_video"' in decorator
+    assert "queue=AI_VIDEO_DOWNLOAD_TASK_QUEUE" in decorator
+    recovery = source[
+        source.index('name="ai_video.result.recover_stale_downloads"')
+        : source.index("def recover_stale_result_downloads")
+    ]
+    assert "queue=AI_VIDEO_MAINTENANCE_TASK_QUEUE" in recovery
     assert 'queue="gmv.tasks.default"' not in source
 
 
@@ -100,6 +107,38 @@ def test_completed_local_files_win_over_an_advisory_download_lease_change():
     assert after_network < all_local < mark_success < lease_check
 
 
+def test_download_contract_rejects_square_video_for_portrait_request(monkeypatch, tmp_path):
+    module = importlib.import_module("app.tasks.ai_video.result_download_tasks")
+    path = tmp_path / "result.mp4"
+    path.write_bytes(b"video")
+    task = KieTask(input_json={"aspect_ratio": "9:16"}, result_json={})
+    file = KieFile(id=91, kind="result", mime_type="video/mp4")
+
+    monkeypatch.setattr(module, "get_local_path", lambda _file: path)
+    monkeypatch.setattr(module, "_probe_video_geometry", lambda _path: (960, 960))
+
+    error = module._result_contract_error(task, [file])
+
+    assert error is not None
+    assert error[0] == "video_output_aspect_mismatch"
+    assert "9:16" in error[1]
+    assert task.result_json["__local"]["output_contract"]["passed"] is False
+
+
+def test_download_contract_accepts_expected_portrait_geometry(monkeypatch, tmp_path):
+    module = importlib.import_module("app.tasks.ai_video.result_download_tasks")
+    path = tmp_path / "result.mp4"
+    path.write_bytes(b"video")
+    task = KieTask(input_json={"aspect_ratio": "9:16"}, result_json={})
+    file = KieFile(id=92, kind="result", mime_type="video/mp4")
+
+    monkeypatch.setattr(module, "get_local_path", lambda _file: path)
+    monkeypatch.setattr(module, "_probe_video_geometry", lambda _path: (720, 1280))
+
+    assert module._result_contract_error(task, [file]) is None
+    assert task.result_json["__local"]["output_contract"]["passed"] is True
+
+
 def test_result_file_is_reloaded_after_network_io_before_committing():
     source = _source(LOCAL_STORAGE)
 
@@ -123,8 +162,8 @@ def test_result_downloaders_use_distinct_partial_files_and_preserve_a_concurrent
 
 
 def test_provider_poll_is_serialized_and_stops_refreshing_in_download_state():
-    source = _source(BANDIANWA_TASKS)
-    poll_loop = source[source.index("while True:", source.index("def submit_and_poll_bandianwa_video_task")) :]
+    source = _source(AI_VIDEO_TASKS)
+    poll_loop = source[source.index("while True:", source.index("def submit_and_poll_ai_video_task")) :]
 
     lock = poll_loop.index("for_update=True")
     downloading = poll_loop.index('if pre_refresh_state == "downloading"')
@@ -136,10 +175,10 @@ def test_provider_poll_is_serialized_and_stops_refreshing_in_download_state():
 
 
 def test_provider_worker_proves_content_factory_authority_before_every_network_phase():
-    source = _source(BANDIANWA_TASKS)
+    source = _source(AI_VIDEO_TASKS)
     worker = source[
-        source.index("def submit_and_poll_bandianwa_video_task")
-        : source.index('@celery_app.task(', source.index("def submit_and_poll_bandianwa_video_task"))
+        source.index("def submit_and_poll_ai_video_task")
+        : source.index('@celery_app.task(', source.index("def submit_and_poll_ai_video_task"))
     ]
 
     assert worker.count("_content_factory_execution_authority(db, task)") >= 3
@@ -164,25 +203,43 @@ def test_video_create_retries_carry_one_stable_provider_idempotency_key():
     assert 'headers["Idempotency-Key"] = str(idempotency_key)' in create
 
 
-def test_provider_failover_commits_new_owner_before_network_submission():
-    source = _source(BANDIANWA_TASKS)
+def test_provider_failover_commits_new_owner_before_target_lane_publish():
+    source = _source(AI_VIDEO_TASKS)
     switch = source[
         source.index("def _switch_to_next_provider_in_place")
         : source.index("def _switch_to_kyy_in_place")
     ]
 
     owner = switch.index("task.key_id = int(next_key.id)")
+    publish_lease = switch.index("submit_enqueued_at=", owner)
     commit = switch.index("db.commit()", owner)
-    submit = switch.index("_submit_current_provider", commit)
+    publish = switch.index("submit_and_poll_ai_video_task.apply_async", commit)
 
-    assert owner < commit < submit
+    assert owner < publish_lease < commit < publish
+    assert "queue=production_video_queue(task)" in switch[publish:]
+    assert "_submit_current_provider(db, task)" not in switch
+
+
+def test_provider_failover_never_reselects_a_quota_exhausted_key():
+    source = _source(AI_VIDEO_TASKS)
+    select_next = source[
+        source.index("def _next_provider_key")
+        : source.index("def _switch_to_next_provider_in_place")
+    ]
+
+    quota_exclusions = select_next.index("provider_quota_failed_key_ids")
+    current_key = select_next.index("attempted.add(int(task.key_id))")
+    route = select_next.index("resolve_video_model_key")
+    exclude = select_next.index("exclude_key_ids=attempted", route)
+
+    assert quota_exclusions < current_key < route < exclude
 
 
 def test_initial_quota_failure_is_persisted_and_switched_without_celery_retry():
-    source = _source(BANDIANWA_TASKS)
+    source = _source(AI_VIDEO_TASKS)
     worker = source[
-        source.index("def submit_and_poll_bandianwa_video_task")
-        : source.index('@celery_app.task(', source.index("def submit_and_poll_bandianwa_video_task"))
+        source.index("def submit_and_poll_ai_video_task")
+        : source.index('@celery_app.task(', source.index("def submit_and_poll_ai_video_task"))
     ]
     handler = worker[
         worker.index("except PROVIDER_TASK_ERRORS as exc:")
@@ -199,10 +256,10 @@ def test_initial_quota_failure_is_persisted_and_switched_without_celery_retry():
 
 
 def test_polling_quota_failure_uses_the_same_provider_failover_path():
-    source = _source(BANDIANWA_TASKS)
+    source = _source(AI_VIDEO_TASKS)
     worker = source[
-        source.index("def submit_and_poll_bandianwa_video_task")
-        : source.index('@celery_app.task(', source.index("def submit_and_poll_bandianwa_video_task"))
+        source.index("def submit_and_poll_ai_video_task")
+        : source.index('@celery_app.task(', source.index("def submit_and_poll_ai_video_task"))
     ]
     poll = worker[worker.index("while True:") :]
     refresh = poll.index("_refresh_current_provider")
@@ -214,3 +271,18 @@ def test_polling_quota_failure_uses_the_same_provider_failover_path():
     retry = handler.index("self.retry", switch)
 
     assert quota < persist < switch < retry
+
+
+def test_replacement_provider_quota_failure_is_not_flattened_to_generic_error():
+    source = _source(AI_VIDEO_TASKS)
+    handler = source[
+        source.index("def _fail_provider_and_advance")
+        : source.index("def _content_factory_dependency_pending")
+    ]
+
+    classify = handler.index("_provider_error_is_quota_failure")
+    persist = handler.index("_mark_provider_quota_failure", classify)
+    generic = handler.index("_mark_failed", persist)
+    advance = handler.index("_should_advance_exhausted_provider", generic)
+
+    assert classify < persist < generic < advance

@@ -183,7 +183,10 @@ class KieTask(Base):
     # KIE 返回的 resultJson 解析后内容
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
-    fail_code: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Structured recovery codes intentionally describe the violated contract;
+    # 32 characters was too small and could make the recovery transaction
+    # itself fail (for example content_factory_continuity_frame_missing).
+    fail_code: Mapped[str | None] = mapped_column(String(128), default=None)
     fail_msg: Mapped[str | None] = mapped_column(String(512), default=None)
 
     # 消耗的积分（如果从回调/查询里拿得到，可以填）
