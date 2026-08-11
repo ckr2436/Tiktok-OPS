@@ -31,7 +31,12 @@ Active workers:
 gmv-celery-worker@gmv.tasks.default.service
 gmv-celery-worker@gmv.tasks.events.service
 gmv-celery-worker@gmv.tasks.hermes_agent.service
-gmv-celery-worker@gmv.tasks.ai_video.service
+gmv-celery-worker@gmv.tasks.hermes_maintenance.service
+gmv-celery-worker@gmv.tasks.ai_video.api.service
+gmv-celery-worker@gmv.tasks.ai_video.browser.service
+gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service
+gmv-celery-worker@gmv.tasks.ai_video.download.service
+gmv-celery-worker@gmv.tasks.ai_video.maintenance.service
 gmv-celery-worker@gmvmax.service
 gmv-celery-worker@gmvmax_sync.service
 gmv-celery-worker@openai_whisper.service
@@ -110,7 +115,11 @@ Restart only affected services:
 ```bash
 systemctl restart gmv-api.service
 systemctl restart gmv-celery-worker@gmv.tasks.hermes_agent.service
-systemctl restart gmv-celery-worker@gmv.tasks.ai_video.service
+systemctl restart gmv-celery-worker@gmv.tasks.ai_video.api.service
+systemctl restart gmv-celery-worker@gmv.tasks.ai_video.browser.service
+systemctl restart gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service
+systemctl restart gmv-celery-worker@gmv.tasks.ai_video.download.service
+systemctl restart gmv-celery-worker@gmv.tasks.ai_video.maintenance.service
 systemctl restart gmv-celerybeat.service
 ```
 
@@ -126,7 +135,12 @@ systemctl is-active \
   gmv-nginx.service \
   gmv-celerybeat.service \
   gmv-celery-worker@gmv.tasks.hermes_agent.service \
-  gmv-celery-worker@gmv.tasks.ai_video.service
+  gmv-celery-worker@gmv.tasks.hermes_maintenance.service \
+  gmv-celery-worker@gmv.tasks.ai_video.api.service \
+  gmv-celery-worker@gmv.tasks.ai_video.browser.service \
+  gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service \
+  gmv-celery-worker@gmv.tasks.ai_video.download.service \
+  gmv-celery-worker@gmv.tasks.ai_video.maintenance.service
 ```
 
 Inspect recent warnings/errors:
@@ -135,7 +149,11 @@ Inspect recent warnings/errors:
 journalctl --since "10 minutes ago" -p warning \
   -u gmv-api.service \
   -u gmv-celery-worker@gmv.tasks.hermes_agent.service \
-  -u gmv-celery-worker@gmv.tasks.ai_video.service \
+  -u gmv-celery-worker@gmv.tasks.ai_video.api.service \
+  -u gmv-celery-worker@gmv.tasks.ai_video.browser.service \
+  -u gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service \
+  -u gmv-celery-worker@gmv.tasks.ai_video.download.service \
+  -u gmv-celery-worker@gmv.tasks.ai_video.maintenance.service \
   -u gmv-celerybeat.service \
   --no-pager
 ```

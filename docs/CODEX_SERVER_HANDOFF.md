@@ -1,6 +1,6 @@
 # GMV OPS Codex Server Handoff
 
-Updated: 2026-07-17
+Updated: 2026-07-31
 
 ## Purpose
 
@@ -142,6 +142,54 @@ Validation:
 - No real campaign was deleted as part of validation.
 - Rollback archive:
   `/data/gmv_ops/deploy_backups/pre_gmv_action_fix_20260717_01.tar.gz`
+
+## TikTok Shop Flash-Sale Batch Apply
+
+Product flash-sale editing is a two-phase workflow. Editing one product only
+updates the browser-side draft; it does not mutate a policy or enqueue provider
+work. After every product is reviewed, the administrator submits one complete
+shop plan to:
+
+```text
+POST /api/v1/tenants/{workspace}/commerce/flash-sales/apply
+```
+
+The request carries the GET response's configuration token. The backend locks
+the shop configuration, rejects stale plans, updates every enabled/disabled
+product atomically, and publishes exactly one `user_batch_apply` reconciliation
+task. A disabled product is removed from replacement activities. If every
+product is disabled, the reconciler deactivates the managed activities and
+marks all policy revisions applied. A batch task retries lock contention so an
+older scheduled reconciliation cannot make the confirmed user plan disappear.
+
+## GMV Max Creative Delivery Status Contract
+
+The live Product GMV Max report was probed on 2026-07-31 against active
+campaign `1871600061135218`, and the official report document was regenerated
+the same day. The public API still returns the metric
+`creative_delivery_status` with these values:
+
+```text
+IN_QUEUE
+LEARNING
+DELIVERING
+NOT_DELIVERYING
+AUTHORIZATION_NEEDED
+EXCLUDED
+UNAVAILABLE
+REJECTED
+NOT_ACTIVE
+```
+
+`NOT_DELIVERYING` is TikTok's actual public-API spelling. Preserve these raw
+values in storage and API responses. The Ads Manager labels “Exploring”,
+“Explored”, “Outstanding”, “Performing”, “Boosting”, and “Boosted” are UI
+groupings and are not fields returned by `/gmv_max/report/get/` as of that
+probe. The Chinese UI uses the API descriptions as exploration semantics:
+`IN_QUEUE` is “待探索”, `LEARNING` is “探索中”, `DELIVERING` is “持续投放”,
+and `NOT_DELIVERYING` is “未通过探索”. Unknown future non-empty upstream
+values must remain visible as unknown official statuses rather than being
+collapsed into local candidate material.
 
 ## Deployment Discipline
 

@@ -36,7 +36,10 @@ import OAuthAppsPage from '../features/platform/oauth/pages/OAuthAppsPage.jsx';
 import EmailServerSettings from '../features/platform/email/pages/EmailServerSettings.jsx';
 
 // 平台 - API Key 管理
-import PlatformKieKeyPage from '../features/platform/kie_ai/pages/PlatformKieKeyPage.jsx';
+import PlatformAiProviderPage from '../features/platform/ai_providers/pages/PlatformAiProviderPage.jsx';
+import FlowAccountPoolPage from '../features/platform/flow2api/pages/FlowAccountPoolPage.jsx';
+import JimengLabPage from '../features/platform/jimeng_lab/pages/JimengLabPage.jsx';
+import DoubaoLabPage from '../features/platform/doubao_lab/pages/DoubaoLabPage.jsx';
 // 平台 - yt-dlp Cookies 管理
 import YtDlpCookiesPage from '../features/platform/yt_dlp_cookies/pages/YtDlpCookiesPage.jsx';
 import PlatformWebShellPage from '../features/platform/webshell/pages/PlatformWebShellPage.jsx';
@@ -71,10 +74,13 @@ const ProductSettingsPage = lazy(() =>
 const TiktokShopVideoAnalyticsPage = lazy(() =>
   import('../features/tenants/integrations/tiktok_shop/pages/TiktokShopVideoAnalyticsPage.jsx'),
 );
+const TiktokShopContentPostingPage = lazy(() =>
+  import('../features/tenants/integrations/tiktok_shop/pages/TiktokShopContentPostingPage.jsx'),
+);
 
 // 租户 - AI 视频页面 + Whisper 工具
-import GenerateVideoPage from '../features/tenants/kie_ai/pages/GenerateVideoPage.jsx';
-import AiVideoMemberTasksPage from '../features/tenants/kie_ai/pages/AiVideoMemberTasksPage.jsx';
+import GenerateVideoPage from '../features/tenants/ai_video/pages/GenerateVideoPage.jsx';
+import AiVideoMemberTasksPage from '../features/tenants/ai_video/pages/AiVideoMemberTasksPage.jsx';
 import SubtitleRecognitionPage from '../features/tenants/openai_whisper/pages/SubtitleRecognitionPage.jsx';
 import SeoPage from '../features/tenants/hermes_agent/pages/SeoPage.jsx';
 import GeoPage from '../features/tenants/hermes_agent/pages/GeoPage.jsx';
@@ -145,7 +151,10 @@ const router = createBrowserRouter([
               { path: 'oauth-apps', element: <OAuthAppsPage /> },
               { path: 'email', element: <EmailServerSettings /> },
               // 平台 - API Key 管理
-              { path: 'api-keys', element: <PlatformKieKeyPage /> },
+              { path: 'api-keys', element: <PlatformAiProviderPage /> },
+              { path: 'flow2api', element: <FlowAccountPoolPage /> },
+              { path: 'jimeng-lab', element: <JimengLabPage /> },
+              { path: 'doubao-lab', element: <DoubaoLabPage /> },
               // ★ 新增：平台 - yt-dlp Cookies 管理
               { path: 'yt-dlp-cookies', element: <YtDlpCookiesPage /> },
               { path: 'webshell', element: <PlatformWebShellPage /> },
@@ -210,6 +219,16 @@ const router = createBrowserRouter([
               <TenantGuard>
                 <Suspense fallback={<Loading text="短视频分析加载中…" />}>
                   <TiktokShopVideoAnalyticsPage />
+                </Suspense>
+              </TenantGuard>
+            ),
+          },
+          {
+            path: 'tenants/:wid/tiktok-shop/content-posting',
+            element: (
+              <TenantGuard>
+                <Suspense fallback={<Loading text="视频发布工作台加载中…" />}>
+                  <TiktokShopContentPostingPage />
                 </Suspense>
               </TenantGuard>
             ),

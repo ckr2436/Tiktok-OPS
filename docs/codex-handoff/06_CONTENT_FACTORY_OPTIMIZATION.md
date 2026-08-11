@@ -1,6 +1,6 @@
 # Content Factory Optimization Blueprint
 
-Updated: 2026-07-21 Asia/Shanghai
+Updated: 2026-08-11 Asia/Shanghai
 
 ## 1. Production Evidence
 
@@ -130,6 +130,15 @@ logical and security boundary, and that boundary already has a dedicated
 runtime. Add another physical process only when measured Director queue latency
 or model/context requirements cannot be isolated through the existing role.
 Windows browser slots are fallback executors, not additional reasoning roles.
+
+Operational recovery is a fourth *logical role* inside the existing primary
+content-control topology, not a fourth resident Hermes service. The stateless
+Recovery Supervisor receives only structured fault metadata and a
+server-generated allowed-action list. It recommends API cooldown, API/browser
+switching, browser wait, or pause; deterministic code retains leases,
+idempotency, tenancy, cost ceilings, manual-pause authority, and the atomic
+state transition. If the role is unavailable or returns an illegal action, a
+safe fallback prefers API cooldown and never escapes the allowed envelope.
 
 The role flow is:
 
@@ -439,3 +448,35 @@ worker-registry migration:
 The existing Director, copy artifact, variant execution ledger, provider task,
 download, composition, and quality-pause authorities remain in place. No ads
 code or ad worker route is part of this slice.
+
+## 11. Current Creative Intent Execution Slice (2026-08-11)
+
+The default intake now uses `content_producer_v19_fast_product_grounding` as the only
+member project-creation path:
+
+- Natural conversation is compiled into a signed, evidence-grounded
+  `CreativeIntentManifest` plus ordered `DeliverableSpec` rows rather than a
+  campaign mother template or a manual parameter form.
+- Every requirement carries a stable ID, original quote, professional
+  interpretation, observable checks, creative freedom and forbidden reuse.
+  Multiple requested outputs are never assumed to reuse one script merely
+  because count is above one.
+- Multi-script packages are duration-checked per deliverable and stored as
+  hash-bound `required_verbatim_voiceovers`; the whole package is not measured
+  as one video or copied into every variant.
+- The current versioned script takes precedence over its original source row.
+- Proposal confirmation binds the parameter proposal, effective intent, current
+  script hash, and pending-decision identity.
+- The frontend shows the effective goal, requirement evidence and observable
+  checks, each output's full locked script when present, and the downstream
+  execution lineage.
+- Exact conversational confirmation uses the displayed pending decision and
+  does not enter another model confirmation loop.
+
+During series materialization, each distinct locked script is attached only to
+its own Director brief. Director mappings and Production Plan mappings make
+every critical/high requirement traceable to concrete execution coordinates;
+the segment reviewer and final composed-output guardian cite those same IDs.
+The Director and Critic still own all creative choices the user left open.
+Deterministic code enforces evidence integrity, duration, tenancy,
+confirmation, count, and execution safety rather than prescribing a story.

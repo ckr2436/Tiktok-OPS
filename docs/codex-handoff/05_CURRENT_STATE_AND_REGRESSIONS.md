@@ -1,6 +1,33 @@
 # Current State And Anti-Regression History
 
-Updated: 2026-07-18 Asia/Shanghai
+Updated: 2026-07-28 Asia/Shanghai
+
+## 0. Creative Intent Execution Architecture
+
+Member project creation now has one authority: the AI Producer conversation.
+The former direct create route, manual advanced form, frontend create helper,
+and create-request schema were removed. Producer confirmation requires a
+signed version-2 `CreativeIntentManifest`; it cannot create a project from an
+unstructured summary alone.
+
+The semantic execution chain is:
+
+```text
+user or attachment evidence
+  -> signed R-NNN requirements
+  -> Director script/capability/segment mappings
+  -> Production Plan beat/reference/audio/copy mappings
+  -> segment-local requirement contracts
+  -> provider render and segment evidence review
+  -> composed-video final intent guardian
+```
+
+Critical and high requirements must survive every mapping boundary. Generic
+booleans and action-count heuristics are not acceptable substitutes for a
+request such as preserving a benchmark hook mechanism, emotional escalation,
+or conversion bridge. The final guardian evaluates originality separately
+from effectiveness transfer and can authorize bounded segment regeneration
+without rewriting already accepted copy or restarting an unrelated segment.
 
 ## 1. Verified Production State At Handoff
 
@@ -8,12 +35,23 @@ The final health verification immediately before this handoff found:
 
 - `gmv-api.service`: active
 - `gmv-celery-worker@gmv.tasks.hermes_agent.service`: active
-- `gmv-celery-worker@gmv.tasks.ai_video.service`: active
+- `gmv-celery-worker@gmv.tasks.hermes_maintenance.service`: active
+- `gmv-celery-worker@gmv.tasks.ai_video.api.service`: active, concurrency 3
+- `gmv-celery-worker@gmv.tasks.ai_video.browser.service`: active, concurrency 3
+- `gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service`: active, concurrency 2
+- `gmv-celery-worker@gmv.tasks.ai_video.download.service`: active, solo
+- `gmv-celery-worker@gmv.tasks.ai_video.maintenance.service`: active, solo
 - `gmv-celerybeat.service`: active
 - active Content Factory stages: 0
 - active AI video rows: 0
 - live video pollers: 0
 - warning-level entries in the checked recent service journal window: none
+
+The retired monolithic `gmv.tasks.ai_video` queue and worker are absent. API
+providers, browser-backed Doubao production, result downloads, account/lab
+maintenance, and Hermes browser maintenance have independent queues. Provider
+failover republishes to the replacement provider's production lane instead of
+performing cross-lane I/O inside the old delivery.
 
 The focused Content Factory test file passed:
 
@@ -75,7 +113,7 @@ does not queue another creative variant.
 
 File:
 
-`backend/app/tasks/bandianwa/video_tasks.py`
+`backend/app/tasks/ai_video/video_tasks.py`
 
 The video worker now claims one poll owner before provider network work,
 maintains a heartbeat, and prevents stale orphan recovery from finalizing a
@@ -238,6 +276,48 @@ Required prevention: Creative owns full script, deterministic segment compiler,
 semantic reference selection, generated character/scene references for video,
 authoritative uploaded product anchor, and first-frame continuation.
 
+### Doubao account-pool isolation
+
+- Adding a second account reused the first account's browser Profile.
+- Background health work opened Chrome even when no login was requested.
+- A text-only provider could be selected for a task carrying reference media.
+- Concurrent tasks could submit through the same account.
+- The edited dynamic-watermark delivery could be mistaken for the original
+  generated resource.
+
+Required prevention: immutable Profile per account, fixed proxy, encrypted
+session context, one generation lease per account, HTTP-only scheduled strong
+authentication probe, separate network/capability/capacity states, exact
+capability filtering, fail-closed original-resource lookup, and unified
+provider failover after account-level cooldown/disable. Never restore the old
+"HTTP 200 equals healthy session" keepalive rule: Doubao returns 200 for logged
+out visitors too. Serialize only the browser submission phase per shared proxy
+exit, release that lane after upstream acceptance, and reject expired browser
+markers so stale work cannot create an open/close loop.
+Do not restore pure-LRU account choice: route ready accounts by recent real
+success, fresh probes, consecutive-error penalty and submit latency, while
+keeping LRU only as a tie-breaker. Preserve bounded, secret-free per-account
+submit phase telemetry so account startup latency is not confused with Doubao
+remote generation latency.
+
+### Flow grant lifecycle
+
+- The account page treated `is_active`, web login, stored AT, and routability as
+  the same state.
+- The one-hour keepalive interval raced the short-lived Flow access grant.
+- A successful Windows browser capture could return an account to the pool
+  without enabling its lifecycle keepalive row.
+- Expired accounts remained visually counted as enabled and their credits were
+  included even though routing correctly failed closed.
+
+Required prevention: publish persistent HTTP keepalive atomically with verified
+browser capture, refresh every 20 minutes, route only unbanned authorization-
+valid accounts, and show administrator state separately from authorization and
+routability. After HTTP recovery fails with `GRANT_EXPIRED`, Hermes may perform
+one headless capture from the immutable fixed Profile per continuous grant
+episode. Failed capture or login/account verification becomes human-required;
+it must never trigger a visible or repeated unattended browser loop.
+
 ### Target count and deliverables
 
 - Project completed with 9 videos when target was 10.
@@ -371,6 +451,67 @@ semantic re-review path. It does not synthesize a character mismatch, create a
 partial visual-repair request, or spend image quota. Only a structurally valid
 row with concrete pixel-grounded missing/wrong facts may cause an image to be
 regenerated.
+
+### Multimodal semantic authority replaces fixed creative gates
+
+The current Director, independent Critic, and visual-inspector logical roles
+all require `multimodal` routes. This remains true for a stage whose current
+packet contains only text: the role is still assigned to a model class that can
+inspect images and video evidence when the workflow supplies them.
+
+Creative meaning is model-owned. Story quality, hook transfer, visual
+continuity, product integration, spoken-copy meaning, provider-rendered segment
+fidelity, and final composed-video intent are reviewed or authored by the
+configured multimodal roles. The server must not scan review prose for business
+keywords, turn a model rejection into approval, synthesize a creative fallback
+artifact, or auto-pass a semantic stage.
+
+Deterministic code remains authoritative only for non-semantic execution
+boundaries: tenant and project ownership, schema and enum validity, signed IDs
+and hashes, reference ordering, file existence and dimensions, exact duration
+arithmetic, idempotency, leases, queue state, retry budgets, and consistency
+between a model's structured verdicts and its top-level decision. Rejection is
+a completed model decision that routes to bounded repair; it is not a failed
+transport and is never silently accepted.
+
+Image failover is likewise exact-route state, not provider-wide prose state.
+An enabled route inventory is loaded before circuit filtering, so a temporarily
+unavailable image model cannot be resurrected through the old compatibility
+key fallback. Same-provider model failover preserves completed boards and
+clears only the failed route's pending work.
+
+`VIDEO_PROMPTS` is a historical storage boundary for Director-enforced
+projects. Its local compiler performs only lossless timeline clipping and
+reference-index binding from the already model-authored, independently reviewed
+Director artifact and Production Plan. It is not another creative author. When
+provider output needs a semantic rewrite, the multimodal segment execution
+Director performs that rewrite from the signed plan plus current media evidence.
+
+Legacy `deterministic_server_fallback` review evidence is recognized only so
+self-heal can invalidate it. Active execution must never create that marker.
+
+### Recovery Supervisor is the sole route-transition writer
+
+Provider exhaustion, browser unavailability, and temporarily empty eligible
+route inventories are incidents, not permission for a caller to select a
+fallback. Every such caller reports the evidence to the Recovery Supervisor;
+the model selects an allowed action and a per-stage distributed lease commits
+exactly one transition. A second worker must preserve an existing live
+cooldown instead of overwriting it with a browser wait or another submission.
+
+`api_available=false` and `api_configured=false` have different meanings. The
+former can mean all configured accounts are cooling. In that case self-heal
+keeps the browser dormant and persists an exponential API inventory probe
+(60 seconds through a maximum 30-minute interval). It does not pause the
+project or create a browser Slot merely because no route is eligible at that
+instant.
+
+Periodic self-heal also collapses failed chained video dependencies to a fixed
+point. A synthetic `dependency_failed` task owns no further provider recovery;
+all descendants become terminal and are removed from the project's pending
+set even if an older video waiter was lost during deployment. This prevents a
+completed or quality-draining project from polling one impossible segment
+forever.
 
 ## 5. Known Structural Risks
 

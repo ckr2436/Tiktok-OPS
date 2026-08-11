@@ -1,6 +1,6 @@
 # GMV OPS Repository Instructions
 
-Updated: 2026-07-18 Asia/Shanghai
+Updated: 2026-08-11 Asia/Shanghai
 
 This is a live production repository with a deliberately dirty worktree. Never
 discard, reset, overwrite, or "clean up" changes merely because they are
@@ -97,7 +97,12 @@ The machine-readable inventory is
 - `gmv-nginx.service`
 - `gmv-celerybeat.service`
 - `gmv-celery-worker@gmv.tasks.hermes_agent.service`
-- `gmv-celery-worker@gmv.tasks.ai_video.service`
+- `gmv-celery-worker@gmv.tasks.ai_video.api.service`
+- `gmv-celery-worker@gmv.tasks.ai_video.browser.service`
+- `gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service`
+- `gmv-celery-worker@gmv.tasks.ai_video.download.service`
+- `gmv-celery-worker@gmv.tasks.ai_video.maintenance.service`
+- `gmv-celery-worker@gmv.tasks.hermes_maintenance.service`
 - `gmv-celery-worker@openai_whisper.service`
 - `gmv-celery-worker@gmvmax.service`
 - `gmv-celery-worker@gmvmax_sync.service`
@@ -110,8 +115,8 @@ The machine-readable inventory is
 - `backend/app/services/hermes_agent/content_factory.py`
 - `backend/app/services/hermes_agent/content_factory_api.py`
 - `backend/app/features/tenants/hermes_agent/router.py`
-- `backend/app/tasks/bandianwa/video_tasks.py`
-- `backend/app/services/kie_api/accounts.py`
+- `backend/app/tasks/ai_video/video_tasks.py`
+- `backend/app/services/ai_video/accounts.py`
 - `backend/app/data/models/hermes_agent.py`
 - `backend/app/data/models/kie_api.py`
 - `gmv-frontend/src/features/tenants/hermes_agent/pages/ContentFactoryPage.jsx`

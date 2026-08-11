@@ -15,6 +15,7 @@ from .oauth_tiktok_shop import (
     OAuthTikTokShopAccount,
     OAuthTikTokShopShop,
 )
+from .tiktok_shop_content_posting import TikTokShopContentPost
 from .tiktok_shop import (
     TikTokShopCategory,
     TikTokShopCoupon,
@@ -22,6 +23,7 @@ from .tiktok_shop import (
     TikTokShopFinanceTransaction,
     TikTokShopFlashSalePolicy,
     TikTokShopFlashSaleRun,
+    TikTokShopFlashSaleSchedule,
     TikTokShopGlobalProduct,
     TikTokShopLiveDailyMetric,
     TikTokShopOrder,
@@ -133,6 +135,7 @@ from .gmvmax_campaign_snapshots import (
 from .openai_whisper import OpenAIWhisperJob
 from .kie_api import KieApiKey, AiProviderModelSetting, KieTask, KieFile
 from .ai_routing import AiProviderModel, AiModelRoute, AiRouteAttempt
+from .flow_account_proxy import FlowAccountProxy
 from .hermes_agent import (
     UserFeaturePermission,
     HermesAgentConversation,
@@ -153,6 +156,8 @@ from .hermes_agent import (
     HermesContentVariantRun,
     HermesContentSegmentRun,
     HermesContentDeliverable,
+    HermesContentEvaluation,
+    HermesContentRuntimeEvent,
 )
 from .email_settings import PlatformEmailSetting, MailSendMode, MailEncryption
 from .video_site_cookies import VideoSiteCookies
@@ -186,6 +191,7 @@ __all__ = [
     "OAuthTikTokShopAuthzSession",
     "OAuthTikTokShopAccount",
     "OAuthTikTokShopShop",
+    "TikTokShopContentPost",
     "TikTokShopSyncRun",
     "TikTokShopCategory",
     "TikTokShopProduct",
@@ -199,6 +205,7 @@ __all__ = [
     "TikTokShopFinanceTransaction",
     "TikTokShopFlashSalePolicy",
     "TikTokShopFlashSaleRun",
+    "TikTokShopFlashSaleSchedule",
     "TikTokShopWithdrawal",
     "TikTokShopPromotionActivity",
     "TikTokShopCoupon",
@@ -293,6 +300,7 @@ __all__ = [
     "AiProviderModel",
     "AiModelRoute",
     "AiRouteAttempt",
+    "FlowAccountProxy",
     "KieTask",
     "KieFile",
     "UserFeaturePermission",

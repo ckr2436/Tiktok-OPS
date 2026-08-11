@@ -1,6 +1,6 @@
 # Codex Handoff: GMV OPS
 
-Updated: 2026-07-18 Asia/Shanghai
+Updated: 2026-08-11 Asia/Shanghai
 
 ## Purpose
 
@@ -45,6 +45,8 @@ The current collaboration concentrated on Content Factory and AI video, while
 - `06_CONTENT_FACTORY_OPTIMIZATION.md`: production-run evidence, non-hardcoded
   target architecture, queue/memory isolation, event-driven execution, and
   staged migration plan.
+- `07_AI_ROUTING_AND_SUB2API.md`: unified Hermes role routing, Sub2API-first
+  provider policy, gateway contracts, service configuration and rollback.
 - `handoff_manifest.json`: machine-readable paths, services, stages, providers,
   and test suites.
 
