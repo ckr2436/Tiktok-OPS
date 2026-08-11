@@ -12435,9 +12435,9 @@ def _retry_product_visual_evidence(
     # Provider packets combine visual direction with spoken copy, reviewer
     # notes and reference bindings. Product words in Dialogue/Repair/Refs are
     # not evidence that the product is visually present. Historical retries
-    # used the whole packet here, so a line such as "bedtime gummy labels" or
-    # a global "exact package label" repair silently changed a product-free
-    # segment into a product-required segment.
+    # used the whole packet here, so unrelated dialogue or global packaging
+    # repair instructions silently changed a product-free segment into a
+    # product-required segment.
     nonvisual_prefixes = (
         "dialogue:",
         "voice:",
