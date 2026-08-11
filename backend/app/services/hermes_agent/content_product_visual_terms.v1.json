@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "unbound_visual_regex_terms": [
+    "products?",
+    "packages?",
+    "packaging",
+    "packshots?",
+    "gumm(?:y|ies)",
+    "supplements?",
+    "capsules?",
+    "pills?",
+    "tablets?",
+    "powders?",
+    "sachets?",
+    "softgels?",
+    "lozenges?",
+    "cleaning\\s+tablets?",
+    "cleaning\\s+pods?",
+    "laundry\\s+pods?",
+    "(?:branded|unbranded|advertised|marketed)\\s+(?:bottles?|jars?|tubes?|boxes?|cartons?|containers?)",
+    "产品",
+    "商品",
+    "包装",
+    "软糖",
+    "补充剂",
+    "胶囊",
+    "药片",
+    "粉剂",
+    "清洁片",
+    "洗衣片",
+    "洗衣凝珠"
+  ]
+}

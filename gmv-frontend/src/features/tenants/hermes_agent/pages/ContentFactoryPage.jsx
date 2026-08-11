@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useSessionQuery } from '@/features/platform/auth/hooks.js'
+import { getProviderStatus as getAiVideoProviderStatus } from '@/features/tenants/ai_video/service.js'
 import {
+  addContentFactoryProducerReferenceLink,
   bindContentFactoryBridgeDevice,
   contentFactoryAssetUrl,
   contentFactoryDeliverablesZipUrl,
   contentFactoryProductAssetUrl,
   confirmContentFactoryProducerProject,
   createContentFactoryProduct,
-  createContentFactoryProject,
   deleteContentFactoryProducerAttachment,
   deleteContentFactoryProduct,
   deleteContentFactoryProductAsset,
@@ -34,6 +35,7 @@ import {
   uploadContentFactoryProducerAttachments,
   uploadContentFactoryProductAssets,
 } from '../api.js'
+import './ContentFactoryPage.css'
 
 const STAGES = ['FACTS', 'SERIES_DIRECTOR', 'DIRECTOR', 'PRODUCTION_PLAN', 'VISUAL_PREVIEW', 'CREATIVE_REVIEW', 'FINAL_ASSETS', 'VIDEO_PROMPTS', 'WAITING_VIDEO_INPUT', 'EDIT_PACKAGE', 'COMPLETE']
 const EXECUTION_STAGES = ['FACTS', 'SERIES_DIRECTOR', 'DIRECTOR', 'PRODUCTION_PLAN', 'VISUAL_PREVIEW', 'CREATIVE_REVIEW', 'FINAL_ASSETS', 'VIDEO_PROMPTS', 'EDIT_PACKAGE']
@@ -45,7 +47,6 @@ const LABELS = {
   SERIES_DIRECTOR: '整批编导',
   DIRECTOR: '单条编导',
   PRODUCTION_PLAN: '制作方案',
-  CREATIVE: '旧版创意（只读）',
   VISUAL_PREVIEW: '视觉预演',
   CREATIVE_REVIEW: '视觉验收',
   FINAL_ASSETS: '正式参考图',
@@ -61,6 +62,25 @@ LABELS.CHARACTER_REFERENCE = '\u4eba\u7269\u53c2\u8003\u56fe'
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function isProducerConfirmationMessage(value) {
+  return /^(?:确认|确认执行|确认创建|开始吧|开始执行|就按这个方案|按这个方案执行)[。！!\s]*$/u.test(String(value || '').trim())
+}
+
+function isProducerExecutionMessage(value) {
+  const message = String(value || '').trim()
+  if (!message || /(?:不要|不用|先别|暂不|停止|取消)(?:再)?(?:生成|制作|创建|执行|开始)/u.test(message)) return false
+  return /(?:生成|制作|创建|开始做|开始生成|开始制作|执行)(?:[^。！？!?\n]{0,40})(?:视频|任务|项目|版本|条|支)/u.test(message)
+}
+
+function producerDeliveryModeLabel(value) {
+  return {
+    single: '单条成片',
+    independent_videos: '多条独立视频',
+    series_episodes: '系列化独立视频',
+    visual_variants: '同一文案的视觉变体',
+  }[value] || '按当前需求执行'
 }
 
 async function recoverProducerTurn(wid, sessionKey, baselineMessageCount, startedAt) {
@@ -89,17 +109,26 @@ async function recoverProducerTurn(wid, sessionKey, baselineMessageCount, starte
 
 function normalizeVideoModel(model) {
   if (['seedance_2_0', 'seedence_2_0', 'seedence_2_0_mini'].includes(model)) return 'seedance_2_0_mini'
-  return 'omni_flash'
+  if (['omni_flash', 'gemini_omni_flash', 'google_omni_flash'].includes(model)) return 'omni_flash'
+  return ''
 }
 
-function videoReferenceLimit(model) {
-  if (normalizeVideoModel(model) === 'seedance_2_0_mini') return 9
-  return 7
+function videoModelRecord(models, model) {
+  const normalized = normalizeVideoModel(model)
+  return (Array.isArray(models) ? models : []).find((item) => item?.id === normalized) || null
 }
 
-function videoSegmentLabel(model) {
-  if (normalizeVideoModel(model) === 'seedance_2_0_mini') return 'Seedance 2.0 Mini 每片最长 15 秒'
-  return 'Omni Flash 每片 10 秒'
+function videoReferenceLimit(models, model) {
+  return Math.max(1, Number(videoModelRecord(models, model)?.reference_image_limit || 1))
+}
+
+function videoSegmentLabel(models, model) {
+  const record = videoModelRecord(models, model)
+  if (!record) return '未选择视频模型'
+  const durations = Array.isArray(record.available_durations_seconds) ? record.available_durations_seconds : []
+  return durations.length
+    ? `${record.label} 单片支持 ${durations.join('/')} 秒`
+    : `${record.label} 按当前供应商能力规划时长`
 }
 
 function statusTone(status) {
@@ -133,6 +162,22 @@ function projectStatusText(project) {
   if (project?.status === 'running') return `正在执行 · ${stage}`
   if (project?.status === 'queued') return `已排队 · ${stage}`
   return stage
+}
+
+function recoveryActionText(action) {
+  const labels = {
+    WAIT_AND_RETRY_API: '等待后重试 API',
+    SWITCH_TO_API: '切回 API',
+    SWITCH_TO_BROWSER: '切换浏览器兜底',
+    RETRY_BROWSER: '重试浏览器',
+    WAIT_FOR_BROWSER: '等待浏览器恢复',
+    ROTATE_PROVIDER: '轮换供应商或账号',
+    SEMANTIC_PROMPT_REPAIR: '多模态修复提示词',
+    RECOMPILE_STAGE_INPUT: '按用户意图重编译本阶段',
+    RECONCILE_LATE_RESULT: '核对已提交任务结果',
+    PAUSE_NONRETRYABLE: '等待外部授权',
+  }
+  return labels[action] || action || '分析中'
 }
 
 function deliverableStatusLabel(status) {
@@ -210,18 +255,6 @@ function factsLabel(product) {
   return '待生成产品事实'
 }
 
-const EMPTY_PROJECT_FORM = {
-  title: '', content_objective: '', target_audience: '',
-  content_mode: 'product', product_id: '', product_brief: '', video_count: 10,
-  max_api_video_variants_in_flight: 2,
-  video_duration_min_seconds: 10, video_duration_max_seconds: 10,
-  video_model: 'omni_flash', video_resolution: '720p', video_aspect_ratio: '9:16', video_language: 'en-US',
-  video_reference_limit: 7, video_frame_mode: 'reference', allow_reference_video: false,
-  confirmed_claims: '', confirmed_selling_points: '', confirmed_promotions: '',
-  promotion_cta: '', allow_promotional_cta: true,
-  content_director_mode: 'enforce', auto_run: true,
-}
-
 const PRODUCER_QUICK_STARTS = [
   {
     label: '带货转化',
@@ -260,7 +293,14 @@ function newProducerTurnId() {
 }
 
 function producerRequestMayStillBeRunning(error) {
-  return !error?.status && !error?.response?.status
+  const hasServerResponse = Boolean(
+    error?.status
+    || error?.response
+    || error?.payload?.error?.code,
+  )
+  if (hasServerResponse) return false
+  return ['ECONNABORTED', 'ERR_NETWORK', 'ETIMEDOUT'].includes(String(error?.code || ''))
+    || /network|timeout|timed out/i.test(String(error?.message || ''))
 }
 
 function producerErrorMessage(error) {
@@ -275,7 +315,16 @@ function producerErrorMessage(error) {
     return '内容模型供应商当前不可用，系统已尝试备用线路。你的文字和附件都已保存，请稍后点击重试。'
   }
   if (code === 'CONTENT_PRODUCER_ATTACHMENTS_PROCESSING') {
-    return '对标视频仍在提取画面和口播文案，请等待附件显示“分析完成”后再继续。'
+    return '对标视频仍在下载、提取口播并进行多模态拆解，请等待完成后再继续。'
+  }
+  if (code === 'CONTENT_PRODUCER_REFERENCE_URL_INVALID') {
+    return '这个链接无法安全下载。请发送 TikTok、抖音、快手、YouTube 或 Facebook 的公开 HTTPS 视频链接。'
+  }
+  if (code === 'CONTENT_PRODUCER_BENCHMARK_ANALYSIS_FAILED') {
+    return '对标视频没有完成多模态拆解。请移除后重试链接，或上传本地视频文件。'
+  }
+  if (code === 'CONTENT_PRODUCER_RESPONSE_INVALID' || code === 'CONTENT_PRODUCER_REVIEWED_DECISION_INVALID') {
+    return '制片助理这次没有形成完整方案，已停止等待并保留你的原话。请点击重试，系统不会重复写入消息。'
   }
   if (code === 'HERMES_TIMEOUT' || error?.status === 504) {
     return '内容模型本次响应超时。你的文字和附件都已保存，可以安全重试，不会重复写入消息。'
@@ -286,8 +335,36 @@ function producerErrorMessage(error) {
   return error?.message || 'AI 制片助理暂时无法响应。'
 }
 
+const BENCHMARK_VIDEO_HOST_SUFFIXES = [
+  'tiktok.com', 'douyin.com', 'iesdouyin.com', 'amemv.com', 'snssdk.com',
+  'youtube.com', 'youtu.be', 'kuaishou.com', 'gifshow.com', 'kwai.com',
+  'facebook.com', 'fb.watch',
+]
+
+function benchmarkVideoUrlFromText(value) {
+  const candidates = String(value || '').match(/https:\/\/[^\s<>"']+/giu) || []
+  for (const candidate of candidates) {
+    const cleaned = candidate.replace(/[)，。！？、；：,.!?;:]+$/u, '')
+    try {
+      const url = new URL(cleaned)
+      const host = url.hostname.toLowerCase().replace(/\.$/u, '')
+      if (BENCHMARK_VIDEO_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) {
+        return url.href
+      }
+    } catch (_) {
+      // Keep ordinary text in the Producer turn; only route valid public URLs.
+    }
+  }
+  return ''
+}
+
 function attachmentKindLabel(kind) {
-  return kind === 'reference_video' ? '对标视频' : '人物参考图'
+  return {
+    reference_video: '对标视频',
+    character_reference: '人物参考图',
+    brief_document: '项目文档',
+    creative_reference: '创意参考图',
+  }[kind] || '附件'
 }
 
 function formatAttachmentSize(bytes) {
@@ -297,10 +374,26 @@ function formatAttachmentSize(bytes) {
 }
 
 function attachmentAnalysisLabel(attachment) {
-  if (['queued', 'processing'].includes(attachment?.analysis_status)) return '分析中'
+  if (attachment?.active === false) return '历史对标 · 本轮不使用'
+  const downloadStatus = String(attachment?.analysis?.download_status || '')
+  const multimodalStatus = String(attachment?.analysis?.multimodal_status || '')
+  const producerTurnStatus = String(attachment?.analysis?.producer_turn_status || '')
+  if (downloadStatus === 'queued' || downloadStatus === 'processing') return '正在下载公开原视频'
+  if (multimodalStatus === 'queued') return '已接收，等待多模态拆解调度'
+  if (['queued', 'processing'].includes(attachment?.analysis_status) || multimodalStatus === 'processing') return '正在转写并做多模态拆解'
+  if (attachment?.analysis_status === 'failed' || multimodalStatus === 'failed') return '多模态拆解失败'
+  if (['waiting_analysis', 'queued', 'processing'].includes(producerTurnStatus)) return '拆解完成 · 制片助理正在整理'
+  if (producerTurnStatus === 'failed') return '拆解完成 · 制片回复失败'
+  if (producerTurnStatus === 'success') return '拆解完成 · 已交给制片助理'
   const transcriptStatus = String(attachment?.analysis?.transcript_status || '')
   if (transcriptStatus === 'failed') return '画面完成 · 口播提取失败'
   if (transcriptStatus === 'no_speech') return '分析完成 · 无可识别口播'
+  if (attachment?.kind === 'brief_document') {
+    const characters = Number(attachment?.analysis?.extracted_characters || 0)
+    return characters ? `正文已提取 · ${characters.toLocaleString()} 字符` : '正文已提取'
+  }
+  if (attachment?.kind === 'creative_reference') return '图片已识别'
+  if (attachment?.kind === 'reference_video' && multimodalStatus === 'success') return '画面、口播与结构拆解完成'
   return '分析完成'
 }
 
@@ -335,18 +428,23 @@ function projectSettings(project) {
     content_mode: config.content_mode
       ? (config.content_mode === 'product' ? 'product' : 'general')
       : (project?.product_id || project?.product_name ? 'product' : 'general'),
+    product_use_mode: config.product_use_mode || (config.product_required === false ? 'none' : 'required'),
     product_brief: project?.product_brief || '',
     video_count: Number(config.video_count || 10),
     max_api_video_variants_in_flight: Number(config.max_api_video_variants_in_flight || 1),
-    video_duration_min_seconds: Number(config.video_duration_min_seconds || config.video_duration_seconds || 10),
-    video_duration_max_seconds: Number(config.video_duration_max_seconds || config.video_duration_seconds || 10),
+    video_duration_min_seconds: Number(config.video_duration_min_seconds || 10),
+    video_duration_max_seconds: Number(config.video_duration_max_seconds || 10),
     video_model: normalizeVideoModel(config.video_model),
+    video_duration_strategy: config.video_duration_strategy || 'creative_flexibility',
     video_resolution: config.video_resolution || '720p',
     video_aspect_ratio: config.video_aspect_ratio || config.director_series_brief?.aspect_ratio || '9:16',
     video_language: config.video_language || 'en-US',
     video_reference_limit: Number(config.video_reference_limit || 7),
     video_frame_mode: config.video_frame_mode || 'reference',
     allow_reference_video: Boolean(config.allow_reference_video),
+    video_generation_mode: ['text_to_video', 'image_to_video', 'video_to_video'].includes(config.video_generation_mode)
+      ? config.video_generation_mode
+      : 'image_to_video',
     confirmed_claims: config.confirmed_claims || '',
     confirmed_selling_points: config.confirmed_selling_points || '',
     confirmed_promotions: config.confirmed_promotions || '',
@@ -371,12 +469,13 @@ function projectMediaContractLocked(project) {
 
 export default function ContentFactoryPage() {
   const { wid } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const handoffSessionKey = useMemo(() => {
+    const value = String(searchParams.get('producer_session') || '').trim()
+    return /^[A-Za-z0-9_.-]{1,48}$/.test(value) ? value : ''
+  }, [searchParams])
   const sessionQuery = useSessionQuery()
   const currentUserId = sessionQuery.data?.id
-  const draftStorageKey = useMemo(
-    () => contentFactoryUserStorageKey('draft', wid, currentUserId),
-    [wid, currentUserId],
-  )
   const producerStorageKey = useMemo(
     () => contentFactoryUserStorageKey('producer', wid, currentUserId),
     [wid, currentUserId],
@@ -385,6 +484,7 @@ export default function ContentFactoryPage() {
   const [projects, setProjects] = useState([])
   const [products, setProducts] = useState([])
   const [selectedKey, setSelectedKey] = useState('')
+  const [workspaceMode, setWorkspaceMode] = useState('conversation')
   const [selectedProductId, setSelectedProductId] = useState('')
   const [bridge, setBridge] = useState({ connected: false })
   const [bridgeForm, setBridgeForm] = useState({ cdp_url: '', inbox_root: '', device_name: '' })
@@ -398,15 +498,13 @@ export default function ContentFactoryPage() {
   const emptyProductForm = { brand_name: '', product_name: '', market: 'US', product_brief: '' }
   const [productForm, setProductForm] = useState(emptyProductForm)
   const [productEditForm, setProductEditForm] = useState(emptyProductForm)
-  const [form, setForm] = useState(EMPTY_PROJECT_FORM)
-  const [pendingBenchmarkVideoFiles, setPendingBenchmarkVideoFiles] = useState([])
-  const [pendingCharacters, setPendingCharacters] = useState([])
+  const [videoModels, setVideoModels] = useState([])
+  const [videoModelsError, setVideoModelsError] = useState('')
   const [characterUploadOpen, setCharacterUploadOpen] = useState(false)
   const [projectCharacterDraft, setProjectCharacterDraft] = useState(() => newCharacterDraft(1))
   const [projectEditForm, setProjectEditForm] = useState(null)
   const [restartStage, setRestartStage] = useState('DIRECTOR')
   const [projectEditOpen, setProjectEditOpen] = useState(false)
-  const [creationMode, setCreationMode] = useState('assistant')
   const [producerSessionKey, setProducerSessionKey] = useState('')
   const [producerProductId, setProducerProductId] = useState('')
   const [producerInput, setProducerInput] = useState('')
@@ -420,16 +518,28 @@ export default function ContentFactoryPage() {
   const [producerProposalSha, setProducerProposalSha] = useState('')
   const [producerStatus, setProducerStatus] = useState('idle')
   const [producerAuthoritativeScriptId, setProducerAuthoritativeScriptId] = useState(null)
+  const [producerAuthoritativeScript, setProducerAuthoritativeScript] = useState('')
+  const [producerAuthoritativeScriptVersion, setProducerAuthoritativeScriptVersion] = useState(null)
+  const [producerIntentSpec, setProducerIntentSpec] = useState(null)
+  const [producerPendingDecisionId, setProducerPendingDecisionId] = useState('')
   const [producerBusy, setProducerBusy] = useState(false)
   const [producerProgress, setProducerProgress] = useState('')
   const [producerSessionLoadError, setProducerSessionLoadError] = useState('')
   const [producerSessionReloadNonce, setProducerSessionReloadNonce] = useState(0)
+  const producerPanelRef = useRef(null)
+  const producerMessagesRef = useRef(null)
+  const producerComposerRef = useRef(null)
+  const [producerFocusNonce, setProducerFocusNonce] = useState(0)
+  const [producerBriefOpen, setProducerBriefOpen] = useState(false)
   const producerAttachmentAnalysisPending = producerAttachments.some(
-    (item) => ['queued', 'processing'].includes(item.analysis_status),
+    (item) => item?.active !== false && (
+      ['queued', 'processing'].includes(item.analysis_status)
+      || ['waiting_analysis', 'queued', 'processing'].includes(item?.analysis?.producer_turn_status)
+    ),
   )
 
   const selected = useMemo(() => projects.find((item) => item.project_key === selectedKey) || projects[0] || null, [projects, selectedKey])
-  const selectedProduct = useMemo(() => products.find((item) => String(item.id) === String(form.product_id || selectedProductId)) || null, [products, selectedProductId, form.product_id])
+  const selectedProduct = useMemo(() => products.find((item) => String(item.id) === String(selectedProductId)) || null, [products, selectedProductId])
   const selectedCharacterGroups = useMemo(() => characterGroupsFromAssets(selected?.assets || []), [selected?.assets])
   const mediaContractLocked = useMemo(() => projectMediaContractLocked(selected), [selected])
   const selectedBridgeDeviceId = String(bridge?.selected_device_id || '')
@@ -440,30 +550,47 @@ export default function ContentFactoryPage() {
     [bridge?.slots, selectedBridgeDeviceId],
   )
 
+  const focusProducerComposer = useCallback(() => {
+    setWorkspaceMode('conversation')
+    setProducerFocusNonce((value) => value + 1)
+  }, [])
+
   useEffect(() => {
-    if (!draftStorageKey) return
-    try { window.localStorage.removeItem(`content-factory-draft:${wid}`) } catch (_) { /* remove legacy unscoped draft */ }
+    if (!producerFocusNonce) return undefined
+    const timer = window.setTimeout(() => {
+      producerPanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      producerComposerRef.current?.focus?.({ preventScroll: true })
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [producerFocusNonce])
+
+  useEffect(() => {
+    const node = producerMessagesRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [producerMessages, producerBusy, producerProgress])
+
+  useEffect(() => {
+    if (producerStatus === 'proposal_ready') setProducerBriefOpen(true)
+  }, [producerStatus])
+
+  useEffect(() => {
     setBridgeForm((prev) => ({
       ...prev,
       device_name: prev.device_name || `${navigator.platform || 'Browser'} · ${navigator.userAgent.includes('Chrome') ? 'Chrome' : 'Browser'}`,
       inbox_root: prev.inbox_root || 'C:\\Users\\sqkj01\\AppData\\Local\\MYUPONA\\HermesInbox',
     }))
-    try {
-      const saved = window.localStorage.getItem(draftStorageKey)
-      if (saved) {
-        const draft = { ...EMPTY_PROJECT_FORM, ...JSON.parse(saved) }
-        setForm(draft)
-        if (draft.product_id) setSelectedProductId(String(draft.product_id))
-      }
-    } catch (_) { /* Ignore an invalid old browser draft. */ }
-  }, [draftStorageKey])
+  }, [wid])
 
   useEffect(() => {
     if (!producerStorageKey) return undefined
-    try { window.localStorage.removeItem(`content-factory-producer:${wid}`) } catch (_) { /* remove legacy unscoped session */ }
     let cancelled = false
-    let savedKey = ''
-    try { savedKey = window.localStorage.getItem(producerStorageKey) || '' } catch (_) { savedKey = '' }
+    let savedKey = handoffSessionKey
+    if (!savedKey) {
+      try { savedKey = window.localStorage.getItem(producerStorageKey) || '' } catch (_) { savedKey = '' }
+    } else {
+      try { window.localStorage.setItem(producerStorageKey, savedKey) } catch (_) { /* ignore */ }
+    }
     if (!savedKey) {
       setProducerSessionLoadError('')
       setProducerSessionKey(newProducerSessionKey())
@@ -482,12 +609,24 @@ export default function ContentFactoryPage() {
         setProducerInput(lastMessage.content || '')
         setProducerRetryMessage(lastMessage.content || '')
         setProducerRetryTurnId(lastMessage.client_turn_id)
+      } else if (!messages.length && session?.draft_message) {
+        setProducerInput(session.draft_message)
       }
       setProducerProposal(session?.proposal || null)
       setProducerProposalSha(session?.proposal_sha256 || '')
       setProducerStatus(session?.status || 'idle')
       setProducerAuthoritativeScriptId(session?.authoritative_script_message_id || null)
+      setProducerAuthoritativeScript(session?.authoritative_script || '')
+      setProducerAuthoritativeScriptVersion(session?.authoritative_script_version || null)
+      setProducerIntentSpec(session?.intent_spec || null)
+      setProducerPendingDecisionId(session?.pending_decision_id || '')
       if (session?.selected_product_id) setProducerProductId(String(session.selected_product_id))
+      if (session?.source_context?.type === 'tiktok_shop_video_analysis') {
+        setTab('factory')
+        setNotice(session?.attachments?.some((item) => item.kind === 'reference_video')
+          ? '视频分析报告和本地参考视频已导入。请核对并选择内容工厂中的权威商品，然后把草稿发送给制片助理。'
+          : '视频分析报告已导入；本地参考视频未命中。请核对并选择内容工厂中的权威商品，然后把草稿发送给制片助理。')
+      }
     }).catch((err) => {
       if (cancelled) return
       if (Number(err?.response?.status || 0) === 404) {
@@ -502,7 +641,7 @@ export default function ContentFactoryPage() {
       setProducerSessionLoadError('暂时无法恢复这次对话。会话编号已保留，不会新建或覆盖；请重试恢复。')
     })
     return () => { cancelled = true }
-  }, [wid, producerStorageKey, producerSessionReloadNonce])
+  }, [wid, producerStorageKey, producerSessionReloadNonce, handoffSessionKey])
 
   useEffect(() => {
     if (!wid || !producerSessionKey || !producerAttachmentAnalysisPending) return undefined
@@ -512,11 +651,37 @@ export default function ContentFactoryPage() {
         const session = await fetchContentFactoryProducerSession(wid, producerSessionKey)
         if (cancelled) return
         const attachments = Array.isArray(session?.attachments) ? session.attachments : []
+        const messages = Array.isArray(session?.messages) ? session.messages : []
         setProducerAttachments(attachments)
-        if (!attachments.some((item) => ['queued', 'processing'].includes(item.analysis_status))) {
-          setNotice(attachments.some((item) => item?.analysis?.transcript_status === 'failed')
-            ? '对标视频画面已分析完成，但口播提取失败；制片助理会仅按可见画面理解，不会臆测音频。'
-            : '对标视频的关键画面和口播文案已分析完成，制片助理现在可以结合附件理解。')
+        setProducerMessages(messages)
+        setProducerPersistedMessageCount(messages.length)
+        setProducerProposal(session?.proposal || null)
+        setProducerProposalSha(session?.proposal_sha256 || '')
+        setProducerStatus(session?.status || 'idle')
+        setProducerAuthoritativeScriptId(session?.authoritative_script_message_id || null)
+        setProducerAuthoritativeScript(session?.authoritative_script || '')
+        setProducerAuthoritativeScriptVersion(session?.authoritative_script_version || null)
+        setProducerIntentSpec(session?.intent_spec || null)
+        setProducerPendingDecisionId(session?.pending_decision_id || '')
+        if (session?.selected_product_id) setProducerProductId(String(session.selected_product_id))
+        const activeReferences = attachments.filter((item) => item?.active !== false && item?.kind === 'reference_video')
+        const stillWorking = activeReferences.some((item) => (
+          ['queued', 'processing'].includes(item.analysis_status)
+          || ['waiting_analysis', 'queued', 'processing'].includes(item?.analysis?.producer_turn_status)
+        ))
+        if (!stillWorking) {
+          const failed = activeReferences.find((item) => (
+            item.analysis_status === 'failed'
+            || item?.analysis?.multimodal_status === 'failed'
+            || item?.analysis?.producer_turn_status === 'failed'
+          ))
+          if (failed) {
+            setError(failed?.analysis?.producer_turn_status === 'failed'
+              ? '视频拆解已经完成，但制片助理暂时未能回复。原请求已保留，可以直接再次发送。'
+              : '对标视频下载或多模态拆解失败。请移除后重试链接，或上传本地视频文件。')
+          } else {
+            setNotice('对标视频的完整画面、口播、钩子、节奏、叙事和转化结构已拆解，制片助理已结合分析结果回复。')
+          }
         }
       } catch (_) {
         // Keep the durable upload and retry on the next bounded polling tick.
@@ -529,14 +694,6 @@ export default function ContentFactoryPage() {
       window.clearInterval(timer)
     }
   }, [wid, producerSessionKey, producerAttachmentAnalysisPending])
-
-  useEffect(() => {
-    if (!draftStorageKey) return undefined
-    const timer = window.setTimeout(() => {
-      window.localStorage.setItem(draftStorageKey, JSON.stringify(form))
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [draftStorageKey, form])
 
   useEffect(() => {
     if (!selected) return
@@ -570,7 +727,6 @@ export default function ContentFactoryPage() {
       if (!selectedKey && items[0]) setSelectedKey(items[0].project_key)
       if (productItems[0]) {
         setSelectedProductId((current) => current || String(productItems[0].id))
-        setForm((current) => current.content_mode !== 'product' || current.product_id ? current : ({ ...current, product_id: String(productItems[0].id) }))
       }
       setError('')
     } catch (err) {
@@ -579,6 +735,18 @@ export default function ContentFactoryPage() {
   }, [wid, selectedKey, selectedProductId])
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    let cancelled = false
+    getAiVideoProviderStatus(wid).then((status) => {
+      if (cancelled) return
+      setVideoModels(Array.isArray(status?.models) ? status.models : [])
+      setVideoModelsError('')
+    }).catch(() => {
+      if (cancelled) return
+      setVideoModelsError('视频模型能力暂时加载失败，请刷新后再创建项目。')
+    })
+    return () => { cancelled = true }
+  }, [wid])
   useEffect(() => {
     const interval = selected && ['queued', 'running', 'generating_video'].includes(selected.status) ? 5000 : 15000
     const timer = window.setInterval(refresh, interval)
@@ -598,14 +766,14 @@ export default function ContentFactoryPage() {
     return true
   }
 
-  async function installBridgeAgent(event) {
+  async function installBridgeAgent(event, requestedDevice = null) {
     event?.preventDefault?.()
     event?.stopPropagation?.()
     setBridgeBusy(true); setBridgeMessage('正在生成当前用户和设备专用的 Windows 浏览器桥...'); setError('')
     try {
       const blob = await downloadContentFactoryBridgeAgent(wid, {
-        deviceId: getBridgeDeviceId(wid),
-        deviceName: bridgeForm.device_name || navigator.platform || 'Windows device',
+        deviceId: requestedDevice?.device_id || getBridgeDeviceId(wid),
+        deviceName: requestedDevice?.device_name || bridgeForm.device_name || navigator.platform || 'Windows device',
       })
       if (!downloadAgent(blob)) throw new Error('Windows 浏览器桥生成失败，请刷新后重试。')
       setBridgeMessage('已下载 MYUPONA-HermesBridge.exe。只需运行一次；以后它会自动启动，并按项目动态创建或回收独立 slot。')
@@ -656,19 +824,6 @@ export default function ContentFactoryPage() {
 
   async function resetProducerConversation() {
     if (producerBusy || producerUploadBusy) return
-    if (producerAttachments.length && producerSessionKey && producerStatus !== 'created') {
-      setProducerUploadBusy(true); setError('')
-      try {
-        await Promise.all(producerAttachments.map((attachment) => (
-          deleteContentFactoryProducerAttachment(wid, producerSessionKey, attachment.attachment_key)
-        )))
-      } catch (err) {
-        setError(err?.message || '旧会话附件清理失败，请重试。')
-        setProducerUploadBusy(false)
-        return
-      }
-      setProducerUploadBusy(false)
-    }
     const nextKey = newProducerSessionKey()
     setProducerSessionKey(nextKey)
     setProducerInput('')
@@ -681,10 +836,57 @@ export default function ContentFactoryPage() {
     setProducerProposalSha('')
     setProducerStatus('idle')
     setProducerAuthoritativeScriptId(null)
+    setProducerAuthoritativeScript('')
+    setProducerAuthoritativeScriptVersion(null)
+    setProducerIntentSpec(null)
+    setProducerPendingDecisionId('')
     setProducerProgress('')
+    setProducerBriefOpen(false)
+    setWorkspaceMode('conversation')
     if (producerStorageKey) {
       try { window.localStorage.setItem(producerStorageKey, nextKey) } catch (_) { /* ignore */ }
     }
+    if (handoffSessionKey) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('producer_session')
+      nextParams.delete('source')
+      setSearchParams(nextParams, { replace: true })
+    }
+  }
+
+  function continueProducerConversationForProject(project) {
+    const sessionKey = String(project?.config_json?.producer_intake?.session_key || '').trim()
+    if (!sessionKey || producerBusy || producerUploadBusy) return
+    setProducerSessionKey(sessionKey)
+    setProducerInput('')
+    setProducerMessages([])
+    setProducerPersistedMessageCount(0)
+    setProducerAttachments([])
+    setProducerProposal(null)
+    setProducerProposalSha('')
+    setProducerStatus('idle')
+    setProducerIntentSpec(null)
+    setProducerPendingDecisionId('')
+    setProducerSessionLoadError('')
+    if (producerStorageKey) {
+      try { window.localStorage.setItem(producerStorageKey, sessionKey) } catch (_) { /* ignore */ }
+    }
+    if (handoffSessionKey) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('producer_session')
+      nextParams.delete('source')
+      setSearchParams(nextParams, { replace: true })
+    }
+    setProducerSessionReloadNonce((value) => value + 1)
+    setNotice(`已恢复项目“${project.title}”的制片对话。可以追加视频、修改要求或制作新版本；原项目成果不会被覆盖。`)
+    focusProducerComposer()
+  }
+
+  function handleProducerComposerKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return
+    event.preventDefault()
+    if (producerBusy || producerUploadBusy || producerAttachmentAnalysisPending || !producerInput.trim()) return
+    event.currentTarget.form?.requestSubmit?.()
   }
 
   function changeProducerProduct(value) {
@@ -695,6 +897,8 @@ export default function ContentFactoryPage() {
       setProducerProposal(null)
       setProducerProposalSha('')
       setProducerStatus('idle')
+      setProducerIntentSpec(null)
+      setProducerPendingDecisionId('')
       setProducerMessages((current) => [...current, {
         role: 'assistant',
         content: '商品选择已变化。请补充一句新要求，我会按当前选择重新整理方案。',
@@ -731,6 +935,11 @@ export default function ContentFactoryPage() {
       setProducerProposal(null)
       setProducerProposalSha('')
       setProducerStatus('idle')
+      setProducerIntentSpec(null)
+      setProducerPendingDecisionId('')
+      if (assetKind === 'supporting_material') {
+        setProducerInput((current) => current.trim() ? current : '请阅读并理解我刚上传的资料，完整提取其中的锁定要求、逐条交付内容和验收标准，再整理成可确认的制作方案。')
+      }
       if (uploaded.some((item) => ['queued', 'processing'].includes(item.analysis_status))) {
         setNotice('对标视频已保存，正在提取关键画面和口播文案。分析完成后制片助理才会使用它。')
       } else {
@@ -764,10 +973,62 @@ export default function ContentFactoryPage() {
     event?.preventDefault?.()
     const message = producerInput.trim()
     if (!message || producerBusy || producerUploadBusy || producerAttachmentAnalysisPending) return
+    if (
+      producerStatus === 'proposal_ready'
+      && producerProposalSha
+      && producerPendingDecisionId
+      && isProducerConfirmationMessage(message)
+    ) {
+      setProducerInput('')
+      setProducerMessages((current) => [...current, { role: 'user', content: message }])
+      await confirmProducerProject({ confirmationMessage: message })
+      return
+    }
     const sessionKey = producerSessionKey || newProducerSessionKey()
     setProducerSessionKey(sessionKey)
     if (producerStorageKey) {
       try { window.localStorage.setItem(producerStorageKey, sessionKey) } catch (_) { /* ignore */ }
+    }
+    const benchmarkUrl = benchmarkVideoUrlFromText(message)
+    if (benchmarkUrl) {
+      setProducerUploadBusy(true)
+      setProducerProgress('正在安全下载公开对标视频，随后会提取口播并进行完整多模态拆解…')
+      setError('')
+      try {
+        const attachment = await addContentFactoryProducerReferenceLink(
+          wid,
+          sessionKey,
+          {
+            url: benchmarkUrl,
+            contextMessage: message,
+            productId: producerProductId ? Number(producerProductId) : null,
+          },
+        )
+        setProducerAttachments((current) => {
+          const next = current.map((item) => item.kind === 'reference_video'
+            ? { ...item, active: false }
+            : item)
+          const existingIndex = next.findIndex((item) => item.attachment_key === attachment.attachment_key)
+          if (existingIndex >= 0) next[existingIndex] = attachment
+          else next.push(attachment)
+          return next
+        })
+        setProducerMessages((current) => [...current, { role: 'user', content: message }])
+        setProducerInput('')
+        setProducerProposal(null)
+        setProducerProposalSha('')
+        setProducerStatus('idle')
+        setProducerIntentSpec(null)
+        setProducerPendingDecisionId('')
+        setNotice('已识别爆款视频链接。系统会在后台下载并做逐段多模态拆解，完成后制片助理自动继续回复，不需要重复发送。')
+        return
+      } catch (err) {
+        setError(producerErrorMessage(err))
+        return
+      } finally {
+        setProducerProgress('')
+        setProducerUploadBusy(false)
+      }
     }
     const startedAt = Date.now()
     const baselineMessageCount = producerPersistedMessageCount
@@ -797,7 +1058,41 @@ export default function ContentFactoryPage() {
       setProducerProposalSha(result.proposal_sha256 || '')
       setProducerStatus(result.status || 'needs_input')
       setProducerAuthoritativeScriptId(result.authoritative_script_message_id || null)
+      setProducerAuthoritativeScript(result.authoritative_script || '')
+      setProducerAuthoritativeScriptVersion(result.authoritative_script_version || null)
+      setProducerIntentSpec(result.intent_spec || null)
+      setProducerPendingDecisionId(result.pending_decision_id || '')
       if (result.selected_product_id) setProducerProductId(String(result.selected_product_id))
+      if (
+        result.status === 'proposal_ready'
+        && result.proposal_sha256
+        && result.pending_decision_id
+        && isProducerExecutionMessage(message)
+      ) {
+        try {
+          const project = await confirmContentFactoryProducerProject(
+            wid,
+            result.session_key || sessionKey,
+            result.proposal_sha256,
+            result.pending_decision_id,
+          )
+          setProducerStatus('created')
+          setProducerPendingDecisionId('')
+          setProducerMessages((current) => [...current, {
+            role: 'assistant',
+            content: `已识别你的明确执行要求，项目“${project.title}”已创建并开始执行。后续可以继续在这里追加或修改。`,
+          }])
+          setSelectedKey(project.project_key)
+          await refresh()
+          setSelectedKey(project.project_key)
+          setWorkspaceMode('production')
+        } catch (confirmError) {
+          // The reviewed proposal remains durable and visible. A transient
+          // creation failure must never erase or resend the successful model
+          // turn; the user can use the explicit confirmation button safely.
+          setError(confirmError?.message || '方案已整理完成，但项目创建暂时失败，请点击确认按钮重试。')
+        }
+      }
     } catch (err) {
       let recovered = null
       if (producerRequestMayStillBeRunning(err)) {
@@ -813,9 +1108,40 @@ export default function ContentFactoryPage() {
         setProducerProposalSha(recovered?.proposal_sha256 || '')
         setProducerStatus(recovered?.status || 'needs_input')
         setProducerAuthoritativeScriptId(recovered?.authoritative_script_message_id || null)
+        setProducerAuthoritativeScript(recovered?.authoritative_script || '')
+        setProducerAuthoritativeScriptVersion(recovered?.authoritative_script_version || null)
+        setProducerIntentSpec(recovered?.intent_spec || null)
+        setProducerPendingDecisionId(recovered?.pending_decision_id || '')
         setProducerRetryTurnId('')
         setProducerRetryMessage('')
         if (recovered?.selected_product_id) setProducerProductId(String(recovered.selected_product_id))
+        if (
+          recovered?.status === 'proposal_ready'
+          && recovered?.proposal_sha256
+          && recovered?.pending_decision_id
+          && isProducerExecutionMessage(message)
+        ) {
+          try {
+            const project = await confirmContentFactoryProducerProject(
+              wid,
+              recovered.session_key || sessionKey,
+              recovered.proposal_sha256,
+              recovered.pending_decision_id,
+            )
+            setProducerStatus('created')
+            setProducerPendingDecisionId('')
+            setProducerMessages([...messages, {
+              role: 'assistant',
+              content: `已同步制片回复，并识别你的明确执行要求；项目“${project.title}”已创建并开始执行。后续可以继续在这里追加或修改。`,
+            }])
+            setSelectedKey(project.project_key)
+            await refresh()
+            setSelectedKey(project.project_key)
+            setWorkspaceMode('production')
+          } catch (confirmError) {
+            setError(confirmError?.message || '方案已同步完成，但项目创建暂时失败，请点击确认按钮重试。')
+          }
+        }
       } else {
         setProducerMessages((current) => {
           const last = current[current.length - 1]
@@ -833,99 +1159,31 @@ export default function ContentFactoryPage() {
     }
   }
 
-  async function confirmProducerProject() {
-    if (!producerSessionKey || !producerProposalSha || producerStatus !== 'proposal_ready') return
+  async function confirmProducerProject({ confirmationMessage = '' } = {}) {
+    if (!producerSessionKey || !producerProposalSha || !producerPendingDecisionId || producerStatus !== 'proposal_ready') return
     setProducerBusy(true); setError('')
     try {
-      const project = await confirmContentFactoryProducerProject(wid, producerSessionKey, producerProposalSha)
+      const project = await confirmContentFactoryProducerProject(
+        wid,
+        producerSessionKey,
+        producerProposalSha,
+        producerPendingDecisionId,
+      )
       setProducerStatus('created')
+      setProducerPendingDecisionId('')
       setProducerMessages((current) => [...current, {
         role: 'assistant',
-        content: `项目“${project.title}”已创建并开始执行。后续可以直接在右侧查看进度。`,
+        content: `${confirmationMessage ? '已按你的确认执行。' : ''}项目“${project.title}”已创建并开始执行。后续可以直接在右侧查看进度。`,
       }])
       setSelectedKey(project.project_key)
       await refresh()
       setSelectedKey(project.project_key)
+      setWorkspaceMode('production')
     } catch (err) {
       setError(err?.message || '项目创建失败。')
     } finally {
       setProducerBusy(false)
     }
-  }
-
-  async function createProject(event) {
-    event.preventDefault()
-    if (form.content_mode === 'product' && !form.product_id) {
-      setError('请先在商品库选择一个商品。')
-      return
-    }
-    if (form.video_duration_min_seconds > form.video_duration_max_seconds) {
-      setError('最短时长不能大于最长时长。')
-      return
-    }
-    if (form.video_model === 'omni_flash' && !Array.from({ length: 12 }, (_, index) => (index + 1) * 10).some((value) => value >= form.video_duration_min_seconds && value <= form.video_duration_max_seconds)) {
-      setError('Omni 时长范围需包含一个 10 的倍数，例如 10-10 或 15-25。')
-      return
-    }
-    const characterGroups = pendingCharacters.filter((character) => character.files.length)
-    const characterFileCount = characterGroups.reduce((total, character) => total + character.files.length, 0)
-    if (characterFileCount > 16) {
-      setError('每个项目最多上传 16 张人物锚点图。')
-      return
-    }
-    setBusy(true); setError('')
-    try {
-      const benchmarkFiles = pendingBenchmarkVideoFiles
-      const characterFiles = characterGroups.flatMap((character) => character.files)
-      const allowReferenceVideo = Boolean(form.allow_reference_video || benchmarkFiles.length)
-      const delayAutoRunForCharacterRefs = Boolean(form.auto_run && characterFiles.length && !allowReferenceVideo)
-      const payload = {
-        ...form,
-        allow_reference_video: allowReferenceVideo,
-        auto_run: delayAutoRunForCharacterRefs ? false : form.auto_run,
-        preferred_browser_device_id: bridge?.selection_required ? null : (selectedBridgeDeviceId || null),
-        product_id: form.content_mode === 'product' ? Number(form.product_id) : null,
-        brand_name: form.content_mode === 'product' ? selectedProduct?.brand_name : null,
-        product_name: form.content_mode === 'product' ? selectedProduct?.product_name : null,
-        market: selectedProduct?.market || 'US',
-      }
-      const project = await createContentFactoryProject(wid, payload)
-      for (const character of characterGroups) {
-        await uploadContentFactoryAssets(
-          wid,
-          project.project_key,
-          character.files,
-          'character_reference',
-          {
-            character_key: character.key,
-            character_name: character.name,
-            character_description: character.description,
-          },
-        )
-      }
-      if (allowReferenceVideo && benchmarkFiles.length) {
-        await uploadContentFactoryAssets(wid, project.project_key, benchmarkFiles, 'reference_video')
-      }
-      if (delayAutoRunForCharacterRefs) {
-        await updateContentFactoryProject(wid, project.project_key, { ...payload, auto_run: true })
-        await runContentFactoryStage(wid, project.project_key, {
-          instruction: 'Use the uploaded character reference images for visual preview, then continue unattended.',
-          stage: project.current_stage,
-          runMode: 'continue',
-        })
-      }
-      setForm({
-        ...EMPTY_PROJECT_FORM,
-        content_mode: form.content_mode,
-        product_id: form.content_mode === 'product' ? form.product_id : '',
-      })
-      setPendingBenchmarkVideoFiles([])
-      setPendingCharacters([])
-      if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
-      setSelectedKey(project.project_key)
-      setTab('factory')
-      await refresh()
-    } catch (err) { setError(err?.message || '项目创建失败。') } finally { setBusy(false) }
   }
 
   async function createProduct(event) {
@@ -935,7 +1193,6 @@ export default function ContentFactoryPage() {
       const product = await createContentFactoryProduct(wid, productForm)
       setProductForm(emptyProductForm)
       setSelectedProductId(String(product.id))
-      setForm((current) => ({ ...current, content_mode: 'product', product_id: String(product.id) }))
       await refresh()
     } catch (err) { setError(err?.message || '商品创建失败。') } finally { setBusy(false) }
   }
@@ -954,7 +1211,6 @@ export default function ContentFactoryPage() {
     try {
       const product = await updateContentFactoryProduct(wid, productId, productEditForm)
       setSelectedProductId(String(product.id))
-      setForm((current) => ({ ...current, content_mode: 'product', product_id: String(product.id) }))
       await refresh()
     } catch (err) { setError(err?.message || '商品更新失败。') }
     finally { setBusy(false) }
@@ -979,7 +1235,6 @@ export default function ContentFactoryPage() {
       await deleteContentFactoryProduct(wid, product.id)
       if (String(selectedProductId) === String(product.id)) {
         setSelectedProductId('')
-        setForm((current) => ({ ...current, product_id: '' }))
       }
       await refresh()
     } catch (err) { setError(err?.message || '商品删除失败。') }
@@ -1118,19 +1373,42 @@ export default function ContentFactoryPage() {
   const deliverableCompleteCount = Number(deliverables.complete_count || 0)
   const projectComposedVideoCount = Math.max(composedVideoCount, deliverableCompleteCount)
   const hasDeliverableFiles = deliverableItems.some((item) => item.video || item.guidance)
+  const selectedIntentManifest = selected?.config_json?.producer_intent_spec?.intent_manifest || null
+  const recoveryDecision = videoState.last_recovery_supervisor_decision || null
+  const directorApproved = Object.keys(videoState.approved_director_artifacts_by_variant || {}).length > 0
+  const productionPlanApproved = Object.keys(videoState.approved_production_plans_by_variant || {}).length > 0
+  const finalIntentEvidence = {}
+  for (const asset of (selected?.assets || [])) {
+    if (asset?.kind !== 'video') continue
+    const review = asset?.meta_json?.intent_fidelity || asset?.meta_json?.final_quality?.intent_fidelity || {}
+    for (const [requirementId, evidence] of Object.entries(review.requirement_evidence || {})) {
+      finalIntentEvidence[requirementId] = evidence
+    }
+  }
 
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+    <div className="content-factory-page">
+      <div className="content-factory-page__header">
         <div>
-          <h2 style={{ margin: 0 }}>Content Factory</h2>
-          <p className="muted" style={{ margin: '6px 0 0' }}>公司商品库、创意、视觉、视频与投放流水线</p>
+          <h2>内容工厂</h2>
+          <p className="muted">从需求沟通到成片交付的一站式 AI 制作空间</p>
         </div>
-        <div style={{ ...bridgeTone(bridge), padding: '7px 11px', borderRadius: 6, fontWeight: 600, maxWidth: 620 }}>
+        <div className="content-factory-system-pill" style={bridgeTone(bridge)}>
+          <span className="content-factory-system-pill__dot" aria-hidden="true" />
           {bridgeStatusText(bridge)}
         </div>
       </div>
-      <div className="card" style={{ padding: 12, display: 'grid', gap: 8 }}>
+      <details className="card content-factory-system-drawer">
+        <summary>
+          <span>
+            <strong>浏览器与设备</strong>
+            <small>API 优先；只有需要浏览器兜底或维护登录时才使用 Slot</small>
+          </span>
+          <span className="content-factory-system-drawer__summary-status">
+            {bridge.active_slots || 0}/{bridge.capacity || 1} 使用中
+          </span>
+        </summary>
+        <div className="content-factory-system-drawer__body">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
             <strong>当前设备 Slot 池</strong>
@@ -1170,6 +1448,8 @@ export default function ContentFactoryPage() {
             {bridge.devices.map((device) => {
               const activeCount = Array.isArray(device.active_project_ids) ? device.active_project_ids.length : 0
               const isCurrentDevice = String(device.device_id) === selectedBridgeDeviceId
+              const versionMismatch = Boolean(device.agent_update_required)
+              const updateFailed = device.agent_update_state === 'failed'
               return (
                 <div key={device.device_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, background: isCurrentDevice ? '#eef5ff' : '#fff', flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 220 }}>
@@ -1177,6 +1457,16 @@ export default function ContentFactoryPage() {
                     <span style={{ marginLeft: 8, fontSize: 12, color: device.online ? '#167a3f' : '#6b7280' }}>{device.online ? '在线' : '离线'}</span>
                     {device.connected ? <span style={{ marginLeft: 6, fontSize: 12, color: '#167a3f' }}>CDP 已连接</span> : null}
                     <div className="muted" title={device.device_id} style={{ marginTop: 3, fontSize: 11 }}>{device.device_id} · {device.slot_count || 0} 个 slot{activeCount ? ` · ${activeCount} 个项目运行中` : ''}</div>
+                    <div className="muted" style={{ marginTop: 3, fontSize: 11 }}>
+                      客户端 {device.agent_version || '未知'} · 服务器 {device.server_agent_version || bridge.server_agent_version || '未知'}
+                    </div>
+                    {versionMismatch ? (
+                      <div style={{ marginTop: 4, fontSize: 12, color: updateFailed ? '#b42318' : '#9a5b00' }}>
+                        {updateFailed
+                          ? `自动更新失败${device.agent_update_error ? `：${device.agent_update_error}` : ''}`
+                          : (device.online ? '版本不一致，客户端正在自动更新。' : '版本不一致且客户端离线，请手动更新。')}
+                      </div>
+                    ) : null}
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     {isCurrentDevice ? <span style={{ ...statusTone('running'), padding: '5px 8px', borderRadius: 999, fontSize: 12 }}>当前设备</span> : null}
@@ -1189,6 +1479,11 @@ export default function ContentFactoryPage() {
                     {device.bound ? (
                       <button className="btn secondary" type="button" onClick={() => manageBridgeDevice('unbind', device.device_id)} disabled={bridgeBusy || activeCount > 0}>解绑</button>
                     ) : null}
+                    {versionMismatch ? (
+                      <button className="btn" type="button" onClick={(event) => installBridgeAgent(event, device)} disabled={bridgeBusy}>
+                        下载最新版 EXE
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )
@@ -1196,7 +1491,6 @@ export default function ContentFactoryPage() {
           </div>
         ) : null}
         <div className="muted">Slot 只属于当前用户的当前设备，不会跨电脑继承。每个并行项目固定占用一个已登录 Slot；请先在对应 Chrome 窗口手动登录 ChatGPT。</div>
-      </div>
       {currentDeviceSlots.length ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
           {currentDeviceSlots.map((slot) => {
@@ -1239,7 +1533,9 @@ export default function ContentFactoryPage() {
       ) : (
         <div className="muted">当前设备还没有 Slot。点击“新增登录 Slot”，然后在自动打开的 Chrome 窗口登录 ChatGPT。</div>
       )}
-      <div style={{ display: 'flex', gap: 8 }}>
+        </div>
+      </details>
+      <div className="content-factory-tabs" role="tablist" aria-label="内容工厂主导航">
         <button className={tab === 'factory' ? 'btn' : 'btn secondary'} type="button" onClick={() => setTab('factory')}>内容工厂</button>
         <button className={tab === 'products' ? 'btn' : 'btn secondary'} type="button" onClick={() => setTab('products')}>商品库</button>
       </div>
@@ -1270,7 +1566,7 @@ export default function ContentFactoryPage() {
                 return (
                   <section key={product.id} style={{ border: active ? '1px solid #3b82f6' : '1px solid var(--border)', borderRadius: 8, padding: 12, background: active ? '#f7fbff' : '#fff' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => { setSelectedProductId(String(product.id)); setForm((current) => ({ ...current, content_mode: 'product', product_id: String(product.id) })) }} style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                      <button type="button" onClick={() => setSelectedProductId(String(product.id))} style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
                         <strong>{product.brand_name} · {product.product_name}</strong>
                         <div className="muted" style={{ marginTop: 4 }}>{product.market} · 资料 {product.assets?.length || 0} 个</div>
                       </button>
@@ -1297,7 +1593,7 @@ export default function ContentFactoryPage() {
                       <button className="btn" type="button" onClick={() => generateProductFacts(product.id)} disabled={busy || !product.assets?.length}>
                         上传完毕，生成产品事实
                       </button>
-                      <button className="btn secondary" type="button" onClick={() => { setSelectedProductId(String(product.id)); changeProducerProduct(String(product.id)); setForm((current) => ({ ...current, content_mode: 'product', product_id: String(product.id) })); setCreationMode('assistant'); setTab('factory') }}>
+                      <button className="btn secondary" type="button" onClick={() => { setSelectedProductId(String(product.id)); changeProducerProduct(String(product.id)); setTab('factory') }}>
                         用此商品创建内容
                       </button>
                     </div>
@@ -1327,19 +1623,65 @@ export default function ContentFactoryPage() {
           </main>
         </div>
       ) : (
-        <div className="content-factory-workspace-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 420px) minmax(0, 1fr)', gap: 14 }}>
-          <aside className="card" style={{ padding: 14, alignSelf: 'start' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
-              <button className={creationMode === 'assistant' ? 'btn' : 'btn secondary'} type="button" onClick={() => setCreationMode('assistant')}>AI制片助理</button>
-              <button className={creationMode === 'advanced' ? 'btn' : 'btn secondary'} type="button" onClick={() => setCreationMode('advanced')}>专业参数</button>
+        <div className={`content-factory-workspace-layout is-${workspaceMode}-mode`}>
+          <div className="content-factory-workspace-toolbar" role="tablist" aria-label="内容工作台模式">
+            <div>
+              <strong>{workspaceMode === 'conversation' ? '需求沟通工作台' : '项目执行工作台'}</strong>
+              <span>{workspaceMode === 'conversation' ? '对话、素材和方案确认在这里完成' : '跟踪阶段、成片与交付状态'}</span>
             </div>
-            {creationMode === 'assistant' ? (
-              <section style={{ display: 'grid', gap: 10 }}>
-                <div>
-                  <strong>和 AI 制片助理聊聊你想做什么视频</strong>
-                  <div className="muted" style={{ marginTop: 4, lineHeight: 1.5 }}>
-                    像聊天一样描述目标即可。制片助理会追问必要信息，推荐时长、数量和制作方案，经你确认后再创建项目。
+            <div className="content-factory-workspace-switch" role="group" aria-label="切换工作台">
+              <button
+                className={workspaceMode === 'conversation' ? 'is-active' : ''}
+                type="button"
+                onClick={() => { setWorkspaceMode('conversation'); focusProducerComposer() }}
+              >
+                与制片助理沟通
+              </button>
+              <button
+                className={workspaceMode === 'production' ? 'is-active' : ''}
+                type="button"
+                onClick={() => setWorkspaceMode('production')}
+                disabled={!selected}
+              >
+                查看项目执行
+              </button>
+            </div>
+          </div>
+          <nav className="card content-factory-project-rail" aria-label="内容项目">
+            <div className="content-factory-project-rail__header">
+              <div>
+                <strong>项目</strong>
+                <span>{projects.length}</span>
+              </div>
+              <button className="content-factory-icon-button" type="button" onClick={refresh} aria-label="刷新项目" title="刷新项目">↻</button>
+            </div>
+            <div className="content-factory-project-list">
+              {projects.map((project) => (
+                <button
+                  key={project.project_key}
+                  type="button"
+                  className={project.project_key === selected?.project_key ? 'content-factory-project-item is-active' : 'content-factory-project-item'}
+                  onClick={() => { setSelectedKey(project.project_key); setWorkspaceMode('production') }}
+                >
+                  <strong>{project.title}</strong>
+                  <span>{projectStatusText(project)}</span>
+                </button>
+              ))}
+              {!projects.length ? <span className="muted content-factory-empty-projects">暂无项目，先与制片助理沟通。</span> : null}
+            </div>
+          </nav>
+          <aside ref={producerPanelRef} className="card content-factory-producer-panel">
+            <section className="content-factory-producer-shell">
+                <div className="content-factory-producer-header">
+                  <div>
+                    <strong>AI 制片助理</strong>
+                    <div className="muted">
+                      说清目标，其余交给助理整理
+                    </div>
                   </div>
+                  <span className={producerStatus === 'proposal_ready' ? 'content-factory-producer-status is-ready' : 'content-factory-producer-status'}>
+                    {producerStatus === 'proposal_ready' ? '等待确认' : producerStatus === 'created' ? '已创建 · 可继续沟通' : '需求沟通中'}
+                  </span>
                 </div>
                 {producerSessionLoadError ? (
                   <div style={{ padding: 10, border: '1px solid #e0a000', borderRadius: 8, background: '#fff8e6', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -1349,22 +1691,27 @@ export default function ContentFactoryPage() {
                     </button>
                   </div>
                 ) : null}
-                <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                  <span>关联商品（可选）</span>
-                  <select className="input" value={producerProductId} onChange={(event) => changeProducerProduct(event.target.value)} disabled={producerBusy || producerStatus === 'created'}>
-                    <option value="">不绑定商品</option>
-                    {products.map((product) => <option key={product.id} value={product.id}>{product.brand_name} · {product.product_name}</option>)}
-                  </select>
-                </label>
-                <div style={{ display: 'grid', gap: 7 }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                <details className="content-factory-materials" defaultOpen={!producerMessages.length && !producerAttachments.length}>
+                  <summary>
+                    <span>项目素材与商品</span>
+                    <span>{producerAttachments.length ? `${producerAttachments.length} 个附件` : producerProductId ? '已关联商品' : '可选'}</span>
+                  </summary>
+                  <div className="content-factory-materials__body">
+                    <label className="content-factory-field">
+                      <span>关联商品（可选）</span>
+                      <select className="input" value={producerProductId} onChange={(event) => changeProducerProduct(event.target.value)} disabled={producerBusy}>
+                        <option value="">不绑定商品</option>
+                        {products.map((product) => <option key={product.id} value={product.id}>{product.brand_name} · {product.product_name}</option>)}
+                      </select>
+                    </label>
+                  <div className="content-factory-upload-actions">
                     <label className="btn secondary" style={{ width: 'auto', cursor: producerBusy || producerUploadBusy ? 'not-allowed' : 'pointer', fontSize: 12 }}>
                       + 上传对标视频
                       <input
                         type="file"
                         accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
                         hidden
-                        disabled={producerBusy || producerUploadBusy || producerStatus === 'created'}
+                        disabled={producerBusy || producerUploadBusy}
                         onChange={(event) => uploadProducerAttachments(event, 'reference_video')}
                       />
                     </label>
@@ -1375,19 +1722,30 @@ export default function ContentFactoryPage() {
                         accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                         multiple
                         hidden
-                        disabled={producerBusy || producerUploadBusy || producerStatus === 'created'}
+                        disabled={producerBusy || producerUploadBusy}
                         onChange={(event) => uploadProducerAttachments(event, 'character_reference')}
                       />
                     </label>
+                    <label className="btn secondary" style={{ width: 'auto', cursor: producerBusy || producerUploadBusy ? 'not-allowed' : 'pointer', fontSize: 12 }}>
+                      + 上传文档 / 图片
+                      <input
+                        type="file"
+                        accept=".docx,.pdf,.txt,.md,.csv,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                        multiple
+                        hidden
+                        disabled={producerBusy || producerUploadBusy}
+                        onChange={(event) => uploadProducerAttachments(event, 'supporting_material')}
+                      />
+                    </label>
                   </div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    对标视频最多 1 个、200 MB；人物图最多 16 张、每张 15 MB。一次多选的人物图会作为同一人物的一组参考。
+                  <div className="muted content-factory-materials__help">
+                    支持爆款视频链接、本地视频、人物参考图和项目文档。视频将在后台完成口播与多模态拆解。
                   </div>
-                  {producerUploadBusy ? <div className="muted" style={{ fontSize: 12 }}>正在校验附件，并为对标视频提取关键画面与口播文案…</div> : null}
+                  {producerUploadBusy ? <div className="muted" style={{ fontSize: 12 }}>正在接收素材；对标视频会继续在后台下载、转写并进行多模态拆解…</div> : null}
                   {producerAttachments.length ? (
                     <div style={{ display: 'grid', gap: 6 }}>
                       {producerAttachments.map((attachment) => (
-                        <div key={attachment.attachment_key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid var(--border)', borderRadius: 8, background: '#fff', fontSize: 12 }}>
+                        <div key={attachment.attachment_key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid var(--border)', borderRadius: 8, background: attachment.active === false ? '#f5f6f8' : '#fff', opacity: attachment.active === false ? 0.72 : 1, fontSize: 12 }}>
                           <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={attachment.original_name}>
                             {attachmentKindLabel(attachment.kind)} · {attachment.original_name}
                           </span>
@@ -1397,25 +1755,26 @@ export default function ContentFactoryPage() {
                             className="btn secondary"
                             type="button"
                             style={{ width: 'auto', minHeight: 28, padding: '3px 8px', fontSize: 12 }}
-                            disabled={producerBusy || producerUploadBusy || producerStatus === 'created'}
+                            disabled={producerBusy || producerUploadBusy || attachment.locked}
                             onClick={() => removeProducerAttachment(attachment.attachment_key)}
                           >
-                            移除
+                            {attachment.locked ? '已用于项目' : '移除'}
                           </button>
                         </div>
                       ))}
                     </div>
                   ) : null}
-                </div>
-                <div style={{ maxHeight: 300, overflowY: 'auto', display: 'grid', gap: 8, padding: producerMessages.length ? 8 : 0, border: producerMessages.length ? '1px solid var(--border)' : 'none', borderRadius: 8, background: '#f8fafc' }}>
+                  </div>
+                </details>
+                <div ref={producerMessagesRef} className={producerMessages.length ? 'content-factory-conversation has-messages' : 'content-factory-conversation'}>
                   {producerAuthoritativeScriptId ? (
                     <div style={{ padding: '6px 8px', borderRadius: 7, background: '#e9f8ef', color: '#216e3a', fontSize: 12 }}>
-                      已识别并锁定你提供的完整文案；后续只改你明确要求修改的部分。
+                      已识别文案来源{producerAuthoritativeScriptVersion ? ` · 当前版本 v${producerAuthoritativeScriptVersion}` : ''}。最终以“需求理解”中的逐条交付物为准，不会把多条脚本误当成一条。
                     </div>
                   ) : null}
                   {!producerMessages.length ? (
                     <div style={{ padding: 10, borderRadius: 8, background: '#eef5ff', color: '#244a7c', fontSize: 13, lineHeight: 1.6 }}>
-                      例如：“给已选商品做3条美国 TikTok 强转化动画，开头抓人；价格和 CTA 以我随后提供的原文为准。”其余参数我来判断。
+                      例如：“分析并复刻这个爆款的前3秒钩子、节奏和转化结构，但人物、场景与文案必须原创：https://…” 制片助理会先拆解，再与你确认怎么迁移到本项目。
                     </div>
                   ) : null}
                   {producerMessages.map((message, index) => (
@@ -1426,7 +1785,7 @@ export default function ContentFactoryPage() {
                   {producerBusy ? <div className="muted" style={{ padding: 6 }}>{producerProgress || '制片助理正在整理方案…'}</div> : null}
                 </div>
                 {!producerMessages.length ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }} aria-label="常用视频需求">
+                  <div className="content-factory-quick-starts" style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }} aria-label="常用视频需求">
                     {PRODUCER_QUICK_STARTS.map((item) => (
                       <button
                         key={item.label}
@@ -1441,185 +1800,185 @@ export default function ContentFactoryPage() {
                     ))}
                   </div>
                 ) : null}
+                {(producerIntentSpec || producerProposal || producerAuthoritativeScript) ? (
+                  <details
+                    className="content-factory-brief"
+                    open={producerBriefOpen}
+                    onToggle={(event) => setProducerBriefOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      <span>{producerProposal ? '需求确认与执行方案' : '需求理解'}</span>
+                      <span>{producerProposal ? `${producerProposal.video_count} 条 · 待确认` : '查看详情'}</span>
+                    </summary>
+                    <div className="content-factory-brief__body">
+                {producerIntentSpec ? (
+                  <div style={{ padding: 12, border: '1px solid #78aaf0', borderRadius: 10, background: '#f7faff', display: 'grid', gap: 9, fontSize: 13 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <strong>需求理解</strong>
+                      <span style={{ padding: '3px 7px', borderRadius: 999, background: '#e7f0ff', color: '#285d9f', fontSize: 11 }}>
+                        {producerDeliveryModeLabel(producerIntentSpec.delivery_mode)}
+                      </span>
+                    </div>
+                    <div>{producerIntentSpec.user_goal}</div>
+                    {producerIntentSpec.intent_manifest ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <strong style={{ fontSize: 12 }}>可追踪创意要求</strong>
+                          <span className="muted" style={{ fontSize: 11 }}>
+                            v{producerIntentSpec.intent_manifest.schema_version} · {producerIntentSpec.intent_manifest.requirements?.length || 0} 项
+                          </span>
+                        </div>
+                        <div>{producerIntentSpec.intent_manifest.objective}</div>
+                        {(producerIntentSpec.intent_manifest.requirements || []).map((item) => (
+                          <details key={item.requirement_id} open={item.priority === 'critical'} style={{ border: '1px solid #d6e3f6', borderRadius: 8, background: '#fff', padding: '8px 9px' }}>
+                            <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600 }}>
+                              <span style={{ color: '#285d9f' }}>{item.requirement_id}</span>
+                              <span style={{ flex: 1 }}>{item.intent}</span>
+                              <span style={{ padding: '2px 6px', borderRadius: 999, fontSize: 10, background: item.priority === 'critical' ? '#ffe9e7' : item.priority === 'high' ? '#fff3d9' : '#edf3fb', color: item.priority === 'critical' ? '#a63128' : '#5b6370' }}>
+                                {{ critical: '关键', high: '重要', normal: '偏好' }[item.priority] || item.priority}
+                              </span>
+                            </summary>
+                            <div style={{ marginTop: 8, display: 'grid', gap: 6, lineHeight: 1.55 }}>
+                              <div><span className="muted">用户原话：</span>“{item.evidence_quote}”</div>
+                              <div><span className="muted">执行理解：</span>{item.interpretation}</div>
+                              <div>
+                                <span className="muted">成片证据：</span>
+                                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                                  {(item.observable_checks || []).map((check) => <li key={check}>{check}</li>)}
+                                </ul>
+                              </div>
+                              {item.creative_freedom?.length ? <div><span className="muted">编导可自由创作：</span>{item.creative_freedom.join('；')}</div> : null}
+                              {item.must_not_reuse?.length ? <div><span className="muted">必须重新发明：</span>{item.must_not_reuse.join('；')}</div> : null}
+                              {item.deliverable_ordinals?.length ? <div><span className="muted">适用视频：</span>{item.deliverable_ordinals.join('、')}</div> : null}
+                              {item.scope === 'time_window' ? <div><span className="muted">时间窗口：</span>{item.start_seconds}-{item.end_seconds} 秒</div> : null}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : null}
+                    {producerIntentSpec.deliverables?.length ? (
+                      <div style={{ display: 'grid', gap: 7 }}>
+                        {producerIntentSpec.deliverables.map((item) => (
+                          <details key={item.ordinal} style={{ border: '1px solid #dbe7f7', borderRadius: 8, background: '#fff', padding: '7px 9px' }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                              {item.ordinal}. {item.label}{item.target_duration_seconds ? ` · ${item.target_duration_seconds}秒` : ''}
+                            </summary>
+                            <div style={{ marginTop: 7, display: 'grid', gap: 6, lineHeight: 1.55 }}>
+                              <div>{item.objective}</div>
+                              {item.differentiation?.length ? <div><span className="muted">本条差异：</span>{item.differentiation.join('；')}</div> : null}
+                              {item.script_text ? <pre style={{ margin: 0, padding: 9, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: '#f8fafc', borderRadius: 7 }}>{item.script_text}</pre> : <div className="muted">文案由编导按本条目标创作。</div>}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      每项关键要求都会随编号传给编导、分镜、片段执行与最终成片验收；不能只用“快节奏”等标签替代。
+                    </div>
+                  </div>
+                ) : null}
+                {producerAuthoritativeScript && !producerIntentSpec?.deliverables?.some((item) => item.script_text) ? (
+                  <details style={{ padding: 10, border: '1px solid var(--border)', borderRadius: 8, background: '#fff', fontSize: 13 }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看当前完整文案{producerAuthoritativeScriptVersion ? ` v${producerAuthoritativeScriptVersion}` : ''}</summary>
+                    <pre style={{ margin: '8px 0 0', maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'inherit', lineHeight: 1.6 }}>{producerAuthoritativeScript}</pre>
+                  </details>
+                ) : null}
                 {producerProposal ? (
                   <div style={{ padding: 10, border: '1px solid #9bc2f4', borderRadius: 8, background: '#f5f9ff', display: 'grid', gap: 6, fontSize: 13 }}>
-                    <strong>建议制作方案</strong>
+                    <strong>执行参数摘要</strong>
                     <div><span className="muted">目标：</span>{producerProposal.content_objective}</div>
                     <div><span className="muted">规格：</span>{producerProposal.video_count} 条 · {producerProposal.video_duration_min_seconds}-{producerProposal.video_duration_max_seconds} 秒 · {producerProposal.video_aspect_ratio}</div>
+                    <div><span className="muted">模型：</span>{videoModelRecord(videoModels, producerProposal.video_model)?.label || producerProposal.video_model}</div>
+                    <div><span className="muted">商品角色：</span>{{ required: '成片中使用并承担转化', context_only: '仅用于品类 / 受众背景，不出镜不转化', none: '不使用商品' }[producerProposal.product_use_mode] || (producerProposal.content_mode === 'product' ? '成片中使用并承担转化' : '不使用商品')}</div>
+                    <div><span className="muted">时长策略：</span>{producerProposal.video_duration_strategy === 'cross_provider_portable' ? '跨供应商兼容优先' : '创意节奏优先'}</div>
+                    <div><span className="muted">口播密度：</span>{{ sparse: '留白型', balanced: '均衡型', dense: '快节奏密集型' }[producerProposal.spoken_density] || producerProposal.spoken_density}{producerProposal.spoken_density_reason ? ` · ${producerProposal.spoken_density_reason}` : ''}</div>
+                    <div><span className="muted">生成：</span>{{ text_to_video: '文生视频（零参考图）', image_to_video: '图生视频', video_to_video: '视频生视频' }[producerProposal.video_generation_mode] || '图生视频'}</div>
                     <div><span className="muted">风格：</span>{producerProposal.visual_style}</div>
                     <div><span className="muted">节奏：</span>{producerProposal.pacing}</div>
                     <div><span className="muted">声音：</span>{producerProposal.audio_direction}</div>
                     {producerProposal.conversion_direction ? <div><span className="muted">转化：</span>{producerProposal.conversion_direction}</div> : null}
-                    <div className="muted">确认只会创建一个项目；商品事实仍以公司商品库为准。</div>
+                    <div className="muted">这是执行边界，不是固定母版。故事、钩子、画面和分段由编导按上方需求动态设计；商品事实仍以公司商品库为准。</div>
                   </div>
                 ) : null}
-                {producerStatus !== 'created' ? (
-                  <form onSubmit={sendProducerMessage} style={{ display: 'grid', gap: 7 }}>
-                    <textarea className="input" rows={4} maxLength={50000} placeholder="描述目标、现有文案、受众或你特别在意的要求……" value={producerInput} onChange={(event) => setProducerInput(event.target.value)} disabled={producerBusy} />
-                    <button className="btn" disabled={producerBusy || producerUploadBusy || producerAttachmentAnalysisPending || !producerInput.trim()}>{producerMessages.length ? '继续沟通' : '开始和制片助理沟通'}</button>
-                  </form>
-                ) : null}
-                {producerStatus === 'proposal_ready' && producerProposalSha ? (
-                  <button className="btn" type="button" onClick={confirmProducerProject} disabled={producerBusy}>确认并创建 {producerProposal?.video_count || ''} 条视频任务</button>
-                ) : null}
-                <button className="btn secondary" type="button" onClick={resetProducerConversation} disabled={producerBusy || producerUploadBusy}>开始新的需求</button>
-              </section>
-            ) : null}
-            <form onSubmit={createProject} style={{ display: creationMode === 'advanced' ? 'grid' : 'none', gap: 8 }}>
-              <strong>新建内容项目</strong>
-              <input className="input" placeholder="项目名称" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-              <textarea className="input" rows={2} maxLength={255} placeholder="这批视频要达成什么目标？例如：解释一个知识、完成一个教程、讲好一组故事，或帮助观众选择一项产品。" value={form.content_objective} onChange={(e) => setForm({ ...form, content_objective: e.target.value })} />
-              <textarea className="input" rows={2} maxLength={1000} placeholder="目标受众：写真实人群、处境、认知和购买顾虑，不要只写年龄性别。" value={form.target_audience} onChange={(e) => setForm({ ...form, target_audience: e.target.value })} />
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>是否绑定商品</span>
-                <select className="input" value={form.content_mode} onChange={(e) => setForm({ ...form, content_mode: e.target.value })}>
-                  <option value="product">绑定商品</option>
-                  <option value="general">不绑定商品</option>
-                </select>
-              </label>
-              {form.content_mode === 'product' ? <>
-                <select className="input" value={form.product_id || ''} onChange={(e) => { setSelectedProductId(e.target.value); setForm({ ...form, product_id: e.target.value }) }} required>
-                  <option value="">选择商品库商品</option>
-                  {products.map((product) => <option key={product.id} value={product.id}>{product.brand_name} · {product.product_name}</option>)}
-                </select>
-                {selectedProduct ? <div style={{ padding: 10, border: '1px solid var(--border)', borderRadius: 6, background: '#f8fbff' }}>
-                  <strong>{selectedProduct.product_name}</strong>
-                  <div className="muted" style={{ marginTop: 4 }}>{factsLabel(selectedProduct)}</div>
-                </div> : null}
-              </> : <div className="muted" style={{ padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
-                不绑定商品。流水线不会上传或虚构产品、包装、卖点、价格和购买 CTA。
-              </div>}
-              <textarea className="input" rows={4} placeholder={form.content_mode === 'product' ? '补充产品资料和必须遵守的限制。创意形式、段数和场景由编导根据目标决定，不需要写母版。' : '补充真实资料和必须遵守的限制。创意形式、段数和场景由编导根据目标决定。'} value={form.product_brief} onChange={(e) => setForm({ ...form, product_brief: e.target.value })} />
-              <div className="muted" style={{ padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
-                通用编导已启用：实际内容形式由目标和资料决定，可生成故事、科普、教程、演示、对比、访谈、动画等，不使用固定母版。先锁定完整文案并通过独立审核，再生成媒体。
-              </div>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>裂变视频数量</span>
-                <input className="input" type="number" min="1" max="50" value={form.video_count} onChange={(e) => setForm({ ...form, video_count: Number(e.target.value) || 10 })} />
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>同时生成视频数</span>
-                <select className="input" value={form.max_api_video_variants_in_flight} onChange={(e) => setForm({ ...form, max_api_video_variants_in_flight: Number(e.target.value) })}>
-                  {[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count} 条</option>)}
-                </select>
-                <span className="muted">只并行媒体供应商、下载和拼接；编导仍按单条隔离。</span>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>目标视频时长范围（秒）</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 6 }}>
-                  <input className="input" aria-label="最短时长" type="number" min="1" max="120" value={form.video_duration_min_seconds} onChange={(e) => setForm({ ...form, video_duration_min_seconds: Number(e.target.value) || 1 })} />
-                  <span className="muted">至</span>
-                  <input className="input" aria-label="最长时长" type="number" min="1" max="120" value={form.video_duration_max_seconds} onChange={(e) => setForm({ ...form, video_duration_max_seconds: Number(e.target.value) || 1 })} />
-                </div>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>视频生成模型</span>
-                <select className="input" value={form.video_model} onChange={(e) => { const model = e.target.value; const max = videoReferenceLimit(model); setForm({ ...form, video_model: model, video_reference_limit: Math.min(form.video_reference_limit, max) }) }}>
-                  <option value="omni_flash">Omni Flash</option>
-                  <option value="seedance_2_0_mini">Seedance 2.0 Mini</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>生成分辨率</span>
-                <select className="input" value={form.video_resolution} onChange={(e) => setForm({ ...form, video_resolution: e.target.value })}>
-                  <option value="720p">720p</option>
-                  <option value="480p">480p</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>画面比例</span>
-                <select className="input" value={form.video_aspect_ratio} onChange={(e) => setForm({ ...form, video_aspect_ratio: e.target.value })}>
-                  <option value="9:16">9:16 竖屏</option>
-                  <option value="16:9">16:9 横屏</option>
-                  <option value="1:1">1:1 方形</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>视频语言</span>
-                <select className="input" value={form.video_language} onChange={(e) => setForm({ ...form, video_language: e.target.value })}>
-                  <option value="en-US">English (US)</option>
-                  <option value="zh-CN">简体中文</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>单段最多参考图</span>
-                <select className="input" value={form.video_reference_limit} onChange={(e) => setForm({ ...form, video_reference_limit: Number(e.target.value) })}>
-                  {Array.from({ length: videoReferenceLimit(form.video_model) }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} 张</option>)}
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                <span>参考帧模式</span>
-                <select className="input" value={form.video_frame_mode} onChange={(e) => setForm({ ...form, video_frame_mode: e.target.value })}>
-                  <option value="reference">多参考图</option>
-                  <option value="first_last">首尾帧</option>
-                </select>
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={form.allow_reference_video} onChange={(e) => setForm({ ...form, allow_reference_video: e.target.checked })} />
-                启用对标视频模仿
-              </label>
-              <label style={{ display: 'grid', gap: 5, padding: 10, border: '1px dashed #9bbce7', borderRadius: 6, background: '#f7fbff', cursor: 'pointer', fontSize: 13 }}>
-                <strong>上传对标视频（可选）</strong>
-                <span className="muted">MP4 / MOV / WebM，上传后会先提取文案和关键帧。</span>
-                <input type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" onChange={(event) => { const files = Array.from(event.target.files || []); setPendingBenchmarkVideoFiles(files); if (files.length) setForm({ ...form, allow_reference_video: true }) }} disabled={busy} style={{ display: 'none' }} />
-                {pendingBenchmarkVideoFiles.length ? <span className="muted">{pendingBenchmarkVideoFiles.map((file) => file.name).join('、')}</span> : null}
-              </label>
-              <section style={{ display: 'grid', gap: 8, padding: 10, border: '1px dashed #9bbce7', borderRadius: 6, background: '#f7fbff', fontSize: 13 }}>
-                <div>
-                  <strong>人物锚点（可选）</strong>
-                  <div className="muted" style={{ marginTop: 3 }}>每个人物可上传多张不同角度图片，并填写人物描述。最多共 16 张。</div>
-                </div>
-                {pendingCharacters.map((character, index) => (
-                  <div key={character.key} style={{ display: 'grid', gap: 6, padding: 8, border: '1px solid var(--border)', borderRadius: 6, background: '#fff' }}>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <input className="input" value={character.name} placeholder={`人物 ${index + 1} 名称`} onChange={(event) => setPendingCharacters((items) => items.map((item) => item.key === character.key ? { ...item, name: event.target.value } : item))} />
-                      <button className="btn secondary" type="button" onClick={() => setPendingCharacters((items) => items.filter((item) => item.key !== character.key))} disabled={busy}>删除</button>
                     </div>
-                    <textarea className="input" rows={2} maxLength={2000} value={character.description} placeholder="人物描述：年龄范围、脸型、发型、身材、服装、角色关系等" onChange={(event) => setPendingCharacters((items) => items.map((item) => item.key === character.key ? { ...item, description: event.target.value } : item))} />
-                    <label style={{ display: 'grid', gap: 4, padding: 8, border: '1px dashed #9bbce7', borderRadius: 6, cursor: 'pointer' }}>
-                      <strong>选择该人物的图片（可多张）</strong>
-                      <input type="file" multiple accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(event) => setPendingCharacters((items) => items.map((item) => item.key === character.key ? { ...item, files: Array.from(event.target.files || []) } : item))} disabled={busy} style={{ display: 'none' }} />
-                      <span className="muted">{character.files.length ? `${character.files.length} 张：${character.files.map((file) => file.name).join('、')}` : '尚未选择图片'}</span>
-                    </label>
+                  </details>
+                ) : null}
+                {producerStatus === 'created' ? (
+                  <div className="content-factory-created-note" style={{ padding: '9px 10px', borderRadius: 8, background: '#eef8f1', color: '#216e3a', fontSize: 12, lineHeight: 1.55 }}>
+                    本轮项目已经创建，原项目和成片会完整保留。继续说明“再增加几条”“修改哪些要求”或“做一个新版本”，制片助理会继承上下文并整理新的确认方案。
                   </div>
-                ))}
-                <button className="btn secondary" type="button" onClick={() => setPendingCharacters((items) => [...items, newCharacterDraft(items.length + 1)])} disabled={busy}>+ 添加人物</button>
-              </section>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={form.auto_run} onChange={(e) => setForm({ ...form, auto_run: e.target.checked })} />
-                无人值守自动执行
-              </label>
-              <button className="btn" disabled={busy}>创建项目</button>
-            </form>
-            <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 10px' }} />
-            <div style={{ display: 'grid', gap: 6 }}>
-              {projects.map((project) => <button key={project.project_key} type="button" onClick={() => setSelectedKey(project.project_key)} style={{ textAlign: 'left', padding: 10, borderRadius: 6, border: project.project_key === selected?.project_key ? '1px solid #3b82f6' : '1px solid var(--border)', background: project.project_key === selected?.project_key ? '#eef5ff' : 'transparent', cursor: 'pointer' }}><strong>{project.title}</strong><div className="muted" style={{ marginTop: 4 }}>{projectStatusText(project)}</div></button>)}
-              {!projects.length ? <span className="muted">暂无项目</span> : null}
-            </div>
+                ) : null}
+                <div className="content-factory-composer">
+                  {producerAttachmentAnalysisPending ? <div className="content-factory-composer__notice">素材正在分析，可以继续编辑需求；分析完成后即可发送。</div> : null}
+                  <form onSubmit={sendProducerMessage}>
+                    <textarea
+                      ref={producerComposerRef}
+                      className="input"
+                      rows={3}
+                      maxLength={50000}
+                      placeholder={producerStatus === 'created' ? '继续提出追加或修改要求，也可以发一个爆款视频链接作为新对标……' : '说说你想做什么视频，或直接粘贴完整文案、爆款视频链接……'}
+                      value={producerInput}
+                      onChange={(event) => setProducerInput(event.target.value)}
+                      onKeyDown={handleProducerComposerKeyDown}
+                      aria-label="给 AI 制片助理发送消息"
+                    />
+                    <div className="content-factory-composer__footer">
+                      <span>Enter 发送 · Shift+Enter 换行</span>
+                      <button className="btn" disabled={producerBusy || producerUploadBusy || producerAttachmentAnalysisPending || !producerInput.trim()}>
+                        {producerBusy ? '助理思考中…' : producerStatus === 'created' ? '发送新要求' : producerMessages.length ? '发送' : '开始沟通'}
+                      </button>
+                    </div>
+                  </form>
+                  {producerStatus === 'proposal_ready' && producerProposalSha ? (
+                    <button className="btn content-factory-confirm-button" type="button" onClick={() => confirmProducerProject()} disabled={producerBusy || !producerPendingDecisionId}>确认方案并创建 {producerProposal?.video_count || ''} 条视频任务</button>
+                  ) : null}
+                  <button className="content-factory-text-button" type="button" onClick={resetProducerConversation} disabled={producerBusy || producerUploadBusy}>开始新的需求</button>
+                </div>
+            </section>
           </aside>
-          <main className="card" style={{ padding: 14, minWidth: 0 }}>
-            {selected ? <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
-                <div className="muted" style={{ fontSize: 12 }}>
-                绑定 Bridge {selected.browser_slot ?? '未分配'}
-                {' · '}
-                目标时长 {selected.config_json?.video_duration_min_seconds || selected.config_json?.video_duration_seconds || 10}-{selected.config_json?.video_duration_max_seconds || selected.config_json?.video_duration_seconds || 10} 秒
-                {' · '}{videoSegmentLabel(selected.config_json?.video_model)}
-                {' · '}分辨率 {selected.config_json?.video_resolution || '720p'}
-                {' · '}比例 {selected.config_json?.video_aspect_ratio || selected.config_json?.director_series_brief?.aspect_ratio || '9:16'}
-                {' · '}语言 {selected.config_json?.video_language === 'zh-CN' ? '简体中文' : 'English (US)'}
+          <main className="card content-factory-production-panel">
+            {selected ? <header className="content-factory-production-header">
+              <div className="content-factory-production-header__identity">
+                <div>
+                  <h3>{selected.title}</h3>
+                  <p>{selected.product_name || '非商品内容'} · {selected.market}</p>
+                </div>
+                <span style={statusTone(selected.status)}>{projectStatusText(selected)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn secondary" type="button" onClick={() => setProjectEditOpen((value) => !value)} disabled={busy}>编辑项目</button>
-                {selected.config_json?.allow_reference_video ? <label className="btn secondary" style={{ cursor: 'pointer' }}>上传对标视频<input type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" onChange={(event) => uploadFiles(event, 'reference_video')} disabled={busy} style={{ display: 'none' }} /></label> : null}
-                <button className="btn secondary" type="button" onClick={() => setCharacterUploadOpen((value) => !value)} disabled={busy}>管理人物锚点</button>
+              <div className="content-factory-production-header__actions">
+                {selected.config_json?.producer_intake?.session_key ? (
+                  <button className="btn" type="button" onClick={() => continueProducerConversationForProject(selected)} disabled={busy || producerBusy || producerUploadBusy}>
+                    继续沟通
+                  </button>
+                ) : null}
+                <button className="btn secondary" type="button" onClick={refresh}>刷新</button>
+                <details className="content-factory-project-menu">
+                  <summary className="btn secondary">更多</summary>
+                  <div>
+                    <button type="button" onClick={() => setProjectEditOpen((value) => !value)} disabled={busy}>编辑项目</button>
+                    {selected.config_json?.allow_reference_video ? <label>上传对标视频<input type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" onChange={(event) => uploadFiles(event, 'reference_video')} disabled={busy} hidden /></label> : null}
+                    <button type="button" onClick={() => setCharacterUploadOpen((value) => !value)} disabled={busy}>管理人物锚点</button>
                 {selected.status === 'paused' ? (
-                  <button className="btn" type="button" onClick={resumeProject} disabled={busy}>恢复项目</button>
+                      <button type="button" onClick={resumeProject} disabled={busy}>恢复项目</button>
                 ) : (
-                  <button className="btn secondary" type="button" onClick={pauseProject} disabled={busy || ['complete'].includes(selected.status)}>暂停项目</button>
+                      <button type="button" onClick={pauseProject} disabled={busy || ['complete'].includes(selected.status)}>暂停项目</button>
                 )}
-                <button className="btn secondary" type="button" onClick={deleteProject} disabled={busy} style={{ color: '#c93636' }}>删除项目</button>
+                    <button type="button" onClick={deleteProject} disabled={busy} className="is-danger">删除项目</button>
+                  </div>
+                </details>
               </div>
-            </div> : null}
+              <details className="content-factory-project-specs">
+                <summary>查看制作规格</summary>
+                <div>
+                  <span>Bridge {selected.browser_slot ?? '未分配'}</span>
+                  <span>目标时长 {selected.config_json?.video_duration_min_seconds || 10}-{selected.config_json?.video_duration_max_seconds || 10} 秒</span>
+                  <span>{videoSegmentLabel(videoModels, selected.config_json?.video_model)}</span>
+                  <span>{selected.config_json?.video_resolution || '720p'}</span>
+                  <span>{selected.config_json?.video_aspect_ratio || selected.config_json?.director_series_brief?.aspect_ratio || '9:16'}</span>
+                  <span>{selected.config_json?.video_language === 'zh-CN' ? '简体中文' : 'English (US)'}</span>
+                </div>
+              </details>
+            </header> : null}
             {selected && characterUploadOpen ? (
               <section style={{ marginBottom: 12, padding: 12, border: '1px solid #9bbce7', borderRadius: 6, background: '#f8fbff', display: 'grid', gap: 10 }}>
                 <div>
@@ -1651,11 +2010,7 @@ export default function ContentFactoryPage() {
                 </div>
               </section>
             ) : null}
-            {!selected ? <div className="muted">创建项目后开始。</div> : <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
-                <div><h3 style={{ margin: 0 }}>{selected.title}</h3><div className="muted" style={{ marginTop: 5 }}>{selected.product_name || '非商品内容'} · {selected.market} · {selected.project_key}</div><div style={{ ...statusTone(selected.status), display: 'inline-block', marginTop: 7, padding: '4px 8px', borderRadius: 10, fontSize: 12 }}>{projectStatusText(selected)}</div></div>
-                <button className="btn secondary" type="button" onClick={refresh}>刷新</button>
-              </div>
+            {!selected ? <div className="content-factory-production-empty"><strong>还没有项目</strong><span>先在左侧告诉制片助理你想制作什么视频。</span><button className="btn" type="button" onClick={focusProducerComposer}>开始沟通</button></div> : <>
               {projectEditOpen && projectEditForm ? (
                 <section style={{ marginTop: 12, padding: 12, border: '1px solid #9bbce7', borderRadius: 6, background: '#f8fbff' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10 }}>
@@ -1666,7 +2021,8 @@ export default function ContentFactoryPage() {
                     <input className="input" aria-label="项目名称" value={projectEditForm.title} onChange={(e) => setProjectEditForm({ ...projectEditForm, title: e.target.value })} style={{ gridColumn: 'span 2' }} />
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>裂变视频数量</span><input className="input" disabled={mediaContractLocked} type="number" min="1" max="50" value={projectEditForm.video_count} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_count: Number(e.target.value) || 1 })} /></label>
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>同时生成视频数</span><select className="input" value={projectEditForm.max_api_video_variants_in_flight} onChange={(e) => setProjectEditForm({ ...projectEditForm, max_api_video_variants_in_flight: Number(e.target.value) })}>{[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count} 条</option>)}</select></label>
-                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>视频模型</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_model} onChange={(e) => { const model = e.target.value; setProjectEditForm({ ...projectEditForm, video_model: model, video_reference_limit: Math.min(projectEditForm.video_reference_limit, videoReferenceLimit(model)) }) }}><option value="omni_flash">Omni Flash</option><option value="seedance_2_0_mini">Seedance 2.0 Mini</option></select></label>
+                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>视频模型</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_model} onChange={(e) => { const model = e.target.value; setProjectEditForm({ ...projectEditForm, video_model: model, video_reference_limit: Math.min(projectEditForm.video_reference_limit, videoReferenceLimit(videoModels, model)) }) }}>{videoModels.filter((item) => item.available || item.id === projectEditForm.video_model).map((item) => <option key={item.id} value={item.id}>{item.label}{item.available ? '' : '（当前不可用）'}</option>)}</select></label>
+                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>时长规划策略</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_duration_strategy} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_duration_strategy: e.target.value })}><option value="creative_flexibility">创意节奏优先</option><option value="cross_provider_portable">跨供应商兼容优先</option></select></label>
                     <textarea className="input" disabled={mediaContractLocked} rows={2} maxLength={255} aria-label="内容目标" placeholder="这批视频要达成什么目标？" value={projectEditForm.content_objective || ''} onChange={(e) => setProjectEditForm({ ...projectEditForm, content_objective: e.target.value })} style={{ gridColumn: '1 / -1' }} />
                     <textarea className="input" disabled={mediaContractLocked} rows={2} maxLength={1000} aria-label="目标受众" placeholder="目标受众、处境、认知和购买顾虑" value={projectEditForm.target_audience || ''} onChange={(e) => setProjectEditForm({ ...projectEditForm, target_audience: e.target.value })} style={{ gridColumn: '1 / -1' }} />
                     <textarea className="input" disabled={mediaContractLocked} rows={4} aria-label="事实与限制" placeholder="补充真实资料和必须遵守的限制；不要写固定段数或场景母版。" value={projectEditForm.product_brief} onChange={(e) => setProjectEditForm({ ...projectEditForm, product_brief: e.target.value })} style={{ gridColumn: '1 / -1' }} />
@@ -1675,9 +2031,10 @@ export default function ContentFactoryPage() {
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>分辨率</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_resolution} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_resolution: e.target.value })}><option value="720p">720p</option><option value="480p">480p</option></select></label>
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>画面比例</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_aspect_ratio} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_aspect_ratio: e.target.value })}><option value="9:16">9:16 竖屏</option><option value="16:9">16:9 横屏</option><option value="1:1">1:1 方形</option></select></label>
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>语言</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_language} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_language: e.target.value })}><option value="en-US">English (US)</option><option value="zh-CN">简体中文</option></select></label>
-                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>单段参考图上限</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_reference_limit} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_reference_limit: Number(e.target.value) })}>{Array.from({ length: videoReferenceLimit(projectEditForm.video_model) }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} 张</option>)}</select></label>
+                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>单段参考图上限</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_reference_limit} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_reference_limit: Number(e.target.value) })}>{Array.from({ length: videoReferenceLimit(videoModels, projectEditForm.video_model) }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} 张</option>)}</select></label>
                     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>参考帧模式</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_frame_mode} onChange={(e) => setProjectEditForm({ ...projectEditForm, video_frame_mode: e.target.value })}><option value="reference">多参考图</option><option value="first_last">首尾帧</option></select></label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}><input type="checkbox" disabled={mediaContractLocked} checked={projectEditForm.allow_reference_video} onChange={(e) => setProjectEditForm({ ...projectEditForm, allow_reference_video: e.target.checked })} />启用对标视频模仿</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}><input type="checkbox" disabled={mediaContractLocked} checked={projectEditForm.allow_reference_video} onChange={(e) => setProjectEditForm({ ...projectEditForm, allow_reference_video: e.target.checked })} />Hermes 分析对标视频</label>
+                    <label style={{ display: 'grid', gap: 4, fontSize: 12 }}><span>视频生成方式</span><select className="input" disabled={mediaContractLocked} value={projectEditForm.video_generation_mode} onChange={(e) => { const mode = e.target.value; setProjectEditForm({ ...projectEditForm, video_generation_mode: mode, allow_reference_video: mode === 'video_to_video' ? true : false }) }}><option value="text_to_video">文生视频（零参考图）</option><option value="image_to_video">图生视频</option><option value="video_to_video">视频生视频</option></select></label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}><input type="checkbox" checked={projectEditForm.auto_run} onChange={(e) => setProjectEditForm({ ...projectEditForm, auto_run: e.target.checked })} />保存后无人值守执行</label>
                     {mediaContractLocked ? <div className="muted" style={{ gridColumn: '1 / -1' }}>项目已进入媒体生产，数量、内容目标、事实、文案、模型、比例、分辨率、语言、时长和参考帧契约已锁定；仍可调整并行数和自动运行。如需改变生产契约，请新建项目。</div> : null}
                   </div>
@@ -1695,7 +2052,48 @@ export default function ContentFactoryPage() {
                   return <div key={stage} style={{ flex: '0 0 auto', padding: '7px 9px', borderRadius: 6, border: active ? '1px solid #3b82f6' : '1px solid var(--border)', background: active ? '#eaf3ff' : passed ? '#eef9f2' : '#fff', fontSize: 12, fontWeight: active ? 700 : 500 }}>{LABELS[stage]}</div>
                 })}
               </div>
+              {recoveryDecision ? (
+                <details style={{ margin: '0 0 12px', padding: 12, border: '1px solid #9bc2f4', borderRadius: 8, background: '#f8fbff' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                    故障调度官 · {recoveryActionText(recoveryDecision.action)}
+                  </summary>
+                  <div style={{ display: 'grid', gap: 6, marginTop: 9, fontSize: 12 }}>
+                    <div><strong>诊断：</strong>{recoveryDecision.diagnosis || recoveryDecision.rationale || '已依据当前故障包完成判断。'}</div>
+                    {recoveryDecision.repair_directive ? <div><strong>修复指令：</strong>{recoveryDecision.repair_directive}</div> : null}
+                    <div className="muted">来源：{recoveryDecision.decision_source === 'model' ? '多模态模型' : '安全兜底'} · 置信度 {Math.round(Number(recoveryDecision.confidence || 0) * 100)}% · 第 {Number(recoveryDecision.recovery_cycle || 0)} 次恢复</div>
+                    {Array.isArray(recoveryDecision.evidence_used) && recoveryDecision.evidence_used.length ? <div><strong>使用证据：</strong>{recoveryDecision.evidence_used.join('；')}</div> : null}
+                  </div>
+                </details>
+              ) : null}
               {paused ? <div style={{ margin: '0 0 12px', padding: 12, border: '1px solid #f0c36d', borderRadius: 6, background: '#fffaf0', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}><div><strong>已暂停，可人工干预</strong><div className="muted" style={{ marginTop: 4 }}>{selected.last_error || '检查编导、API、额度或素材后，点恢复项目从断点继续；浏览器只在兜底时需要在线。'}</div></div><button className="btn" type="button" onClick={resumeProject} disabled={busy}>恢复执行</button></div> : null}
+              {selectedIntentManifest ? (
+                <details style={{ margin: '0 0 12px', padding: 12, border: '1px solid #9bc2f4', borderRadius: 8, background: '#f8fbff' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700 }}>创意要求执行链 · {selectedIntentManifest.requirements?.length || 0} 项</summary>
+                  <div className="muted" style={{ marginTop: 7, fontSize: 12 }}>
+                    客服意图 → 编导映射 {directorApproved ? '✓' : '…'} → 制作方案映射 {productionPlanApproved ? '✓' : '…'} → 成片证据 {Object.keys(finalIntentEvidence).length ? '✓' : '…'}
+                  </div>
+                  <div style={{ display: 'grid', gap: 7, marginTop: 9 }}>
+                    {(selectedIntentManifest.requirements || []).map((item) => {
+                      const evidence = finalIntentEvidence[item.requirement_id] || null
+                      const status = String(evidence?.status || '').toLowerCase()
+                      return (
+                        <div key={item.requirement_id} style={{ padding: 8, borderRadius: 7, background: '#fff', border: '1px solid #dbe7f7', display: 'grid', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                            <strong style={{ color: '#285d9f' }}>{item.requirement_id}</strong>
+                            <span style={{ flex: 1 }}>{item.intent}</span>
+                            <span style={{ fontSize: 11, color: status === 'pass' ? '#21713b' : status === 'fail' ? '#b52d25' : '#6b7280' }}>
+                              {status === 'pass' ? '成片通过' : status === 'fail' ? '成片未通过' : '执行中'}
+                            </span>
+                          </div>
+                          <div className="muted" style={{ fontSize: 11 }}>{item.interpretation}</div>
+                          {evidence?.observed_evidence?.length ? <div style={{ fontSize: 12 }}><span className="muted">已观察到：</span>{evidence.observed_evidence.join('；')}</div> : null}
+                          {evidence?.missing_checks?.length ? <div style={{ fontSize: 12, color: '#b52d25' }}><span>缺失：</span>{evidence.missing_checks.join('；')}</div> : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </details>
+              ) : null}
               {(selected.status === 'generating_video' || videoGroups.length > 0 || projectComposedVideoCount > 0) ? (
                 <div style={{ margin: '0 0 12px', padding: 12, border: '1px solid var(--border)', borderRadius: 6, background: '#f8fbff' }}>
                   <strong>视频生成进度</strong>

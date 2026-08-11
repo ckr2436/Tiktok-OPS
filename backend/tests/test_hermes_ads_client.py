@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
+from app.core.config import settings
 from app.core.errors import APIError
 from app.services.hermes_agent.client import (
     HermesAdsRealtimeClient,
@@ -100,7 +101,28 @@ class HermesContentClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("content_critic", critic.role)
         self.assertEqual("content_producer", producer.role)
 
-    async def test_producer_keeps_only_its_scoped_conversation_and_role_metadata(self) -> None:
+    def test_control_role_timeouts_fit_the_control_stage_budget(self) -> None:
+        """A role request must outlive one bounded provider-failover pass."""
+
+        director = HermesContentDirectorClient()
+        critic = HermesContentCriticClient()
+        minimum_role_window = (
+            float(settings.HERMES_CONTENT_CONTROL_STAGE_SOFT_LIMIT_SECONDS)
+            / 3.0
+        )
+
+        self.assertGreaterEqual(director.timeout, minimum_role_window)
+        self.assertGreaterEqual(critic.timeout, minimum_role_window)
+        self.assertLessEqual(
+            director.timeout,
+            float(settings.HERMES_CONTENT_CONTROL_STAGE_SOFT_LIMIT_SECONDS),
+        )
+        self.assertLessEqual(
+            critic.timeout,
+            float(settings.HERMES_CONTENT_CONTROL_STAGE_SOFT_LIMIT_SECONDS),
+        )
+
+    async def test_producer_uses_sql_memory_and_stateless_upstream_context(self) -> None:
         with patch.object(HermesAgentClient, "create_response", new_callable=AsyncMock) as create_response:
             create_response.return_value = ({"output_text": "ok"}, 5)
             client = HermesContentProducerClient()
@@ -113,9 +135,10 @@ class HermesContentClientTests(unittest.IsolatedAsyncioTestCase):
             )
 
         kwargs = create_response.await_args.kwargs
-        self.assertTrue(kwargs["store"])
-        self.assertEqual("gmv-cf-producer-scoped", kwargs["conversation"])
-        self.assertEqual("gmv-cf-producer-scoped", kwargs["session_key"])
+        self.assertFalse(kwargs["store"])
+        self.assertIsNone(kwargs["conversation"])
+        self.assertIsNone(kwargs["previous_response_id"])
+        self.assertIsNone(kwargs["session_key"])
         self.assertEqual("content_producer", kwargs["metadata"]["agent_role"])
         self.assertEqual(kwargs["idempotency_key"], kwargs["metadata"]["request_id"])
 

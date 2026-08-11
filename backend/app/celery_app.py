@@ -92,8 +92,13 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
         default_q,
         TTB_SYNC_QUEUE,
         "gmv.tasks.maintenance",
-        getattr(settings, "AI_VIDEO_TASK_QUEUE", "gmv.tasks.ai_video"),
+        getattr(settings, "AI_VIDEO_API_TASK_QUEUE", "gmv.tasks.ai_video.api"),
+        getattr(settings, "AI_VIDEO_BROWSER_TASK_QUEUE", "gmv.tasks.ai_video.browser"),
+        getattr(settings, "AI_VIDEO_BROWSER_POLL_TASK_QUEUE", "gmv.tasks.ai_video.browser_poll"),
+        getattr(settings, "AI_VIDEO_DOWNLOAD_TASK_QUEUE", "gmv.tasks.ai_video.download"),
+        getattr(settings, "AI_VIDEO_MAINTENANCE_TASK_QUEUE", "gmv.tasks.ai_video.maintenance"),
         getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent"),
+        getattr(settings, "HERMES_MAINTENANCE_TASK_QUEUE", "gmv.tasks.hermes_maintenance"),
         "gmvmax",
         "gmvmax_control",
         "gmvmax_sync",
@@ -123,7 +128,26 @@ def _load_queues() -> tuple[str, Sequence[Queue]]:
 default_queue_name, queue_objs = _load_queues()
 WHISPER_TASK_QUEUE = getattr(settings, "OPENAI_WHISPER_TASK_QUEUE", None) or default_queue_name
 HERMES_AGENT_TASK_QUEUE = getattr(settings, "HERMES_AGENT_TASK_QUEUE", "gmv.tasks.hermes_agent")
-AI_VIDEO_TASK_QUEUE = getattr(settings, "AI_VIDEO_TASK_QUEUE", "gmv.tasks.ai_video")
+HERMES_MAINTENANCE_TASK_QUEUE = getattr(
+    settings, "HERMES_MAINTENANCE_TASK_QUEUE", "gmv.tasks.hermes_maintenance"
+)
+AI_VIDEO_API_TASK_QUEUE = getattr(
+    settings, "AI_VIDEO_API_TASK_QUEUE", "gmv.tasks.ai_video.api"
+)
+AI_VIDEO_BROWSER_TASK_QUEUE = getattr(
+    settings, "AI_VIDEO_BROWSER_TASK_QUEUE", "gmv.tasks.ai_video.browser"
+)
+AI_VIDEO_BROWSER_POLL_TASK_QUEUE = getattr(
+    settings,
+    "AI_VIDEO_BROWSER_POLL_TASK_QUEUE",
+    "gmv.tasks.ai_video.browser_poll",
+)
+AI_VIDEO_DOWNLOAD_TASK_QUEUE = getattr(
+    settings, "AI_VIDEO_DOWNLOAD_TASK_QUEUE", "gmv.tasks.ai_video.download"
+)
+AI_VIDEO_MAINTENANCE_TASK_QUEUE = getattr(
+    settings, "AI_VIDEO_MAINTENANCE_TASK_QUEUE", "gmv.tasks.ai_video.maintenance"
+)
 WEBSITE_ADS_MEDIA_TASK_QUEUE = getattr(settings, "WEBSITE_ADS_MEDIA_TASK_QUEUE", "website_ads_media")
 WEBSITE_ADS_TASK_QUEUE = getattr(settings, "WEBSITE_ADS_TASK_QUEUE", "website_ads")
 
@@ -156,10 +180,21 @@ celery_app.conf.task_routes = {
     "gmvmax.creative_asset_media_cache": {"queue": WEBSITE_ADS_MEDIA_TASK_QUEUE},
     "website_ads.upload_video": {"queue": WEBSITE_ADS_MEDIA_TASK_QUEUE},
     "openai_whisper.*": {"queue": WHISPER_TASK_QUEUE},
-    "ai_video.result.*": {"queue": AI_VIDEO_TASK_QUEUE},
-    "bandianwa.video.*": {"queue": AI_VIDEO_TASK_QUEUE},
-    "globalaiopc.video.*": {"queue": AI_VIDEO_TASK_QUEUE},
+    "ai_video.result.download_task_result_files": {"queue": AI_VIDEO_DOWNLOAD_TASK_QUEUE},
+    "ai_video.result.recover_stale_downloads": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    "ai_video.video.recover_stale_polling": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    "ai_video.video.*": {"queue": AI_VIDEO_API_TASK_QUEUE},
+    "globalaiopc.video.*": {"queue": AI_VIDEO_API_TASK_QUEUE},
+    "jimeng_lab.*": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    "doubao_lab.*": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    "doubao_provider.*": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
     "hermes_content_factory.*": {"queue": HERMES_AGENT_TASK_QUEUE},
+    "hermes_agent.reconcile_yt_dlp_cookie_keepalives": {
+        "queue": HERMES_MAINTENANCE_TASK_QUEUE
+    },
+    "hermes_agent.reconcile_flow_auto_reauth": {
+        "queue": HERMES_MAINTENANCE_TASK_QUEUE
+    },
     "hermes_agent.*": {"queue": HERMES_AGENT_TASK_QUEUE},
     "ttb.sync.*": {"queue": TTB_SYNC_QUEUE},
     "tiktok_shop.*": {"queue": TIKTOK_SHOP_TASK_QUEUE},
@@ -179,6 +214,22 @@ celery_app.conf.task_routes.update(
 )
 
 beat_schedule = dict(getattr(celery_app.conf, "beat_schedule", {}) or {})
+beat_schedule.setdefault(
+    "yt_dlp_cookie_keepalive_reconciliation",
+    {
+        "task": "hermes_agent.reconcile_yt_dlp_cookie_keepalives",
+        "schedule": 15 * 60,
+        "options": {"queue": HERMES_MAINTENANCE_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "flow_account_auto_reauthorization",
+    {
+        "task": "hermes_agent.reconcile_flow_auto_reauth",
+        "schedule": 2 * 60,
+        "options": {"queue": HERMES_MAINTENANCE_TASK_QUEUE},
+    },
+)
 beat_schedule.setdefault(
     "ai_provider_model_discovery",
     {
@@ -378,19 +429,37 @@ beat_schedule.setdefault(
     },
 )
 beat_schedule.setdefault(
+    "doubao_provider_auth_probe",
+    {
+        "task": "doubao_provider.dispatch_auth_probes",
+        "schedule": 15 * 60,
+        "options": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "doubao_provider_capability_probe",
+    {
+        "task": "doubao_provider.dispatch_capability_probes",
+        "schedule": int(
+            settings.DOUBAO_CAPABILITY_PROBE_DISPATCH_INTERVAL_SECONDS
+        ),
+        "options": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
     "ai_video_recover_stale_result_downloads",
     {
         "task": "ai_video.result.recover_stale_downloads",
         "schedule": 5 * 60,
-        "options": {"queue": AI_VIDEO_TASK_QUEUE},
+        "options": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
     },
 )
 beat_schedule.setdefault(
-    "bandianwa_recover_stale_video_polling",
+    "ai_video_recover_stale_polling",
     {
-        "task": "bandianwa.video.recover_stale_polling",
+        "task": "ai_video.video.recover_stale_polling",
         "schedule": 5 * 60,
-        "options": {"queue": AI_VIDEO_TASK_QUEUE},
+        "options": {"queue": AI_VIDEO_MAINTENANCE_TASK_QUEUE},
     },
 )
 beat_schedule.setdefault(
@@ -402,10 +471,26 @@ beat_schedule.setdefault(
     },
 )
 beat_schedule.setdefault(
+    "openai_whisper_recover_content_producer_references",
+    {
+        "task": "openai_whisper.recover_content_producer_reference_analyses",
+        "schedule": 60,
+        "options": {"queue": WHISPER_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
     "hermes_content_factory_self_heal",
     {
         "task": "hermes_content_factory.self_heal",
         "schedule": 60,
+        "options": {"queue": HERMES_AGENT_TASK_QUEUE},
+    },
+)
+beat_schedule.setdefault(
+    "hermes_content_factory_runtime_outbox_reconciliation",
+    {
+        "task": "hermes_content_factory.reconcile_runtime_ledger",
+        "schedule": 5 * 60,
         "options": {"queue": HERMES_AGENT_TASK_QUEUE},
     },
 )
@@ -435,12 +520,15 @@ _CORE_TASK_MODULES = (
     "app.tasks.tiktok_shop_tasks",
     "app.tasks.tiktok_shop_video_analysis_tasks",
     "app.tasks.ttb_sync_tasks",
-    "app.tasks.kie_ai.video_result_download_tasks",
-    "app.tasks.bandianwa.video_tasks",
+    "app.tasks.ai_video.result_download_tasks",
+    "app.tasks.ai_video.video_tasks",
     "app.tasks.globalaiopc.video_tasks",
+    "app.tasks.jimeng_lab_tasks",
+    "app.tasks.doubao_lab_tasks",
     "app.tasks.ttb_gmvmax_tasks",
     "app.tasks.website_ads_tasks",
     "app.tasks.hermes_agent.tasks",
+    "app.tasks.hermes_agent.content_runtime_tasks",
     "app.tasks.hermes_agent.content_factory_tasks",
     "app.gmvmax.tasks_sync",
 )
@@ -448,12 +536,21 @@ _TIKTOK_SHOP_TASK_MODULE = "app.tasks.tiktok_shop_tasks"
 _VIDEO_ANALYSIS_TASK_MODULE = "app.tasks.tiktok_shop_video_analysis_tasks"
 _HERMES_TASK_MODULES = (
     "app.tasks.hermes_agent.tasks",
+    "app.tasks.hermes_agent.content_runtime_tasks",
     "app.tasks.hermes_agent.content_factory_tasks",
 )
-_AI_VIDEO_TASK_MODULES = (
-    "app.tasks.kie_ai.video_result_download_tasks",
-    "app.tasks.bandianwa.video_tasks",
+_HERMES_MAINTENANCE_TASK_MODULES = ("app.tasks.hermes_agent.tasks",)
+_AI_VIDEO_PRODUCTION_TASK_MODULES = (
+    "app.tasks.ai_video.result_download_tasks",
+    "app.tasks.ai_video.video_tasks",
     "app.tasks.globalaiopc.video_tasks",
+)
+_AI_VIDEO_DOWNLOAD_TASK_MODULES = ("app.tasks.ai_video.result_download_tasks",)
+_AI_VIDEO_MAINTENANCE_TASK_MODULES = (
+    "app.tasks.ai_video.result_download_tasks",
+    "app.tasks.ai_video.video_tasks",
+    "app.tasks.jimeng_lab_tasks",
+    "app.tasks.doubao_lab_tasks",
 )
 _WHISPER_TASK_MODULE = "app.features.tenants.openai_whisper.tasks"
 _VIDEO_TRANSCRIPT_TASK_MODULE = "app.tasks.tiktok_shop_video_transcript_tasks"
@@ -472,8 +569,18 @@ def task_modules_for_worker_queue(worker_queue: str | None) -> tuple[str, ...]:
     hermes_queue = str(HERMES_AGENT_TASK_QUEUE)
     if queue == hermes_queue or queue.startswith(f"{hermes_queue}.slot"):
         return _HERMES_TASK_MODULES
-    if queue == str(AI_VIDEO_TASK_QUEUE):
-        return _AI_VIDEO_TASK_MODULES
+    if queue == str(HERMES_MAINTENANCE_TASK_QUEUE):
+        return _HERMES_MAINTENANCE_TASK_MODULES
+    if queue in {
+        str(AI_VIDEO_API_TASK_QUEUE),
+        str(AI_VIDEO_BROWSER_TASK_QUEUE),
+        str(AI_VIDEO_BROWSER_POLL_TASK_QUEUE),
+    }:
+        return _AI_VIDEO_PRODUCTION_TASK_MODULES
+    if queue == str(AI_VIDEO_DOWNLOAD_TASK_QUEUE):
+        return _AI_VIDEO_DOWNLOAD_TASK_MODULES
+    if queue == str(AI_VIDEO_MAINTENANCE_TASK_QUEUE):
+        return _AI_VIDEO_MAINTENANCE_TASK_MODULES
     if queue == str(WHISPER_TASK_QUEUE):
         return _WHISPER_TASK_MODULES
     if queue == TIKTOK_SHOP_TASK_QUEUE:
@@ -505,9 +612,6 @@ def _register_task_modules(
             continue
         try:
             importlib.import_module(module_name)
-            from app.features.tenants.openai_whisper import runtime_patches
-
-            runtime_patches.apply()
         except ModuleNotFoundError as exc:
             if exc.name == "yt_dlp":
                 logging.getLogger(__name__).warning(

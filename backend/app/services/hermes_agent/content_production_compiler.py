@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.hermes_agent.content_director import DirectedContentArtifact
-from app.services.hermes_agent.content_production_plan import (
-    DirectedProductionPlan,
-)
+from app.services.hermes_agent.content_production_plan import DirectedProductionPlan
 
 
 _REFERENCE_ROLE_MAP = {
@@ -41,11 +39,28 @@ def _overlaps(left_start: float, left_end: float, right_start: float, right_end:
     return min(left_end, right_end) - max(left_start, right_start) > 0.01
 
 
+def _media_safe_story_purposes(
+    values: list[str],
+    *,
+    product_allowed: bool,
+) -> list[str]:
+    """Preserve the independently reviewed Director purpose text verbatim.
+
+    Product visibility and product-free intent are semantic decisions owned by
+    the multimodal Director and Critic.  This transport compiler must not scan
+    or rewrite their prose with a keyword list.
+    """
+    del product_allowed
+    purposes = list(dict.fromkeys(str(value or "").strip() for value in values))
+    return [value for value in purposes if value]
+
+
 def compile_production_plan_for_media(
     artifact: DirectedContentArtifact,
     plan: DirectedProductionPlan,
     *,
     asset_registry: dict[str, dict[str, Any]],
+    product_allowed: bool = True,
 ) -> dict[str, Any]:
     """Compile one signed plan into the existing media-stage data shape.
 
@@ -106,6 +121,11 @@ def compile_production_plan_for_media(
             "source_asset_refs": list(reference.source_asset_refs),
             "generation_mode": "generate",
             "requires_product_reference": "product" in reference.roles,
+            # Every reference authored by one signed Production Plan belongs
+            # to the same visual storyboard.  Persist that relationship as
+            # data so a later sparse repair can redraw rejected frames on one
+            # canvas instead of guessing from generation-brief prose.
+            "storyboard_group_id": str(plan.plan_id),
         })
 
     shot_plan: list[dict[str, Any]] = []
@@ -126,9 +146,10 @@ def compile_production_plan_for_media(
             }
             for line_id in line_ids
         ]
-        purposes = list(dict.fromkeys(
-            line_by_id[line_id].purpose for line_id in line_ids
-        ))
+        purposes = _media_safe_story_purposes(
+            [line_by_id[line_id].purpose for line_id in line_ids],
+            product_allowed=product_allowed,
+        )
         visual_state = " ".join(
             (
                 f"{beat.environment}. {beat.subject_action}. "
@@ -144,6 +165,11 @@ def compile_production_plan_for_media(
             for beat in beats
             for reference_id in beat.reference_ids
         ))
+        requirement_ids = list(dict.fromkeys(
+            requirement_id
+            for beat in beats
+            for requirement_id in beat.requirement_ids
+        ))
         shot_plan.append({
             "segment": segment_index,
             "segment_index": segment_index,
@@ -155,6 +181,7 @@ def compile_production_plan_for_media(
             "motion_and_transition": transition,
             "reference_ids": reference_ids,
             "director_line_ids": line_ids,
+            "requirement_ids": requirement_ids,
         })
         script_segments.append({
             "segment_index": segment_index,
@@ -165,6 +192,7 @@ def compile_production_plan_for_media(
             "visual_state": visual_state,
             "motion_and_transition": transition,
             "reference_ids": reference_ids,
+            "requirement_ids": requirement_ids,
         })
 
     voices = {
@@ -286,12 +314,25 @@ def compile_production_plan_for_media(
                 }
                 for item in artifact.script.segments
             ],
+            "intent_manifest_sha256": artifact.program.intent_manifest_sha256,
+            "intent_requirements": [
+                item.model_dump(mode="json")
+                for item in artifact.program.intent_requirements
+            ],
+            "requirement_execution": [
+                item.model_dump(mode="json")
+                for item in artifact.program.requirement_execution
+            ],
         },
         "production_plan_lock": {
             "plan_id": plan.plan_id,
             "plan_revision": int(plan.revision),
             "plan_sha256": plan.plan_sha256,
             "director_artifact_sha256": artifact.artifact_sha256,
+            "requirement_execution": [
+                item.model_dump(mode="json")
+                for item in plan.requirement_execution
+            ],
         },
     }
 
@@ -304,6 +345,7 @@ def compile_production_plan_to_video_result(
     resolution: str,
     language_label: str,
     reference_image_limit: int | None = None,
+    product_allowed: bool = True,
 ) -> dict[str, Any]:
     """Compile the signed plan into segment execution data without an LLM.
 
@@ -326,6 +368,18 @@ def compile_production_plan_to_video_result(
     }
     delivery_by_id = {
         delivery.line_id: delivery for delivery in plan.copy_delivery.deliveries
+    }
+    intent_requirement_by_id = {
+        item.requirement_id: item
+        for item in artifact.program.intent_requirements
+    }
+    director_requirement_by_id = {
+        item.requirement_id: item
+        for item in artifact.program.requirement_execution
+    }
+    plan_requirement_by_id = {
+        item.requirement_id: item
+        for item in plan.requirement_execution
     }
     voice_by_id = {
         voice.speaker_id: voice for voice in plan.audio.voices
@@ -412,6 +466,14 @@ def compile_production_plan_to_video_result(
                     )
                     if str(value or "").strip()
                 ),
+                # Preserve the AI-authored multimodal decisions as separate
+                # fields. Small-budget providers can then retain motion and
+                # effects without re-parsing or truncating the environment.
+                "environment": str(beat.environment).strip(),
+                "subject_action": str(beat.subject_action).strip(),
+                "motion_and_transition": str(
+                    beat.motion_and_transition
+                ).strip(),
                 "camera": str(beat.camera_composition).strip(),
                 "dialogue_key": ",".join(
                     line_id
@@ -451,9 +513,10 @@ def compile_production_plan_to_video_result(
             else:
                 display_lines.append(row)
 
-        purposes = list(dict.fromkeys(
-            line_by_id[line_id].purpose for line_id in allocation.line_ids
-        ))
+        purposes = _media_safe_story_purposes(
+            [line_by_id[line_id].purpose for line_id in allocation.line_ids],
+            product_allowed=product_allowed,
+        )
         environments = list(dict.fromkeys(
             str(beat.environment).strip() for beat in beats
         ))
@@ -511,6 +574,36 @@ def compile_production_plan_to_video_result(
             )
             else "independent"
         )
+        requirement_ids = list(dict.fromkeys([
+            *(
+                requirement_id
+                for beat in beats
+                for requirement_id in beat.requirement_ids
+            ),
+            *(
+                requirement_id
+                for requirement_id, mapping in director_requirement_by_id.items()
+                if segment_index in mapping.segment_indices
+            ),
+        ]))
+        requirement_contract = [
+            {
+                **intent_requirement_by_id[requirement_id].model_dump(mode="json"),
+                "director_implementation": (
+                    director_requirement_by_id[requirement_id].implementation
+                ),
+                "director_evidence_plan": list(
+                    director_requirement_by_id[requirement_id].evidence_plan
+                ),
+                "production_implementation_evidence": list(
+                    plan_requirement_by_id[requirement_id].implementation_evidence
+                ),
+            }
+            for requirement_id in requirement_ids
+            if requirement_id in intent_requirement_by_id
+            and requirement_id in director_requirement_by_id
+            and requirement_id in plan_requirement_by_id
+        ]
         segments.append({
             "segment_index": segment_index,
             "duration_seconds": segment_duration,
@@ -540,7 +633,15 @@ def compile_production_plan_to_video_result(
             "authoritative_product_composites": [],
             "product_render_mode": "provider_reference",
             "audio_mode": plan.audio.audio_mode,
+            "spoken_boundary_mode": (
+                "runtime_compiled_continuation"
+                if artifact.script.schema_version == "2.1"
+                else "complete_sentence"
+            ),
             "compile_source": "signed_production_plan",
+            "intent_manifest_sha256": artifact.program.intent_manifest_sha256,
+            "requirement_ids": requirement_ids,
+            "requirement_contract": requirement_contract,
         })
         segment_start = segment_end
 
@@ -559,15 +660,34 @@ def compile_production_plan_to_video_result(
             "resolution": str(resolution),
             "language": str(language_label),
             "audio_mode": artifact.script.audio_mode,
+            "spoken_boundary_mode": (
+                "runtime_compiled_continuation"
+                if artifact.script.schema_version == "2.1"
+                else "complete_sentence"
+            ),
             "visual_style": plan.visual.style_language,
             "visual_grammar": plan.visual.visual_grammar,
             "segments": segments,
+            "intent_manifest_sha256": artifact.program.intent_manifest_sha256,
+            "intent_requirements": [
+                item.model_dump(mode="json")
+                for item in artifact.program.intent_requirements
+            ],
+            "requirement_execution": [
+                item.model_dump(mode="json")
+                for item in artifact.program.requirement_execution
+            ],
+            "production_requirement_execution": [
+                item.model_dump(mode="json")
+                for item in plan.requirement_execution
+            ],
             "compiler_authority": {
                 "director_artifact_sha256": artifact.artifact_sha256,
                 "director_script_sha256": (
                     artifact.script.canonical_text_sha256
                 ),
                 "production_plan_sha256": plan.plan_sha256,
+                "intent_manifest_sha256": artifact.program.intent_manifest_sha256,
             },
         }]
     }

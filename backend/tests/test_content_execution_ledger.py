@@ -20,6 +20,7 @@ from app.tasks.hermes_agent import content_factory_tasks as content_tasks
 from app.tasks.hermes_agent.content_factory_tasks import (
     _dual_write_media_execution_ledger,
     _ensure_content_execution_ledger,
+    _append_content_segment_retry_attempt,
     _sync_content_segment_execution_ledger,
     _upsert_content_deliverable_ledger,
 )
@@ -192,6 +193,10 @@ def test_segment_sync_hashes_download_once_when_file_is_unchanged(
         calls.append(str(path))
         return real_hash(path, **kwargs)
 
+    # This test exercises ledger hash idempotency, not managed-root security.
+    # Point the scoped result row at the isolated pytest file explicitly;
+    # production get_local_path correctly rejects arbitrary /tmp paths.
+    monkeypatch.setattr(content_tasks, "get_local_path", lambda _file: local_video)
     monkeypatch.setattr(content_tasks, "_file_sha256", counted_hash)
     _sync_content_segment_execution_ledger(
         db_session, project=project, tasks=[task]
@@ -205,6 +210,86 @@ def test_segment_sync_hashes_download_once_when_file_is_unchanged(
     assert segment.output_sha256
     assert segment.meta_json["output_size_bytes"] == local_video.stat().st_size
     assert calls == [str(local_video)]
+
+
+def test_replacement_segment_attempt_supersedes_old_failure_for_variant_state(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    project = _ledger_project()
+    failed_task, group = _submitted_segment(db_session, project)
+    failed_task.state = "failed"
+    failed_task.fail_code = "product_visual_qa"
+    failed_task.fail_msg = "package identity drift"
+    retry_task = KieTask(
+        workspace_id=project.workspace_id,
+        key_id=1,
+        created_by_user_id=project.user_id,
+        model="omni_flash",
+        task_id="local-ledger-replacement",
+        state="success",
+        input_json={
+            **dict(failed_task.input_json or {}),
+            "prompt": "repaired product identity prompt",
+        },
+    )
+    db_session.add(retry_task)
+    db_session.flush()
+    segment = group["segments"][0]
+    segment["task_id"] = int(retry_task.id)
+    segment["retry_source_task_id"] = int(failed_task.id)
+    _append_content_segment_retry_attempt(
+        db_session,
+        project=project,
+        failed_task=failed_task,
+        retry_task=retry_task,
+        segment=segment,
+        provider_key="sub2api",
+    )
+    local_video = tmp_path / "replacement-segment.mp4"
+    local_video.write_bytes(b"replacement-segment-content")
+    db_session.add(
+        KieFile(
+            workspace_id=project.workspace_id,
+            key_id=1,
+            task_id=int(retry_task.id),
+            file_url="https://provider.invalid/replacement.mp4",
+            kind="result",
+            meta_json={"local_path": str(local_video)},
+        )
+    )
+    db_session.flush()
+    monkeypatch.setattr(
+        content_tasks,
+        "get_local_path",
+        lambda file: (
+            local_video
+            if int(file.task_id or 0) == int(retry_task.id)
+            else None
+        ),
+    )
+
+    _sync_content_segment_execution_ledger(
+        db_session,
+        project=project,
+        tasks=[retry_task],
+    )
+
+    attempts = (
+        db_session.query(HermesContentSegmentRun)
+        .order_by(HermesContentSegmentRun.attempt.asc())
+        .all()
+    )
+    assert [row.attempt for row in attempts] == [1, 2]
+    assert attempts[0].state == "failed"
+    assert attempts[0].meta_json["superseded_by_provider_task_row_id"] == (
+        int(retry_task.id)
+    )
+    assert attempts[1].state == "downloaded"
+    assert attempts[1].provider_task_row_id == int(retry_task.id)
+    variant = db_session.query(HermesContentVariantRun).one()
+    assert variant.state == "segments_downloaded"
 
 
 def test_deliverable_upsert_reuses_verified_hash_and_completes_execution(

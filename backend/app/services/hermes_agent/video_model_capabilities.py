@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -26,6 +26,7 @@ class VideoModelCapability(BaseModel):
     provider: str = Field(min_length=1, max_length=128)
     provider_key: str = Field(min_length=1, max_length=128)
     task_model: str = Field(min_length=1, max_length=255)
+    provider_prompt_max_characters: int = Field(ge=1, le=100_000)
     reference_image_minimum: int = Field(ge=0, le=64)
     reference_image_default: int = Field(ge=0, le=64)
     reference_image_maximum: int = Field(ge=0, le=64)
@@ -39,6 +40,17 @@ class VideoModelCapability(BaseModel):
     recommended_project_variant_parallelism: int = Field(ge=1, le=16)
     maximum_project_variant_parallelism: int = Field(ge=1, le=16)
     allows_human_face_references: bool
+    human_face_reference_mode: Literal[
+        "allowed",
+        "stylized_animation_only",
+        "forbidden",
+    ] = "allowed"
+    supports_native_spoken_audio: bool = False
+    preferred_spoken_delivery: Literal[
+        "provider_dialogue",
+        "local_voiceover",
+    ] = "local_voiceover"
+    native_spoken_audio_notes: str = Field(default="", max_length=1000)
     hard_rules: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
@@ -82,6 +94,20 @@ class VideoModelCapability(BaseModel):
         ):
             raise ValueError(
                 "recommended project parallelism cannot exceed maximum"
+            )
+        if (
+            self.human_face_reference_mode == "forbidden"
+            and self.allows_human_face_references
+        ):
+            raise ValueError(
+                "forbidden human_face_reference_mode cannot allow human face references"
+            )
+        if (
+            self.human_face_reference_mode != "forbidden"
+            and not self.allows_human_face_references
+        ):
+            raise ValueError(
+                "non-forbidden human_face_reference_mode must allow human face references"
             )
         return self
 
@@ -156,6 +182,9 @@ def resolve_video_model_policy(
         "provider": model.provider,
         "provider_key": model.provider_key,
         "task_model": model.task_model,
+        "provider_prompt_max_characters": (
+            model.provider_prompt_max_characters
+        ),
         "reference_limit": reference_limit,
         "reference_video_limit": (
             model.reference_video_maximum
@@ -174,6 +203,10 @@ def resolve_video_model_policy(
         "allows_human_face_references": (
             model.allows_human_face_references
         ),
+        "human_face_reference_mode": model.human_face_reference_mode,
+        "supports_native_spoken_audio": model.supports_native_spoken_audio,
+        "preferred_spoken_delivery": model.preferred_spoken_delivery,
+        "native_spoken_audio_notes": model.native_spoken_audio_notes,
         "recommended_project_variant_parallelism": (
             model.recommended_project_variant_parallelism
         ),
@@ -242,6 +275,26 @@ def build_video_production_contract(
         ],
         reference_image_limit=int(policy["reference_limit"]),
         reference_video_limit=int(policy["reference_video_limit"]),
+        provider_prompt_max_characters=int(
+            policy["provider_prompt_max_characters"]
+        ),
+        allows_human_face_references=bool(
+            policy["allows_human_face_references"]
+        ),
+        human_face_reference_mode=str(
+            policy["human_face_reference_mode"]
+        ),
+        supports_native_spoken_audio=bool(
+            policy["supports_native_spoken_audio"]
+        ),
+        preferred_spoken_delivery=str(
+            policy["preferred_spoken_delivery"]
+        ),
+        provider_hard_rules=[
+            str(value)
+            for value in list(policy.get("hard_rules") or [])
+            if str(value).strip()
+        ],
     )
 
 

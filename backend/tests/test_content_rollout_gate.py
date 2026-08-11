@@ -143,6 +143,53 @@ def test_checkpoint_resume_immediately_publishes_authorized_missing_video(
     db.flush.assert_called_once_with()
 
 
+def test_resume_reconciles_terminal_paid_media_before_missing_variant_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = SimpleNamespace(
+        id=176,
+        current_stage="WAITING_VIDEO_INPUT",
+        status="ready",
+        state_json={
+            "ai_video_pending_task_ids": [],
+            "ai_video_resume_failed_task_ids": [],
+            "ai_video_task_ids": [2917, 2918, 2922, 2923],
+            "ai_video_groups": [
+                {"video_index": 4, "segments": [{"task_id": 2917}]},
+                {"video_index": 5, "segments": [{"task_id": 2922}]},
+            ],
+        },
+    )
+    db = MagicMock()
+    queued = SimpleNamespace(id="wait-terminal-media-176")
+    observed: list[dict] = []
+
+    monkeypatch.setattr(
+        "app.tasks.hermes_agent.content_factory_tasks.wait_for_content_factory_videos.apply_async",
+        lambda **kwargs: observed.append(kwargs) or queued,
+    )
+    monkeypatch.setattr(
+        "app.tasks.hermes_agent.content_factory_tasks._queue_missing_serial_video_variant_if_needed",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("missing-variant cleanup must wait for paid-media reconciliation")
+        ),
+    )
+
+    task_id = resume_waiting_project_production(db, project)
+
+    assert task_id == "wait-terminal-media-176"
+    assert observed == [{
+        "kwargs": {"project_id": 176},
+        "countdown": 1,
+        "queue": "gmv.tasks.hermes_agent",
+        "priority": 9,
+    }]
+    assert project.state_json["ai_video_wait_task_id"] == task_id
+    assert "terminal paid media" in project.state_json["ai_video_wait_reason"]
+    db.add.assert_called_once_with(project)
+    db.flush.assert_called_once_with()
+
+
 def test_stale_universal_profile_versions_contract_and_retires_pointer(
     db_session,
 ) -> None:
@@ -192,6 +239,10 @@ def test_stale_universal_profile_versions_contract_and_retires_pointer(
             "confirmed_selling_points": ["sugar free"],
             "confirmed_promotions": "$7.99",
             "promotion_cta": "Find it in the yellow cart.",
+            "director_loop_policy": {
+                "maximum_revisions": 4,
+                "maximum_contract_repairs_per_revision": 1,
+            },
         },
         state_json={
             "product_knowledge": {"source": "test-facts"},
@@ -206,7 +257,12 @@ def test_stale_universal_profile_versions_contract_and_retires_pointer(
     assert upgraded["series_version"] == 2
     assert (
         upgraded["truth_payload"]["profile_id"]
-        == "universal-short-video-v4"
+        == "universal-short-video-v8-autonomy"
+    )
+    assert (
+        project.config_json["director_loop_policy"]
+        ["maximum_contract_repairs_per_revision"]
+        == 2
     )
     assert "approved_series_slate" not in project.state_json
     assert project.state_json["director_profile_upgrade"]["series_version"] == 2
@@ -483,6 +539,61 @@ def test_service_archives_previous_release_and_checkpoint(db_session) -> None:
     assert history[0]["checkpoint"]["status"] == "awaiting_operator_review"
     assert project.state_json.get("variant_rollout_checkpoint") is None
     assert project.config_json["variant_rollout_gate"]["batch_id"] == "scale-02"
+
+
+def test_service_retires_paused_variant_excluded_by_narrowed_release(
+    db_session,
+) -> None:
+    project = _paused_project()
+    project.current_stage = "PRODUCTION_PLAN"
+    project.config_json = {
+        **dict(project.config_json or {}),
+        "video_count": 6,
+    }
+    project.state_json = {
+        **dict(project.state_json or {}),
+        "video_variant_pipeline": {
+            "target_count": 6,
+            "active_index": 6,
+            "submitted_indices": [1, 2, 3, 4, 5],
+            "completed_indices": [1, 2, 3],
+            "failed_indices": [],
+        },
+    }
+    db_session.add(project)
+    db_session.flush()
+    paused_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="PRODUCTION_PLAN",
+        attempt=1,
+        status="paused",
+        input_json={"variant_index": 6},
+    )
+    db_session.add(paused_stage)
+    db_session.commit()
+
+    configure_variant_rollout_gate(
+        db_session,
+        project,
+        authorized_variant_indices=[4, 5],
+        batch_id="stop-before-six",
+        released_by_user_id=6,
+    )
+    db_session.commit()
+    db_session.refresh(project)
+    db_session.refresh(paused_stage)
+
+    assert paused_stage.status == "failed"
+    assert project.current_stage == "WAITING_VIDEO_INPUT"
+    assert project.state_json["video_variant_pipeline"]["active_index"] == 4
+    assert project.state_json["rollout_retired_unauthorized_variant"] == {
+        "stage_ids": [paused_stage.id],
+        "variant_indices": [6],
+        "authorized_variant_indices": [4, 5],
+        "at": project.state_json["variant_rollout_release"]["released_at"],
+    }
 
 
 def test_service_rejects_release_while_project_is_active(db_session) -> None:

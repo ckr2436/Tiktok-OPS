@@ -10,6 +10,7 @@ Type=simple
 User=hermes
 Group=hermes
 WorkingDirectory=/home/hermes/hermes-agent
+EnvironmentFile=/etc/gmv/ai-gateway.env
 Environment=HERMES_HOME=/home/hermes/.hermes-video-analyst
 Environment=API_SERVER_ENABLED=true
 Environment=API_SERVER_HOST=127.0.0.1

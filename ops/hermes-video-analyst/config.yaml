@@ -1,5 +1,5 @@
 model:
-  default: video-analyst-gpt-5.4-mini
+  default: gmv-shop-video-analyst-v1
   provider: custom:gmv_gateway
   base_url: http://127.0.0.1:8650/v1
   api_mode: chat_completions
@@ -11,9 +11,9 @@ providers:
     base_url: http://127.0.0.1:8650/v1
     key_env: GMV_AI_GATEWAY_KEY
     transport: chat_completions
-    default_model: video-analyst-gpt-5.4-mini
+    default_model: gmv-shop-video-analyst-v1
     models:
-      video-analyst-gpt-5.4-mini: {}
+      gmv-shop-video-analyst-v1: {}
 fallback_providers: []
 platform_toolsets:
   cli: []

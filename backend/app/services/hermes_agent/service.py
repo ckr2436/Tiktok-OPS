@@ -67,13 +67,6 @@ def _validate_input_size(input_text: str) -> None:
         )
 
 
-def _truncate_result(result_text: str) -> str:
-    limit = int(settings.HERMES_AGENT_MAX_RESULT_CHARS)
-    if limit > 0 and len(result_text) > limit:
-        return result_text[:limit] + "\n\n[TRUNCATED_BY_GMV_OPS]"
-    return result_text
-
-
 async def create_and_run(
     db: Session,
     *,
@@ -189,7 +182,12 @@ async def execute_run(db: Session, *, workspace_id: int, run_id: str):
                 "task_type": run.task_type,
             },
         )
-        result_text = _truncate_result(extract_output_text(payload))
+        # The upstream response is the auditable execution result.  Do not
+        # apply a second GMV-side character cap: HermesAgentRun.result_text and
+        # the mirrored conversation message are long-text columns, so a local
+        # truncation would make the UI/history disagree with the real model
+        # output even though the complete provider envelope was received.
+        result_text = extract_output_text(payload)
         usage = extract_usage(payload)
         response_id = payload.get("id") if isinstance(payload.get("id"), str) else None
         repository.mark_run_success(

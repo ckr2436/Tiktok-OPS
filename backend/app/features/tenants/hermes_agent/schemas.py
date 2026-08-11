@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -196,6 +196,11 @@ class ContentFactoryProducerTurnResponse(BaseModel):
     proposal_sha256: str | None = None
     selected_product_id: int | None = None
     authoritative_script_message_id: int | None = None
+    authoritative_script: str | None = None
+    authoritative_script_version: int | None = None
+    revised_authoritative_script: str | None = None
+    intent_spec: dict[str, Any] | None = None
+    pending_decision_id: str | None = None
 
 
 class ContentFactoryProducerMessageOut(BaseModel):
@@ -207,7 +212,9 @@ class ContentFactoryProducerMessageOut(BaseModel):
 
 class ContentFactoryProducerAttachmentOut(BaseModel):
     attachment_key: str
-    kind: Literal["reference_video", "character_reference"]
+    kind: Literal[
+        "reference_video", "character_reference", "brief_document", "creative_reference"
+    ]
     original_name: str
     mime_type: str | None = None
     size_bytes: int
@@ -215,109 +222,38 @@ class ContentFactoryProducerAttachmentOut(BaseModel):
     analysis: dict[str, Any] = Field(default_factory=dict)
     character_name: str | None = None
     character_description: str | None = None
+    locked: bool = False
+    active: bool = True
     created_at: datetime
+
+
+class ContentFactoryProducerReferenceLinkRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=4096)
+    context_message: str | None = Field(default=None, max_length=50000)
+    product_id: int | None = Field(default=None, ge=1)
 
 
 class ContentFactoryProducerSessionOut(BaseModel):
     session_key: str
     status: str
+    draft_message: str | None = None
+    source_context: dict[str, Any] | None = None
     messages: list[ContentFactoryProducerMessageOut] = Field(default_factory=list)
     attachments: list[ContentFactoryProducerAttachmentOut] = Field(default_factory=list)
     proposal: dict[str, Any] | None = None
     proposal_sha256: str | None = None
     selected_product_id: int | None = None
     authoritative_script_message_id: int | None = None
+    authoritative_script: str | None = None
+    authoritative_script_version: int | None = None
+    intent_spec: dict[str, Any] | None = None
+    pending_decision_id: str | None = None
     created_project_key: str | None = None
 
 
 class ContentFactoryProducerConfirmRequest(BaseModel):
     proposal_sha256: str = Field(min_length=64, max_length=64)
-
-
-class ContentFactoryProjectCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=255)
-    content_objective: str | None = Field(default=None, max_length=255)
-    target_audience: str | None = Field(default=None, max_length=1000)
-    content_mode: str = Field(
-        default="product",
-        min_length=1,
-        max_length=64,
-        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$",
-    )
-    product_required: bool | None = None
-    product_id: int | None = Field(default=None, ge=1)
-    brand_name: str | None = Field(default=None, max_length=255)
-    product_name: str | None = Field(default=None, max_length=255)
-    market: str = Field(default="US", min_length=1, max_length=64)
-    product_brief: str | None = Field(default=None, max_length=30000)
-    video_count: int = Field(default=10, ge=1, le=50)
-    max_api_video_variants_in_flight: int | None = Field(
-        default=None,
-        ge=1,
-        le=16,
-    )
-    video_duration_seconds: int | None = Field(default=None, ge=1, le=120)
-    video_duration_min_seconds: int = Field(default=10, ge=1, le=120)
-    video_duration_max_seconds: int = Field(default=10, ge=1, le=120)
-    video_model: Literal["omni_flash", "seedance_2_0_mini"] = "omni_flash"
-    video_resolution: Literal["480p", "720p"] = "720p"
-    video_aspect_ratio: Literal["9:16", "16:9", "1:1"] = "9:16"
-    video_language: Literal["en-US", "zh-CN"] = "en-US"
-    video_reference_limit: int = Field(default=7, ge=1, le=9)
-    video_frame_mode: Literal["reference", "first_last"] = "reference"
-    allow_reference_video: bool = False
-    visual_reference_generation_mode: Literal["individual", "board"] = "individual"
-    visual_image_model_chain: list[
-        Literal[
-            "gpt-image-2",
-            "gpt-image-2.0",
-            "nano_banana_pro",
-            "nano_banana_2",
-        ]
-    ] = Field(
-        default_factory=lambda: ["gpt-image-2", "nano_banana_pro"],
-        min_length=1,
-        max_length=4,
-    )
-    preferred_browser_device_id: str | None = Field(default=None, max_length=128)
-    confirmed_claims: str | None = Field(default=None, max_length=30000)
-    confirmed_selling_points: str | None = Field(default=None, max_length=30000)
-    confirmed_promotions: str | None = Field(default=None, max_length=5000)
-    promotion_cta: str | None = Field(default=None, max_length=500)
-    allow_promotional_cta: bool = True
-    publishing_profile: ContentFactoryPublishingProfile | None = None
-    creative_copy_contract: ContentFactoryCreativeCopyContract | None = None
-    creative_cast_policy: ContentFactoryCreativeCastPolicy | None = None
-    product_presentation_policy: ContentFactoryProductPresentationPolicy | None = None
-    content_director_mode: Literal["enforce"] = "enforce"
-    director_series_brief: dict[str, Any] | None = None
-    director_briefs_by_variant: dict[str, dict[str, Any]] | None = Field(
-        default=None,
-        max_length=50,
-    )
-    director_loop_policy: ContentFactoryDirectorLoopPolicy | None = None
-    director_creative_constraints: list[str] = Field(
-        default_factory=list,
-        max_length=128,
-    )
-    director_copy_review_criteria: list[dict[str, Any]] = Field(
-        default_factory=list,
-        max_length=64,
-    )
-    director_series_page_review_criteria: list[dict[str, Any]] = Field(
-        default_factory=list,
-        max_length=64,
-    )
-    director_series_global_review_criteria: list[dict[str, Any]] = Field(
-        default_factory=list,
-        max_length=64,
-    )
-    director_diversity_requirements: list[dict[str, Any]] = Field(
-        default_factory=list,
-        max_length=64,
-    )
-    director_structured_intent_contract_required: bool | None = None
-    auto_run: bool = True
+    pending_decision_id: str | None = Field(default=None, min_length=10, max_length=80)
 
 
 class ContentFactoryProjectUpdate(BaseModel):
@@ -330,6 +266,7 @@ class ContentFactoryProjectUpdate(BaseModel):
         max_length=64,
         pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$",
     )
+    product_use_mode: Literal["required", "context_only", "none"] | None = None
     product_required: bool | None = None
     product_brief: str | None = Field(default=None, max_length=30000)
     video_count: int | None = Field(default=None, ge=1, le=50)
@@ -341,12 +278,18 @@ class ContentFactoryProjectUpdate(BaseModel):
     video_duration_min_seconds: int | None = Field(default=None, ge=1, le=120)
     video_duration_max_seconds: int | None = Field(default=None, ge=1, le=120)
     video_model: Literal["omni_flash", "seedance_2_0_mini"] | None = None
+    video_duration_strategy: Literal[
+        "creative_flexibility", "cross_provider_portable"
+    ] | None = None
     video_resolution: Literal["480p", "720p"] | None = None
     video_aspect_ratio: Literal["9:16", "16:9", "1:1"] | None = None
     video_language: Literal["en-US", "zh-CN"] | None = None
-    video_reference_limit: int | None = Field(default=None, ge=1, le=9)
+    video_reference_limit: int | None = Field(default=None, ge=1, le=10)
     video_frame_mode: Literal["reference", "first_last"] | None = None
     allow_reference_video: bool | None = None
+    video_generation_mode: Literal[
+        "text_to_video", "image_to_video", "video_to_video"
+    ] | None = None
     visual_reference_generation_mode: Literal["individual", "board"] | None = None
     visual_image_model_chain: list[
         Literal[
@@ -403,6 +346,7 @@ class ContentFactoryProjectRestart(BaseModel):
     allowed_audio_modes: list[
         Literal["spoken", "silent", "music_only", "sound_design"]
     ] | None = Field(default=None, min_length=1, max_length=4)
+    replace_completed: bool = False
     auto_run: bool = True
 
 
@@ -565,16 +509,7 @@ class ContentFactoryBridgeStatus(BaseModel):
     devices: list[dict[str, Any]] = Field(default_factory=list)
     selected_device_id: str | None = None
     selection_required: bool = False
-
-
-class ContentFactoryBridgeRegister(BaseModel):
-    device_id: str = Field(min_length=1, max_length=128)
-    device_name: str | None = Field(default=None, max_length=255)
-    cdp_url: str | None = Field(default=None, max_length=512)
-    inbox_root: str | None = Field(default=None, max_length=1024)
-    outbox_root: str | None = Field(default=None, max_length=1024)
-    browser: str | None = Field(default=None, max_length=255)
-    load_json: dict[str, Any] | None = None
+    server_agent_version: str | None = None
 
 
 class ContentFactoryBridgeDeviceAction(BaseModel):
@@ -590,6 +525,11 @@ class ContentFactoryBridgeAgentSlotStatus(BaseModel):
     auth_status: str | None = Field(default=None, max_length=32)
     account_name: str | None = Field(default=None, max_length=120)
     page_url: str | None = Field(default=None, max_length=1000)
+    purpose: Literal["content_factory", "flow_account", "jimeng_lab", "doubao_lab", "yt_dlp_account"] = "content_factory"
+    flow_status: str | None = Field(default=None, max_length=32)
+    capture_id: str | None = Field(default=None, max_length=64)
+    session_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    profile_reset: bool = False
     synced_files: list[dict[str, Any]] = Field(default_factory=list)
     last_sync_at: str | None = Field(default=None, max_length=64)
     sync_error: str | None = Field(default=None, max_length=1000)
@@ -602,4 +542,50 @@ class ContentFactoryBridgeAgentHeartbeat(BaseModel):
     public_key: str = Field(min_length=40, max_length=2048)
     inbox_root: str = Field(min_length=3, max_length=1024)
     local_capacity: int = Field(default=4, ge=1, le=8)
+    profile_capacity: int = Field(default=64, ge=1, le=128)
+    host_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    installed_bindings: list[Annotated[str, Field(pattern=r"^[a-f0-9]{16}$")]] = Field(
+        default_factory=list, max_length=64
+    )
+    update_state: Literal["current", "installing", "failed"] | None = None
+    update_error: str | None = Field(default=None, max_length=1000)
     slots: list[ContentFactoryBridgeAgentSlotStatus] = Field(default_factory=list)
+
+
+class ContentFactoryBridgeFlowCapture(BaseModel):
+    device_id: str = Field(min_length=1, max_length=128)
+    bridge_id: str = Field(min_length=1, max_length=64)
+    capture_id: str = Field(min_length=1, max_length=64)
+    session_token: str = Field(min_length=20, max_length=20_000)
+    session_tokens: list[Annotated[str, Field(min_length=20, max_length=20_000)]] = Field(
+        default_factory=list, max_length=8
+    )
+    session_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    profile_id: str = Field(min_length=1, max_length=255)
+    fingerprint: dict[str, Any]
+
+
+class ContentFactoryBridgeJimengCapture(BaseModel):
+    device_id: str = Field(min_length=1, max_length=128)
+    bridge_id: str = Field(min_length=1, max_length=64)
+    capture_id: str = Field(min_length=1, max_length=64)
+    session_token: str = Field(min_length=20, max_length=20_000)
+    session_tokens: list[Annotated[str, Field(min_length=1, max_length=20_000)]] = Field(
+        default_factory=list, max_length=8
+    )
+    session_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    session_cookies: list[dict[str, Any]] = Field(default_factory=list, max_length=80)
+    profile_id: str = Field(min_length=1, max_length=255)
+    fingerprint: dict[str, Any]
+
+
+class ContentFactoryBridgeDoubaoCapture(ContentFactoryBridgeJimengCapture):
+    """Purpose-scoped Doubao browser context; credentials never reach the UI."""
+
+
+class ContentFactoryBridgeYtDlpCapture(BaseModel):
+    device_id: str = Field(min_length=1, max_length=128)
+    bridge_id: str = Field(min_length=1, max_length=64)
+    capture_id: str = Field(min_length=1, max_length=64)
+    session_cookies: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
+    profile_id: str = Field(min_length=1, max_length=255)

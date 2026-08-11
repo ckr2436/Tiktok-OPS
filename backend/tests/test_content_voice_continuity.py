@@ -6,6 +6,7 @@ from app.tasks.hermes_agent.content_factory_tasks import (
     VOICE_CONTINUITY_FAIL_CODE,
     _apply_voice_continuity_retry_prompt,
     _completed_asset_matches_segment_results,
+    _local_voiceover_identity_report,
     _voice_continuity_outliers,
 )
 from app.data.models.kie_api import KieTask
@@ -109,3 +110,93 @@ def test_completed_asset_identity_changes_when_same_task_is_retried():
         source_task_ids=[2724, 2725],
         source_file_ids=[9010, 9002],
     )
+
+
+def test_local_voiceover_continuity_uses_muxed_voice_identity_not_provider_audio():
+    segments = [
+        {
+            "segment_index": 1,
+            "dialogue_lines": [{
+                "speaker_id": "female_narrator",
+                "line": "First line.",
+                "delivery_method": "local_voiceover",
+            }],
+        },
+        {
+            "segment_index": 2,
+            "dialogue_lines": [{
+                "speaker_id": "female_narrator",
+                "line": "Second line.",
+                "delivery_method": "local_voiceover",
+            }],
+        },
+    ]
+    postproduction = [
+        {
+            "segment_index": 1,
+            "task_id": 10,
+            "local_voiceover": {
+                "backend": "edge_neural_tts",
+                "voice": "en-US-JennyNeural",
+            },
+        },
+        {
+            "segment_index": 2,
+            "task_id": 11,
+            "local_voiceover": {
+                "backend": "edge_neural_tts",
+                "voice": "en-US-JennyNeural",
+            },
+        },
+    ]
+
+    report = _local_voiceover_identity_report(
+        segments=segments,
+        local_postproduction=postproduction,
+    )
+
+    assert report is not None
+    assert report["status"] == "PASS"
+    assert report["verification_mode"] == "deterministic_local_voice_identity"
+    assert report["blocking_task_ids"] == []
+
+
+def test_local_voiceover_continuity_rejects_a_real_voice_id_change():
+    segments = [
+        {
+            "segment_index": index,
+            "dialogue_lines": [{
+                "speaker_id": "narrator",
+                "line": f"Line {index}.",
+                "delivery_method": "local_voiceover",
+            }],
+        }
+        for index in (1, 2)
+    ]
+    postproduction = [
+        {
+            "segment_index": 1,
+            "task_id": 20,
+            "local_voiceover": {
+                "backend": "edge_neural_tts",
+                "voice": "en-US-JennyNeural",
+            },
+        },
+        {
+            "segment_index": 2,
+            "task_id": 21,
+            "local_voiceover": {
+                "backend": "edge_neural_tts",
+                "voice": "en-US-GuyNeural",
+            },
+        },
+    ]
+
+    report = _local_voiceover_identity_report(
+        segments=segments,
+        local_postproduction=postproduction,
+    )
+
+    assert report is not None
+    assert report["status"] == "FAIL"
+    assert report["blocking_task_ids"] == [20, 21]

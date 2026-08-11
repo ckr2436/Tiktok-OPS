@@ -30,11 +30,6 @@ export async function fetchContentFactoryBridge(wid) {
   return res.data
 }
 
-export async function registerContentFactoryBridge(wid, payload) {
-  const res = await http.post(`${basePath(wid)}/content-factory/bridge/register`, payload)
-  return res.data
-}
-
 export async function bindContentFactoryBridgeDevice(wid, deviceId) {
   const res = await http.post(`${basePath(wid)}/content-factory/bridge/devices/bind`, { device_id: deviceId })
   return res.data
@@ -120,11 +115,6 @@ export async function generateContentFactoryProductFacts(wid, productId) {
   return res.data
 }
 
-export async function createContentFactoryProject(wid, payload) {
-  const res = await http.post(`${basePath(wid)}/content-factory/projects`, payload)
-  return res.data
-}
-
 export async function sendContentFactoryProducerTurn(wid, payload) {
   // Producer turns can legitimately spend several minutes reasoning over a
   // long brief and product packet.  The shared client timeout is intentionally
@@ -162,6 +152,22 @@ export async function uploadContentFactoryProducerAttachments(
   return Array.isArray(res.data) ? res.data : []
 }
 
+export async function addContentFactoryProducerReferenceLink(
+  wid,
+  sessionKey,
+  { url, contextMessage, productId } = {},
+) {
+  const res = await http.post(
+    `${basePath(wid)}/content-factory/producer/sessions/${encodeURIComponent(sessionKey)}/reference-links`,
+    {
+      url,
+      context_message: contextMessage || null,
+      product_id: productId || null,
+    },
+  )
+  return res.data
+}
+
 export async function deleteContentFactoryProducerAttachment(wid, sessionKey, attachmentKey) {
   const res = await http.delete(
     `${basePath(wid)}/content-factory/producer/sessions/${encodeURIComponent(sessionKey)}/attachments/${encodeURIComponent(attachmentKey)}`,
@@ -169,10 +175,13 @@ export async function deleteContentFactoryProducerAttachment(wid, sessionKey, at
   return res.data
 }
 
-export async function confirmContentFactoryProducerProject(wid, sessionKey, proposalSha256) {
+export async function confirmContentFactoryProducerProject(wid, sessionKey, proposalSha256, pendingDecisionId) {
   const res = await http.post(
     `${basePath(wid)}/content-factory/producer/sessions/${encodeURIComponent(sessionKey)}/confirm`,
-    { proposal_sha256: proposalSha256 },
+    {
+      proposal_sha256: proposalSha256,
+      pending_decision_id: pendingDecisionId || null,
+    },
   )
   return res.data
 }

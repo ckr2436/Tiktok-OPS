@@ -158,11 +158,19 @@ def persist_content_director_loop(
                 != artifact.artifact_sha256
                 or artifact_row.parent_artifact_sha256
                 != artifact.parent_artifact_sha256
-                or bool(artifact_row.accepted) != is_accepted
             ):
                 raise ValueError(
                     "director artifact identity conflicts with immutable ancestry"
                 )
+            if bool(artifact_row.accepted) and not is_accepted:
+                raise ValueError(
+                    "accepted director artifact cannot be reverted to unaccepted"
+                )
+            if is_accepted and not bool(artifact_row.accepted):
+                # Acceptance is review state, not author-owned artifact content.
+                # A review-only recovery may legitimately promote the already
+                # immutable artifact once its missing independent verdict lands.
+                artifact_row.accepted = True
             _assert_same_payload(
                 label="director artifact",
                 existing=artifact_row.artifact_json,

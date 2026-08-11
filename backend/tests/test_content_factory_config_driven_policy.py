@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 from app.tasks.hermes_agent.content_factory_tasks import (
     _creative_cast_policy,
@@ -8,7 +9,7 @@ from app.tasks.hermes_agent.content_factory_tasks import (
     _product_conversion_points,
     _promotion_line_for_speech,
 )
-from app.features.tenants.hermes_agent.schemas import ContentFactoryProjectCreate
+from app.features.tenants.hermes_agent.schemas import ContentFactoryProjectUpdate
 from app.services.hermes_agent.content_factory import (
     _control_transition_checkpoint_clear_keys,
 )
@@ -20,7 +21,12 @@ def _project(**config):
         product_id=33,
         product_name="NOVA Evening Tea",
         product_brief="",
-        config_json={"content_mode": "product", "product_required": True, **config},
+        config_json={
+            "content_mode": "product",
+            "product_required": True,
+            "video_model": "omni_flash",
+            **config,
+        },
         state_json={},
     )
 
@@ -34,6 +40,21 @@ def test_targeted_plan_repair_keeps_paid_visual_sibling_checkpoint():
             production_plan_external_repair=False,
         )
     )
+
+
+def test_live_content_factory_has_no_retired_creative_stage_or_single_duration_fallback():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "app/services/hermes_agent/content_factory.py",
+        root / "app/services/hermes_agent/direct_browser.py",
+        root / "app/tasks/hermes_agent/content_factory_tasks.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert '"CREATIVE"' not in combined
+    assert "CONTENT_LEGACY_CREATIVE_REMOVED" not in combined
+    assert "RETIRED_CONTENT_FACTORY_STAGES" not in combined
+    assert 'config.get("video_duration_seconds")' not in combined
 
 
 def test_conversion_points_come_only_from_confirmed_project_fields():
@@ -73,11 +94,9 @@ def test_price_without_configured_storefront_action_does_not_invent_one():
     )
 
 
-def test_create_schema_accepts_structured_copy_and_publishing_profiles():
-    payload = ContentFactoryProjectCreate(
+def test_update_schema_accepts_structured_copy_and_publishing_profiles():
+    payload = ContentFactoryProjectUpdate(
         title="NOVA launch",
-        brand_name="NOVA",
-        product_name="Evening Tea",
         publishing_profile={
             "platform": "short_video",
             "hashtags": ["NOVA", "EveningTea"],
@@ -110,11 +129,9 @@ def test_create_schema_accepts_structured_copy_and_publishing_profiles():
     )
 
 
-def test_create_schema_accepts_board_generation_and_model_fallback_chain():
-    payload = ContentFactoryProjectCreate(
+def test_update_schema_accepts_board_generation_and_model_fallback_chain():
+    payload = ContentFactoryProjectUpdate(
         title="Board-rendered launch",
-        brand_name="NOVA",
-        product_name="Evening Tea",
         visual_reference_generation_mode="board",
         visual_image_model_chain=[
             "gpt-image-2.0",

@@ -372,7 +372,7 @@ def test_universal_showrunner_zero_media_compile(case):
             segment,
             resolution="720p",
             language_label="English (US)",
-            fast_pacing=False,
+            requirement_contract=[],
             promotion="Runtime must not append this sentence.",
             product_required=bool(segment["product_anchor_required"]),
             audio_mode=case["audio_mode"],

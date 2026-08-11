@@ -267,6 +267,53 @@ def test_new_execution_key_preserves_a_new_immutable_audit_generation(
     ) == 2
 
 
+def test_review_only_recovery_promotes_existing_immutable_artifact(db_session):
+    project = SimpleNamespace(id=171, workspace_id=12, user_id=34)
+    brief, approved_result = _approved_loop()
+    pending_result = approved_result.model_copy(update={
+        "status": "quality_pause",
+        "final_artifact": approved_result.final_artifact,
+        "reviews": [],
+        "reason": "critic response contract was incomplete",
+    })
+
+    first = persist_content_director_loop(
+        db_session,
+        project=project,
+        variant_index=41,
+        mode="enforce",
+        brief=brief,
+        result=pending_result,
+        execution_key="director-stage-200-run-one",
+    )
+    db_session.commit()
+    artifact = db_session.scalar(select(HermesContentDirectorArtifact))
+    assert artifact.accepted is False
+    assert db_session.scalar(
+        select(func.count()).select_from(HermesContentDirectorReview)
+    ) == 0
+
+    second = persist_content_director_loop(
+        db_session,
+        project=project,
+        variant_index=41,
+        mode="enforce",
+        brief=brief,
+        result=approved_result,
+        execution_key="director-stage-200-run-one",
+    )
+    db_session.commit()
+
+    assert first.id == second.id
+    assert db_session.scalar(
+        select(func.count()).select_from(HermesContentDirectorArtifact)
+    ) == 1
+    assert db_session.scalar(
+        select(func.count()).select_from(HermesContentDirectorReview)
+    ) == 1
+    assert db_session.scalar(select(HermesContentDirectorArtifact)).accepted is True
+
+
 def test_new_director_brief_never_resumes_cross_brief_artifact_ancestry(
     db_session,
 ):

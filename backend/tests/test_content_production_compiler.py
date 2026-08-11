@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from app.services.hermes_agent.content_director import (
+    build_directed_content_artifact,
+)
+from app.services.hermes_agent.content_intent import (
+    CreativeIntentManifest,
+    CreativeIntentRequirement,
+    RequirementExecutionMapping,
+    sign_creative_intent_manifest,
+)
 from app.services.hermes_agent.content_production_compiler import (
     compile_production_plan_for_media,
     compile_production_plan_to_video_result,
@@ -60,6 +69,170 @@ def test_compiler_preserves_script_and_variable_reference_count():
     assert voice["screen_relation"] == "off_screen_narrator"
     assert voice["timbre"] == "warm and grounded"
     assert compiled["production_plan_lock"]["plan_sha256"] == plan.plan_sha256
+    assert {
+        row["storyboard_group_id"]
+        for row in compiled["visual_job_ticket"]["reference_plan"]
+    } == {plan.plan_id}
+
+
+def test_compiler_carries_user_requirement_evidence_through_every_authority():
+    base_artifact = _artifact()
+    requirement = CreativeIntentRequirement(
+        requirement_id="R-001",
+        kind="reference_transfer",
+        priority="critical",
+        scope="time_window",
+        start_seconds=0,
+        end_seconds=3,
+        intent="Open with an immediate visual interruption that stops scrolling.",
+        evidence_quote="The first three seconds must keep the hook strength.",
+        interpretation=(
+            "The opening must create a specific visual contradiction before the "
+            "viewer can infer the setup."
+        ),
+        observable_checks=[
+            "A visually contradictory event is already readable before second 3.",
+            "The opening is newly authored and does not reproduce benchmark shots.",
+        ],
+        creative_freedom=["Choose a new setting and interruption mechanism."],
+        must_not_reuse=["benchmark composition", "benchmark wording"],
+    )
+    manifest = sign_creative_intent_manifest(
+        CreativeIntentManifest(
+            objective="Create an original fast-opening short-form product story.",
+            requirements=[requirement],
+        )
+    )
+    director_mapping = RequirementExecutionMapping(
+        requirement_id="R-001",
+        implementation=(
+            "Make the notification trail visibly invade the home on the first beat."
+        ),
+        script_line_ids=["l1"],
+        capability_node_ids=["copy"],
+        segment_indices=[1],
+        evidence_plan=[
+            "The first beat shows the contradiction and the first line names it."
+        ],
+    )
+    program = base_artifact.program.model_copy(
+        update={
+            "intent_manifest_sha256": manifest.manifest_sha256,
+            "intent_requirements": list(manifest.requirements),
+            "requirement_execution": [director_mapping],
+        }
+    )
+    artifact = build_directed_content_artifact(
+        artifact_id=base_artifact.artifact_id,
+        revision=base_artifact.revision,
+        parent_artifact_sha256=base_artifact.parent_artifact_sha256,
+        program=program,
+        script=base_artifact.script,
+    )
+
+    payload = _author_plan_payload(_spoken_plan(artifact))
+    payload["visual"]["beats"][0]["requirement_ids"] = ["R-001"]
+    payload["requirement_execution"] = [{
+        "requirement_id": "R-001",
+        "beat_ids": ["recognition"],
+        "reference_ids": ["character-design"],
+        "audio_cue_ids": [],
+        "line_ids": ["l1"],
+        "implementation_evidence": [
+            "The signed recognition beat carries R-001 and begins at zero seconds."
+        ],
+    }]
+    plan = finalize_director_production_plan_author_draft(
+        DirectorProductionPlanAuthorDraft.model_validate(payload),
+        artifact,
+        plan_id="plan.intent-lineage",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    video = compile_production_plan_to_video_result(
+        artifact,
+        plan,
+        variant_index=1,
+        resolution="720p",
+        language_label="English (US)",
+    )["videos"][0]
+    first_segment = video["segments"][0]
+    first_beat = first_segment["timeline"][0]
+    assert first_beat["environment"]
+    assert first_beat["subject_action"]
+    assert first_beat["motion_and_transition"]
+    assert first_beat["motion_and_transition"] in first_beat["action"]
+    assert first_segment["requirement_ids"] == ["R-001"]
+    assert first_segment["requirement_contract"][0]["evidence_quote"] == (
+        "The first three seconds must keep the hook strength."
+    )
+    assert first_segment["requirement_contract"][0][
+        "director_implementation"
+    ].startswith("Make the notification trail")
+    assert first_segment["requirement_contract"][0][
+        "production_implementation_evidence"
+    ] == [
+        "The signed recognition beat carries R-001 and begins at zero seconds."
+    ]
+    assert video["intent_manifest_sha256"] == manifest.manifest_sha256
+
+
+def test_unbound_compiler_preserves_multimodal_director_purpose_text():
+    artifact = _artifact()
+    product_line = artifact.script.lines[-1].model_copy(update={
+        "text": "MYUPONA is part of that moment.",
+        "purpose": "Position MYUPONA as part of the protected moment.",
+    })
+    artifact = artifact.model_copy(update={
+        "script": artifact.script.model_copy(update={
+            "lines": [*artifact.script.lines[:-1], product_line],
+        }),
+    })
+    payload = _author_plan_payload(_spoken_plan(artifact))
+    plan = finalize_director_production_plan_author_draft(
+        DirectorProductionPlanAuthorDraft.model_validate(payload),
+        artifact,
+        plan_id="plan.unbound-copy",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    compiled = compile_production_plan_for_media(
+        artifact,
+        plan,
+        asset_registry={"asset:product:front": {"asset_id": 1}},
+        product_allowed=False,
+    )
+    video = compile_production_plan_to_video_result(
+        artifact,
+        plan,
+        variant_index=1,
+        resolution="720p",
+        language_label="English (US)",
+        product_allowed=False,
+    )["videos"][0]
+
+    compiled_lines = [
+        line["line"]
+        for segment in compiled["complete_video_script"]["segments"]
+        for line in segment["dialogue_lines"]
+    ]
+    assert "MYUPONA is part of that moment." in compiled_lines
+    assert any(
+        "Position MYUPONA" in segment["story_function"]
+        for segment in compiled["shot_plan"]
+    )
+    assert any("Position MYUPONA" in segment["prompt"] for segment in video["segments"])
+    assert any("Position MYUPONA" in segment["segment_goal"] for segment in video["segments"])
+    assert any(
+        "Position MYUPONA" in segment["segment_goal"]
+        for segment in video["segments"]
+    )
 
 
 def test_finalizer_rejects_source_only_reference_before_media_spend():

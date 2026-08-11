@@ -250,7 +250,10 @@ class HermesAgentRun(Base):
     input_text: Mapped[str | None] = mapped_column(Text, default=None)
     input_json: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSON, default=None)
     instructions: Mapped[str | None] = mapped_column(Text, default=None)
-    result_text: Mapped[str | None] = mapped_column(Text, default=None)
+    # Preserve the complete upstream answer.  Long Director/analyst outputs
+    # can exceed MySQL TEXT's 64 KiB boundary and must remain identical to the
+    # assistant message and provider response envelope.
+    result_text: Mapped[str | None] = mapped_column(LongText, default=None)
     result_json: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSON, default=None)
     hermes_response_id: Mapped[str | None] = mapped_column(String(128), default=None)
     hermes_conversation: Mapped[str | None] = mapped_column(String(191), default=None)
@@ -794,7 +797,11 @@ class HermesContentFactoryStage(Base):
     instruction: Mapped[str | None] = mapped_column(Text, default=None)
     input_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     output_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
-    response_text: Mapped[str | None] = mapped_column(Text, default=None)
+    # VIDEO_PROMPTS can legitimately exceed MySQL TEXT's 64 KiB limit once a
+    # multi-segment compiler result includes per-segment timelines, reference
+    # bindings, continuity constraints, and audit evidence.  Keep the complete
+    # durable response instead of truncating the execution record.
+    response_text: Mapped[str | None] = mapped_column(LongText, default=None)
     chat_url: Mapped[str | None] = mapped_column(String(1024), default=None)
     error_message: Mapped[str | None] = mapped_column(Text, default=None)
     celery_task_id: Mapped[str | None] = mapped_column(String(64), default=None)
@@ -943,6 +950,187 @@ class HermesContentDeliverable(Base):
     updated_at: Mapped[datetime] = mapped_column(MySQL_DATETIME(fsp=6), server_default=text("CURRENT_TIMESTAMP(6)"), server_onupdate=text("CURRENT_TIMESTAMP(6)"), nullable=False)
 
 
+class HermesContentEvaluation(Base):
+    """Independent semantic or deterministic evidence for one media artifact.
+
+    Provider transport state deliberately does not live here.  A successfully
+    downloaded provider task remains transport-successful even when a
+    multimodal reviewer recommends a bounded creative repair.
+    """
+
+    __tablename__ = "hermes_content_evaluations"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_key",
+            name="uq_hermes_content_evaluation_key",
+        ),
+        Index(
+            "idx_hermes_content_evaluation_scope",
+            "workspace_id",
+            "project_id",
+            "evaluation_kind",
+            "status",
+        ),
+        Index(
+            "idx_hermes_content_evaluation_task",
+            "provider_task_row_id",
+            "created_at",
+        ),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    evaluation_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    workspace_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(UBigInt, nullable=True)
+    project_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_factory_projects.id",
+            onupdate="RESTRICT",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    execution_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_executions.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    variant_run_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_variant_runs.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    segment_run_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_segment_runs.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    provider_task_row_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey("kie_api_tasks.id", onupdate="RESTRICT", ondelete="SET NULL"),
+        nullable=True,
+    )
+    evaluation_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+
+
+class HermesContentRuntimeEvent(Base):
+    """Transactional outbox event for execution-ledger state transitions."""
+
+    __tablename__ = "hermes_content_runtime_events"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_hermes_content_runtime_event"),
+        Index("idx_hermes_content_runtime_event_pending", "status", "available_at"),
+        Index(
+            "idx_hermes_content_runtime_event_scope",
+            "workspace_id",
+            "project_id",
+            "created_at",
+        ),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    workspace_id: Mapped[int] = mapped_column(UBigInt, nullable=False)
+    project_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_factory_projects.id",
+            onupdate="RESTRICT",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    execution_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_executions.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    variant_run_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_variant_runs.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    segment_run_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey(
+            "hermes_content_segment_runs.id",
+            onupdate="RESTRICT",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    provider_task_row_id: Mapped[int | None] = mapped_column(
+        UBigInt,
+        ForeignKey("kie_api_tasks.id", onupdate="RESTRICT", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'pending'")
+    )
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    available_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        MySQL_DATETIME(fsp=6), default=None
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+        nullable=False,
+    )
+
+
 __all__ = [
     "UserFeaturePermission",
     "HermesAgentConversation",
@@ -964,4 +1152,6 @@ __all__ = [
     "HermesContentVariantRun",
     "HermesContentSegmentRun",
     "HermesContentDeliverable",
+    "HermesContentEvaluation",
+    "HermesContentRuntimeEvent",
 ]

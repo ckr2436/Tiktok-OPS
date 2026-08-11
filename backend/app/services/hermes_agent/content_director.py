@@ -9,6 +9,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.services.hermes_agent.content_intent import (
+    CreativeIntentManifest,
+    CreativeIntentRequirement,
+    RequirementExecutionMapping,
+    applicable_requirements,
+    validate_requirement_execution_coverage,
+)
+
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)?")
 _SENTENCE_END_RE = re.compile(r"[.!?…][\"'”’)]*$")
@@ -59,6 +67,17 @@ def _required_verbatim_voiceover_blocks(
         raise ValueError(
             "required_verbatim_voiceover must be a non-empty string"
         )
+    compiled_lines = payload.get("required_verbatim_voiceover_lines")
+    if isinstance(compiled_lines, list):
+        line_blocks = [
+            str(item.get("text") or "").strip()
+            for item in compiled_lines
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        normalized_raw = re.sub(r"\s+", " ", raw).strip()
+        normalized_lines = re.sub(r"\s+", " ", " ".join(line_blocks)).strip()
+        if line_blocks and normalized_lines == normalized_raw:
+            return line_blocks
     blocks = [
         block.strip()
         for block in re.split(r"(?:\r?\n)[ \t]*(?:\r?\n)+", raw.strip())
@@ -141,7 +160,15 @@ class DirectorCapabilitySpec(BaseModel):
 
 
 class VideoProductionContract(BaseModel):
-    """Provider timing/reference limits supplied by a capability registry."""
+    """Signed provider capability boundary supplied to every creative role.
+
+    Timing alone is not enough to make a media plan executable.  In
+    particular, a Director must know whether the selected provider accepts
+    human-face references and which visual medium is safe *before* it writes
+    paid image prompts.  Keep these values in the immutable brief instead of
+    relying on a later worker-only lookup that an independent Critic cannot
+    see.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -152,8 +179,32 @@ class VideoProductionContract(BaseModel):
         default_factory=list,
         max_length=300,
     )
+    required_segment_durations_seconds: list[float] = Field(
+        default_factory=list,
+        max_length=300,
+    )
     reference_image_limit: int = Field(ge=0, le=64)
     reference_video_limit: int = Field(ge=0, le=8)
+    provider_prompt_max_characters: int = Field(
+        default=100_000,
+        ge=1,
+        le=100_000,
+    )
+    allows_human_face_references: bool = True
+    human_face_reference_mode: Literal[
+        "allowed",
+        "stylized_animation_only",
+        "forbidden",
+    ] = "allowed"
+    supports_native_spoken_audio: bool = False
+    preferred_spoken_delivery: Literal[
+        "provider_dialogue",
+        "local_voiceover",
+    ] = "local_voiceover"
+    provider_hard_rules: list[str] = Field(
+        default_factory=list,
+        max_length=64,
+    )
 
     @model_validator(mode="after")
     def validate_timing_contract(self) -> "VideoProductionContract":
@@ -185,6 +236,49 @@ class VideoProductionContract(BaseModel):
             raise ValueError(
                 "allowed segment durations must be unique"
             )
+        required_outside_range = [
+            value
+            for value in self.required_segment_durations_seconds
+            if not (
+                self.segment_duration_minimum_seconds
+                <= value
+                <= self.segment_duration_maximum_seconds
+            )
+        ]
+        if required_outside_range:
+            raise ValueError(
+                "required segment durations are outside the declared range: "
+                f"{required_outside_range}"
+            )
+        allowed_fingerprints = {
+            round(value, 4)
+            for value in self.allowed_segment_durations_seconds
+        }
+        unsupported_required = [
+            value
+            for value in self.required_segment_durations_seconds
+            if allowed_fingerprints
+            and round(value, 4) not in allowed_fingerprints
+        ]
+        if unsupported_required:
+            raise ValueError(
+                "required segment durations are not provider-supported: "
+                f"{unsupported_required}"
+            )
+        if (
+            self.human_face_reference_mode == "forbidden"
+            and self.allows_human_face_references
+        ):
+            raise ValueError(
+                "forbidden human-face mode cannot allow face references"
+            )
+        if (
+            self.human_face_reference_mode != "forbidden"
+            and not self.allows_human_face_references
+        ):
+            raise ValueError(
+                "non-forbidden human-face mode must allow face references"
+            )
         return self
 
 
@@ -196,6 +290,17 @@ def production_segment_durations(
     total = float(total_duration_seconds)
     if total <= 0:
         raise ValueError("total_duration_seconds must be positive")
+    required = [
+        round(float(value), 2)
+        for value in contract.required_segment_durations_seconds
+    ]
+    if required:
+        if abs(sum(required) - total) > 0.05:
+            raise ValueError(
+                f"{contract.model_id} required segment topology totals "
+                f"{sum(required):g}, not requested total {total:g}"
+            )
+        return required
     allowed = sorted(
         {
             int(round(float(value) * 100))
@@ -317,6 +422,7 @@ class CopyReviewCriterion(BaseModel):
     instruction: str = Field(min_length=1, max_length=2000)
     minimum_score: int = Field(ge=0, le=100)
     blocking: bool = True
+    priority: Literal["critical", "high", "normal"] = "high"
 
 
 class SeriesReviewCriterion(BaseModel):
@@ -330,6 +436,7 @@ class SeriesReviewCriterion(BaseModel):
     instruction: str = Field(min_length=1, max_length=2000)
     minimum_score: int = Field(ge=0, le=100)
     blocking: bool = True
+    priority: Literal["critical", "high", "normal"] = "high"
 
 
 class DirectorProjectBrief(BaseModel):
@@ -1694,10 +1801,7 @@ def parse_series_slate_response(
 def build_series_slate_packet(
     brief: DirectorSeriesBrief,
 ) -> dict[str, Any]:
-    output_contract = series_slate_output_contract(
-        allowed_audio_modes=brief.allowed_audio_modes,
-    )
-    _remove_unrequested_pain_contract(output_contract, brief)
+    output_contract = series_slate_brief_output_contract(brief)
     return {
         "schema_version": "2.0",
         "role": "content_series_director",
@@ -1807,6 +1911,83 @@ def _remove_unrequested_pain_contract(
         field for field in required if field != "pain_hypothesis"
     ]
     definitions.pop("PainHypothesis", None)
+
+
+def series_slate_brief_output_contract(
+    brief: DirectorSeriesBrief,
+) -> dict[str, Any]:
+    """Bind the monolithic slate schema to this project's exact vocabulary.
+
+    Small series use the monolithic response path.  Its former generic
+    ``dict[str, str]`` differentiation schema and free-text product attribute
+    field contradicted the deterministic validator, so a model could satisfy
+    the advertised JSON schema and still be rejected.  Make the schema tell
+    the same truth as the validator: exact dimension keys, exact confirmed
+    attribute values, fixed project identity, duration range and intent count.
+    """
+    output_contract = series_slate_output_contract(
+        allowed_audio_modes=brief.allowed_audio_modes,
+    )
+    _remove_unrequested_pain_contract(output_contract, brief)
+    definitions = output_contract.get("$defs", {})
+    intent_schema = definitions.get("SeriesSlateIntent", {})
+    intent_properties = intent_schema.get("properties", {})
+    dimension_ids = [
+        item.dimension_id for item in brief.diversity_requirements
+    ]
+    intent_properties["differentiation"] = {
+        "type": "object",
+        "properties": {
+            item.dimension_id: {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": item.instruction,
+            }
+            for item in brief.diversity_requirements
+        },
+        "required": dimension_ids,
+        "additionalProperties": False,
+        "minProperties": len(dimension_ids),
+        "maxProperties": len(dimension_ids),
+    }
+    duration_schema = intent_properties.get("target_duration_seconds")
+    if isinstance(duration_schema, dict):
+        duration_schema["minimum"] = float(
+            brief.minimum_duration_seconds
+        )
+        duration_schema["maximum"] = float(
+            brief.maximum_duration_seconds
+        )
+    if brief.source_truth_refs:
+        truth_ref_schema = intent_properties.get("source_truth_refs")
+        if isinstance(truth_ref_schema, dict):
+            items_schema = truth_ref_schema.get("items")
+            if isinstance(items_schema, dict):
+                items_schema["enum"] = list(brief.source_truth_refs)
+    if brief.conversion.confirmed_differentiators:
+        confirmed_attribute_schema = (
+            definitions.get("ConversionHypothesis", {})
+            .get("properties", {})
+            .get("confirmed_attribute")
+        )
+        if isinstance(confirmed_attribute_schema, dict):
+            confirmed_attribute_schema["enum"] = list(
+                brief.conversion.confirmed_differentiators
+            )
+    root_properties = output_contract.get("properties", {})
+    for field_name, exact_value in (
+        ("series_id", brief.series_id),
+        ("series_version", int(brief.series_version)),
+    ):
+        field_schema = root_properties.get(field_name)
+        if isinstance(field_schema, dict):
+            field_schema["const"] = exact_value
+    intents_schema = root_properties.get("intents")
+    if isinstance(intents_schema, dict):
+        intents_schema["minItems"] = int(brief.target_count)
+        intents_schema["maxItems"] = int(brief.target_count)
+    return output_contract
 
 
 def build_series_slate_page_packet(
@@ -2184,6 +2365,19 @@ class VideoProgramSpec(BaseModel):
         "sound_design",
     ] | None = None
     creative_strategy: dict[str, Any] = Field(default_factory=dict)
+    intent_manifest_sha256: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+    )
+    intent_requirements: list[CreativeIntentRequirement] = Field(
+        default_factory=list,
+        max_length=128,
+    )
+    requirement_execution: list[RequirementExecutionMapping] = Field(
+        default_factory=list,
+        max_length=128,
+    )
     conversion: ConversionIntent = Field(default_factory=ConversionIntent)
     execution_graph: list[DirectorCapabilityNode] = Field(min_length=1, max_length=64)
     copy_review_criteria: list[CopyReviewCriterion] = Field(
@@ -2430,6 +2624,10 @@ class DirectorProgramAuthorDraft(BaseModel):
         "sound_design",
     ]
     creative_strategy: dict[str, Any] = Field(default_factory=dict)
+    requirement_execution: list[RequirementExecutionMapping] = Field(
+        default_factory=list,
+        max_length=128,
+    )
     execution_graph: list[DirectorCapabilitySelection] = Field(
         min_length=1,
         max_length=64,
@@ -2519,6 +2717,23 @@ def _brief_segment_durations(
     )
 
 
+def _brief_intent_authority(
+    brief: DirectorProjectBrief,
+) -> tuple[CreativeIntentManifest | None, int | None]:
+    producer = dict(
+        dict(brief.truth_payload or {}).get("producer_intent_spec") or {}
+    )
+    manifest_payload = producer.get("intent_manifest")
+    if not isinstance(manifest_payload, dict):
+        return None, None
+    manifest = CreativeIntentManifest.model_validate(manifest_payload)
+    series_intent = dict(
+        dict(brief.truth_payload or {}).get("series_intent") or {}
+    )
+    ordinal = int(series_intent.get("variant_index") or 0) or None
+    return manifest, ordinal
+
+
 def director_author_output_contract(
     brief: DirectorProjectBrief,
 ) -> dict[str, Any]:
@@ -2569,6 +2784,61 @@ def director_author_output_contract(
         segment_count = len(_brief_segment_durations(brief))
         script_segments_schema["minItems"] = segment_count
         script_segments_schema["maxItems"] = segment_count
+
+    manifest, ordinal = _brief_intent_authority(brief)
+    if manifest is not None:
+        applicable = applicable_requirements(
+            manifest,
+            deliverable_ordinal=ordinal,
+        )
+        allowed_ids = [item.requirement_id for item in applicable]
+        mapping_schema = program_properties.get("requirement_execution")
+        required_mapping_count = len([
+            item
+            for item in applicable
+            if item.priority in {"critical", "high"}
+        ])
+        if isinstance(mapping_schema, dict):
+            mapping_schema["minItems"] = required_mapping_count
+        if required_mapping_count:
+            required_fields = program_schema.setdefault("required", [])
+            if "requirement_execution" not in required_fields:
+                required_fields.append("requirement_execution")
+        requirement_id_schema = (
+            definitions.get("RequirementExecutionMapping", {})
+            .get("properties", {})
+            .get("requirement_id")
+        )
+        if isinstance(requirement_id_schema, dict):
+            requirement_id_schema["enum"] = allowed_ids
+
+    # A user-locked voiceover is runtime-owned source truth.  The author still
+    # supplies metadata and lossless segment allocation, but it must reserve
+    # exactly one spoken line for every immutable blank-line block.  Keep this
+    # invariant in the machine-readable contract as well as the prose packet;
+    # otherwise models commonly merge adjacent blocks and force a second,
+    # avoidable contract-repair request.
+    verbatim_blocks = _required_verbatim_voiceover_blocks(
+        brief.truth_payload
+    )
+    script_lines_schema = (
+        definitions.get("DirectorScriptAuthorDraft", {})
+        .get("properties", {})
+        .get("lines")
+    )
+    if verbatim_blocks is not None and isinstance(
+        script_lines_schema,
+        dict,
+    ):
+        script_lines_schema["contains"] = {
+            "type": "object",
+            "properties": {
+                "delivery_mode": {"const": "spoken"},
+            },
+            "required": ["delivery_mode"],
+        }
+        script_lines_schema["minContains"] = len(verbatim_blocks)
+        script_lines_schema["maxContains"] = len(verbatim_blocks)
     return output_contract
 
 
@@ -2647,12 +2917,16 @@ class CopyCriticCriterionEvidence(BaseModel):
     @model_validator(mode="after")
     def validate_quotes(self) -> "CopyCriticCriterionEvidence":
         cleaned = [str(quote or "").strip() for quote in self.quotes]
-        if any(len(quote) < 8 for quote in cleaned):
-            raise ValueError("critic evidence quotes must contain at least 8 characters")
+        if any(not quote for quote in cleaned):
+            raise ValueError("critic evidence quotes must not be empty")
         if len(set(self.line_ids)) != len(self.line_ids):
             raise ValueError("critic evidence line_ids must be unique")
-        if len(set(cleaned)) != len(cleaned):
-            raise ValueError("critic evidence quotes must be unique")
+        # A script may intentionally repeat the same audience-facing copy in
+        # two different lines (for example, the opening and closing CTA).  The
+        # critic must be allowed to cite both immutable occurrences.  Line IDs
+        # remain unique and the parser below still grounds every quote against
+        # the cited authoritative lines, so rejecting repeated quote text adds
+        # no integrity protection and can strand a valid review forever.
         self.quotes = cleaned
         return self
 
@@ -2799,26 +3073,32 @@ def build_delivery_budget_contract(
             else []
         )
     )
-    return {
-        "spoken_global_max_words": int(
+    spoken_global_max_words = int(
             usable_seconds * brief.speech_rate_wpm / 60.0
-        ),
-        "display_global_max_words": int(
+        )
+    display_global_max_words = int(
             usable_seconds
             * brief.display_reading_rate_wpm
             / 60.0
-        ),
+        )
+    return {
+        "spoken_global_max_words": spoken_global_max_words,
+        "display_global_max_words": display_global_max_words,
         "segments": [
             {
                 "segment_index": index,
                 "duration_seconds": duration,
-                "spoken_max_words": int(
-                    duration * brief.speech_rate_wpm / 60.0
+                "spoken_max_words": min(
+                    spoken_global_max_words,
+                    int(duration * brief.speech_rate_wpm / 60.0),
                 ),
-                "display_max_words": int(
-                    duration
-                    * brief.display_reading_rate_wpm
-                    / 60.0
+                "display_max_words": min(
+                    display_global_max_words,
+                    int(
+                        duration
+                        * brief.display_reading_rate_wpm
+                        / 60.0
+                    ),
                 ),
             }
             for index, duration in enumerate(durations, 1)
@@ -2826,10 +3106,82 @@ def build_delivery_budget_contract(
         "rules": {
             "count_each_line_in_its_delivery_mode": True,
             "every_segment_must_fit_its_own_budget": True,
-            "global_budget_does_not_override_segment_budget": True,
+            "segment_ceiling_is_already_capped_by_global_budget": True,
+            "sum_of_all_segments_must_also_fit_global_budget": True,
             "self_count_before_returning": True,
         },
     }
+
+
+def director_author_project_brief(
+    brief: DirectorProjectBrief,
+) -> dict[str, Any]:
+    """Return the current-deliverable view supplied to the Director model.
+
+    The durable brief intentionally retains the complete series contract, but
+    an individual Director invocation authors exactly one deliverable.  Giving
+    the author all sibling scripts and deliverables caused short one-segment
+    variants to be expanded into the entire series.  Keep project-wide intent
+    and requirements as authority while narrowing sibling creative material to
+    the current ordinal.
+    """
+
+    payload = brief.model_dump(mode="json")
+    truth = dict(payload.get("truth_payload") or {})
+    copy_contract = dict(truth.get("creative_copy_contract") or {})
+    current_seed = copy_contract.get("director_seed_voiceover")
+    series_intent = dict(truth.get("series_intent") or {})
+    current_ordinal = int(series_intent.get("variant_index") or 0) or None
+    has_current_seed = isinstance(current_seed, dict) and bool(
+        str(current_seed.get("text") or "").strip()
+    )
+    if not has_current_seed and current_ordinal is None:
+        return payload
+    all_seeds = [
+        dict(item)
+        for item in list(copy_contract.get("director_seed_voiceovers") or [])
+        if isinstance(item, dict)
+    ]
+    if has_current_seed:
+        current_seed = dict(current_seed)
+        copy_contract["director_seed_voiceover"] = current_seed
+        copy_contract.pop("director_seed_voiceovers", None)
+        current_ordinal = (
+            int(current_seed.get("deliverable_ordinal") or 0)
+            or current_ordinal
+        )
+
+    producer = dict(truth.get("producer_intent_spec") or {})
+    all_deliverables = [
+        dict(item)
+        for item in list(producer.get("deliverables") or [])
+        if isinstance(item, dict)
+    ]
+    if current_ordinal is not None and all_deliverables:
+        current_deliverables = [
+            item
+            for item in all_deliverables
+            if int(item.get("ordinal") or 0) == current_ordinal
+        ]
+        if current_deliverables:
+            producer["deliverables"] = current_deliverables
+
+    truth["creative_copy_contract"] = copy_contract
+    truth["producer_intent_spec"] = producer
+    truth["director_author_scope"] = {
+        "current_deliverable_only": True,
+        "current_deliverable_ordinal": current_ordinal,
+        "expected_script_segment_count": len(_brief_segment_durations(brief)),
+        "series_deliverable_count": max(len(all_seeds), len(all_deliverables)),
+        "instruction": (
+            "Author only the current deliverable. Project-wide target counts "
+            "describe sibling final videos and must never become script "
+            "segments in this Director response. Map project requirements to "
+            "observable evidence in this current deliverable only."
+        ),
+    }
+    payload["truth_payload"] = truth
+    return payload
 
 
 def build_initial_director_packet(brief: DirectorProjectBrief) -> dict[str, Any]:
@@ -2839,7 +3191,7 @@ def build_initial_director_packet(brief: DirectorProjectBrief) -> dict[str, Any]
     return {
         "schema_version": "1.0",
         "role": "content_director",
-        "project_brief": brief.model_dump(mode="json"),
+        "project_brief": director_author_project_brief(brief),
         "delivery_budget_contract": build_delivery_budget_contract(
             brief
         ),
@@ -2847,6 +3199,13 @@ def build_initial_director_packet(brief: DirectorProjectBrief) -> dict[str, Any]
             "use_only_supplied_truth": True,
             "select_only_registered_capabilities": True,
             "return_only_author_owned_fields": True,
+            "author_only_current_deliverable": True,
+            "script_segment_count_must_equal_current_production_contract": True,
+            "project_target_count_is_not_script_segment_count": True,
+            "map_every_critical_and_high_intent_requirement": True,
+            "requirement_mapping_must_name_script_capability_and_segment_coordinates": True,
+            "requirement_mapping_must_explain_observable_final_evidence": True,
+            "do_not_replace_semantic_requirements_with_boolean_flags": True,
             "runtime_materializes_project_truth_and_capability_policies": True,
             "write_complete_script_before_media": True,
             "obey_spoken_and_display_reading_budgets": True,
@@ -2972,6 +3331,30 @@ def validate_directed_artifact_against_brief(
                 f"actual={actual_segment_durations}"
             )
 
+    manifest, ordinal = _brief_intent_authority(brief)
+    if manifest is not None:
+        if program.intent_manifest_sha256 != manifest.manifest_sha256:
+            raise ValueError("director program is not bound to the intent manifest")
+        expected_requirements = applicable_requirements(
+            manifest,
+            deliverable_ordinal=ordinal,
+        )
+        if (
+            [item.model_dump(mode="json") for item in program.intent_requirements]
+            != [item.model_dump(mode="json") for item in expected_requirements]
+        ):
+            raise ValueError("director program changed the applicable intent requirements")
+        validate_requirement_execution_coverage(
+            manifest,
+            list(program.requirement_execution),
+            deliverable_ordinal=ordinal,
+            valid_script_line_ids={line.line_id for line in artifact.script.lines},
+            valid_capability_node_ids={node.node_id for node in program.execution_graph},
+            valid_segment_indices={
+                segment.segment_index for segment in artifact.script.segments
+            },
+        )
+
     catalog = {
         row.capability: row
         for row in brief.capability_catalog
@@ -3084,7 +3467,12 @@ def finalize_director_author_draft(
             )
         )
 
+    manifest, ordinal = _brief_intent_authority(brief)
     program = VideoProgramSpec(
+        # The continuation marker describes how the immutable narration is
+        # allocated across provider clips; it is script semantics, not a new
+        # VideoProgramSpec contract.  Keeping the program on v2 also preserves
+        # compatibility with every production-plan consumer.
         schema_version="2.0",
         program_id=draft.program.program_id,
         objective=brief.objective,
@@ -3096,6 +3484,15 @@ def finalize_director_author_draft(
         aspect_ratio=brief.aspect_ratio,
         audio_mode=draft.program.audio_mode,
         creative_strategy=dict(draft.program.creative_strategy),
+        intent_manifest_sha256=(
+            manifest.manifest_sha256 if manifest is not None else None
+        ),
+        intent_requirements=(
+            applicable_requirements(manifest, deliverable_ordinal=ordinal)
+            if manifest is not None
+            else []
+        ),
+        requirement_execution=list(draft.program.requirement_execution),
         conversion=brief.conversion,
         execution_graph=selected_nodes,
         copy_review_criteria=brief.copy_review_criteria,
@@ -3136,7 +3533,16 @@ def finalize_director_author_draft(
         truth_payload=brief.truth_payload,
     )
     script = build_script_package(
-        schema_version="2.0",
+        schema_version=(
+            "2.1"
+            if str(
+                dict(brief.truth_payload or {})
+                .get("locked_voiceover_segment_boundary_policy", {})
+                .get("mode")
+                or ""
+            ).strip().lower() == "runtime_compiled_continuation"
+            else "2.0"
+        ),
         script_id=draft.script.script_id,
         program_id=draft.script.program_id,
         locale=brief.locale,
@@ -3395,16 +3801,55 @@ def preflight_script_copy(
                     ],
                 )
             )
-    fragments = [
-        line.line_id
-        for line in script.lines
-        if not _SENTENCE_END_RE.search(line.text.strip())
-    ]
+    # A Director line is an addressable timing/edit unit, not necessarily a
+    # grammatical sentence.  Lead-ins such as ``You tell yourself:`` and the
+    # immediately following quote are deliberately separate canonical lines,
+    # yet form one complete spoken beat when allocated to the same provider
+    # segment.  Judging every line in isolation made locked user voiceovers
+    # impossible to approve and sent the immutable copy through identical
+    # model revisions.  The actual production boundary is the segment: only
+    # its final spoken line may leave the generated clip mid-sentence.
+    fragments: list[str] = []
+    if script.schema_version == "2.1":
+        # A locked narration may be longer than one provider clip.  Its
+        # runtime compiler owns the lossless splice coordinates, and adjacent
+        # clips are one continuous voiceover performance.  Requiring each
+        # transport clip to sound like a standalone sentence made the exact
+        # user copy impossible to produce and sent an immutable allocation
+        # through identical model revisions.  The complete narration must
+        # still close grammatically; only internal, audited splices are
+        # exempt from the standalone-sentence rule.
+        final_spoken_lines = [
+            line for line in script.lines
+            if line.delivery_mode == "spoken"
+        ]
+        if (
+            final_spoken_lines
+            and not _SENTENCE_END_RE.search(
+                final_spoken_lines[-1].text.strip()
+            )
+        ):
+            fragments.append(final_spoken_lines[-1].line_id)
+    else:
+        for segment in script.segments:
+            segment_spoken_lines = [
+                lines_by_id[line_id]
+                for line_id in segment.line_ids
+                if lines_by_id[line_id].delivery_mode == "spoken"
+            ]
+            if not segment_spoken_lines:
+                continue
+            final_spoken_line = segment_spoken_lines[-1]
+            if not _SENTENCE_END_RE.search(final_spoken_line.text.strip()):
+                fragments.append(final_spoken_line.line_id)
     if fragments:
         issues.append(
             CopyPreflightIssue(
                 code="INCOMPLETE_SPOKEN_SENTENCE",
-                message="Every allocated spoken line must end as a complete sentence.",
+                message=(
+                    "Every spoken provider segment must end at a complete "
+                    "sentence boundary."
+                ),
                 line_ids=fragments,
             )
         )
@@ -3617,6 +4062,30 @@ def build_independent_copy_critic_packet(
     verbatim_blocks = _required_verbatim_voiceover_blocks(
         brief.truth_payload if brief is not None else None
     )
+    review_criterion_ids = {
+        criterion.criterion_id
+        for criterion in program.copy_review_criteria
+    }
+    product_review_enabled = bool(
+        review_criterion_ids
+        & {
+            "product_relevance_bridge",
+            "reason_to_choose",
+            "expected_viewer_change",
+            "offer_and_action_clarity",
+        }
+    )
+    # ``None`` is the explicit product-first contract: no delayed reveal
+    # boundary was requested.  Keep this classification in the reviewer
+    # packet instead of asking the Critic to infer it from sentence layout.
+    # A short use-case phrase before the product name in the opening line does
+    # not turn a product-first demonstration into a delayed-reveal story.
+    reveal_after_fraction = program.conversion.reveal_after_fraction
+    product_reveal_strategy = (
+        "product_first"
+        if reveal_after_fraction is None or float(reveal_after_fraction) <= 0
+        else "delayed_reveal"
+    )
     return {
         "schema_version": "1.0",
         "role": "independent_copy_critic",
@@ -3645,6 +4114,13 @@ def build_independent_copy_critic_packet(
             for criterion in program.copy_review_criteria
         ],
         "review_method": {
+            "registered_criteria_are_exclusive": (
+                "Apply only the criterion IDs present in review_criteria. Do not "
+                "import an unregistered product, conversion, offer, CTA, category-"
+                "entry, or reason-to-choose requirement into objective_fit, "
+                "complete_coherence, audience_comprehension, or another generic "
+                "criterion."
+            ),
             "immutable_user_copy_authority": (
                 "The exact spoken copy is user-supplied and runtime-locked. "
                 "Verify fidelity, truth, safety, compliance, delivery, and the "
@@ -3652,6 +4128,15 @@ def build_independent_copy_critic_packet(
                 "rewrite for stylistic escalation, and do not judge ungenerated "
                 "visual execution from the copy."
                 if verbatim_blocks is not None
+                else None
+            ),
+            "runtime_compiled_continuation": (
+                "The locked narration is compiled losslessly across adjacent "
+                "provider clips. Internal script lines are audited splice "
+                "coordinates, not standalone sentences. Judge the ordered "
+                "voiceover as one continuous performance; do not reject an "
+                "internal line merely because it continues in the next clip."
+                if script.schema_version == "2.1"
                 else None
             ),
             "score_only_the_final_copy": (
@@ -3669,14 +4154,14 @@ def build_independent_copy_critic_packet(
                 "human stake, consequence, or loss when the criterion asks for one."
             ),
             "requested_intensity_is_binding": (
-                "Read the whole-series objective and audience in project_brief."
-                "truth_payload together with the episode objective and pain hypothesis. "
-                "When they explicitly request sharp, deep, urgent, painful, or high-stakes "
-                "communication, generic friction or an unfinished routine cannot receive "
-                "a passing stakes score. Quote the exact downstream human loss, identity "
-                "conflict, relationship or professional cost, repeated consequence, "
-                "missed life moment, or fear of no longer feeling like oneself. For a "
-                "neutral objective, do not manufacture pain."
+                "Read the signed intent requirements and their typed ownership. "
+                "Only spoken or displayed copy requirements can require the words "
+                "to carry sharp, urgent, painful, or high-stakes communication. "
+                "A requirement typed visual is evaluated later from generated "
+                "media and must not be converted into demanded loss, consequence, "
+                "or identity pain in the script. Judge whether the exact copy "
+                "supports its assigned beat; for a visually intense but copy-neutral "
+                "objective, do not manufacture pain."
             ),
             "consequence_is_not_a_restatement": (
                 "Repeating or relabeling the setup as more instances of the same setup "
@@ -3693,28 +4178,61 @@ def build_independent_copy_critic_packet(
                 "or unrelated preference after the opening problem has been closed. The "
                 "exact copy must make the shared causal or psychological progression and "
                 "the product's bounded role understandable."
+                if product_review_enabled
+                else None
             ),
             "new_use_case_must_be_established": (
                 "A distinct product-relevant use case cannot be inserted merely by "
                 "announcing an additional desire. The exact progression must make clear "
                 "why that question, decision, comparison, demonstration, or use case is "
                 "now the audience's relevant next consideration."
+                if product_review_enabled
+                else None
             ),
             "category_entry_precedes_attribute_selection": (
                 "A confirmed-attribute preference may explain why this product is "
                 "considered among alternatives, but it cannot create the need for the "
                 "product category or use case. In delayed-reveal work, exact earlier "
                 "copy must first make that category-level decision relevant."
+                if product_review_enabled
+                else None
             ),
             "preference_is_not_a_reason": (
-                "A relevant preference or selection requirement established before the "
-                "product reveal can be a valid decision basis when a confirmed attribute "
-                "clearly matches it. In story-led or delayed-reveal work it must be a "
-                "completed earlier audience-facing line or beat; wording earlier in the "
-                "same reveal sentence or line does not count. Merely asking whether the "
-                "viewer wants the matching attribute, or saying the speaker wanted, "
-                "chose, liked, or added it during reveal, is circular. Product-first "
-                "demonstrations and comparisons may establish their basis in the opening."
+                (
+                    "This runtime classified the work as product-first because no delayed "
+                    "reveal boundary is configured. Do not apply the delayed-reveal "
+                    "earlier-line rule. A short use-case phrase before the product name in "
+                    "the same opening line remains product-first. Judge the complete exact "
+                    "copy: a confirmed differentiator connected to the already stated use "
+                    "case may provide a truthful consideration basis anywhere in that "
+                    "product-first progression; it need not precede product identity."
+                    if product_reveal_strategy == "product_first"
+                    else (
+                        "A relevant preference or selection requirement established before "
+                        "the product reveal can be a valid decision basis when a confirmed "
+                        "attribute clearly matches it. In story-led or delayed-reveal work "
+                        "it must be a completed earlier audience-facing line or beat; "
+                        "wording earlier in the same reveal sentence or line does not count. "
+                        "Merely asking whether the viewer wants the matching attribute, or "
+                        "saying the speaker wanted, chose, liked, or added it during reveal, "
+                        "is circular."
+                    )
+                )
+                if product_review_enabled
+                else None
+            ),
+            "visual_proof_review_boundary": (
+                "This stage is the copy Critic, not the generated-media Critic. When a "
+                "registered criterion permits a fact or reason to be clearly shown, judge "
+                "what the exact words truthfully establish now, but do not reject immutable "
+                "user-supplied copy merely because an ungenerated visual demonstration is "
+                "not yet available. Production-plan review and multimodal visual review own "
+                "that later execution evidence. Never invent visual evidence here."
+                if verbatim_blocks is not None and product_review_enabled
+                else None
+            ),
+            "product_reveal_strategy": (
+                product_reveal_strategy if product_review_enabled else None
             ),
             "fail_closed": (
                 "If exact quoted copy cannot prove a blocking criterion at its minimum "
@@ -3798,9 +4316,51 @@ def parse_independent_copy_critic_response(
                 "critic evidence cited unknown script line_ids for "
                 f"{criterion_id}: {unknown_evidence_line_ids}"
             )
+        cited_line_ids = set(evidence.line_ids)
+        # Evidence may quote one spoken sentence split across adjacent delivery
+        # lines.  Ground it against the cited lines in authoritative script
+        # order as well as each individual line.  The previous per-line-only
+        # check rejected truthful quotes such as ``After class, use...`` when
+        # the segment allocator placed the comma at the end of one line and
+        # the next word at the start of the following line.
         cited_texts = [script_lines[line_id] for line_id in evidence.line_ids]
+        cited_script_text = " ".join(
+            line.text for line in script.lines if line.line_id in cited_line_ids
+        )
+        normalized_cited_script_text = re.sub(
+            r"\s+", " ", cited_script_text
+        ).strip().casefold()
         for quote in evidence.quotes:
-            if not any(quote.casefold() in text.casefold() for text in cited_texts):
+            normalized_quote = re.sub(r"\s+", " ", quote).strip().casefold()
+            quote_candidates = [normalized_quote]
+            # Models frequently format a verbatim citation as a quoted JSON
+            # string even though the quote marks are presentation delimiters,
+            # not characters in the authoritative script line.  Treat one or
+            # more balanced outer quote pairs as equivalent grounding while
+            # retaining the original candidate for scripts that genuinely
+            # contain quote marks.  This is transport normalization only; the
+            # interior text must still be present in the cited line(s).
+            unwrapped = normalized_quote
+            wrapper_pairs = {'"': '"', "'": "'", "“": "”", "‘": "’"}
+            while (
+                len(unwrapped) >= 2
+                and unwrapped[0] in wrapper_pairs
+                and unwrapped[-1] == wrapper_pairs[unwrapped[0]]
+            ):
+                unwrapped = unwrapped[1:-1].strip()
+                if unwrapped and unwrapped not in quote_candidates:
+                    quote_candidates.append(unwrapped)
+            if not (
+                any(
+                    candidate in re.sub(r"\s+", " ", text).strip().casefold()
+                    for candidate in quote_candidates
+                    for text in cited_texts
+                )
+                or any(
+                    candidate in normalized_cited_script_text
+                    for candidate in quote_candidates
+                )
+            ):
                 raise ValueError(
                     "critic evidence quote is not present in its cited script lines "
                     f"for {criterion_id}: {quote!r}"
@@ -3901,7 +4461,7 @@ def build_director_revision_packet(
     return {
         "schema_version": "1.0",
         "role": "content_director_revision",
-        "project_brief": brief.model_dump(mode="json"),
+        "project_brief": director_author_project_brief(brief),
         "current_artifact": artifact.model_dump(mode="json"),
         "deterministic_preflight": preflight.model_dump(mode="json"),
         "independent_critic_verdict": verdict.model_dump(mode="json"),

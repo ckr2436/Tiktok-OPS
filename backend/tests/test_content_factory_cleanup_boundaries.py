@@ -149,7 +149,79 @@ def test_completed_waiting_bridge_status_is_repaired_without_deletion(db_session
     db_session.commit()
 
     assert repaired == 1
-    assert db_session.get(HermesContentFactoryProject, project.id).status == "complete"
+    persisted = db_session.get(HermesContentFactoryProject, project.id)
+    assert persisted.status == "complete"
+    machine = dict(dict(persisted.state_json or {}).get("state_machine") or {})
+    assert machine["stage"] == "COMPLETE"
+    assert machine["status"] == "complete"
+    assert machine["history"][-1]["reason"] == "terminal_project_reconciliation"
+
+
+def test_completed_project_stale_state_machine_is_reconciled(db_session):
+    completion_message = "已完成 10 个完整视频，并生成 10 个对应剪辑发布指导。"
+    project = _project(
+        project_key="cf_terminal_machine_repair_01",
+        status="complete",
+        current_stage="COMPLETE",
+        last_error=completion_message,
+        state_json={
+            "state_machine": {
+                "revision": 4,
+                "stage": "VIDEO_PROMPTS",
+                "status": "queued",
+                "history": [],
+            }
+        },
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    repaired = content_factory_tasks._normalize_completed_project_statuses(
+        db_session,
+    )
+    db_session.commit()
+
+    persisted = db_session.get(HermesContentFactoryProject, project.id)
+    machine = dict(dict(persisted.state_json or {}).get("state_machine") or {})
+    assert repaired == 1
+    assert persisted.status == "complete"
+    assert persisted.last_error == completion_message
+    assert machine["stage"] == "COMPLETE"
+    assert machine["status"] == "complete"
+    assert machine["revision"] == 5
+    assert machine["history"][-1]["reason"] == "terminal_project_reconciliation"
+
+
+def test_completed_project_active_stage_is_retired_without_deleting_audit(db_session):
+    project = _project(status="complete", current_stage="COMPLETE")
+    db_session.add(project)
+    db_session.flush()
+    stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="DIRECTOR",
+        attempt=10,
+        status="retrying",
+        celery_task_id="late-retry-delivery",
+    )
+    db_session.add(stage)
+    db_session.commit()
+
+    repaired = (
+        content_factory_tasks._retire_active_stages_for_completed_projects(
+            db_session,
+        )
+    )
+    db_session.commit()
+
+    persisted = db_session.get(HermesContentFactoryStage, stage.id)
+    assert repaired == 1
+    assert persisted is not None
+    assert persisted.status == "superseded"
+    assert persisted.completed_at is not None
+    assert persisted.celery_task_id is None
+    assert "owning project was already complete" in persisted.error_message
 
 
 def test_provider_task_ledger_is_scoped_by_workspace_and_user(db_session):

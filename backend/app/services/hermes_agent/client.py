@@ -227,12 +227,76 @@ class HermesContentDirectorClient(_HermesContentIsolatedClient):
         )
 
 
-class HermesContentProducerClient(HermesAgentClient):
-    """Conversational intake role with a physically isolated response store.
+class HermesVisualPromptRepairClient(_HermesContentIsolatedClient):
+    """Repairs one rejected image prompt without entering user conversation.
 
-    Producer continuity is scoped to one workspace/user/intake session.  It
-    cannot use the browser, create media, or mutate a project.  Director and
-    Critic deliberately keep their stronger stateless boundary.
+    This role deliberately reuses the Director model endpoint and credentials,
+    but has a separate stateless role/idempotency namespace.  Provider-declared
+    image failures therefore cannot contaminate the Director's script context
+    or the conversational producer memory.
+    """
+
+    role = "visual_prompt_repair"
+
+    def __init__(self) -> None:
+        super().__init__(
+            base_url=settings.HERMES_CONTENT_DIRECTOR_AGENT_BASE_URL,
+            api_key=settings.HERMES_AGENT_API_KEY,
+            model=settings.HERMES_CONTENT_DIRECTOR_AGENT_MODEL,
+            timeout=float(settings.HERMES_CONTENT_DIRECTOR_AGENT_TIMEOUT_SECONDS),
+            enabled=bool(settings.HERMES_CONTENT_DIRECTOR_AGENT_ENABLED),
+        )
+
+
+class HermesContentRecoverySupervisorClient(_HermesContentIsolatedClient):
+    """Stateless operational recovery adviser with no execution authority.
+
+    The role reuses the already isolated content-control runtime rather than
+    adding a fourth long-lived Hermes process.  Its response is only a signed
+    recommendation; the Content Factory state machine still validates the
+    allowed action and performs the atomic transition.
+    """
+
+    role = "content_recovery_supervisor"
+
+    def __init__(self) -> None:
+        super().__init__(
+            base_url=settings.HERMES_CONTENT_DIRECTOR_AGENT_BASE_URL,
+            api_key=settings.HERMES_AGENT_API_KEY,
+            model=settings.HERMES_CONTENT_DIRECTOR_AGENT_MODEL,
+            timeout=min(
+                120.0,
+                float(settings.HERMES_CONTENT_DIRECTOR_AGENT_TIMEOUT_SECONDS),
+            ),
+            enabled=bool(settings.HERMES_CONTENT_DIRECTOR_AGENT_ENABLED),
+        )
+
+
+class HermesVideoProviderRecoveryClient(_HermesContentIsolatedClient):
+    """Advises on sanitized provider incidents without execution authority."""
+
+    role = "video_provider_recovery"
+
+    def __init__(self) -> None:
+        super().__init__(
+            base_url=settings.HERMES_CONTENT_DIRECTOR_AGENT_BASE_URL,
+            api_key=settings.HERMES_AGENT_API_KEY,
+            model=settings.HERMES_CONTENT_DIRECTOR_AGENT_MODEL,
+            timeout=min(
+                90.0,
+                float(settings.HERMES_CONTENT_DIRECTOR_AGENT_TIMEOUT_SECONDS),
+            ),
+            enabled=bool(settings.HERMES_CONTENT_DIRECTOR_AGENT_ENABLED),
+        )
+
+
+class HermesContentProducerClient(HermesAgentClient):
+    """Producer role with a physically isolated response store.
+
+    Producer continuity lives in GMV's workspace/user-scoped SQL transcript
+    and effective-brief packet.  Each upstream Hermes chain is turn-isolated so
+    large packets are not duplicated into an ever-growing provider context. It
+    cannot use the browser, create media, or mutate a project.
     """
 
     role = "content_producer"
@@ -260,7 +324,17 @@ class HermesContentProducerClient(HermesAgentClient):
         metadata.setdefault("agent_role", self.role)
         metadata.setdefault("request_id", idempotency_key)
         kwargs["metadata"] = metadata
-        kwargs["store"] = True
+        # The producer's durable memory is the workspace/user-scoped SQL
+        # transcript included in the explicit packet.  Reusing a Hermes
+        # conversation or X-Hermes-Session-Key appends that same (potentially
+        # multimodal) packet to the upstream session again.  The Hermes context
+        # compressor then performs extra model calls before returning one
+        # front-desk reply.  Keep every producer inference stateless; request
+        # idempotency remains covered by the stable idempotency key above.
+        kwargs["store"] = False
+        kwargs["conversation"] = None
+        kwargs["previous_response_id"] = None
+        kwargs["session_key"] = None
         return await super().create_response(**kwargs)
 
     def __init__(self) -> None:

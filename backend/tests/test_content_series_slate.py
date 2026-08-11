@@ -48,6 +48,7 @@ from app.services.hermes_agent.content_capabilities import (
     load_content_capability_manifest,
 )
 from app.services.hermes_agent.content_director_profile import (
+    _editable_seed_speech_rate_wpm,
     compile_universal_director_series_brief,
 )
 from app.services.hermes_agent.content_factory import (
@@ -57,9 +58,12 @@ from app.services.hermes_agent.content_factory import (
 )
 from app.tasks.hermes_agent import content_factory_tasks
 from app.tasks.hermes_agent.content_factory_tasks import (
+    _apply_locked_deliverable_script_to_director_brief,
     _configured_next_stage,
+    _deliverable_copy_is_user_verbatim,
     _refresh_profile_director_brief_from_facts,
     _run_content_series_director_stage,
+    _sanitize_editable_director_brief,
 )
 from app.data.models.hermes_agent import (
     HermesContentFactoryAsset,
@@ -85,6 +89,247 @@ class _FakeClient:
                 "request_id": f"request-{len(self.calls)}",
             },
         }, 8
+
+
+def test_ai_planned_deliverable_copy_remains_editable_for_director():
+    seed = {
+        "deliverable_ordinal": 1,
+        "text": "A Producer-authored first draft.",
+        "sha256": "not-an-authority-bound-hash",
+        "source_message_id": None,
+    }
+    config = {
+        "producer_intent_spec": {
+            "source_material_mode": "requirements",
+            "deliverables": [{
+                "ordinal": 1,
+                "script_text": seed["text"],
+                "source_message_id": None,
+            }],
+        },
+        "creative_copy_contract": {
+            "script_reuse_mode": "distinct_per_deliverable",
+            "required_verbatim_voiceovers": [seed],
+        },
+    }
+    assert not _deliverable_copy_is_user_verbatim(config)
+
+    brief = _sanitize_editable_director_brief(
+        {
+            "creative_constraints": [
+                "Preserve deliverable ordinal 1 required verbatim voiceover exactly.",
+                "Open on an already locked after-work routine.",
+            ],
+            "truth_payload": {
+                "required_verbatim_voiceover": seed["text"],
+                "required_verbatim_voiceover_lines": [{
+                    "line_id": "LOCKED-VO-001",
+                    "text": seed["text"],
+                }],
+                "locked_script_variant_policy": {"mode": "locked"},
+                "creative_copy_contract": config["creative_copy_contract"],
+                "series_intent": {
+                    "creative_strategy": {
+                        "script_preservation": "Keep it exact."
+                    },
+                    "differentiation": {
+                        "audio_strategy": "Protected adult US voiceover."
+                    },
+                },
+            },
+        },
+        seed_deliverable=seed,
+    )
+
+    truth = brief["truth_payload"]
+    assert "required_verbatim_voiceover" not in truth
+    assert "required_verbatim_voiceover_lines" not in truth
+    assert "locked_script_variant_policy" not in truth
+    assert truth["creative_copy_contract"]["copy_authority"] == (
+        "producer_draft_editable"
+    )
+    assert truth["creative_copy_contract"]["director_seed_voiceover"][
+        "text"
+    ] == seed["text"]
+    assert all(
+        "required verbatim" not in item.casefold()
+        for item in brief["creative_constraints"]
+    )
+    assert "already locked" not in brief["creative_constraints"][0].casefold()
+    assert truth["series_intent"]["creative_strategy"][
+        "script_preservation"
+    ].startswith("Use the Producer copy only as an editable seed")
+
+
+def test_multi_script_user_source_keeps_verbatim_authority():
+    config = {
+        "producer_intent_spec": {
+            "source_material_mode": "multi_script_package",
+            "deliverables": [{
+                "ordinal": 1,
+                "script_text": "Exact user script.",
+                "source_message_id": 42,
+            }],
+        },
+        "creative_copy_contract": {
+            "required_verbatim_voiceovers": [{
+                "deliverable_ordinal": 1,
+                "text": "Exact user script.",
+                "source_message_id": 42,
+            }],
+        },
+    }
+    assert _deliverable_copy_is_user_verbatim(config)
+
+
+def test_distinct_locked_script_is_bound_only_to_its_deliverable_brief():
+    script = "Opening line.\n\nA different ending."
+    locked = {
+        "deliverable_ordinal": 2,
+        "label": "Second story",
+        "objective": "Tell only the second supplied story",
+        "text": script,
+        "sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+        "target_duration_seconds": 40,
+        "must_preserve": ["Exact words"],
+        "differentiation": ["Different conflict"],
+    }
+    generated = {
+        "target_duration_seconds": 30,
+        "edit_headroom_seconds": 2,
+        "speech_rate_wpm": 165,
+        "audio_mode_hint": None,
+        "truth_payload": {"series_intent": {"variant_index": 2}},
+    }
+
+    result = _apply_locked_deliverable_script_to_director_brief(
+        generated,
+        locked_deliverable=locked,
+        deliverable_ordinal=2,
+    )
+
+    assert result["target_duration_seconds"] == 40
+    assert result["audio_mode_hint"] == "spoken"
+    assert result["truth_payload"]["required_verbatim_voiceover"] == script
+    assert result["truth_payload"]["locked_script_variant_policy"] == {
+        "mode": "distinct_copy_per_deliverable",
+        "copy_reuse_required": False,
+        "semantic_copy_diversity_required": True,
+        "visual_execution_diversity_required": True,
+        "deliverable_ordinal": 2,
+        "script_sha256": locked["sha256"],
+    }
+    assert [
+        item["text"]
+        for item in result["truth_payload"]["required_verbatim_voiceover_lines"]
+    ] == ["Opening line.", "A different ending."]
+
+
+def test_locked_deliverable_uses_nearest_supported_duration_within_voice_limit():
+    block_sizes = [9, 9, 8] * 6 + [8, 8]
+    blocks = [
+        " ".join("word" for _ in range(size))
+        for size in block_sizes
+    ]
+    script = "\n\n".join(blocks)
+    locked = {
+        "deliverable_ordinal": 1,
+        "text": script,
+        "sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+        "target_duration_seconds": 62,
+        "requested_target_duration_seconds": 65,
+    }
+    generated = {
+        "target_duration_seconds": 62,
+        "edit_headroom_seconds": 2,
+        "speech_rate_wpm": 172,
+        "production_contract": {
+            "model_id": "omni_flash",
+            "segment_duration_minimum_seconds": 4,
+            "segment_duration_maximum_seconds": 10,
+            "allowed_segment_durations_seconds": [4, 6, 8, 10],
+            "reference_image_limit": 7,
+            "reference_video_limit": 0,
+        },
+        "truth_payload": {},
+    }
+
+    result = _apply_locked_deliverable_script_to_director_brief(
+        generated,
+        locked_deliverable=locked,
+        deliverable_ordinal=1,
+        minimum_duration_seconds=56,
+        maximum_duration_seconds=68,
+        baseline_speech_rate_wpm=145,
+        maximum_speech_rate_wpm=155,
+    )
+
+    assert result["target_duration_seconds"] == 68
+    assert 145 <= result["speech_rate_wpm"] <= 155
+    assert result["edit_headroom_seconds"] == 0
+    allocation = result["truth_payload"][
+        "locked_voiceover_feasible_allocation"
+    ]
+    assert len(allocation["segment_indices"]) == len(
+        result["truth_payload"]["required_verbatim_voiceover_lines"]
+    )
+    assert len(allocation["segment_indices"]) == 7
+    assert sum(allocation["segment_durations_seconds"]) == 68
+    boundary_policy = result["truth_payload"][
+        "locked_voiceover_segment_boundary_policy"
+    ]
+    assert boundary_policy["mode"] == "runtime_compiled_continuation"
+    assert len(boundary_policy["segment_boundaries"]) == 7
+
+
+def test_locked_compiler_avoids_dangling_transport_cut_when_possible():
+    script = (
+        "You keep everyone from falling apart. "
+        "No wonder you cannot fall asleep. "
+        "Late at night may be the only time no one needs anything from you. "
+        "All day, you answer, remember, fix, and carry. "
+        "When the house finally goes quiet, the next thought begins."
+    )
+    locked = {
+        "deliverable_ordinal": 1,
+        "text": script,
+        "sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+        "target_duration_seconds": 20,
+    }
+    generated = {
+        "target_duration_seconds": 20,
+        "edit_headroom_seconds": 0,
+        "speech_rate_wpm": 150,
+        "production_contract": {
+            "model_id": "two-ten-second-clips",
+            "segment_duration_minimum_seconds": 10,
+            "segment_duration_maximum_seconds": 10,
+            "allowed_segment_durations_seconds": [10],
+            "reference_image_limit": 1,
+            "reference_video_limit": 0,
+        },
+        "truth_payload": {},
+    }
+
+    result = _apply_locked_deliverable_script_to_director_brief(
+        generated,
+        locked_deliverable=locked,
+        deliverable_ordinal=1,
+        minimum_duration_seconds=20,
+        maximum_duration_seconds=20,
+        baseline_speech_rate_wpm=145,
+        maximum_speech_rate_wpm=155,
+    )
+
+    boundaries = result["truth_payload"][
+        "locked_voiceover_segment_boundary_policy"
+    ]["segment_boundaries"]
+    assert len(boundaries) == 2
+    assert boundaries[0]["boundary_kind"] in {
+        "sentence", "authored_line", "clause", "word"
+    }
+    assert not boundaries[0]["boundary_kind"].startswith("dangling_")
+    assert boundaries[-1]["boundary_kind"] == "complete_script"
 
 
 def _brief() -> DirectorSeriesBrief:
@@ -160,6 +405,43 @@ def test_universal_series_packet_does_not_force_pain_structure():
     assert packet["director_rules"][
         "describe_the_viewer_need_without_forcing_pain"
     ] is True
+
+
+def test_small_series_packet_schema_matches_runtime_contract_exactly():
+    brief = compile_universal_director_series_brief(
+        series_id="small-product-series",
+        objective="Create four distinct product videos.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults.",
+        target_count=4,
+        minimum_duration_seconds=35,
+        maximum_duration_seconds=45,
+        product_required=True,
+        brand_name="Example",
+        product_name="Example Product",
+        market="US",
+        project_brief=None,
+        confirmed_claims=["Melatonin-free"],
+        confirmed_selling_points=["Blueberry flavor"],
+    )
+
+    packet = build_series_slate_packet(brief)
+    contract = packet["output_contract"]
+    intent = contract["$defs"]["SeriesSlateIntent"]
+    differentiation = intent["properties"]["differentiation"]
+
+    assert differentiation["required"] == [
+        item.dimension_id for item in brief.diversity_requirements
+    ]
+    assert differentiation["additionalProperties"] is False
+    assert contract["$defs"]["ConversionHypothesis"]["properties"][
+        "confirmed_attribute"
+    ]["enum"] == brief.conversion.confirmed_differentiators
+    assert contract["properties"]["series_id"]["const"] == brief.series_id
+    assert contract["properties"]["series_version"]["const"] == 1
+    assert contract["properties"]["intents"]["minItems"] == 4
+    assert contract["properties"]["intents"]["maxItems"] == 4
 
 
 def _draft() -> dict:
@@ -809,6 +1091,7 @@ def test_enforced_series_project_starts_at_non_media_planning_stage(
         video_count=3,
         video_duration_min_seconds=20,
         video_duration_max_seconds=40,
+        video_model="omni_flash",
         video_language="en-US",
         content_director_mode="enforce",
         director_series_brief=brief.model_dump(mode="json"),
@@ -869,6 +1152,7 @@ def test_enforced_project_compiles_scene_free_series_brief_from_normal_inputs(
         confirmed_promotions="$7.99",
         promotion_cta="Tap the yellow cart.",
         video_count=5,
+        video_model="omni_flash",
         video_duration_min_seconds=40,
         video_duration_max_seconds=40,
         video_language="en-US",
@@ -884,7 +1168,7 @@ def test_enforced_project_compiles_scene_free_series_brief_from_normal_inputs(
     assert (
         project.config_json["director_loop_policy"]
         ["maximum_series_revisions"]
-            == 5
+            == 3
     )
     assert (
         project.config_json["director_series_brief_source"]
@@ -922,12 +1206,28 @@ def test_enforced_project_compiles_scene_free_series_brief_from_normal_inputs(
     } <= {
         item.criterion_id for item in brief.copy_review_criteria
     }
-    assert brief.truth_payload["profile_id"] == "universal-short-video-v4"
+    stakes_criterion = next(
+        item
+        for item in brief.copy_review_criteria
+        if item.criterion_id == "requested_stakes_strength"
+    )
+    assert "kind=visual belongs to multimodal media review" in (
+        stakes_criterion.instruction
+    )
+    assert brief.truth_payload["profile_id"] == "universal-short-video-v8-autonomy"
     encoded = json.dumps(raw, ensure_ascii=False).lower()
     assert "mother template" in encoded
     assert "cannot by itself establish why the product category" in encoded
     assert "bedroom doorway" not in encoded
     assert "four segments" not in encoded
+
+    versioned_config = dict(project.config_json or {})
+    versioned_brief = dict(
+        versioned_config.get("director_series_brief") or {}
+    )
+    versioned_brief["series_version"] = 4
+    versioned_config["director_series_brief"] = versioned_brief
+    project.config_json = versioned_config
 
     _refresh_profile_director_brief_from_facts(
         project,
@@ -940,10 +1240,17 @@ def test_enforced_project_compiles_scene_free_series_brief_from_normal_inputs(
     refreshed = DirectorSeriesBrief.model_validate(
         project.config_json["director_series_brief"]
     )
+    assert refreshed.series_version == 4
     assert (
         refreshed.truth_payload["product_truth"]["source"]
         == "FACTS"
     )
+    assert set(refreshed.conversion.confirmed_differentiators) == {
+        "GABA",
+        "L-Theanine",
+        "Magnesium Glycinate",
+        "Melatonin-free",
+    }
     refreshed_text = json.dumps(
         refreshed.model_dump(mode="json"),
         ensure_ascii=False,
@@ -951,6 +1258,43 @@ def test_enforced_project_compiles_scene_free_series_brief_from_normal_inputs(
     assert (
         "Use only the supplied nighttime-routine positioning."
         not in refreshed_text
+    )
+
+
+def test_confirmed_offer_preserves_shipping_qualifier_in_director_truth(
+    db_session,
+):
+    project = create_project(
+        db_session,
+        workspace_id=1203,
+        user_id=3403,
+        title="Current shipped offer",
+        content_objective="Create a TikTok conversion video.",
+        target_audience="US adults.",
+        content_mode="product",
+        brand_name="MYUPONA",
+        product_name="Sleep Ease Gummies",
+        market="US",
+        product_brief="Use current project truth only.",
+        confirmed_promotions="$14.99 shipped",
+        video_count=1,
+        video_duration_min_seconds=40,
+        video_duration_max_seconds=40,
+        video_model="omni_flash",
+        video_language="en-US",
+        publishing_profile={"platform": "TikTok"},
+        content_director_mode="enforce",
+        auto_run=False,
+    )
+
+    brief = DirectorSeriesBrief.model_validate(
+        project.config_json["director_series_brief"]
+    )
+
+    assert brief.conversion.offer_text == "$14.99 shipped"
+    assert (
+        brief.truth_payload["confirmed_promotions"]
+        == "$14.99 shipped"
     )
 
 
@@ -1017,6 +1361,236 @@ def test_universal_profile_scales_diversity_without_scene_inventory():
         "Use concrete examples instead of generic abstractions."
         in brief.creative_constraints
     )
+
+
+def test_variant_speech_capacity_ignores_longer_sibling_seed_copy():
+    rate = _editable_seed_speech_rate_wpm(
+        copy_contract={
+            "copy_authority": "producer_draft_editable",
+            "director_seed_voiceover": {
+                "deliverable_ordinal": 7,
+                "text": "Why do my thoughts bring a megaphone to bed?",
+                "target_duration_seconds": 4,
+            },
+            "director_seed_voiceovers": [{
+                "deliverable_ordinal": 1,
+                "text": (
+                    "This deliberately much longer sibling sentence must not "
+                    "change the current variant delivery capacity at all."
+                ),
+                "target_duration_seconds": 4,
+            }],
+        },
+        default_duration_seconds=4,
+        edit_headroom_seconds=1,
+        baseline_rate_wpm=180,
+        maximum_rate_wpm=260,
+    )
+
+    assert rate == 180
+
+
+def test_four_second_editable_seed_gets_feasible_delivery_capacity():
+    seed = "You close your eyes—and your brain calls an emergency meeting."
+
+    brief = compile_universal_director_series_brief(
+        series_id="editable-four-second-hook",
+        objective="Create one fast high-impact nighttime hook.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults.",
+        target_count=1,
+        minimum_duration_seconds=4,
+        maximum_duration_seconds=4,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        video_model="omni_flash",
+        creative_copy_contract={
+            "copy_authority": "producer_draft_editable",
+            "director_seed_voiceovers": [{
+                "deliverable_ordinal": 1,
+                "text": seed,
+                "target_duration_seconds": 4,
+            }],
+        },
+    )
+
+    assert brief.edit_headroom_seconds == 1
+    assert brief.speech_rate_wpm == 220
+    assert int(
+        (brief.minimum_duration_seconds - brief.edit_headroom_seconds)
+        * brief.speech_rate_wpm
+        / 60
+    ) == 11
+    materialized = materialize_series_director_briefs(
+        brief,
+        finalize_series_slate(
+            SeriesSlateDraft(
+                series_id=brief.series_id,
+                series_version=brief.series_version,
+                intents=[{
+                    "intent_id": "night-meeting",
+                    "variant_index": 1,
+                    "objective": "Show bedtime thoughts becoming a meeting.",
+                    "audience": "US adults.",
+                    "content_type": "absurdist sketch",
+                    "audio_mode": "spoken",
+                    "target_duration_seconds": 4,
+                    "creative_strategy": {
+                        "viewer_moment": "Closing eyes at bedtime.",
+                        "escalation": "The room becomes a meeting.",
+                        "ending_beat": "A startled reaction.",
+                        "semantic_route_fingerprint": "eyes-meeting",
+                    },
+                    "differentiation": {
+                        item.dimension_id: f"{item.dimension_id}-one"
+                        for item in brief.diversity_requirements
+                    },
+                    "source_truth_refs": [
+                        "truth_payload.creative_copy_contract"
+                    ],
+                    "creative_constraints": [],
+                }],
+            ),
+            brief,
+        ),
+    )
+    assert materialized["1"]["edit_headroom_seconds"] == 1
+    assert materialized["1"]["speech_rate_wpm"] == 220
+
+
+def test_locked_script_uses_configured_fast_rate_when_fixed_duration_fits():
+    locked_script = " ".join(["word"] * 394)
+
+    brief = compile_universal_director_series_brief(
+        series_id="locked-394",
+        objective="Visualize the supplied script without rewriting it.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults.",
+        target_count=1,
+        minimum_duration_seconds=120,
+        maximum_duration_seconds=120,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        creative_copy_contract={
+            "required_verbatim_voiceover": locked_script,
+        },
+    )
+
+    assert brief.speech_rate_wpm == 201
+    assert brief.minimum_duration_seconds == 120
+    assert int(
+        (brief.minimum_duration_seconds - brief.edit_headroom_seconds)
+        * brief.speech_rate_wpm
+        / 60
+    ) >= 394
+
+
+def test_locked_script_rate_proves_ordered_provider_segment_feasibility():
+    block_word_counts = [
+        14, 14, 23, 8, 9, 11, 5, 8, 11, 24,
+        7, 7, 14, 7, 5, 6, 9, 14, 12, 13,
+        4, 4, 17, 6, 7, 6, 7, 9, 20, 12,
+        5, 6, 4, 10, 6, 7, 18, 13, 5, 7,
+    ]
+    locked_script = "\n\n".join(
+        " ".join(["word"] * count)
+        for count in block_word_counts
+    )
+
+    brief = compile_universal_director_series_brief(
+        series_id="locked-ordered-394",
+        objective="Visualize the supplied script without rewriting it.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults.",
+        target_count=1,
+        minimum_duration_seconds=120,
+        maximum_duration_seconds=120,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        video_model="omni_flash",
+        creative_copy_contract={
+            "required_verbatim_voiceover": locked_script,
+        },
+    )
+
+    assert brief.speech_rate_wpm == 216
+    allocation = brief.truth_payload[
+        "locked_voiceover_feasible_allocation"
+    ]
+    assert len(allocation["segment_indices"]) == 40
+    assert allocation["segment_indices"] == sorted(
+        allocation["segment_indices"]
+    )
+    assert set(allocation["segment_indices"]) == set(range(1, 13))
+
+
+def test_locked_script_allocation_allows_silent_provider_segments():
+    brief = compile_universal_director_series_brief(
+        series_id="locked-two-blocks-four-segments",
+        objective="Visualize the supplied script without rewriting it.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults.",
+        target_count=1,
+        minimum_duration_seconds=40,
+        maximum_duration_seconds=40,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        video_model="omni_flash",
+        creative_copy_contract={
+            "required_verbatim_voiceover": (
+                "A short opening block.\n\nA short ending block."
+            ),
+        },
+    )
+
+    allocation = brief.truth_payload[
+        "locked_voiceover_feasible_allocation"
+    ]["segment_indices"]
+    assert len(allocation) == 2
+    assert allocation == sorted(allocation)
+
+
+def test_locked_script_rejects_impossible_duration_before_model_call():
+    locked_script = " ".join(["word"] * 500)
+
+    with pytest.raises(
+        ValueError,
+        match="LOCKED_SCRIPT_DURATION_BUDGET_EXCEEDED",
+    ):
+        compile_universal_director_series_brief(
+            series_id="locked-too-long",
+            objective="Visualize the supplied script without rewriting it.",
+            platform="TikTok",
+            locale="en-US",
+            audience="US adults.",
+            target_count=1,
+            minimum_duration_seconds=120,
+            maximum_duration_seconds=120,
+            product_required=False,
+            brand_name=None,
+            product_name=None,
+            market="US",
+            project_brief=None,
+            creative_copy_contract={
+                "required_verbatim_voiceover": locked_script,
+            },
+        )
 
 
 def test_universal_profile_deduplicates_confirmed_attributes_case_insensitively():
@@ -1637,6 +2211,436 @@ async def test_large_series_is_generated_in_bounded_resumable_pages():
         ["reject_unearned_required_conversion_transition"]
         is False
     )
+
+
+@pytest.mark.asyncio
+async def test_unstructured_series_critic_repairs_invalid_json():
+    director = _FakeClient([
+        _draft(),
+    ])
+    critic = _FakeClient([
+        "I reviewed it, but this is not JSON.",
+        {
+            "approved": True,
+            "scores": {"distinct": 95},
+            "blocking_issues": [],
+            "repair_scope": "slate_only",
+        },
+    ])
+
+    result = await run_content_series_slate_loop(
+        brief=_paged_brief(target_count=3),
+        policy=DirectorLoopPolicy(
+            maximum_revisions=0,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=5,
+        ),
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    assert len(critic.calls) == 2
+    repair_packet = json.loads(critic.calls[1]["input_text"])
+    assert repair_packet["role"] == "series_critic_contract_repair"
+    assert repair_packet["validation_error"]
+    assert "not JSON" in repair_packet["invalid_response"]
+
+
+@pytest.mark.asyncio
+async def test_small_series_resumes_valid_candidate_at_critic_boundary():
+    brief = _paged_brief(target_count=3)
+    slate = finalize_series_slate(
+        SeriesSlateDraft.model_validate(_draft()),
+        brief,
+    )
+    director = _FakeClient([])
+    critic = _FakeClient([{
+        "approved": True,
+        "scores": {"distinct": 95},
+        "blocking_issues": [],
+        "repair_scope": "slate_only",
+    }])
+    emitted: list[dict | None] = []
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=1,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=5,
+        ),
+        director_client=director,
+        critic_client=critic,
+        resume_page_checkpoint={
+            "schema_version": "1.0",
+            "mode": "monolithic",
+            "series_id": brief.series_id,
+            "series_version": brief.series_version,
+            "page_size": 5,
+            "revision": 1,
+            "current_slate": slate.model_dump(mode="json"),
+            "attempts": [],
+            "reviews": [],
+            "contract_errors": [],
+            "progress": {"phase": "critic"},
+        },
+        page_checkpoint_callback=emitted.append,
+    )
+
+    assert result.status == "approved"
+    assert result.final_slate == slate
+    assert director.calls == []
+    assert len(critic.calls) == 1
+    assert emitted[-1] is None
+
+
+@pytest.mark.asyncio
+async def test_small_series_resume_revision_uses_project_bound_contract():
+    brief = _paged_brief(target_count=3)
+    slate = finalize_series_slate(
+        SeriesSlateDraft.model_validate(_draft()),
+        brief,
+    )
+    rejected = {
+        "approved": False,
+        "scores": {"distinct": 60},
+        "blocking_issues": [{
+            "code": "SERIES_DISTINCTNESS",
+            "intent_ids": ["intent-one"],
+            "evidence": "The first plan needs a more distinct route.",
+            "repair_instruction": "Repair only the first plan.",
+        }],
+        "repair_scope": "slate_only",
+    }
+    director = _FakeClient([_draft()])
+    critic = _FakeClient([{
+        "approved": True,
+        "scores": {"distinct": 95},
+        "blocking_issues": [],
+        "repair_scope": "slate_only",
+    }])
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=1,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=5,
+        ),
+        director_client=director,
+        critic_client=critic,
+        resume_page_checkpoint={
+            "schema_version": "1.0",
+            "mode": "monolithic",
+            "series_id": brief.series_id,
+            "series_version": brief.series_version,
+            "page_size": 5,
+            "revision": 1,
+            "current_slate": slate.model_dump(mode="json"),
+            "attempts": [],
+            "reviews": [{
+                "revision": 1,
+                "slate_sha256": slate.slate_sha256,
+                "verdict": rejected,
+                "latency_ms": 8,
+                "response_sha256": "a" * 64,
+            }],
+            "contract_errors": [],
+            "progress": {"phase": "revision"},
+        },
+    )
+
+    assert result.status == "approved"
+    assert len(director.calls) == 1
+    revision_packet = json.loads(director.calls[0]["input_text"])
+    assert revision_packet["role"] == "content_series_revision"
+    differentiation = revision_packet["output_contract"]["$defs"][
+        "SeriesSlateIntent"
+    ]["properties"]["differentiation"]
+    assert differentiation["required"] == [
+        item.dimension_id for item in brief.diversity_requirements
+    ]
+    assert differentiation["additionalProperties"] is False
+
+
+def _fixed_eighteen_second_brief_and_slate():
+    brief_payload = _brief().model_dump(mode="json")
+    brief_payload.update({
+        "minimum_duration_seconds": 18,
+        "maximum_duration_seconds": 19,
+        "default_duration_seconds": 18,
+        "production_contract": {
+            "model_id": "seedance_2_0_mini",
+            "segment_duration_minimum_seconds": 9,
+            "segment_duration_maximum_seconds": 9,
+            "allowed_segment_durations_seconds": [9],
+            "required_segment_durations_seconds": [9, 9],
+            "reference_image_limit": 10,
+            "reference_video_limit": 0,
+        },
+    })
+    brief = DirectorSeriesBrief.model_validate(brief_payload)
+    slate_payload = _draft()
+    for intent in slate_payload["intents"]:
+        intent["target_duration_seconds"] = 18
+    slate = finalize_series_slate(
+        SeriesSlateDraft.model_validate(slate_payload),
+        brief,
+    )
+    return brief, slate, slate_payload
+
+
+@pytest.mark.asyncio
+async def test_duration_hallucination_cannot_reject_valid_finalized_slate():
+    brief, slate, slate_payload = _fixed_eighteen_second_brief_and_slate()
+    director = _FakeClient([slate_payload])
+    critic = _FakeClient([{
+        "approved": False,
+        "scores": {"production_feasibility": 96},
+        "blocking_issues": [{
+            "code": "production_duration_infeasibility",
+            "intent_ids": ["intent-one"],
+            "evidence": (
+                "The intent allegedly requests 19 seconds even though the "
+                "supplied finalized slate records 18 seconds."
+            ),
+            "repair_instruction": "Change the intent to 18 seconds.",
+        }],
+        "repair_scope": "slate_only",
+    }])
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=0,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=5,
+        ),
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    assert result.final_slate == slate
+    assert len(director.calls) == 1
+    assert len(critic.calls) == 1
+    assert result.reviews[0].verdict.approved is True
+    assert result.reviews[0].verdict.blocking_issues == []
+    assert result.reviews[0].deterministic_reconciliations
+
+
+@pytest.mark.asyncio
+async def test_exhausted_resume_reconciles_stale_duration_hallucination():
+    brief, slate, _ = _fixed_eighteen_second_brief_and_slate()
+    rejected = {
+        "approved": False,
+        "scores": {"production_feasibility": 96},
+        "blocking_issues": [{
+            "code": "production_duration_infeasibility",
+            "intent_ids": ["intent-one", "intent-two", "intent-three"],
+            "evidence": "One intent allegedly remains at 19 seconds.",
+            "repair_instruction": "Set every intent to 18 seconds.",
+        }],
+        "repair_scope": "slate_only",
+    }
+    director = _FakeClient([])
+    critic = _FakeClient([])
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=0,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=5,
+        ),
+        director_client=director,
+        critic_client=critic,
+        resume_page_checkpoint={
+            "schema_version": "1.0",
+            "mode": "monolithic",
+            "series_id": brief.series_id,
+            "series_version": brief.series_version,
+            "page_size": 5,
+            "revision": 1,
+            "current_slate": slate.model_dump(mode="json"),
+            "attempts": [],
+            "reviews": [{
+                "revision": 1,
+                "slate_sha256": slate.slate_sha256,
+                "verdict": rejected,
+                "latency_ms": 8,
+                "response_sha256": "a" * 64,
+            }],
+            "contract_errors": [],
+            "progress": {"phase": "revision"},
+        },
+    )
+
+    assert result.status == "approved"
+    assert result.final_slate == slate
+    assert director.calls == []
+    assert critic.calls == []
+    assert result.reviews[0].verdict.approved is True
+    assert result.reviews[0].deterministic_reconciliations
+
+
+@pytest.mark.asyncio
+async def test_locked_script_series_critic_judges_visual_variants_not_copy_reuse():
+    brief = compile_universal_director_series_brief(
+        series_id="locked-visual-series",
+        objective="Produce three visual versions of the supplied script.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults",
+        target_count=3,
+        minimum_duration_seconds=20,
+        maximum_duration_seconds=30,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        creative_copy_contract={
+            "required_verbatim_voiceover": (
+                "First locked line.\n\nSecond locked line."
+            )
+        },
+        product_truth={},
+    )
+    dimensions = [
+        item.dimension_id for item in brief.diversity_requirements
+    ]
+    payload = _draft()
+    payload["series_id"] = brief.series_id
+    for index, intent in enumerate(payload["intents"], 1):
+        intent["differentiation"] = {
+            dimension: f"{dimension}-{index}"
+            for dimension in dimensions
+        }
+        intent["source_truth_refs"] = [
+            "truth_payload.deliverable_script_manifest"
+        ]
+        intent["source_truth_refs"] = [
+            "truth_payload.required_verbatim_voiceover"
+        ]
+    director = _FakeClient([payload])
+    critic = _FakeClient([{
+        "approved": True,
+        "scores": {"truth": 100},
+        "blocking_issues": [],
+        "repair_scope": "slate_only",
+    }])
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=0,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=10,
+        ),
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    critic_packet = json.loads(critic.calls[0]["input_text"])
+    rules = critic_packet["review_rules"]
+    assert rules["locked_script_visual_variant_mode"] is True
+    assert rules["reject_fixed_template_repetition"] is False
+    assert rules["reject_semantic_duplicates"] is False
+
+
+@pytest.mark.asyncio
+async def test_distinct_locked_deliverable_scripts_are_source_authority_not_rewrite_targets():
+    scripts = [
+        {
+            "deliverable_ordinal": index,
+            "text": f"Locked opening {index}. Product identity. Locked close.",
+            "sha256": "a" * 64,
+        }
+        for index in range(1, 4)
+    ]
+    brief = compile_universal_director_series_brief(
+        series_id="locked-distinct-series",
+        objective="Produce three differentiated visual executions.",
+        platform="TikTok",
+        locale="en-US",
+        audience="US adults",
+        target_count=3,
+        minimum_duration_seconds=20,
+        maximum_duration_seconds=30,
+        product_required=False,
+        brand_name=None,
+        product_name=None,
+        market="US",
+        project_brief=None,
+        creative_copy_contract={
+            "script_reuse_mode": "distinct_per_deliverable",
+            "required_verbatim_voiceovers": scripts,
+        },
+        product_truth={},
+    )
+    dimensions = [
+        item.dimension_id for item in brief.diversity_requirements
+    ]
+    payload = _draft()
+    payload["series_id"] = brief.series_id
+    for index, intent in enumerate(payload["intents"], 1):
+        intent["differentiation"] = {
+            dimension: f"{dimension}-{index}"
+            for dimension in dimensions
+        }
+        intent["source_truth_refs"] = [
+            "truth_payload.deliverable_script_manifest"
+        ]
+    director = _FakeClient([payload])
+    critic = _FakeClient([{
+        "approved": True,
+        "scores": {"truth": 100},
+        "blocking_issues": [],
+        "repair_scope": "slate_only",
+    }])
+
+    result = await run_content_series_slate_loop(
+        brief=brief,
+        policy=DirectorLoopPolicy(
+            maximum_revisions=0,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=10,
+        ),
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    critic_call = critic.calls[0]
+    critic_packet = json.loads(critic_call["input_text"])
+    rules = critic_packet["review_rules"]
+    assert rules["locked_distinct_deliverable_script_mode"] is True
+    assert rules["operator_locked_copy_order_is_authoritative"] is True
+    assert rules["reject_fixed_template_repetition"] is False
+    assert rules[
+        "judge_conversion_and_response_route_diversity_inside_authorized_visual_execution_scope"
+    ] is True
+    assert rules[
+        "audit_each_operator_quantified_requirement_against_each_intent"
+    ] is True
+    assert rules[
+        "judge_observable_hook_action_not_self_describing_adjectives"
+    ] is True
+    assert rules[
+        "ordinary_expected_action_is_not_a_disruption_merely_because_it_is_fast"
+    ] is True
+    assert rules[
+        "do_not_average_strong_and_weak_hooks_across_the_series"
+    ] is True
+    instructions = critic_call["instructions"]
+    assert "operator-locked verbatim script" in instructions
+    assert "must not be expanded into a ban on the generic setting noun" in instructions
+    assert "audit every intent independently" in instructions
+    assert "judge the concrete observable event" in instructions
+    assert "does not become a strong hook merely because" in instructions
 
 
 @pytest.mark.asyncio
@@ -2625,6 +3629,7 @@ def test_series_stage_materializes_briefs_without_queuing_media(
         video_count=3,
         video_duration_min_seconds=20,
         video_duration_max_seconds=40,
+        video_model="omni_flash",
         video_language="en-US",
         content_director_mode="enforce",
         director_series_brief=brief.model_dump(mode="json"),
@@ -2673,7 +3678,7 @@ def test_series_stage_materializes_briefs_without_queuing_media(
     assert stage.output_json["evidence"]["page_reviews"] == []
     assert seen_resume_checkpoints == [{}]
     assert seen_policies[0].maximum_revisions == 0
-    assert seen_policies[0].series_revision_limit == 5
+    assert seen_policies[0].series_revision_limit == 3
     assert (
         "series_director_page_checkpoint"
         not in dict(stage.input_json or {})
@@ -2723,6 +3728,7 @@ def test_series_stage_locks_completed_history_and_queues_active_missing_variant(
         video_count=3,
         video_duration_min_seconds=20,
         video_duration_max_seconds=40,
+        video_model="omni_flash",
         video_language="en-US",
         content_director_mode="enforce",
         director_series_brief=brief.model_dump(mode="json"),
@@ -2818,9 +3824,11 @@ def test_series_stage_locks_completed_history_and_queues_active_missing_variant(
         )
 
     queued: dict[str, object] = {}
+    successor_events: list[str] = []
 
     def _capture_queue_stage(db, **kwargs):
         del db
+        successor_events.append("queue")
         queued.update(kwargs)
         return SimpleNamespace(id=999)
 
@@ -2840,6 +3848,9 @@ def test_series_stage_locks_completed_history_and_queues_active_missing_variant(
         project=project,
         request_id="",
         delivery_run_token="",
+        release_guard_before_successor=lambda: successor_events.append(
+            "release"
+        ),
     )
     db_session.refresh(project)
     db_session.refresh(stage)
@@ -2866,6 +3877,7 @@ def test_series_stage_locks_completed_history_and_queues_active_missing_variant(
     assert project.state_json["video_variant_pipeline"]["active_index"] == 3
     assert "variant 3" in str(queued["instruction"])
     assert queued["target_stage"] == "DIRECTOR"
+    assert successor_events == ["release", "queue"]
     assert outcome["status"] == "success"
 
 
@@ -2892,6 +3904,7 @@ def test_series_stage_soft_limit_resumes_the_same_durable_checkpoint(
         video_count=3,
         video_duration_min_seconds=20,
         video_duration_max_seconds=40,
+        video_model="omni_flash",
         video_language="en-US",
         content_director_mode="enforce",
         director_series_brief=brief.model_dump(mode="json"),
@@ -2995,6 +4008,7 @@ def test_manual_series_resume_stage_inherits_same_plan_checkpoint(
         video_count=3,
         video_duration_min_seconds=20,
         video_duration_max_seconds=40,
+        video_model="omni_flash",
         video_language="en-US",
         content_director_mode="enforce",
         director_series_brief=brief.model_dump(mode="json"),

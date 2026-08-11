@@ -29,6 +29,7 @@ from app.tasks.hermes_agent.content_factory_tasks import (
 from app.tasks.hermes_agent import content_factory_tasks
 from app.services.hermes_agent.content_factory import (
     _promote_approved_paused_control_stage,
+    _restore_missing_approved_production_plan_pointer,
     resume_project,
 )
 from app.services.hermes_agent.content_production_compiler import (
@@ -451,6 +452,44 @@ def test_media_gate_requires_audited_plan_and_exact_script_lock(db_session):
         == artifact.script.canonical_text_sha256
     )
 
+    # A parallel provider-video waiter may commit a state snapshot that was
+    # captured before Director/Plan approval.  The redundant cache pointers
+    # must be reconstructed from the newest successful stages and immutable
+    # accepted audit rows without rerunning either paid model turn.
+    erased_state = dict(project.state_json or {})
+    erased_state["approved_director_artifacts_by_variant"] = {}
+    erased_state.pop("approved_director_artifact", None)
+    erased_state["approved_production_plans_by_variant"] = {}
+    erased_state.pop("approved_production_plan", None)
+    project.state_json = erased_state
+    db_session.commit()
+
+    restored_authorization = _assert_director_media_authorization(
+        db_session,
+        project,
+        variant_index=1,
+    )
+    restored_state = dict(project.state_json or {})
+    assert restored_authorization["production_plan_stage_id"] == plan_stage.id
+    assert (
+        restored_state["approved_director_artifacts_by_variant"]["1"]
+        ["director_stage_id"]
+        == director_stage.id
+    )
+    assert (
+        restored_state["approved_production_plans_by_variant"]["1"]
+        ["production_plan_stage_id"]
+        == plan_stage.id
+    )
+    assert (
+        restored_state["restored_director_artifact_pointer"]["reason"]
+        == "recovered_after_concurrent_video_state_merge"
+    )
+    assert (
+        restored_state["restored_production_plan_pointer"]["reason"]
+        == "recovered_after_concurrent_video_state_merge"
+    )
+
     damaged = dict(plan_stage.output_json or {})
     damaged_result = dict(damaged.get("result") or {})
     damaged_compiled = dict(
@@ -572,6 +611,103 @@ def test_resume_promotes_audited_paused_production_plan_without_replanning(
     assert stage.status == "success"
     assert project.current_stage == "VISUAL_PREVIEW"
     pointer = state["approved_production_plans_by_variant"]["1"]
+    assert pointer["production_plan_stage_id"] == stage.id
+    assert pointer["audit_row_id"] == audit.id
+    assert pointer["plan_sha256"] == plan.plan_sha256
+
+
+def test_resume_restores_plan_pointer_erased_by_concurrent_video_wait(
+    db_session,
+):
+    artifact = _artifact()
+    plan = _production_plan(artifact)
+    compiled = compile_production_plan_for_media(
+        artifact,
+        plan,
+        asset_registry={},
+    )
+    project = HermesContentFactoryProject(
+        project_key="cf-restore-erased-plan-pointer",
+        workspace_id=1,
+        user_id=None,
+        title="Restore accepted plan pointer",
+        product_name="",
+        status="paused",
+        current_stage="VISUAL_PREVIEW",
+        config_json={
+            "content_director_mode": "enforce",
+            "manual_paused": True,
+        },
+        state_json={
+            "active_variant_index": 4,
+            "video_variant_pipeline": {
+                "active_index": 4,
+                "target_count": 4,
+            },
+            "approved_director_artifacts_by_variant": {
+                "4": {
+                    "variant_index": 4,
+                    "artifact_sha256": artifact.artifact_sha256,
+                    "script_sha256": (
+                        artifact.script.canonical_text_sha256
+                    ),
+                }
+            },
+        },
+    )
+    db_session.add(project)
+    db_session.flush()
+    stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="PRODUCTION_PLAN",
+        attempt=1,
+        status="success",
+        input_json={"variant_index": 4},
+        output_json={
+            "status": "PASS",
+            "content_factory_variant_index": 4,
+            "result": {
+                "loop_status": "approved",
+                "production_plan": plan.model_dump(mode="json"),
+                "compiled_media_design": compiled,
+            },
+        },
+    )
+    db_session.add(stage)
+    db_session.flush()
+    audit = HermesContentProductionPlanAudit(
+        project_id=project.id,
+        stage_id=stage.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        variant_index=4,
+        plan_id=plan.plan_id,
+        plan_revision=plan.revision,
+        director_artifact_sha256=artifact.artifact_sha256,
+        plan_sha256=plan.plan_sha256,
+        status="approved",
+        accepted=True,
+        plan_json=plan.model_dump(mode="json"),
+        attempts_json=[],
+        critic_attempts_json=[],
+        reviews_json=[],
+        contract_errors_json=[],
+        reason="approved",
+    )
+    db_session.add(audit)
+    db_session.flush()
+
+    state, restored = _restore_missing_approved_production_plan_pointer(
+        db_session,
+        project,
+        dict(project.state_json or {}),
+        variant_index=4,
+    )
+
+    assert restored is True
+    pointer = state["approved_production_plans_by_variant"]["4"]
     assert pointer["production_plan_stage_id"] == stage.id
     assert pointer["audit_row_id"] == audit.id
     assert pointer["plan_sha256"] == plan.plan_sha256

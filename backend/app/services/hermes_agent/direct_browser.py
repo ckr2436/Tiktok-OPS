@@ -863,7 +863,12 @@ def _page_state(*, isolated: bool = True) -> dict[str, Any]:
         ));
       const authUrl = /auth\.openai\.com|\/auth\/|email-verification|login|signin/i.test(location.href || '');
       const verificationRequired = /check your inbox|email verification|verification code|\u68c0\u67e5\u4f60\u7684\u6536\u4ef6\u7bb1|\u9a8c\u8bc1\u7801|\u4f7f\u7528\u5bc6\u7801\u7ee7\u7eed/i.test(fallbackText || '');
-      const loginRequired = (!composer && loginControl) || (!composer && (authUrl || verificationRequired));
+      // Anonymous ChatGPT still exposes a composer, but it cannot create the
+      // images or accept the files required by Content Factory. A visible,
+      // exact login control is therefore authoritative even when the anonymous
+      // composer exists. Account-switch menu labels such as "log in to another
+      // account" do not match the exact control pattern above.
+      const loginRequired = loginControl || (!composer && (authUrl || verificationRequired));
       // Completed ChatGPT turns retain a static "Thinking" label. Treating
       // that historical text as live activity leaves stages running forever.
       // The stop control is the authoritative text-stream signal; only the
@@ -1940,8 +1945,13 @@ def _wait_for_late_stage_response(
 def _reference_image_count(packet: dict[str, Any]) -> int:
     previous = dict(packet.get("previous_outputs") or {})
     review = dict(previous.get("CREATIVE_REVIEW") or {})
-    creative = dict(previous.get("CREATIVE") or {})
-    ticket = dict(creative.get("visual_job_ticket") or {})
+    production = dict(
+        previous.get("MEDIA_DESIGN")
+        or previous.get("PRODUCTION_PLAN")
+        or {}
+    )
+    compiled = dict(production.get("compiled_media_design") or production)
+    ticket = dict(compiled.get("visual_job_ticket") or {})
     values = [
         review.get("reference_image_count"),
         ticket.get("reference_image_count"),
@@ -2120,13 +2130,6 @@ def _packet_for_prompt(packet: dict[str, Any], stage: str | None = None) -> dict
         "FACTS": {
             "browser_assets", "product_facts_rules",
         },
-        "CREATIVE": {
-            "previous_outputs", "browser_assets", "previous_variant_briefs",
-            "benchmark_video_analysis", "video_duration_range_seconds",
-            "recommended_video_duration_seconds", "video_segment_durations_seconds",
-            "video_segment_count", "video_model", "video_reference_limit",
-            "video_resolution", "video_language_label",
-        },
         "VISUAL_PREVIEW": {
             "previous_outputs", "browser_assets", "video_model",
             "video_reference_limit", "video_resolution", "video_language_label",
@@ -2159,11 +2162,10 @@ def _packet_for_prompt(packet: dict[str, Any], stage: str | None = None) -> dict
         if key in allowed and item not in (None, "", [], {})
     }
     previous_allowed = {
-        "CREATIVE": {"FACTS"},
-        "VISUAL_PREVIEW": {"CREATIVE"},
-        "CREATIVE_REVIEW": {"CREATIVE"},
-        "FINAL_ASSETS": {"CREATIVE", "CREATIVE_REVIEW"},
-        "VIDEO_PROMPTS": {"CREATIVE", "FINAL_ASSETS"},
+        "VISUAL_PREVIEW": {"DIRECTOR", "PRODUCTION_PLAN", "MEDIA_DESIGN"},
+        "CREATIVE_REVIEW": {"PRODUCTION_PLAN", "MEDIA_DESIGN", "VISUAL_PREVIEW"},
+        "FINAL_ASSETS": {"PRODUCTION_PLAN", "MEDIA_DESIGN", "CREATIVE_REVIEW", "VISUAL_PREVIEW"},
+        "VIDEO_PROMPTS": {"DIRECTOR", "PRODUCTION_PLAN", "MEDIA_DESIGN", "FINAL_ASSETS"},
         "EDIT_PACKAGE": {"VIDEO_PROMPTS"},
     }
     if isinstance(value.get("previous_outputs"), dict):
@@ -4472,12 +4474,23 @@ def _execute_chatgpt_stage(packet: dict[str, Any]) -> tuple[str, str | None, lis
         else:
             count_instruction, expected_visuals = _visual_browser_board_instruction(packet, stage)
         policy = dict(packet.get("video_model_policy") or {})
+        face_reference_mode = str(
+            policy.get("human_face_reference_mode") or "allowed"
+        ).strip().lower()
         face_rule = (
             "Because Seedance is selected, every panel must avoid visible human faces. "
             "Use product packaging, room layout, props, hands-only action, back-of-head, cropped-below-chin, or face-hidden body anchors. "
             "Do not generate portraits, selfies, face-locked characters, or recognizable human face references. "
-            if not bool(policy.get("allows_human_face_references", True))
-            else ""
+            if face_reference_mode == "forbidden"
+            else (
+                "Because Seedance is selected, visible adult faces are allowed only as unmistakably fictional stylized animation. "
+                "Use clearly drawn or rendered 2D/2.5D/3D facial planes, skin, eyes, hair, expressions, light, and surfaces. "
+                "Do not create photorealistic, hyperreal, live-action, photographic, synthetic-photo, or real-person-looking faces; "
+                "avoid realistic pores, skin texture, eye reflections, individual hair strands, photographic bokeh, and photographic lighting. "
+                "Preserve the approved adult character, emotion, hook, scene, action, and continuity in this animation medium. "
+                if face_reference_mode == "stylized_animation_only"
+                else ""
+            )
         )
         learned = dict(packet.get("learned_constraints") or {})
         omni_learning = dict(learned.get("omni_flash") or {})
@@ -4546,30 +4559,6 @@ def _execute_chatgpt_stage(packet: dict[str, Any]) -> tuple[str, str | None, lis
                 "Keep every fact, citation, upload, and conclusion inside this project's knowledge_namespace; never reuse another project. "
                 "Return only one strict JSON object. Do not put inline citations, source chips, markdown links, or bibliography text inside JSON string values; "
                 "place source titles and URLs only in result.source_map. "
-            )
-        elif stage == "CREATIVE":
-            marketing = dict(packet.get("marketing_authorization") or {})
-            promo = "；".join(dict.fromkeys(
-                part for part in (
-                    str(marketing.get("confirmed_promotions") or "").strip(),
-                    str(marketing.get("promotion_cta") or "").strip(),
-                )
-                if part
-            ))
-            promo_instruction = (
-                f"Use the confirmed promotional CTA only as natural on-camera speech where natural: {promo}. Do not invent other promotions, landing pages, shopping UI, QR codes, hard-sell banners, or TV-shopping style. "
-                if bool(marketing.get("allow_promotional_cta")) and promo
-                else "Do not invent unconfirmed promotions. "
-            )
-            stage_instruction = (
-                "Open compliance gaps from FACTS are guardrails, not a reason to fail this stage. "
-                "If this stage has no attached files, continue from the product name, project brief, product_facts_source, previous_outputs, and uploaded asset names in the project packet. "
-                "Create concepts that explicitly avoid unapproved dosage, consumption, timing, warnings, and medical/sleep outcome claims. "
-                + promo_instruction
-                + "If those restrictions are respected and result contains concepts, selected_concept, visual_job_ticket, continuity_rules, shot_plan, and cta_options, "
-                "use status COMPLETE_WITH_VISUAL_QA_GATE or PASS, not FAIL. Put restrictions in issues and creative_impact, then set next_stage to VISUAL_PREVIEW. "
-                "Choose enough reference-image panels to control video continuity for the selected video model; avoid a single all-purpose image when it would make video generation unstable. "
-                "Include reference_image_count or final_reference_count in visual_job_ticket. "
             )
         elif stage == "CREATIVE_REVIEW":
             stage_instruction = (

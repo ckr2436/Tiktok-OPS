@@ -21,6 +21,7 @@ from app.services.hermes_agent.content_director import (
     build_directed_content_artifact,
     build_director_revision_packet,
     build_initial_director_packet,
+    build_delivery_budget_contract,
     build_script_package,
     director_author_output_contract,
     director_draft_output_contract,
@@ -31,6 +32,11 @@ from app.services.hermes_agent.content_director import (
     run_content_director_shadow_preflight,
     script_package_from_creative_result,
     validate_directed_artifact_against_brief,
+)
+from app.services.hermes_agent.content_intent import (
+    CreativeIntentManifest,
+    CreativeIntentRequirement,
+    sign_creative_intent_manifest,
 )
 
 
@@ -132,6 +138,47 @@ def _brief(*, product_required: bool = True) -> DirectorProjectBrief:
         copy_review_criteria=_criteria(product_required=product_required),
         quality_rubric=program.quality_rubric if program is not None else [],
         source_truth_refs=program.source_truth_refs if program is not None else [],
+    )
+
+
+def test_latest_restart_instruction_is_bound_to_each_director_variant() -> None:
+    from types import SimpleNamespace
+
+    from app.tasks.hermes_agent.content_factory_tasks import (
+        _bind_latest_operator_instruction_to_director_brief,
+    )
+
+    instruction = (
+        "Open every deliverable with a distinct high-energy visual conflict; "
+        "a calm shoulder touch is not an acceptable hook."
+    )
+    project = SimpleNamespace(
+        state_json={
+            "restart_count": 7,
+            "last_restart": {
+                "stage": "SERIES_DIRECTOR",
+                "instruction": instruction,
+                "replace_completed": True,
+                "at": "2026-08-01T07:17:12.258186",
+            },
+        }
+    )
+
+    bound = _bind_latest_operator_instruction_to_director_brief(
+        _brief(),
+        project=project,
+    )
+
+    assert bound.truth_payload["operator_stage_instruction"] == instruction
+    authority = bound.truth_payload[
+        "operator_stage_instruction_authority"
+    ]
+    assert authority["source"] == "project_last_restart"
+    assert authority["restart_generation"] == 7
+    assert authority["replace_completed"] is True
+    assert any(
+        instruction in constraint
+        for constraint in bound.creative_constraints
     )
 
 
@@ -365,6 +412,31 @@ def test_author_only_contract_excludes_every_runtime_owned_field():
     ) == {item.capability for item in brief.capability_catalog}
 
 
+def test_author_only_contract_machine_locks_verbatim_spoken_block_count():
+    brief = _brief().model_copy(
+        update={
+            "truth_payload": {
+                "required_verbatim_voiceover": (
+                    "First immutable block.\n\n"
+                    "Second immutable block.\n\n"
+                    "Third immutable block."
+                )
+            }
+        }
+    )
+
+    contract = director_author_output_contract(brief)
+    lines = contract["$defs"]["DirectorScriptAuthorDraft"][
+        "properties"
+    ]["lines"]
+
+    assert lines["minContains"] == 3
+    assert lines["maxContains"] == 3
+    assert lines["contains"]["properties"]["delivery_mode"] == {
+        "const": "spoken"
+    }
+
+
 def test_author_only_draft_materializes_exact_project_owned_contract():
     brief = _brief()
     authoritative = []
@@ -407,6 +479,106 @@ def test_author_only_draft_materializes_exact_project_owned_contract():
     assert artifact.program.execution_graph[0].policy == {
         "authority": "copy.write"
     }
+
+
+def test_director_must_bind_and_map_signed_high_priority_intent():
+    manifest = sign_creative_intent_manifest(
+        CreativeIntentManifest(
+            objective="Create an original stopping-power opening.",
+            requirements=[CreativeIntentRequirement(
+                requirement_id="R-001",
+                kind="reference_transfer",
+                priority="high",
+                intent="Keep the benchmark hook force without copying it.",
+                evidence_quote="Keep the hook force, but do not copy the original.",
+                interpretation=(
+                    "Create a new immediately readable contradiction in the opening."
+                ),
+                observable_checks=[
+                    "The contradiction is readable before the setup is explained."
+                ],
+                creative_freedom=["Invent a new setting and visual mechanism."],
+                must_not_reuse=["benchmark actors", "benchmark wording"],
+            )],
+        )
+    )
+    brief = _brief().model_copy(update={
+        "truth_payload": {
+            "producer_intent_spec": {
+                "intent_manifest": manifest.model_dump(mode="json"),
+            },
+            "series_intent": {"variant_index": 1},
+        },
+    })
+    contract = director_author_output_contract(brief)
+    program_contract = contract["$defs"]["DirectorProgramAuthorDraft"]
+    assert "requirement_execution" in program_contract["required"]
+    assert program_contract["properties"]["requirement_execution"][
+        "minItems"
+    ] == 1
+    payload = _author_only_payload()
+    payload["program"]["requirement_execution"] = [{
+        "requirement_id": "R-001",
+        "implementation": (
+            "Use the first line and first segment to reveal a newly invented "
+            "visual contradiction."
+        ),
+        "script_line_ids": ["l1"],
+        "capability_node_ids": ["copy"],
+        "segment_indices": [1],
+        "evidence_plan": [
+            "Opening pixels and the first line jointly establish the contradiction."
+        ],
+    }]
+
+    artifact = finalize_director_author_draft(
+        DirectorAuthorDraftPayload.model_validate(payload),
+        brief,
+        artifact_id="intent-bound-artifact",
+        revision=1,
+    )
+
+    assert artifact.program.intent_manifest_sha256 == manifest.manifest_sha256
+    assert artifact.program.intent_requirements == manifest.requirements
+    assert artifact.program.requirement_execution[0].requirement_id == "R-001"
+
+    missing = _author_only_payload()
+    with pytest.raises(ValueError, match="lack execution mappings"):
+        finalize_director_author_draft(
+            DirectorAuthorDraftPayload.model_validate(missing),
+            brief,
+            artifact_id="intent-unmapped-artifact",
+            revision=1,
+        )
+
+
+def test_finalizer_keeps_program_v2_when_script_uses_compiled_continuation():
+    payload = _author_only_payload()
+    locked_copy = payload["script"]["lines"][0]["text"]
+    brief = _brief().model_copy(
+        update={
+            "truth_payload": {
+                "required_verbatim_voiceover": locked_copy,
+                "required_verbatim_voiceover_lines": [
+                    {"segment_index": 1, "text": locked_copy}
+                ],
+                "locked_voiceover_segment_boundary_policy": {
+                    "mode": "runtime_compiled_continuation",
+                    "authority": "runtime",
+                },
+            }
+        }
+    )
+
+    artifact = finalize_director_author_draft(
+        DirectorAuthorDraftPayload.model_validate(payload),
+        brief,
+        artifact_id="compiled-continuation-finalizer",
+        revision=1,
+    )
+
+    assert artifact.program.schema_version == "2.0"
+    assert artifact.script.schema_version == "2.1"
 
 
 def test_author_only_draft_rejects_invented_capability_before_signing():
@@ -759,6 +931,216 @@ def test_preflight_allows_small_segment_pacing_variance_under_global_budget():
     }
 
 
+def test_preflight_treats_colon_leadin_and_quote_as_one_spoken_segment():
+    program = _program().model_copy(
+        update={
+            "program_id": "colon-leadin-program",
+            "target_duration_seconds": 10,
+            "conversion": ConversionIntent(product_required=False),
+        }
+    )
+    script = build_script_package(
+        script_id="colon-leadin-script",
+        program_id=program.program_id,
+        locale=program.locale,
+        target_duration_seconds=10,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        primary_speaker_id="narrator",
+        lines=[
+            ScriptLine(
+                line_id="lead-in",
+                speaker_id="narrator",
+                text="And you keep asking yourself:",
+                beat_id="question",
+                purpose="lead into the exact question",
+            ),
+            ScriptLine(
+                line_id="question",
+                speaker_id="narrator",
+                text="Why can’t I just turn my brain off?",
+                beat_id="question",
+                purpose="complete the question",
+            ),
+        ],
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=["lead-in", "question"],
+            )
+        ],
+    )
+
+    report = preflight_script_copy(program, script)
+
+    assert "INCOMPLETE_SPOKEN_SENTENCE" not in {
+        issue.code for issue in report.issues
+    }
+
+
+def test_preflight_blocks_spoken_segment_that_ends_on_colon_leadin():
+    program = _program().model_copy(
+        update={
+            "program_id": "split-colon-program",
+            "target_duration_seconds": 20,
+            "conversion": ConversionIntent(product_required=False),
+        }
+    )
+    script = build_script_package(
+        script_id="split-colon-script",
+        program_id=program.program_id,
+        locale=program.locale,
+        target_duration_seconds=20,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        primary_speaker_id="narrator",
+        lines=[
+            ScriptLine(
+                line_id="lead-in",
+                speaker_id="narrator",
+                text="And you keep asking yourself:",
+                beat_id="question",
+                purpose="lead into the exact question",
+            ),
+            ScriptLine(
+                line_id="question",
+                speaker_id="narrator",
+                text="Why can’t I just turn my brain off?",
+                beat_id="answer",
+                purpose="complete the question",
+            ),
+        ],
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=["lead-in"],
+            ),
+            ScriptSegmentAllocation(
+                segment_index=2,
+                duration_seconds=10,
+                line_ids=["question"],
+            ),
+        ],
+    )
+
+    report = preflight_script_copy(program, script)
+
+    issue = next(
+        issue
+        for issue in report.issues
+        if issue.code == "INCOMPLETE_SPOKEN_SENTENCE"
+    )
+    assert issue.line_ids == ["lead-in"]
+
+
+def test_preflight_allows_only_audited_internal_continuation_splice():
+    program = _program().model_copy(
+        update={
+            "program_id": "compiled-continuation-program",
+            "target_duration_seconds": 20,
+            "conversion": ConversionIntent(product_required=False),
+        }
+    )
+    script = build_script_package(
+        script_id="compiled-continuation-script",
+        program_id=program.program_id,
+        locale=program.locale,
+        target_duration_seconds=20,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        schema_version="2.1",
+        primary_speaker_id="narrator",
+        lines=[
+            ScriptLine(
+                line_id="splice-1",
+                speaker_id="narrator",
+                text="And you keep asking yourself:",
+                beat_id="question",
+                purpose="runtime compiled first excerpt",
+            ),
+            ScriptLine(
+                line_id="splice-2",
+                speaker_id="narrator",
+                text="Why can’t I just turn my brain off?",
+                beat_id="answer",
+                purpose="runtime compiled continuation",
+            ),
+        ],
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=["splice-1"],
+            ),
+            ScriptSegmentAllocation(
+                segment_index=2,
+                duration_seconds=10,
+                line_ids=["splice-2"],
+            ),
+        ],
+    )
+
+    report = preflight_script_copy(program, script)
+    packet = build_independent_copy_critic_packet(
+        program,
+        script,
+        report,
+    )
+
+    assert "INCOMPLETE_SPOKEN_SENTENCE" not in {
+        issue.code for issue in report.issues
+    }
+    assert "one continuous performance" in packet["review_method"][
+        "runtime_compiled_continuation"
+    ]
+
+
+def test_compiled_continuation_still_requires_complete_final_ending():
+    program = _program().model_copy(
+        update={
+            "program_id": "compiled-incomplete-ending-program",
+            "target_duration_seconds": 10,
+            "conversion": ConversionIntent(product_required=False),
+        }
+    )
+    script = build_script_package(
+        script_id="compiled-incomplete-ending-script",
+        program_id=program.program_id,
+        locale=program.locale,
+        target_duration_seconds=10,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        schema_version="2.1",
+        primary_speaker_id="narrator",
+        lines=[
+            ScriptLine(
+                line_id="unfinished",
+                speaker_id="narrator",
+                text="Because the final thought still",
+                beat_id="ending",
+                purpose="prove the full narration still needs closure",
+            ),
+        ],
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=["unfinished"],
+            ),
+        ],
+    )
+
+    report = preflight_script_copy(program, script)
+
+    issue = next(
+        issue for issue in report.issues
+        if issue.code == "INCOMPLETE_SPOKEN_SENTENCE"
+    )
+    assert issue.line_ids == ["unfinished"]
+
+
 def test_historic_v40_is_blocked_before_visual_spend():
     program = _program()
     script = script_package_from_creative_result(
@@ -957,6 +1339,81 @@ def test_independent_critic_response_is_strict_and_fail_closed():
     )
     assert verdict.approved is False
 
+    # JSON models often add presentation quotes around an otherwise verbatim
+    # citation. The interior still has to match the cited authoritative line.
+    first_criterion = next(iter(scores))
+    original_quote = payload["criterion_evidence"][first_criterion]["quotes"]
+    payload["criterion_evidence"][first_criterion]["quotes"] = [
+        f'"{script.lines[0].text}"'
+    ]
+    quoted_verdict = parse_independent_copy_critic_response(
+        __import__("json").dumps(payload),
+        packet=packet,
+        script=script,
+        preflight=preflight,
+    )
+    assert quoted_verdict.approved is False
+    payload["criterion_evidence"][first_criterion]["quotes"] = original_quote
+
+    # Display copy such as "43" or "2:17 AM" is legitimate audit evidence.
+    # Grounding is enforced by exact membership in the cited script line, not
+    # by an arbitrary minimum quote length.
+    payload["criterion_evidence"][first_criterion]["quotes"] = [
+        script.lines[0].text[:3]
+    ]
+    short_quote_verdict = parse_independent_copy_critic_response(
+        __import__("json").dumps(payload),
+        packet=packet,
+        script=script,
+        preflight=preflight,
+    )
+    assert short_quote_verdict.approved is False
+    payload["criterion_evidence"][first_criterion]["quotes"] = original_quote
+
+    # Repeated audience-facing copy may occur at more than one immutable
+    # coordinate (a CTA at the opening and close is a common example). Quote
+    # text repetition is therefore valid as long as every citation remains
+    # grounded in the authoritative cited line set.
+    payload["criterion_evidence"][first_criterion]["quotes"] = [
+        script.lines[0].text,
+        script.lines[0].text,
+    ]
+    repeated_quote_verdict = parse_independent_copy_critic_response(
+        __import__("json").dumps(payload),
+        packet=packet,
+        script=script,
+        preflight=preflight,
+    )
+    assert repeated_quote_verdict.approved is False
+    payload["criterion_evidence"][first_criterion]["quotes"] = original_quote
+
+    # A critic may quote a contiguous spoken sentence that the delivery
+    # allocator split across two adjacent script lines. Both line IDs still
+    # provide exact, ordered evidence and must not trigger a contract retry.
+    spanning_quote = (
+        f"{script.lines[0].text[-12:]} {script.lines[1].text[:12]}"
+    )
+    payload["criterion_evidence"][first_criterion] = {
+        "line_ids": [script.lines[0].line_id, script.lines[1].line_id],
+        "quotes": [spanning_quote],
+        "rationale": "The evidence spans two adjacent delivery lines.",
+    }
+    spanning_verdict = parse_independent_copy_critic_response(
+        __import__("json").dumps(payload),
+        packet=packet,
+        script=script,
+        preflight=preflight,
+    )
+    assert spanning_verdict.approved is False
+    payload["criterion_evidence"][first_criterion] = {
+        "line_ids": [script.lines[0].line_id],
+        "quotes": original_quote,
+        "rationale": (
+            "The quoted opening does not prove this criterion at its "
+            "configured blocking threshold."
+        ),
+    }
+
     fenced = "```json\n" + __import__("json").dumps(payload) + "\n```"
     with pytest.raises(ValueError, match="without markdown fences"):
         parse_independent_copy_critic_response(
@@ -976,7 +1433,6 @@ def test_independent_critic_response_is_strict_and_fail_closed():
         )
 
     payload["blocking_issues"][0]["line_ids"] = ["s004.l001"]
-    first_criterion = next(iter(scores))
     payload["criterion_evidence"][first_criterion]["quotes"] = [
         "This sentence was never in the final script."
     ]
@@ -1119,6 +1575,55 @@ def test_delayed_reveal_reason_must_cite_an_earlier_decision_basis():
     assert verdict.approved is True
 
 
+def test_product_first_locked_copy_does_not_inherit_delayed_reveal_rule():
+    program = _program(reveal_after_fraction=None).model_copy(
+        update={
+            "copy_review_criteria": [
+                CopyReviewCriterion(
+                    criterion_id="reason_to_choose",
+                    instruction=(
+                        "State or clearly show a confirmed reason to consider "
+                        "the product."
+                    ),
+                    minimum_score=85,
+                )
+            ]
+        }
+    )
+    original = script_package_from_creative_result(
+        _historic_v40_result(),
+        script_id="product-first-locked-copy-review",
+        program_id=program.program_id,
+        locale=program.locale,
+        edit_headroom_seconds=2,
+    )
+    brief = _brief().model_copy(
+        update={
+            "truth_payload": {
+                **_brief().truth_payload,
+                "required_verbatim_voiceover": " ".join(
+                    line.text for line in original.lines
+                ),
+            }
+        }
+    )
+    preflight = preflight_script_copy(program, original)
+    packet = build_independent_copy_critic_packet(
+        program,
+        original,
+        preflight,
+        brief=brief,
+    )
+
+    assert packet["review_method"]["product_reveal_strategy"] == "product_first"
+    assert "Do not apply the delayed-reveal earlier-line rule" in packet[
+        "review_method"
+    ]["preference_is_not_a_reason"]
+    assert "multimodal visual review" in packet["review_method"][
+        "visual_proof_review_boundary"
+    ]
+
+
 def test_director_artifact_is_runtime_hashed_and_revision_is_parented():
     program = _program()
     package = script_package_from_creative_result(
@@ -1228,6 +1733,104 @@ def test_revision_packet_is_explicit_and_keeps_artifact_ancestry():
         for row in revision_packet["revision_contract"]["must_improve"]
     )
     assert "conversation" not in revision_packet
+
+
+def test_variant_director_packet_exposes_only_current_deliverable_copy():
+    current_seed = {
+        "deliverable_ordinal": 7,
+        "text": "Why do my thoughts bring a megaphone to bed?",
+        "target_duration_seconds": 4,
+    }
+    brief = _brief().model_copy(update={
+        "target_duration_seconds": 4,
+        "edit_headroom_seconds": 1,
+        "speech_rate_wpm": 220,
+        "production_contract": VideoProductionContract(
+            model_id="omni_flash",
+            segment_duration_minimum_seconds=4,
+            segment_duration_maximum_seconds=10,
+            allowed_segment_durations_seconds=[4, 6, 8, 10],
+            required_segment_durations_seconds=[4],
+            reference_image_limit=7,
+            reference_video_limit=0,
+        ),
+        "truth_payload": {
+            "series_intent": {"variant_index": 7},
+            "creative_copy_contract": {
+                "copy_authority": "producer_draft_editable",
+                "director_seed_voiceover": current_seed,
+                "director_seed_voiceovers": [
+                    {
+                        "deliverable_ordinal": 1,
+                        "text": "Sibling copy must not enter this request.",
+                    },
+                    current_seed,
+                ],
+            },
+            "producer_intent_spec": {
+                "user_goal": "Create two independent videos.",
+                "deliverables": [
+                    {"ordinal": 1, "script_text": "Sibling copy."},
+                    {"ordinal": 7, "script_text": current_seed["text"]},
+                ],
+            },
+        },
+    })
+
+    packet = build_initial_director_packet(brief)
+    truth = packet["project_brief"]["truth_payload"]
+
+    assert "director_seed_voiceovers" not in truth[
+        "creative_copy_contract"
+    ]
+    assert truth["creative_copy_contract"][
+        "director_seed_voiceover"
+    ] == current_seed
+    assert truth["producer_intent_spec"]["deliverables"] == [{
+        "ordinal": 7,
+        "script_text": current_seed["text"],
+    }]
+    assert truth["director_author_scope"] == {
+        "current_deliverable_only": True,
+        "current_deliverable_ordinal": 7,
+        "expected_script_segment_count": 1,
+        "series_deliverable_count": 2,
+        "instruction": (
+            "Author only the current deliverable. Project-wide target counts "
+            "describe sibling final videos and must never become script "
+            "segments in this Director response. Map project requirements to "
+            "observable evidence in this current deliverable only."
+        ),
+    }
+    assert "Sibling copy" not in __import__("json").dumps(
+        packet["project_brief"]
+    )
+
+
+def test_segment_delivery_ceiling_is_capped_by_global_editing_budget():
+    brief = _brief().model_copy(update={
+        "target_duration_seconds": 4,
+        "edit_headroom_seconds": 1,
+        "speech_rate_wpm": 220,
+        "display_reading_rate_wpm": 220,
+        "production_contract": VideoProductionContract(
+            model_id="omni_flash",
+            segment_duration_minimum_seconds=4,
+            segment_duration_maximum_seconds=10,
+            allowed_segment_durations_seconds=[4, 6, 8, 10],
+            required_segment_durations_seconds=[4],
+            reference_image_limit=7,
+            reference_video_limit=0,
+        ),
+    })
+
+    contract = build_delivery_budget_contract(brief)
+
+    assert contract["spoken_global_max_words"] == 11
+    assert contract["segments"][0]["spoken_max_words"] == 11
+    assert contract["rules"][
+        "segment_ceiling_is_already_capped_by_global_budget"
+    ] is True
 
 
 def test_director_packet_and_artifact_cannot_invent_capabilities_or_change_brief():

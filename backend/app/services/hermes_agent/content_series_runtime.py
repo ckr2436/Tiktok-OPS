@@ -31,7 +31,8 @@ from app.services.hermes_agent.content_director import (
     finalize_series_coverage_map,
     finalize_series_slate,
     parse_series_slate_response,
-    series_slate_output_contract,
+    production_segment_durations,
+    series_slate_brief_output_contract,
     series_slate_page_output_contract,
     validate_series_slate_page,
 )
@@ -112,6 +113,10 @@ class SeriesCriticReview(BaseModel):
     verdict: IndependentSeriesCriticVerdict
     latency_ms: int = Field(ge=0)
     response_sha256: str = Field(min_length=64, max_length=64)
+    deterministic_reconciliations: list[str] = Field(
+        default_factory=list,
+        max_length=256,
+    )
 
 
 class SeriesCoverageCriticReview(BaseModel):
@@ -250,6 +255,82 @@ def _parse_series_critic(
     return verdict
 
 
+def _reconcile_deterministic_series_critic(
+    *,
+    brief: DirectorSeriesBrief,
+    slate: SeriesSlate,
+    verdict: IndependentSeriesCriticVerdict,
+) -> tuple[IndependentSeriesCriticVerdict, list[str]]:
+    """Discard Critic claims contradicted by machine-verifiable contracts.
+
+    The Critic remains authoritative for semantic quality, differentiation,
+    audience fit and conversion logic.  It is not authoritative for provider
+    timing arithmetic that the finalized slate has already passed.  Without
+    this boundary, a stale or hallucinated duration claim can make the
+    Director regenerate the same legal slate until the revision budget is
+    exhausted.
+    """
+
+    production = brief.production_contract
+    if production is None or verdict.approved:
+        return verdict, []
+
+    intent_by_id = {
+        intent.intent_id: intent for intent in slate.intents
+    }
+    retained: list[SeriesCriticBlockingIssue] = []
+    reconciliations: list[str] = []
+    for issue in verdict.blocking_issues:
+        normalized_code = (
+            str(issue.code or "")
+            .strip()
+            .casefold()
+            .replace("-", "_")
+        )
+        if normalized_code != "production_duration_infeasibility":
+            retained.append(issue)
+            continue
+
+        cited_intents = [
+            intent_by_id.get(intent_id)
+            for intent_id in issue.intent_ids
+        ]
+        if not cited_intents or any(
+            intent is None for intent in cited_intents
+        ):
+            retained.append(issue)
+            continue
+
+        try:
+            for intent in cited_intents:
+                production_segment_durations(
+                    production,
+                    intent.target_duration_seconds,
+                )
+        except ValueError:
+            retained.append(issue)
+            continue
+
+        reconciliations.append(
+            "discarded production_duration_infeasibility for "
+            f"{','.join(issue.intent_ids)}: finalized slate durations "
+            "satisfy the provider production contract"
+        )
+
+    if len(retained) == len(verdict.blocking_issues):
+        return verdict, []
+    return (
+        IndependentSeriesCriticVerdict.model_validate({
+            **verdict.model_dump(mode="json"),
+            "approved": not retained,
+            "blocking_issues": [
+                issue.model_dump(mode="json") for issue in retained
+            ],
+        }),
+        reconciliations,
+    )
+
+
 async def _request_bounded_series_critic(
     *,
     critic: Any,
@@ -257,8 +338,8 @@ async def _request_bounded_series_critic(
     packet: dict[str, Any],
     instructions: str,
     metadata: dict[str, Any],
-    criteria: list[SeriesReviewCriterion],
-    valid_intent_ids: set[str],
+    criteria: list[SeriesReviewCriterion] | None,
+    valid_intent_ids: set[str] | None,
     maximum_contract_repairs: int,
 ) -> tuple[IndependentSeriesCriticVerdict, int, str]:
     current_packet = dict(packet)
@@ -300,8 +381,12 @@ async def _request_bounded_series_critic(
                 "validation_error": str(exc)[:4000],
                 "repair_rules": {
                     "preserve_review_judgment": True,
-                    "score_exactly_supplied_criterion_ids": True,
-                    "cite_only_supplied_intent_ids": True,
+                    "score_exactly_supplied_criterion_ids": (
+                        criteria is not None
+                    ),
+                    "cite_only_supplied_intent_ids": (
+                        valid_intent_ids is not None
+                    ),
                     "do_not_rewrite_intents": True,
                 },
                 "output_contract": (
@@ -938,9 +1023,7 @@ async def _request_series_slate_full(
                 "series_brief": brief.model_dump(mode="json"),
                 "invalid_response": raw[:1_000_000],
                 "validation_error": message,
-                "output_contract": series_slate_output_contract(
-                    allowed_audio_modes=brief.allowed_audio_modes,
-                ),
+                "output_contract": series_slate_brief_output_contract(brief),
             }
     return None, attempts, errors
 
@@ -2523,22 +2606,276 @@ async def run_content_series_slate_loop(
     attempts: list[SeriesDirectorAttempt] = []
     reviews: list[SeriesCriticReview] = []
     contract_errors: list[str] = []
-
-    for revision in range(1, policy.series_revision_limit + 2):
-        slate, current_attempts, current_errors = (
-            await _request_series_slate(
-                director=director,
-                brief=brief,
-                packet=packet,
-                revision=revision,
-                maximum_contract_repairs=(
-                    policy.maximum_contract_repairs_per_revision
-                ),
-                page_size=policy.series_page_size,
-                resume_checkpoint=resume_page_checkpoint,
-                checkpoint_callback=page_checkpoint_callback,
-            )
+    monolithic = int(brief.target_count) <= int(policy.series_page_size)
+    locked_script_variant_policy = dict(
+        dict(brief.truth_payload or {}).get(
+            "locked_script_variant_policy"
         )
+        or {}
+    )
+    locked_script_visual_variants = (
+        locked_script_variant_policy.get("mode")
+        == "same_copy_visual_variants"
+        and bool(
+            locked_script_variant_policy.get("copy_reuse_required")
+        )
+    )
+    creative_copy_contract = dict(
+        dict(brief.truth_payload or {}).get("creative_copy_contract")
+        or {}
+    )
+    locked_deliverable_scripts = (
+        str(
+            creative_copy_contract.get("script_reuse_mode") or ""
+        ).strip()
+        == "distinct_per_deliverable"
+        and len([
+            row
+            for row in list(
+                creative_copy_contract.get(
+                    "required_verbatim_voiceovers"
+                )
+                or []
+            )
+            if isinstance(row, dict)
+            and str(row.get("text") or "").strip()
+        ])
+        == int(brief.target_count)
+    )
+    immutable_copy_authority = (
+        locked_script_visual_variants or locked_deliverable_scripts
+    )
+    paged_resume_checkpoint = (
+        None if monolithic else resume_page_checkpoint
+    )
+
+    def revision_packet(
+        slate: SeriesSlate,
+        verdict: IndependentSeriesCriticVerdict,
+        *,
+        next_revision: int,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "2.0",
+            "role": "content_series_revision",
+            "series_brief": brief.model_dump(mode="json"),
+            "current_slate": slate.model_dump(mode="json"),
+            "critic_verdict": verdict.model_dump(mode="json"),
+            "revision_contract": {
+                "revision": int(next_revision),
+                "repair_only_blocking_issues": True,
+                "preserve_approved_intents_when_possible": True,
+                "do_not_change_project_owned_fields": True,
+            },
+            # A semantic revision is still required to satisfy the exact
+            # project-owned dimensions, truth references, product attributes,
+            # series identity, and count.  Falling back to the generic schema
+            # makes every later revision structurally invalid and burns the
+            # contract-repair budget before the Critic can review the copy.
+            "output_contract": series_slate_brief_output_contract(brief),
+        }
+
+    async def emit_monolithic_checkpoint(
+        *,
+        phase: str,
+        revision: int,
+        slate: SeriesSlate | None,
+    ) -> None:
+        if not monolithic or page_checkpoint_callback is None:
+            return
+        payload = {
+            "schema_version": "1.0",
+            "mode": "monolithic",
+            "series_id": brief.series_id,
+            "series_version": int(brief.series_version),
+            "page_size": int(policy.series_page_size),
+            "revision": int(revision),
+            "current_slate": (
+                slate.model_dump(mode="json")
+                if slate is not None
+                else None
+            ),
+            "attempts": [
+                item.model_dump(mode="json") for item in attempts
+            ],
+            "reviews": [
+                item.model_dump(mode="json") for item in reviews
+            ],
+            "contract_errors": list(contract_errors),
+            "progress": {"phase": phase},
+        }
+        emitted = page_checkpoint_callback(payload)
+        if inspect.isawaitable(emitted):
+            await emitted
+
+    resume_slate: SeriesSlate | None = None
+    start_revision = 1
+    checkpoint = dict(resume_page_checkpoint or {})
+    checkpoint_matches = (
+        monolithic
+        and
+        checkpoint.get("schema_version") == "1.0"
+        and checkpoint.get("mode") == "monolithic"
+        and checkpoint.get("series_id") == brief.series_id
+        and int(checkpoint.get("series_version") or 0)
+        == int(brief.series_version)
+        and int(checkpoint.get("page_size") or 0)
+        == int(policy.series_page_size)
+    )
+    if checkpoint_matches:
+        try:
+            attempts = [
+                SeriesDirectorAttempt.model_validate(item)
+                for item in list(checkpoint.get("attempts") or [])
+            ]
+            reviews = [
+                SeriesCriticReview.model_validate(item)
+                for item in list(checkpoint.get("reviews") or [])
+            ]
+            contract_errors = [
+                str(item)[:4000]
+                for item in list(checkpoint.get("contract_errors") or [])
+            ]
+            raw_slate = checkpoint.get("current_slate")
+            if isinstance(raw_slate, dict):
+                candidate = SeriesSlate.model_validate(raw_slate)
+                # Re-run the complete project-owned deterministic contract;
+                # an old or manually damaged checkpoint must never authorize
+                # media or become the basis of another semantic revision.
+                verified = finalize_series_slate(
+                    SeriesSlateDraft(
+                        schema_version=candidate.schema_version,
+                        series_id=candidate.series_id,
+                        series_version=candidate.series_version,
+                        intents=candidate.intents,
+                    ),
+                    brief,
+                )
+                if verified.slate_sha256 != candidate.slate_sha256:
+                    raise ValueError(
+                        "monolithic checkpoint slate hash changed"
+                    )
+                resume_slate = verified
+            start_revision = max(
+                1,
+                int(checkpoint.get("revision") or 1),
+            )
+        except (TypeError, ValueError):
+            attempts = []
+            reviews = []
+            contract_errors = []
+            resume_slate = None
+            start_revision = 1
+
+    if resume_slate is not None:
+        matching_review = next(
+            (
+                review
+                for review in reversed(reviews)
+                if review.slate_sha256 == resume_slate.slate_sha256
+                and review.revision == start_revision
+            ),
+            None,
+        )
+        if matching_review is not None:
+            reconciled_verdict, reconciliation_notes = (
+                _reconcile_deterministic_series_critic(
+                    brief=brief,
+                    slate=resume_slate,
+                    verdict=matching_review.verdict,
+                )
+            )
+            if reconciliation_notes:
+                matching_review = SeriesCriticReview(
+                    revision=matching_review.revision,
+                    slate_sha256=matching_review.slate_sha256,
+                    verdict=reconciled_verdict,
+                    latency_ms=matching_review.latency_ms,
+                    response_sha256=matching_review.response_sha256,
+                    deterministic_reconciliations=[
+                        *matching_review.deterministic_reconciliations,
+                        *reconciliation_notes,
+                    ],
+                )
+                reviews = [
+                    (
+                        matching_review
+                        if review.revision == matching_review.revision
+                        and review.slate_sha256
+                        == matching_review.slate_sha256
+                        else review
+                    )
+                    for review in reviews
+                ]
+        if matching_review is not None and matching_review.verdict.approved:
+            if page_checkpoint_callback is not None:
+                cleared = page_checkpoint_callback(None)
+                if inspect.isawaitable(cleared):
+                    await cleared
+            return SeriesSlateLoopResult(
+                status="approved",
+                final_slate=resume_slate,
+                attempts=attempts,
+                reviews=reviews,
+                contract_errors=contract_errors,
+                reason=(
+                    "series slate resumed after deterministic contract "
+                    "validation and independent critic approval"
+                ),
+            )
+        if matching_review is not None:
+            if start_revision > policy.series_revision_limit:
+                return SeriesSlateLoopResult(
+                    status="quality_pause",
+                    final_slate=None,
+                    attempts=attempts,
+                    reviews=reviews,
+                    contract_errors=contract_errors,
+                    reason=(
+                        "series slate exhausted the project-owned revision "
+                        "budget"
+                    ),
+                )
+            packet = revision_packet(
+                resume_slate,
+                matching_review.verdict,
+                next_revision=start_revision + 1,
+            )
+            start_revision += 1
+            resume_slate = None
+
+    for revision in range(
+        start_revision,
+        policy.series_revision_limit + 2,
+    ):
+        if resume_slate is not None and revision == start_revision:
+            slate = resume_slate
+            current_attempts: list[SeriesDirectorAttempt] = []
+            current_errors: list[str] = []
+            resume_slate = None
+        else:
+            slate, current_attempts, current_errors = (
+                await _request_series_slate(
+                    director=director,
+                    brief=brief,
+                    packet=packet,
+                    revision=revision,
+                    maximum_contract_repairs=(
+                        policy.maximum_contract_repairs_per_revision
+                    ),
+                    page_size=policy.series_page_size,
+                    resume_checkpoint=paged_resume_checkpoint,
+                    checkpoint_callback=(
+                        None
+                        if monolithic
+                        else page_checkpoint_callback
+                    ),
+                )
+            )
+            # A page checkpoint is scoped to the Director request that
+            # assembled the current whole-slate candidate.  Reusing it on a
+            # later semantic revision would bypass the Critic's repair packet.
+            paged_resume_checkpoint = None
         attempts.extend(current_attempts)
         contract_errors.extend(current_errors)
         if slate is None:
@@ -2552,6 +2889,15 @@ async def run_content_series_slate_loop(
                     "contract within its bounded repair budget"
                 ),
             )
+
+        # Persist the valid candidate before the independent Critic call.  A
+        # provider delay, worker restart, or soft time limit can now resume at
+        # the Critic instead of regenerating already accepted Director work.
+        await emit_monolithic_checkpoint(
+            phase="critic",
+            revision=revision,
+            slate=slate,
+        )
 
         critic_packet = {
             "schema_version": "2.0",
@@ -2570,9 +2916,43 @@ async def run_content_series_slate_loop(
                 "verify_each_intent_can_satisfy_every_blocking_copy_criterion": True,
                 "score_project_quality_rubric": True,
                 "score_every_diversity_requirement": True,
-                "reject_semantic_duplicates": True,
-                "reject_semantic_overlap_with_completed_content_history": True,
-                "reject_fixed_template_repetition": True,
+                "reject_semantic_duplicates": (
+                    not locked_script_visual_variants
+                ),
+                "reject_semantic_overlap_with_completed_content_history": (
+                    not locked_script_visual_variants
+                ),
+                "reject_fixed_template_repetition": (
+                    not immutable_copy_authority
+                ),
+                "locked_script_visual_variant_mode": (
+                    locked_script_visual_variants
+                ),
+                "locked_distinct_deliverable_script_mode": (
+                    locked_deliverable_scripts
+                ),
+                "operator_locked_copy_order_is_authoritative": (
+                    immutable_copy_authority
+                ),
+                "do_not_block_on_similarity_or_order_inside_locked_copy": (
+                    immutable_copy_authority
+                ),
+                "judge_conversion_and_response_route_diversity_inside_"
+                "authorized_visual_execution_scope": (
+                    immutable_copy_authority
+                ),
+                "locked_deliverable_setting_authorizes_its_generic_"
+                "category_but_not_source_execution_copying": (
+                    locked_deliverable_scripts
+                ),
+                "judge_diversity_only_inside_project_owned_scope": True,
+                "audit_each_operator_quantified_requirement_against_each_"
+                "intent": True,
+                "judge_observable_hook_action_not_self_describing_"
+                "adjectives": True,
+                "ordinary_expected_action_is_not_a_disruption_merely_"
+                "because_it_is_fast": True,
+                "do_not_average_strong_and_weak_hooks_across_the_series": True,
                 "reject_unearned_required_conversion_transition": bool(
                     brief.conversion.product_required
                 ),
@@ -2585,59 +2965,113 @@ async def run_content_series_slate_loop(
                 IndependentSeriesCriticVerdict.model_json_schema()
             ),
         }
-        critic_response, latency_ms = await critic.create_response(
-            input_text=json.dumps(
-                critic_packet,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            instructions=(
-                "Act only as independent_series_critic. Review the exact "
-                "project objective, intended audience, every blocking copy "
-                "criterion, quality rubric, and diversity requirement. Reject "
-                "any intent whose planned story cannot plausibly satisfy a "
-                "blocking copy criterion. "
-                + (
-                    "Because this project explicitly requires a product, also "
-                    "reject an intent whose conversion transition cannot be "
-                    "earned from the preceding audience need or story logic. "
-                    if brief.conversion.product_required
-                    else "Do not invent a product, offer, CTA, purchase reason, "
-                    "or conversion bridge for this non-product project. "
-                )
-                +
-                "Treat structured audio_mode as authoritative and reject any "
-                "contradictory audio prose or plan. "
-                "Compare the proposed slate with completed_content_history and "
-                "reject semantic repeats of already delivered videos. "
-                "Return one raw JSON verdict. Do not rewrite the slate or "
-                "relax a threshold."
-            ),
-            metadata={
-                "series_id": brief.series_id,
-                "series_version": int(brief.series_version),
-                "slate_sha256": slate.slate_sha256,
-                "revision": int(revision),
-            },
-        )
-        raw_verdict = extract_output_text(critic_response)
-        verdict = _parse_series_critic(
-            raw_verdict,
-            brief=brief,
-        )
         valid_ids = {item.intent_id for item in slate.intents}
-        unknown_ids = sorted({
-            intent_id
-            for issue in verdict.blocking_issues
-            for intent_id in issue.intent_ids
-            if intent_id not in valid_ids
-        })
-        if unknown_ids:
-            raise ValueError(
-                "series critic referenced unknown intent IDs: "
-                f"{unknown_ids}"
+        verdict, latency_ms, raw_verdict = (
+            await _request_bounded_series_critic(
+                critic=critic,
+                brief=brief,
+                packet=critic_packet,
+                instructions=(
+                    "Act only as independent_series_critic. Review the exact "
+                    "project objective, intended audience, every blocking copy "
+                    "criterion, quality rubric, and diversity requirement. Reject "
+                    "any intent whose planned story cannot plausibly satisfy a "
+                    "blocking copy criterion. "
+                    + (
+                        "Because this project explicitly requires a product, also "
+                        "reject an intent whose conversion transition cannot be "
+                        "earned from the preceding audience need or story logic. "
+                        if brief.conversion.product_required
+                        else "Do not invent a product, offer, CTA, purchase reason, "
+                        "or conversion bridge for this non-product project. "
+                    )
+                    + "Treat structured audio_mode as authoritative and reject any "
+                    "contradictory audio prose or plan. "
+                    + "When an operator requirement says each, every, all, or "
+                    "otherwise quantifies deliverables, audit every intent "
+                    "independently and cite every failing intent ID; do not let "
+                    "strong entries average away weak ones. For a requested "
+                    "visual disruption, conflict, contradiction, surprise, or "
+                    "abnormal action, judge the concrete observable event, not "
+                    "the Director's adjectives. An ordinary expected routine "
+                    "action does not become a strong hook merely because it is "
+                    "described as fast, sudden, decisive, energetic, or high-"
+                    "energy. Approve only when the planned visible action itself "
+                    "makes the requested attention event immediately readable, "
+                    "remains causally relevant to the story, and stays inside "
+                    "the supplied truth and safety boundaries. "
+                    + (
+                        "This project explicitly requests multiple visual "
+                        "executions of one immutable, line-addressable script. "
+                        "Do not reject the required repeated copy, story order, "
+                        "conversion route, offer, or CTA as template repetition. "
+                        "Judge variation only in the project-authorized visual "
+                        "execution scope. Treat an operator-locked first-person "
+                        "routine description as personal copy, not as general "
+                        "label Directions; never generalize it, and still reject "
+                        "explicit prohibited claims or contradictions of "
+                        "confirmed facts. "
+                        if locked_script_visual_variants
+                        else ""
+                    )
+                    + (
+                        "This project contains one separate operator-locked "
+                        "verbatim script for every deliverable. Those scripts, "
+                        "their spoken order, factual order, named generic "
+                        "settings, product-identification timing, offer, and "
+                        "CTA are immutable source authority, not Director-"
+                        "authored candidates. Never reject their cross-script "
+                        "similarity, fixed conversion wording, or a confirmed "
+                        "attribute appearing after product identity, and never "
+                        "ask the Director to obtain permission to rewrite them. "
+                        "Judge differentiation, response/action route, opening "
+                        "force, and conversion architecture only within the "
+                        "authorized visual story, audience decision, action, "
+                        "camera, evidence, and pacing around that locked copy. "
+                        "A generic setting named by a locked deliverable is "
+                        "authorized for that deliverable; a benchmark must-not-"
+                        "copy rule still forbids reproducing the source's exact "
+                        "premise, event sequence, cast, dialogue, composition, "
+                        "UI, watermark, or pixels, but must not be expanded into "
+                        "a ban on the generic setting noun itself. Continue to "
+                        "reject invented facts, prohibited outcomes, unearned "
+                        "category relevance, weak visual hooks, or copied source "
+                        "execution. "
+                        if locked_deliverable_scripts
+                        else ""
+                    )
+                    + (
+                        "Compare only the visual execution fingerprints with "
+                        "completed_content_history; repeated locked copy is "
+                        "intentional, but repeated visual execution is not. "
+                        if locked_script_visual_variants
+                        else "Compare the proposed slate with "
+                        "completed_content_history and reject semantic repeats "
+                        "of already delivered videos. "
+                    )
+                    + "Return one raw JSON verdict. Do not rewrite the slate or "
+                    "relax a threshold."
+                ),
+                metadata={
+                    "series_id": brief.series_id,
+                    "series_version": int(brief.series_version),
+                    "slate_sha256": slate.slate_sha256,
+                    "revision": int(revision),
+                },
+                criteria=None,
+                valid_intent_ids=valid_ids,
+                maximum_contract_repairs=(
+                    policy.maximum_contract_repairs_per_revision
+                ),
             )
+        )
+        verdict, reconciliation_notes = (
+            _reconcile_deterministic_series_critic(
+                brief=brief,
+                slate=slate,
+                verdict=verdict,
+            )
+        )
         reviews.append(
             SeriesCriticReview(
                 revision=revision,
@@ -2645,7 +3079,13 @@ async def run_content_series_slate_loop(
                 verdict=verdict,
                 latency_ms=int(latency_ms),
                 response_sha256=_sha256(raw_verdict),
+                deterministic_reconciliations=reconciliation_notes,
             )
+        )
+        await emit_monolithic_checkpoint(
+            phase=("approved" if verdict.approved else "revision"),
+            revision=revision,
+            slate=slate,
         )
         if verdict.approved:
             if page_checkpoint_callback is not None:
@@ -2674,32 +3114,22 @@ async def run_content_series_slate_loop(
                     "series slate exhausted the project-owned revision budget"
                 ),
             )
-        if page_checkpoint_callback is not None:
+        if not monolithic and page_checkpoint_callback is not None:
             cleared = page_checkpoint_callback(None)
             if inspect.isawaitable(cleared):
                 await cleared
-        packet = {
-            "schema_version": "2.0",
-            "role": "content_series_revision",
-            "series_brief": brief.model_dump(mode="json"),
-            "current_slate": slate.model_dump(mode="json"),
-            "critic_verdict": verdict.model_dump(mode="json"),
-            "revision_contract": {
-                "revision": revision + 1,
-                "repair_only_blocking_issues": True,
-                "preserve_approved_intents_when_possible": True,
-                "do_not_change_project_owned_fields": True,
-            },
-            "output_contract": series_slate_output_contract(
-                allowed_audio_modes=brief.allowed_audio_modes,
-            ),
-        }
+        packet = revision_packet(
+            slate,
+            verdict,
+            next_revision=revision + 1,
+        )
 
     raise AssertionError("unreachable series slate loop state")
 
 
 __all__ = [
     "IndependentSeriesCriticVerdict",
+    "_reconcile_deterministic_series_critic",
     "SeriesCriticBlockingIssue",
     "SeriesCriticReview",
     "SeriesDirectorAttempt",

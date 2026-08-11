@@ -1,6 +1,11 @@
 from app.celery_app import (
-    AI_VIDEO_TASK_QUEUE,
+    AI_VIDEO_API_TASK_QUEUE,
+    AI_VIDEO_BROWSER_TASK_QUEUE,
+    AI_VIDEO_BROWSER_POLL_TASK_QUEUE,
+    AI_VIDEO_DOWNLOAD_TASK_QUEUE,
+    AI_VIDEO_MAINTENANCE_TASK_QUEUE,
     HERMES_AGENT_TASK_QUEUE,
+    HERMES_MAINTENANCE_TASK_QUEUE,
     WHISPER_TASK_QUEUE,
     task_modules_for_runtime,
     task_modules_for_worker_queue,
@@ -12,6 +17,7 @@ def test_hermes_worker_does_not_load_unrelated_task_graphs():
 
     assert modules == (
         "app.tasks.hermes_agent.tasks",
+        "app.tasks.hermes_agent.content_runtime_tasks",
         "app.tasks.hermes_agent.content_factory_tasks",
     )
     assert "app.tasks.website_ads_tasks" not in modules
@@ -19,11 +25,32 @@ def test_hermes_worker_does_not_load_unrelated_task_graphs():
     assert "app.features.tenants.openai_whisper.tasks" not in modules
 
 
-def test_ai_video_worker_only_loads_provider_and_download_tasks():
-    assert task_modules_for_worker_queue(AI_VIDEO_TASK_QUEUE) == (
-        "app.tasks.kie_ai.video_result_download_tasks",
-        "app.tasks.bandianwa.video_tasks",
+def test_ai_video_production_workers_only_load_provider_tasks():
+    expected = (
+        "app.tasks.ai_video.result_download_tasks",
+        "app.tasks.ai_video.video_tasks",
         "app.tasks.globalaiopc.video_tasks",
+    )
+    assert task_modules_for_worker_queue(AI_VIDEO_API_TASK_QUEUE) == expected
+    assert task_modules_for_worker_queue(AI_VIDEO_BROWSER_TASK_QUEUE) == expected
+    assert task_modules_for_worker_queue(AI_VIDEO_BROWSER_POLL_TASK_QUEUE) == expected
+
+
+def test_ai_video_download_and_maintenance_registries_are_isolated():
+    assert task_modules_for_worker_queue(AI_VIDEO_DOWNLOAD_TASK_QUEUE) == (
+        "app.tasks.ai_video.result_download_tasks",
+    )
+    assert task_modules_for_worker_queue(AI_VIDEO_MAINTENANCE_TASK_QUEUE) == (
+        "app.tasks.ai_video.result_download_tasks",
+        "app.tasks.ai_video.video_tasks",
+        "app.tasks.jimeng_lab_tasks",
+        "app.tasks.doubao_lab_tasks",
+    )
+
+
+def test_hermes_browser_maintenance_does_not_load_content_factory():
+    assert task_modules_for_worker_queue(HERMES_MAINTENANCE_TASK_QUEUE) == (
+        "app.tasks.hermes_agent.tasks",
     )
 
 
@@ -48,6 +75,7 @@ def test_api_producer_and_beat_do_not_import_consumer_task_graphs():
     assert task_modules_for_runtime(None, "beat") == ()
     assert task_modules_for_runtime(HERMES_AGENT_TASK_QUEUE, "worker") == (
         "app.tasks.hermes_agent.tasks",
+        "app.tasks.hermes_agent.content_runtime_tasks",
         "app.tasks.hermes_agent.content_factory_tasks",
     )
 

@@ -8,4 +8,4 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 output=${1:-"$root/backend/assets/MYUPONA-HermesBridge.exe"}
 
 cd "$root/hermes-bridge-agent"
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-H=windowsgui' -o "$output" .
+GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-H=windowsgui' -o "$output" .

@@ -10,7 +10,9 @@ Content Factory runtime.
 - Home: `/home/hermes/.hermes-video-analyst`
 - Endpoint: `http://127.0.0.1:8647/v1`
 - Model alias: `gmv-ops-hermes-video-analyst`
-- Logical model: `video-analyst-gpt-5.4-mini`
+- Logical role: `gmv-shop-video-analyst-v1`
+- Provider policy: Sub2API `gpt-5.6-luna` first, then the verified
+  `video-analyst-gpt-5.4-mini` provider pool.
 - Gateway: `http://127.0.0.1:8650/v1`
 - Service: `hermes-video-analyst.service`
 - Queue: `gmv.tasks.video_analysis`

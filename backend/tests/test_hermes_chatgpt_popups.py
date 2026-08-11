@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import base64
+import inspect
 import signal
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -59,6 +60,28 @@ def test_blocking_interruption_is_not_clicked(monkeypatch, blocked: str, expecte
 
     with pytest.raises((RuntimeError, direct_browser.ChatGPTStageError), match=expected):
         direct_browser._dismiss_chatgpt_interruptions()
+
+
+def test_anonymous_composer_does_not_mask_visible_login_control():
+    source = inspect.getsource(direct_browser._page_state)
+
+    assert "const loginRequired = loginControl ||" in source
+
+
+def test_bridge_auth_probe_blocks_logged_out_slot_only():
+    logged_out = SimpleNamespace(
+        meta_json={"chatgpt_auth_status": "login_required"},
+        load_json={},
+    )
+    ready = SimpleNamespace(
+        meta_json={"chatgpt_auth_status": "ready"},
+        load_json={},
+    )
+    legacy = SimpleNamespace(meta_json={}, load_json={})
+
+    assert content_factory_tasks._bridge_login_blocked(logged_out) is True
+    assert content_factory_tasks._bridge_login_blocked(ready) is False
+    assert content_factory_tasks._bridge_login_blocked(legacy) is False
 
 
 def test_harmless_overlays_are_drained_before_polling(monkeypatch):
@@ -410,6 +433,32 @@ def test_stage_completion_relocks_after_durable_capture_before_validation():
     )
 
     assert capture < completion_lock < validation < success_write
+
+
+def test_stage_error_relocks_and_refreshes_before_honoring_manual_pause():
+    source = (
+        content_factory_tasks.Path(content_factory_tasks.__file__)
+        .read_text(encoding="utf-8")
+    )
+    worker = source[
+        source.index("def run_content_factory_stage")
+        : source.index("def release_content_factory_stage_retry")
+    ]
+
+    rollback = worker.index("db.rollback()", worker.index("except Exception as exc:"))
+    recovery_lock = worker.index(
+        "stage_row, project, _ = _lock_stage_delivery_scope(",
+        rollback,
+    )
+    manual_pause_guard = worker.index(
+        'str(project.status or "").lower() == "paused"',
+        recovery_lock,
+    )
+
+    assert rollback < recovery_lock < manual_pause_guard
+    assert "stage_row = db.get(HermesContentFactoryStage" not in worker[
+        rollback:manual_pause_guard
+    ]
 
 
 def test_mysql_deadlock_detection_is_specific_to_error_1213():
@@ -849,6 +898,73 @@ def test_recent_running_stage_keeps_single_project_publish_lease():
     assert content_factory_tasks._stage_owns_publish_lease(stage, now=now) is True
 
 
+def test_completion_fence_accepts_live_control_stage_behind_video_wait_pointer():
+    assert content_factory_tasks._completion_pointer_allows_parallel_video_lane(
+        project_stage="WAITING_VIDEO_INPUT",
+        task_stage="DIRECTOR",
+        task_has_live_lease=True,
+        latest_same_stage_is_task=True,
+        competing_stage_has_live_lease=False,
+    ) is True
+
+
+def test_completion_fence_rejects_real_stage_change_or_competing_lease():
+    assert content_factory_tasks._completion_pointer_allows_parallel_video_lane(
+        project_stage="PRODUCTION_PLAN",
+        task_stage="DIRECTOR",
+        task_has_live_lease=True,
+        latest_same_stage_is_task=True,
+        competing_stage_has_live_lease=False,
+    ) is False
+    assert content_factory_tasks._completion_pointer_allows_parallel_video_lane(
+        project_stage="WAITING_VIDEO_INPUT",
+        task_stage="DIRECTOR",
+        task_has_live_lease=True,
+        latest_same_stage_is_task=True,
+        competing_stage_has_live_lease=True,
+    ) is False
+
+
+def test_completion_fence_db_wrapper_keeps_newest_live_director(monkeypatch):
+    now = datetime.now()
+    stage = SimpleNamespace(
+        id=2930,
+        project_id=184,
+        stage="DIRECTOR",
+        status="running",
+        input_json={"execution_lease_expires_at": (
+            now + timedelta(minutes=20)
+        ).isoformat()},
+        celery_task_id="director-delivery",
+        started_at=now - timedelta(minutes=5),
+        created_at=now - timedelta(minutes=6),
+    )
+    project = SimpleNamespace(
+        id=184,
+        current_stage="WAITING_VIDEO_INPUT",
+    )
+
+    class EmptyQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def all(self):
+            return []
+
+    db = SimpleNamespace(query=lambda *_args: EmptyQuery())
+    monkeypatch.setattr(
+        content_factory_tasks,
+        "_latest_stage",
+        lambda *_args, **_kwargs: stage,
+    )
+
+    assert content_factory_tasks._stage_completion_pointer_is_authoritative(
+        db,
+        project,
+        stage,
+    ) is True
+
+
 def test_series_director_execution_budget_scales_with_page_count(monkeypatch):
     monkeypatch.setattr(
         content_factory_tasks.settings,
@@ -904,6 +1020,24 @@ def test_stage_execution_budget_can_be_project_configured(monkeypatch):
         "SERIES_DIRECTOR",
         project,
     ) == (2700, 2800)
+
+
+def test_task_fallback_limit_does_not_undercut_control_stage_budget():
+    """Recovered broker deliveries may lose their per-message time limits."""
+
+    project = SimpleNamespace(config_json={})
+    control_soft, control_hard = (
+        content_factory_tasks._content_stage_execution_limits(
+            "PRODUCTION_PLAN",
+            project,
+        )
+    )
+
+    assert (
+        content_factory_tasks.run_content_factory_stage.soft_time_limit
+        >= control_soft
+    )
+    assert content_factory_tasks.run_content_factory_stage.time_limit >= control_hard
 
 
 def test_explicit_execution_lease_matches_the_published_stage_budget():
@@ -1472,6 +1606,55 @@ def test_self_heal_recovers_existing_response_before_resending(monkeypatch):
     assert "response_fresh_regeneration_count" not in stage.input_json
     assert stage.status == "queued"
     assert project.status == "queued"
+
+
+def test_due_retry_preserves_bounded_response_recovery_sequence(monkeypatch):
+    monkeypatch.setattr(
+        content_factory_tasks,
+        "_locked_browser_routing",
+        lambda _db, _project, _stage_input: (
+            "br_same",
+            "http://127.0.0.1:9373",
+            "queue",
+        ),
+    )
+    project = SimpleNamespace(
+        current_stage="VISUAL_PREVIEW",
+        status="queued",
+        last_error="ChatGPT stage returned an incomplete or truncated text response",
+    )
+    stage = SimpleNamespace(
+        stage="VISUAL_PREVIEW",
+        status="retrying",
+        error_message="ChatGPT stage returned an incomplete or truncated text response",
+        input_json={
+            "automatic_retry_count": 2,
+            "force_fresh_response": True,
+            "browser_recovery_mode": "fresh_composer_after_invalid_recovered_response",
+            "clear_stale_composer_before_send": True,
+            "response_recovery_probe_count": 1,
+            "response_fresh_regeneration_count": 1,
+        },
+        celery_task_id=None,
+        started_at=None,
+        completed_at=None,
+    )
+
+    content_factory_tasks._queue_existing_stage(
+        None,
+        project,
+        stage,
+        reason="periodic self-heal released due retry",
+    )
+
+    assert stage.input_json["automatic_retry_count"] == 0
+    assert stage.input_json["force_fresh_response"] is True
+    assert stage.input_json["clear_stale_composer_before_send"] is True
+    assert stage.input_json["browser_recovery_mode"] == (
+        "fresh_composer_after_invalid_recovered_response"
+    )
+    assert stage.input_json["response_recovery_probe_count"] == 1
+    assert stage.input_json["response_fresh_regeneration_count"] == 1
 
 
 def test_formal_browser_requeue_resets_exhausted_delivery_budget(monkeypatch):

@@ -39,10 +39,10 @@ from app.services.hermes_agent.content_production_plan import (
     build_director_production_plan_packet,
     finalize_director_production_plan,
     finalize_director_production_plan_author_draft,
+    normalize_production_plan_author_payload,
+    unbound_product_visual_depiction_evidence,
 )
 from app.services.hermes_agent.content_production_plan_runtime import (
-    _generated_reference_text_dependency_details,
-    _generated_reference_text_dependencies,
     run_content_production_plan_loop,
 )
 
@@ -479,6 +479,323 @@ def _silent_plan(artifact) -> DirectorProductionPlanDraft:
     )
 
 
+def test_image_to_video_rejects_empty_generated_reference_contract():
+    artifact = _artifact()
+    payload = _spoken_plan(artifact).model_dump(mode="json")
+    payload["visual"]["references"] = []
+    for beat in payload["visual"]["beats"]:
+        beat["reference_ids"] = []
+
+    draft = DirectorProductionPlanDraft.model_validate(payload)
+    with pytest.raises(ValueError, match="at least one visual reference"):
+        finalize_director_production_plan(
+            draft,
+            artifact,
+            plan_id="plan-empty-image-contract",
+            revision=1,
+            parent_plan_sha256=None,
+            authorized_asset_refs={"asset:product:front"},
+            authoritative_product_asset_refs={"asset:product:front"},
+        )
+
+
+def test_text_to_video_allows_empty_visual_reference_contract():
+    artifact = _artifact(silent=True)
+    payload = _silent_plan(artifact).model_dump(mode="json")
+    payload["visual"]["references"] = []
+    for beat in payload["visual"]["beats"]:
+        beat["reference_ids"] = []
+
+    plan = finalize_director_production_plan(
+        DirectorProductionPlanDraft.model_validate(payload),
+        artifact,
+        plan_id="plan-empty-text-contract",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs=set(),
+        authoritative_product_asset_refs=set(),
+        require_visual_references=False,
+    )
+
+    assert plan.visual.references == []
+
+
+def test_unbound_product_prose_is_left_for_multimodal_critic():
+    artifact = _artifact(silent=True)
+    draft = _silent_plan(artifact)
+    references = list(draft.visual.references)
+    references[0] = references[0].model_copy(update={
+        "purpose": "Show the quiet nighttime routine.",
+        "generation_brief": (
+            "Maya places two unbranded blueberry-colored gummies beside "
+            "a glass of water."
+        ),
+    })
+    beats = list(draft.visual.beats)
+    beats[0] = beats[0].model_copy(update={
+        "subject_action": (
+            "Her hand places two unbranded blueberry gummies beside water."
+        ),
+    })
+    broken = draft.model_copy(update={
+        "visual": draft.visual.model_copy(update={
+            "product_presentation_intent": (
+                "Do not show packaging; show only two unbranded gummies."
+            ),
+            "references": references,
+            "beats": beats,
+        }),
+    })
+
+    plan = finalize_director_production_plan(
+        broken,
+        artifact,
+        plan_id="plan-unbound-product-substitute",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs=set(),
+        authoritative_product_asset_refs=set(),
+    )
+    assert "blueberry gummies" in plan.visual.beats[0].subject_action
+
+
+def test_unbound_project_allows_explicit_product_visual_exclusion():
+    artifact = _artifact(silent=True)
+    draft = _silent_plan(artifact)
+    safe = draft.model_copy(update={
+        "visual": draft.visual.model_copy(update={
+            "product_presentation_intent": (
+                "Do not show any product, package, gummy, or supplement; "
+                "product words remain narration-only."
+            ),
+        }),
+    })
+
+    plan = finalize_director_production_plan(
+        safe,
+        artifact,
+        plan_id="plan-unbound-product-exclusion",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs=set(),
+        authoritative_product_asset_refs=set(),
+    )
+
+    assert plan.visual.product_presentation_intent is not None
+
+
+def test_pre_reveal_wording_is_not_a_positive_product_depiction():
+    assert unbound_product_visual_depiction_evidence(
+        "The wipe pauses before revealing any product."
+    ) is None
+    assert unbound_product_visual_depiction_evidence(
+        "The character settles before showing the product package."
+    ) is None
+    assert unbound_product_visual_depiction_evidence(
+        "The cable begins to lift but does not reveal product yet."
+    ) is None
+    assert unbound_product_visual_depiction_evidence(
+        "The following beat alone begins the product reveal."
+    ) is None
+    assert unbound_product_visual_depiction_evidence(
+        "This is strictly pre-product: no bottle, package silhouette, "
+        "product branding, gummies, ingredient imagery, or product "
+        "reference is visible."
+    ) is None
+    assert unbound_product_visual_depiction_evidence(
+        "The wipe reveals the product package at center."
+    ) == "The wipe reveals the product package at center."
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Support the disclosure as an abstract, non-product visual transition.",
+        "The visual remains product-free and object-free.",
+        "Keep the narrated two-gummy statement as audio-only.",
+        (
+            "Use a flat ink-like symbol rather than a food, capsule, gummy, "
+            "container, or ingredient depiction."
+        ),
+        "Do not show any product, package, gummy, or supplement.",
+        "The product is absent.",
+        "The room remains free of product imagery.",
+        "The nightstand remains clear of packaging and product objects.",
+        "Product identity remains absent while the unbranded tray rotates.",
+        "Product identity has not appeared yet.",
+        (
+            "The character reacts to the morning consequence before any "
+            "routine or product visual enters."
+        ),
+    ],
+)
+def test_unbound_visual_detector_allows_explicit_negative_scope(value):
+    assert unbound_product_visual_depiction_evidence(value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Use a non-product transition, then show two blueberry gummies.",
+        "Do not show packaging, but place two capsules beside the water.",
+        "Product words remain audio-only while a gummy appears in her hand.",
+    ],
+)
+def test_unbound_visual_detector_rejects_positive_depiction_after_exclusion(value):
+    assert unbound_product_visual_depiction_evidence(value) is not None
+
+
+def test_author_payload_normalization_preserves_reference_graph_and_layout():
+    artifact = _artifact()
+    payload = _author_plan_payload(_spoken_plan(artifact))
+    reference = payload["visual"]["references"][0]
+    old_reference_id = reference["reference_id"]
+    reference["reference_id"] = "ref my upona reveal"
+    for beat in payload["visual"]["beats"]:
+        beat["reference_ids"] = [
+            "ref my upona reveal" if value == old_reference_id else value
+            for value in beat.get("reference_ids", [])
+        ]
+    payload["requirement_execution"] = [{
+        "requirement_id": "R-001",
+        "beat_ids": [payload["visual"]["beats"][0]["beat_id"]],
+        "reference_ids": ["ref my upona reveal"],
+        "audio_cue_ids": [],
+        "line_ids": [],
+        "implementation_evidence": ["The signed product reference is used."],
+    }]
+    payload["visual"]["beats"][0]["requirement_ids"] = []
+    delivery = payload["copy_delivery"]["deliveries"][0]
+    delivery["method"] = "local_overlay"
+    delivery["speaker_id"] = None
+    delivery["presentation"] = {
+        "placement": "upper_third",
+        "emphasis": "strong",
+        "background": "box",
+        "max_lines": 2,
+    }
+
+    normalized = normalize_production_plan_author_payload(payload)
+
+    assert normalized["visual"]["references"][0]["reference_id"] == (
+        "ref_my_upona_reveal"
+    )
+    assert "ref_my_upona_reveal" in {
+        value
+        for beat in normalized["visual"]["beats"]
+        for value in beat.get("reference_ids", [])
+    }
+    assert normalized["requirement_execution"][0]["reference_ids"] == [
+        "ref_my_upona_reveal"
+    ]
+    assert normalized["visual"]["beats"][0]["requirement_ids"] == [
+        "R-001"
+    ]
+    assert normalized["copy_delivery"]["deliveries"][0]["presentation"][
+        "placement"
+    ] == "top_safe"
+    DirectorProductionPlanAuthorDraft.model_validate(normalized)
+
+
+def test_unbound_product_foley_prose_is_left_for_multimodal_critic():
+    artifact = _artifact(silent=True)
+    draft = _silent_plan(artifact)
+    broken = draft.model_copy(update={
+        "audio": draft.audio.model_copy(update={
+            "cues": [
+                AudioCue(
+                    cue_id="product-foley",
+                    start_seconds=0,
+                    end_seconds=20,
+                    kind="silence",
+                    intent=(
+                        "Two blueberry gummies settle beside a glass of water."
+                    ),
+                ),
+            ],
+        }),
+    })
+
+    plan = finalize_director_production_plan(
+        broken,
+        artifact,
+        plan_id="plan-unbound-product-foley",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs=set(),
+        authoritative_product_asset_refs=set(),
+    )
+    assert plan.audio.cues[0].cue_id == "product-foley"
+
+
+def test_unbound_brand_direction_is_left_for_multimodal_critic():
+    artifact = _artifact(silent=True)
+    draft = _silent_plan(artifact)
+    beats = list(draft.visual.beats)
+    beats[0] = beats[0].model_copy(update={
+        "purpose": "Position MYUPONA as part of the protected moment.",
+    })
+    broken = draft.model_copy(update={
+        "visual": draft.visual.model_copy(update={"beats": beats}),
+    })
+
+    plan = finalize_director_production_plan(
+        broken,
+        artifact,
+        plan_id="plan-unbound-brand-direction",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs=set(),
+        authoritative_product_asset_refs=set(),
+    )
+    assert "MYUPONA" in plan.visual.beats[0].purpose
+
+
+def test_bound_project_still_allows_authoritative_product_visuals():
+    artifact = _artifact()
+    plan = finalize_director_production_plan(
+        _spoken_plan(artifact),
+        artifact,
+        plan_id="plan-bound-authoritative-product",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    assert "product" in plan.visual.references[0].roles
+
+
+def test_product_visible_prose_is_not_keyword_reclassified_by_server() -> None:
+    artifact = _artifact()
+    draft = _spoken_plan(artifact)
+    beats = [
+        beat.model_copy(update={"reference_ids": ["character-design"]})
+        for beat in draft.visual.beats
+    ]
+    broken = draft.model_copy(update={
+        "visual": draft.visual.model_copy(update={
+            "references": [
+                reference
+                for reference in draft.visual.references
+                if reference.reference_id == "character-design"
+            ],
+            "beats": beats,
+        }),
+    })
+
+    plan = finalize_director_production_plan(
+        broken,
+        artifact,
+        plan_id="plan-product-beat-without-authority",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+    assert plan.visual.beats
+
+
 @pytest.mark.parametrize(
     "action",
     [
@@ -486,7 +803,7 @@ def _silent_plan(artifact) -> DirectorProductionPlanDraft:
         "未开封的瓶保持关闭，却从瓶中倒出两份产品颗粒。",
     ],
 )
-def test_plan_rejects_impossible_sealed_package_action_before_media_spend(action):
+def test_package_action_prose_is_left_for_multimodal_critic(action):
     artifact = _artifact()
     draft = _spoken_plan(artifact)
     beats = list(draft.visual.beats)
@@ -497,18 +814,18 @@ def test_plan_rejects_impossible_sealed_package_action_before_media_spend(action
         "visual": draft.visual.model_copy(update={"beats": beats}),
     })
 
-    with pytest.raises(ValueError, match="impossible package-state action"):
-        finalize_director_production_plan_author_draft(
-            DirectorProductionPlanAuthorDraft.model_validate(
-                _author_plan_payload(broken)
-            ),
-            artifact,
-            plan_id="plan.impossible-package-state",
-            revision=1,
-            parent_plan_sha256=None,
-            authorized_asset_refs={"asset:product:front"},
-            authoritative_product_asset_refs={"asset:product:front"},
-        )
+    plan = finalize_director_production_plan_author_draft(
+        DirectorProductionPlanAuthorDraft.model_validate(
+            _author_plan_payload(broken)
+        ),
+        artifact,
+        plan_id="plan.impossible-package-state",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+    assert plan.visual.beats[-1].subject_action == action
 
 
 def _author_plan_payload(
@@ -678,10 +995,66 @@ def test_production_plan_accepts_director_spoken_pacing_tolerance():
         delivery for delivery in packet["line_delivery_contract"]
         if delivery["line_id"] == "l3"
     ][0]
-    assert segment_three["minimum_delivery_seconds"] == 9.9
+    assert segment_three["minimum_delivery_seconds"] == 10.0
     assert segment_three["runtime_compiled_interval_seconds"] == {
         "start_seconds": 20.0,
         "end_seconds": 30.0,
+    }
+
+
+def test_production_plan_accepts_director_one_word_floor_on_four_second_tail():
+    base = _artifact()
+    lines = [line.model_copy(deep=True) for line in base.script.lines]
+    lines[-1] = lines[-1].model_copy(
+        update={
+            "text": "For the part of the day that finally belongs to you."
+        }
+    )
+    segments = [
+        segment.model_copy(
+            update={
+                "duration_seconds": 4
+                if segment.segment_index == 4
+                else segment.duration_seconds
+            }
+        )
+        for segment in base.script.segments
+    ]
+    program = base.program.model_copy(update={"target_duration_seconds": 34})
+    script = build_script_package(
+        script_id=base.script.script_id,
+        program_id=base.script.program_id,
+        locale=base.script.locale,
+        target_duration_seconds=34,
+        edit_headroom_seconds=base.script.edit_headroom_seconds,
+        speech_rate_wpm=base.script.speech_rate_wpm,
+        display_reading_rate_wpm=base.script.display_reading_rate_wpm,
+        audio_mode=base.script.audio_mode,
+        primary_speaker_id=base.script.primary_speaker_id,
+        lines=lines,
+        segments=segments,
+    )
+    artifact = build_directed_content_artifact(
+        artifact_id=base.artifact_id,
+        revision=base.revision,
+        parent_artifact_sha256=base.parent_artifact_sha256,
+        program=program,
+        script=script,
+    )
+
+    packet = build_director_production_plan_packet(
+        artifact,
+        capability_catalog=[],
+        authorized_asset_refs=["asset:product:front"],
+        authoritative_product_asset_refs=["asset:product:front"],
+    )
+
+    tail = packet["line_delivery_contract"][-1]
+    assert tail["word_count"] == 11
+    assert tail["minimum_delivery_seconds"] <= 4.0
+    assert tail["runtime_compiled_interval_seconds"] == {
+        "start_seconds": 30.0,
+        "end_seconds": 34.0,
     }
 
 
@@ -928,6 +1301,18 @@ def test_production_plan_packet_binds_identity_but_not_beat_count():
         "accent",
     ):
         assert field_name in voice_schema["required"]
+    assert voice_schema["properties"]["gender"]["enum"] == [
+        "female",
+        "male",
+        "androgynous",
+    ]
+    assert voice_schema["properties"]["screen_relation"]["enum"] == [
+        "off_screen_narrator",
+        "on_screen_character",
+        "character_voiceover",
+    ]
+    for field_name in ("timbre", "pitch", "accent"):
+        assert voice_schema["properties"][field_name]["minLength"] == 1
     assert "start_seconds" not in definitions[
         "ScriptDeliveryIntent"
     ]["properties"]
@@ -945,6 +1330,15 @@ def test_production_plan_packet_binds_identity_but_not_beat_count():
     ] is True
     assert packet["planning_rules"][
         "visual_beats_are_contiguous_without_gaps_or_overlaps"
+    ] is True
+    assert packet["planning_rules"][
+        "previous_segment_is_reserved_for_literal_action_or_product_state_continuation"
+    ] is True
+    assert packet["planning_rules"][
+        "shared_character_location_wardrobe_style_or_mood_alone_does_not_require_previous_segment"
+    ] is True
+    assert packet["planning_rules"][
+        "prefer_independent_transport_for_parallel_execution_when_signed_references_fully_define_the_beat"
     ] is True
 
 
@@ -1023,6 +1417,274 @@ def test_author_only_plan_runtime_compiles_copy_timing_deterministically():
     assert by_id["l4"].end_seconds == 40
 
 
+def test_author_only_plan_materializes_lossless_visual_line_coverage():
+    artifact = _artifact()
+    payload = _author_plan_payload(_spoken_plan(artifact))
+    for beat in payload["visual"]["beats"]:
+        beat["line_ids"] = [artifact.script.lines[0].line_id]
+    author = DirectorProductionPlanAuthorDraft.model_validate(payload)
+
+    plan = finalize_director_production_plan_author_draft(
+        author,
+        artifact,
+        plan_id="author-plan-lossless-visual-line-coverage",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    assert [
+        line_id
+        for beat in plan.visual.beats
+        for line_id in beat.line_ids
+    ] == [line.line_id for line in artifact.script.lines]
+
+
+def test_runtime_compiles_spoken_and_display_copy_as_parallel_lanes():
+    base = _artifact()
+    lines = [
+        ScriptLine(
+            line_id="spoken-1",
+            speaker_id="narrator",
+            text=(
+                "Before you buy a bedtime gummy, flip the bottle and check "
+                "what the label actually lists."
+            ),
+            beat_id="label-check",
+            purpose="spoken explanation",
+            delivery_mode="spoken",
+        ),
+        ScriptLine(
+            line_id="display-1",
+            speaker_id="display",
+            text="TIRED STILL THINKING TOMORROW ONE MORE THING",
+            beat_id="label-check",
+            purpose="simultaneous emphasis overlay",
+            delivery_mode="display",
+        ),
+    ]
+    script = build_script_package(
+        script_id="script-parallel-copy-lanes",
+        program_id=base.program.program_id,
+        locale="en-US",
+        target_duration_seconds=10,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        display_reading_rate_wpm=120,
+        audio_mode="spoken",
+        primary_speaker_id="narrator",
+        lines=lines,
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=["spoken-1", "display-1"],
+            )
+        ],
+    )
+    program = base.program.model_copy(
+        update={"target_duration_seconds": 10}
+    )
+    artifact = build_directed_content_artifact(
+        artifact_id="artifact-parallel-copy-lanes",
+        revision=1,
+        parent_artifact_sha256=None,
+        program=program,
+        script=script,
+    )
+    payload = _author_plan_payload(_spoken_plan(base))
+    payload["visual"]["beats"] = [
+        {
+            **payload["visual"]["beats"][0],
+            "start_seconds": 0,
+            "end_seconds": 10,
+            "line_ids": ["spoken-1", "display-1"],
+            "reference_ids": ["character-design", "product-anchor"],
+        }
+    ]
+    payload["audio"]["cues"] = [
+        {
+            **payload["audio"]["cues"][0],
+            "start_seconds": 0,
+            "end_seconds": 10,
+        }
+    ]
+    payload["copy_delivery"]["deliveries"] = [
+        {
+            "line_id": "spoken-1",
+            "method": "local_voiceover",
+            "speaker_id": "narrator",
+            "presentation": None,
+        },
+        {
+            "line_id": "display-1",
+            "method": "local_overlay",
+            "speaker_id": None,
+            "presentation": {
+                "placement": "top_safe",
+                "emphasis": "strong",
+                "background": "box",
+                "max_lines": 2,
+            },
+        },
+    ]
+    plan = finalize_director_production_plan_author_draft(
+        DirectorProductionPlanAuthorDraft.model_validate(payload),
+        artifact,
+        plan_id="plan-parallel-copy-lanes",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    by_id = {
+        delivery.line_id: delivery
+        for delivery in plan.copy_delivery.deliveries
+    }
+    assert by_id["spoken-1"].start_seconds == 0
+    assert by_id["spoken-1"].end_seconds == 10
+    assert by_id["display-1"].start_seconds == 0
+    assert by_id["display-1"].end_seconds == 10
+
+
+def test_parallel_copy_lanes_do_not_require_one_global_start_sort():
+    base = _artifact()
+    lines = [
+        ScriptLine(
+            line_id="spoken-1",
+            speaker_id="narrator",
+            text="One spoken line.",
+            beat_id="parallel",
+            purpose="spoken opening",
+            delivery_mode="spoken",
+        ),
+        ScriptLine(
+            line_id="spoken-2",
+            speaker_id="narrator",
+            text="A second spoken line.",
+            beat_id="parallel",
+            purpose="spoken continuation",
+            delivery_mode="spoken",
+        ),
+        ScriptLine(
+            line_id="display-1",
+            speaker_id="display",
+            text="FIRST OVERLAY",
+            beat_id="parallel",
+            purpose="simultaneous display opening",
+            delivery_mode="display",
+        ),
+        ScriptLine(
+            line_id="display-2",
+            speaker_id="display",
+            text="SECOND OVERLAY",
+            beat_id="parallel",
+            purpose="simultaneous display continuation",
+            delivery_mode="display",
+        ),
+    ]
+    script = build_script_package(
+        script_id="script-interleaved-parallel-copy-lanes",
+        program_id=base.program.program_id,
+        locale="en-US",
+        target_duration_seconds=10,
+        edit_headroom_seconds=0,
+        speech_rate_wpm=150,
+        display_reading_rate_wpm=120,
+        audio_mode="spoken",
+        primary_speaker_id="narrator",
+        lines=lines,
+        segments=[
+            ScriptSegmentAllocation(
+                segment_index=1,
+                duration_seconds=10,
+                line_ids=[line.line_id for line in lines],
+            )
+        ],
+    )
+    artifact = build_directed_content_artifact(
+        artifact_id="artifact-interleaved-parallel-copy-lanes",
+        revision=1,
+        parent_artifact_sha256=None,
+        program=base.program.model_copy(
+            update={"target_duration_seconds": 10}
+        ),
+        script=script,
+    )
+    payload = _author_plan_payload(_spoken_plan(base))
+    opening_beat = {
+        **payload["visual"]["beats"][0],
+        "start_seconds": 0,
+        "end_seconds": 4,
+        "line_ids": ["display-1"],
+        "reference_ids": ["character-design", "product-anchor"],
+    }
+    closing_beat = {
+        **payload["visual"]["beats"][0],
+        "beat_id": "parallel-close",
+        "start_seconds": 4,
+        "end_seconds": 10,
+        "line_ids": ["spoken-1"],
+        "reference_ids": ["character-design", "product-anchor"],
+    }
+    payload["visual"]["beats"] = [opening_beat, closing_beat]
+    payload["audio"]["cues"] = [{
+        **payload["audio"]["cues"][0],
+        "start_seconds": 0,
+        "end_seconds": 10,
+    }]
+    payload["copy_delivery"]["deliveries"] = [
+        {
+            "line_id": line.line_id,
+            "method": (
+                "local_overlay"
+                if line.delivery_mode == "display"
+                else "local_voiceover"
+            ),
+            "speaker_id": (
+                None if line.delivery_mode == "display" else "narrator"
+            ),
+            "presentation": (
+                {
+                    "placement": "top_safe",
+                    "emphasis": "standard",
+                    "background": "box",
+                    "max_lines": 2,
+                }
+                if line.delivery_mode == "display"
+                else None
+            ),
+        }
+        for line in lines
+    ]
+
+    plan = finalize_director_production_plan_author_draft(
+        DirectorProductionPlanAuthorDraft.model_validate(payload),
+        artifact,
+        plan_id="plan-interleaved-parallel-copy-lanes",
+        revision=1,
+        parent_plan_sha256=None,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+
+    starts = {
+        delivery.line_id: delivery.start_seconds
+        for delivery in plan.copy_delivery.deliveries
+    }
+    assert starts["spoken-2"] > starts["display-1"]
+    assert [
+        delivery.line_id for delivery in plan.copy_delivery.deliveries
+    ] == [line.line_id for line in lines]
+    assert [
+        line_id
+        for beat in plan.visual.beats
+        for line_id in beat.line_ids
+    ] == [line.line_id for line in lines]
+
+
 def test_delivery_validation_uses_one_tolerant_duration_formula():
     artifact = _artifact()
     draft = _spoken_plan(artifact)
@@ -1093,193 +1755,6 @@ def test_runtime_signed_plan_rejects_hash_tampering():
         DirectedProductionPlan.model_validate(payload)
 
 
-def test_production_plan_detects_impossible_generated_small_copy():
-    artifact = _artifact()
-    draft = _spoken_plan(artifact)
-    references = list(draft.visual.references)
-    references[1] = references[1].model_copy(update={
-        "generation_brief": (
-            "Show a handwritten note that reads Laptop closed at nine."
-        ),
-    })
-    draft = draft.model_copy(update={
-        "visual": draft.visual.model_copy(update={"references": references}),
-    })
-    plan = finalize_director_production_plan(
-        draft,
-        artifact,
-        plan_id="plan-generated-text",
-        revision=1,
-        parent_plan_sha256=None,
-        authorized_asset_refs={"asset:product:front"},
-        authoritative_product_asset_refs={"asset:product:front"},
-    )
-
-    assert _generated_reference_text_dependencies(plan) == [
-        "character-design"
-    ]
-    assert _generated_reference_text_dependency_details(plan) == [
-        {
-            "reference_id": "character-design",
-            "matches": [
-                {
-                    "field": "generation_brief",
-                    "evidence": (
-                        "Show a handwritten note that reads Laptop closed "
-                        "at nine."
-                    ),
-                }
-            ],
-        }
-    ]
-
-
-def test_production_plan_allows_explicitly_nonrequired_generated_copy():
-    artifact = _artifact()
-    draft = _spoken_plan(artifact)
-    references = list(draft.visual.references)
-    references[1] = references[1].model_copy(update={
-        "generation_brief": (
-            "Show an alarm clock with abstract numerals rather than required "
-            "as generated readable text."
-        ),
-    })
-    draft = draft.model_copy(update={
-        "visual": draft.visual.model_copy(update={"references": references}),
-    })
-    plan = finalize_director_production_plan(
-        draft,
-        artifact,
-        plan_id="plan-no-generated-text-dependency",
-        revision=1,
-        parent_plan_sha256=None,
-        authorized_asset_refs={"asset:product:front"},
-        authoritative_product_asset_refs={"asset:product:front"},
-    )
-
-    assert _generated_reference_text_dependency_details(plan) == []
-
-
-def test_production_plan_detects_exact_writing_action_in_linked_beat():
-    artifact = _artifact()
-    draft = _spoken_plan(artifact)
-    references = list(draft.visual.references)
-    target = references[1]
-    references[1] = target.model_copy(update={
-        "generation_brief": (
-            "Same adult at a warm home desk with a blank paper note."
-        ),
-    })
-    beats = list(draft.visual.beats)
-    linked_index = next(
-        index
-        for index, beat in enumerate(beats)
-        if target.reference_id in beat.reference_ids
-    )
-    beats[linked_index] = beats[linked_index].model_copy(update={
-        "subject_action": (
-            "The adult writes Laptop closed at nine on the paper note and "
-            "places it beside the keyboard."
-        ),
-    })
-    draft = draft.model_copy(update={
-        "visual": draft.visual.model_copy(update={
-            "references": references,
-            "beats": beats,
-        }),
-    })
-    plan = finalize_director_production_plan_author_draft(
-        draft,
-        artifact,
-        plan_id="plan-generated-action-text",
-        revision=1,
-        parent_plan_sha256=None,
-        authorized_asset_refs={"asset:product:front"},
-        authoritative_product_asset_refs={"asset:product:front"},
-    )
-
-    assert target.reference_id in _generated_reference_text_dependencies(plan)
-
-
-def test_production_plan_allows_generic_typing_with_unreadable_screen():
-    artifact = _artifact()
-    draft = _spoken_plan(artifact)
-    references = list(draft.visual.references)
-    target = references[1]
-    references[1] = target.model_copy(update={
-        "purpose": "Show the late email catch-up pattern.",
-        "generation_brief": (
-            "Same adult typing at a laptop with generic inbox rows; no "
-            "readable screen text, sender names, brands, or UI copy."
-        ),
-    })
-    beats = list(draft.visual.beats)
-    linked_index = next(
-        index
-        for index, beat in enumerate(beats)
-        if target.reference_id in beat.reference_ids
-    )
-    beats[linked_index] = beats[linked_index].model_copy(update={
-        "subject_action": (
-            "The adult types briefly, stops, and takes both hands away "
-            "from the keyboard."
-        ),
-    })
-    draft = draft.model_copy(update={
-        "visual": draft.visual.model_copy(update={
-            "references": references,
-            "beats": beats,
-        }),
-    })
-    plan = finalize_director_production_plan_author_draft(
-        draft,
-        artifact,
-        plan_id="plan-generic-screen-action",
-        revision=1,
-        parent_plan_sha256=None,
-        authorized_asset_refs={"asset:product:front"},
-        authoritative_product_asset_refs={"asset:product:front"},
-    )
-
-    assert target.reference_id not in _generated_reference_text_dependencies(
-        plan
-    )
-
-
-def test_product_reference_allows_copy_from_authoritative_local_composite():
-    artifact = _artifact()
-    draft = _spoken_plan(artifact)
-    references = list(draft.visual.references)
-    target_index = next(
-        index
-        for index, reference in enumerate(references)
-        if "product" in reference.roles
-    )
-    target = references[target_index]
-    references[target_index] = target.model_copy(update={
-        "generation_brief": (
-            "Use a broad empty tabletop. Exact package pixels and all package "
-            "labeling are supplied only by the authoritative local composite."
-        ),
-    })
-    draft = draft.model_copy(update={
-        "visual": draft.visual.model_copy(update={"references": references}),
-    })
-    plan = finalize_director_production_plan_author_draft(
-        draft,
-        artifact,
-        plan_id="plan-authoritative-product-copy",
-        revision=1,
-        parent_plan_sha256=None,
-        authorized_asset_refs={"asset:product:front"},
-        authoritative_product_asset_refs={"asset:product:front"},
-    )
-
-    assert target.reference_id not in _generated_reference_text_dependencies(
-        plan
-    )
-
-
 def test_universal_profile_owns_production_plan_review_thresholds():
     profile = load_universal_director_profile()
 
@@ -1288,6 +1763,7 @@ def test_universal_profile_owns_production_plan_review_thresholds():
         for item in profile.production_plan_review_criteria
     } == {
         "visual_script_alignment",
+        "opening_hook_execution_fidelity",
         "visual_continuity_and_reference_efficiency",
         "audio_and_copy_delivery_fit",
         "production_plan_truth_boundary",
@@ -1297,6 +1773,21 @@ def test_universal_profile_owns_production_plan_review_thresholds():
         for item in profile.production_plan_review_criteria
         if item.criterion_id == "production_plan_truth_boundary"
     ).minimum_score == 100
+    continuity = next(
+        item
+        for item in profile.production_plan_review_criteria
+        if item.criterion_id == "visual_continuity_and_reference_efficiency"
+    )
+    assert "Shared character identity" in continuity.instruction
+    assert "run concurrently" in continuity.instruction
+    opening = next(
+        item
+        for item in profile.production_plan_review_criteria
+        if item.criterion_id == "opening_hook_execution_fidelity"
+    )
+    assert opening.minimum_score == 92
+    assert "flattens a designed disruption" in opening.instruction
+    assert "watermark-cover overlays" in opening.instruction
 
 
 @pytest.mark.asyncio
@@ -1305,6 +1796,17 @@ async def test_production_plan_loop_approves_without_media_work():
     draft = _spoken_plan(artifact)
     director = _FakeClient([_author_plan_payload(draft)])
     critic = _FakeClient([_approved_plan_verdict()])
+    capability_catalog = [
+        {
+            "capability": "visual.reference.generate",
+            "input_contract": "VisualProgram",
+            "output_contract": "ReferenceAssetSet",
+            "provider_policy": {
+                "human_face_reference_mode": "stylized_animation_only",
+                "required_visual_medium": "stylized 2.5D animation",
+            },
+        }
+    ]
 
     result = await run_content_production_plan_loop(
         artifact=artifact,
@@ -1315,13 +1817,7 @@ async def test_production_plan_loop_approves_without_media_work():
             series_page_size=10,
         ),
         review_criteria=_plan_criteria(),
-        capability_catalog=[
-            {
-                "capability": "visual.reference.generate",
-                "input_contract": "VisualProgram",
-                "output_contract": "ReferenceAssetSet",
-            }
-        ],
+        capability_catalog=capability_catalog,
         authorized_asset_refs=["asset:product:front"],
         authoritative_product_asset_refs=["asset:product:front"],
         director_client=director,
@@ -1338,14 +1834,103 @@ async def test_production_plan_loop_approves_without_media_work():
     assert json.loads(critic.calls[0]["input_text"])["role"] == (
         "independent_production_plan_critic"
     )
+    director_packet = json.loads(director.calls[0]["input_text"])
+    critic_packet = json.loads(critic.calls[0]["input_text"])
+    assert director_packet["production_capabilities"] == capability_catalog
+    assert critic_packet["production_capabilities"] == capability_catalog
+    assert "never silently downgrade" in director_packet[
+        "creative_energy_authority"
+    ]["authority_rule"]
+    assert "experiential change of state" in director_packet[
+        "creative_energy_authority"
+    ]["authority_rule"]
+    assert "do not impose a reusable plot" in director_packet[
+        "creative_energy_authority"
+    ]["authority_rule"]
+    assert critic_packet["creative_energy_authority"] == director_packet[
+        "creative_energy_authority"
+    ]
+    assert critic_packet["review_rules"][
+        "provider_safety_must_not_flatten_signed_creative_energy"
+    ] is True
+    assert critic_packet["review_rules"][
+        "literal_must_not_reuse_lists_bound_source_exclusions"
+    ] is True
+    assert critic_packet["review_rules"][
+        "narrative_interpretation_cannot_expand_an_exclusion_beyond_its_literal_list"
+    ] is True
+    assert critic_packet["review_rules"][
+        "approved_director_generic_setting_is_authorized_unless_literally_excluded"
+    ] is True
+    assert "broaden a source-exclusion narrative" in critic.calls[0][
+        "instructions"
+    ]
+    assert "generic setting explicitly declared" in critic.calls[0][
+        "instructions"
+    ]
     critic_contract = json.loads(
         critic.calls[0]["input_text"]
     )["output_contract"]
+    assert critic_packet["deterministic_preflight"][
+        "runtime_line_delivery_contract_valid"
+    ] is True
+    assert critic_packet["runtime_line_delivery_contract"]
+    assert all(
+        "runtime_word_count" in item
+        and "minimum_delivery_seconds" in item
+        and "runtime_compiled_duration_seconds" in item
+        for item in critic_packet["runtime_line_delivery_contract"]
+    )
+    assert critic_packet["review_rules"][
+        "do_not_retokenize_or_recalculate_approved_copy_timing"
+    ] is True
     scores = critic_contract["properties"]["scores"]
     assert scores["required"] == [
         item.criterion_id for item in _plan_criteria()
     ]
     assert scores["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_text_to_video_loop_approves_zero_reference_plan():
+    artifact = _artifact(silent=True)
+    draft = _silent_plan(artifact)
+    payload = _author_plan_payload(draft)
+    payload["visual"]["references"] = []
+    for beat in payload["visual"]["beats"]:
+        beat["reference_ids"] = []
+    director = _FakeClient([payload])
+    critic = _FakeClient([_approved_plan_verdict()])
+
+    result = await run_content_production_plan_loop(
+        artifact=artifact,
+        plan_id="plan-loop-text-to-video",
+        policy=DirectorLoopPolicy(
+            maximum_revisions=1,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=10,
+        ),
+        review_criteria=_plan_criteria(),
+        capability_catalog=[],
+        authorized_asset_refs=[],
+        authoritative_product_asset_refs=[],
+        video_generation_mode="text_to_video",
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    assert result.final_plan is not None
+    assert result.final_plan.visual.references == []
+    request = json.loads(director.calls[0]["input_text"])
+    assert request["planning_rules"]["video_generation_mode"] == (
+        "text_to_video"
+    )
+    references_schema = (
+        request["output_contract"]["$defs"]
+        ["VisualProgramAuthorDraft"]["properties"]["references"]
+    )
+    assert references_schema["minItems"] == 0
 
 
 @pytest.mark.asyncio
@@ -1410,6 +1995,13 @@ async def test_production_plan_loop_revises_plan_without_rewriting_copy():
         _rejected_plan_verdict(),
         _approved_plan_verdict(),
     ])
+    capability_catalog = [{
+        "capability": "visual.reference.generate",
+        "provider_policy": {
+            "human_face_reference_mode": "stylized_animation_only",
+            "required_visual_medium": "adult 2D animation",
+        },
+    }]
 
     result = await run_content_production_plan_loop(
         artifact=artifact,
@@ -1420,7 +2012,7 @@ async def test_production_plan_loop_revises_plan_without_rewriting_copy():
             series_page_size=10,
         ),
         review_criteria=_plan_criteria(),
-        capability_catalog=[],
+        capability_catalog=capability_catalog,
         authorized_asset_refs=["asset:product:front"],
         authoritative_product_asset_refs=["asset:product:front"],
         director_client=director,
@@ -1447,6 +2039,67 @@ async def test_production_plan_loop_revises_plan_without_rewriting_copy():
     assert revision_packet["critic_blocking_issues"][0][
         "beat_ids"
     ] == ["recognition"]
+    assert revision_packet["production_capabilities"] == capability_catalog
+    assert "equal observable attention strength" in revision_packet[
+        "creative_energy_authority"
+    ]["authority_rule"]
+
+
+@pytest.mark.asyncio
+async def test_external_plan_repair_uses_a_fresh_bounded_revision_budget():
+    artifact = _artifact()
+    current = finalize_director_production_plan(
+        _spoken_plan(artifact),
+        artifact,
+        plan_id="plan-loop-external-repair",
+        revision=9,
+        parent_plan_sha256="a" * 64,
+        authorized_asset_refs={"asset:product:front"},
+        authoritative_product_asset_refs={"asset:product:front"},
+    )
+    external_candidate = _spoken_plan(artifact)
+    critic_repair = external_candidate.model_copy(
+        update={
+            "visual": external_candidate.visual.model_copy(
+                update={
+                    "style_language": (
+                        "Adult 2D animation with a concrete repaired opening."
+                    )
+                }
+            )
+        }
+    )
+    director = _FakeClient([
+        _author_plan_payload(external_candidate),
+        _author_plan_payload(critic_repair),
+    ])
+    critic = _FakeClient([
+        _rejected_plan_verdict(),
+        _approved_plan_verdict(),
+    ])
+
+    result = await run_content_production_plan_loop(
+        artifact=artifact,
+        plan_id="plan-loop-external-repair",
+        policy=DirectorLoopPolicy(
+            maximum_revisions=1,
+            maximum_contract_repairs_per_revision=1,
+            series_page_size=10,
+        ),
+        review_criteria=_plan_criteria(),
+        capability_catalog=[],
+        authorized_asset_refs=["asset:product:front"],
+        authoritative_product_asset_refs=["asset:product:front"],
+        current_plan=current,
+        external_repair_brief="Repair the cited visual anchor only.",
+        director_client=director,
+        critic_client=critic,
+    )
+
+    assert result.status == "approved"
+    assert [plan.revision for plan in result.plans] == [9, 10, 11]
+    assert len(result.reviews) == 2
+    assert len(director.calls) == 2
 
 
 @pytest.mark.asyncio
@@ -1497,53 +2150,53 @@ async def test_production_plan_loop_repairs_contract_before_review():
 
 
 @pytest.mark.asyncio
-async def test_spoken_plan_copy_repair_never_requests_local_overlay():
+async def test_quality_recovery_uses_stable_fresh_idempotency_namespace():
     artifact = _artifact()
-    invalid = _spoken_plan(artifact)
-    references = list(invalid.visual.references)
-    references[1] = references[1].model_copy(update={
-        "generation_brief": (
-            "Show a handwritten note that reads Laptop closed at nine."
-        ),
-    })
-    invalid = invalid.model_copy(update={
-        "visual": invalid.visual.model_copy(update={
-            "references": references,
-        }),
-    })
-    valid = _spoken_plan(artifact)
-    director = _FakeClient([
-        _author_plan_payload(invalid),
-        _author_plan_payload(valid),
-    ])
-    critic = _FakeClient([_approved_plan_verdict()])
+    payload = _author_plan_payload(_spoken_plan(artifact))
 
-    result = await run_content_production_plan_loop(
-        artifact=artifact,
-        plan_id="plan-spoken-copy-repair",
-        policy=DirectorLoopPolicy(
-            maximum_revisions=0,
-            maximum_contract_repairs_per_revision=1,
-            series_page_size=10,
-        ),
-        review_criteria=_plan_criteria(),
-        capability_catalog=[],
-        authorized_asset_refs=["asset:product:front"],
-        authoritative_product_asset_refs=["asset:product:front"],
-        director_client=director,
-        critic_client=critic,
+    async def run(namespace: str):
+        director = _FakeClient([payload])
+        critic = _FakeClient([_approved_plan_verdict()])
+        result = await run_content_production_plan_loop(
+            artifact=artifact,
+            plan_id="plan-loop-bounded-recovery",
+            policy=DirectorLoopPolicy(
+                maximum_revisions=0,
+                maximum_contract_repairs_per_revision=1,
+                series_page_size=10,
+            ),
+            review_criteria=_plan_criteria(),
+            capability_catalog=[],
+            authorized_asset_refs=["asset:product:front"],
+            authoritative_product_asset_refs=["asset:product:front"],
+            recovery_idempotency_namespace=namespace,
+            recovery_contract_errors=[
+                "copy deliveries must be ordered by start time",
+            ],
+            director_client=director,
+            critic_client=critic,
+        )
+        assert result.status == "approved"
+        return director.calls[0], critic.calls[0]
+
+    director_a, critic_a = await run("generation-92:attempt-1")
+    director_a_replay, critic_a_replay = await run(
+        "generation-92:attempt-1"
     )
+    director_b, critic_b = await run("generation-92:attempt-2")
 
-    assert result.status == "approved"
-    repair_packet = json.loads(director.calls[1]["input_text"])
-    assert repair_packet["repair_rules"]["copy_delivery_mode"] == "spoken"
-    assert repair_packet["repair_rules"][
-        "spoken_copy_must_not_become_local_overlay"
-    ] is True
-    validation_error = repair_packet["validation_error"]
-    assert "provider_dialogue or local_voiceover" in validation_error
-    assert "do not create local_overlay for spoken copy" in validation_error
-    assert "generation_brief" in validation_error
+    assert director_a["idempotency_key"] == (
+        director_a_replay["idempotency_key"]
+    )
+    assert critic_a["idempotency_key"] == critic_a_replay["idempotency_key"]
+    assert director_a["idempotency_key"] != director_b["idempotency_key"]
+    assert critic_a["idempotency_key"] != critic_b["idempotency_key"]
+    recovery = json.loads(director_a["input_text"])[
+        "bounded_recovery_context"
+    ]
+    assert recovery["prior_contract_errors"] == [
+        "copy deliveries must be ordered by start time"
+    ]
 
 
 @pytest.mark.asyncio

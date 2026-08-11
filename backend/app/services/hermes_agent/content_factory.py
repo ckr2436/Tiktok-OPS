@@ -14,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from urllib.parse import urlparse
 
 import httpx
 from fastapi import UploadFile
@@ -26,6 +25,7 @@ from app.core.config import settings
 from app.data.models.hermes_agent import (
     HermesBrowserBridge,
     HermesContentDirectorArtifact,
+    HermesContentExecution,
     HermesContentFactoryAsset,
     HermesContentFactoryProject,
     HermesContentFactoryStage,
@@ -34,10 +34,14 @@ from app.data.models.hermes_agent import (
     HermesContentProduct,
     HermesContentProductAsset,
     HermesContentSegmentRun,
+    HermesContentVariantRun,
 )
-from app.data.models.kie_api import KieTask
-from app.services.kie_api.accounts import (
+from app.data.models.ai_routing import AiModelRoute
+from app.data.models.kie_api import KieApiKey, KieTask
+from app.services.ai_video.accounts import (
     BANDIANWA_PROVIDER_KEY,
+    FLOW2API_PROVIDER_KEY,
+    SUB2API_PROVIDER_KEY,
     TOAPIS_PROVIDER_KEY,
     has_active_key,
     normalize_video_model_id,
@@ -105,15 +109,14 @@ CONTENT_PROVIDER_TERMINAL_STATES = frozenset({
 })
 WINDOWS_INBOX = os.getenv("HERMES_DEFAULT_WINDOWS_INBOX", r"%LOCALAPPDATA%\MYUPONA\HermesInbox")
 HERMES_QUEUE_BASE = str(settings.HERMES_AGENT_TASK_QUEUE)
-SELF_HEAL_POLICY_VERSION = 69
+SELF_HEAL_POLICY_VERSION = 108
 BRIDGE_DEFAULT_TTL_SECONDS = 90
 BRIDGE_LEASE_HOURS = 6
 BRIDGE_PORT_START = int(os.getenv("HERMES_BRIDGE_PORT_START", "9322"))
 BRIDGE_PORT_END = int(os.getenv("HERMES_BRIDGE_PORT_END", "9422"))
 BRIDGE_LOCAL_CDP_PORT = int(os.getenv("HERMES_BRIDGE_LOCAL_CDP_PORT", "9222"))
-BRIDGE_SSH_TARGET = os.getenv("HERMES_BRIDGE_SSH_TARGET", "root@192.168.1.2")
 BRIDGE_AGENT_BINARY = Path(os.getenv("HERMES_BRIDGE_AGENT_BINARY", "/opt/gmv/GMV-OPS/backend/assets/MYUPONA-HermesBridge.exe"))
-BRIDGE_AGENT_VERSION = os.getenv("HERMES_BRIDGE_AGENT_VERSION", "2026.07.18.2")
+BRIDGE_AGENT_VERSION = os.getenv("HERMES_BRIDGE_AGENT_VERSION", "2026.08.11.4")
 BRIDGE_AGENT_SSH_HOST = os.getenv("HERMES_BRIDGE_AGENT_SSH_HOST", "192.168.1.2")
 BRIDGE_AGENT_SSH_USER = os.getenv("HERMES_BRIDGE_AGENT_SSH_USER", "gmv")
 BRIDGE_AGENT_SSH_PORT = int(os.getenv("HERMES_BRIDGE_AGENT_SSH_PORT", "22"))
@@ -123,6 +126,9 @@ BRIDGE_AGENT_SESSION_GUARD = Path(
 )
 BRIDGE_AGENT_CONFIG_MARKER = b"\nMYUPONA_BRIDGE_AGENT_CONFIG_V1\n"
 BRIDGE_AGENT_TOKEN_TTL_DAYS = int(os.getenv("HERMES_BRIDGE_AGENT_TOKEN_TTL_DAYS", "365"))
+BRIDGE_PROFILE_CAPACITY_DEFAULT = 64
+BRIDGE_PROFILE_CAPACITY_MAX = 128
+BRIDGE_PROFILE_ORPHAN_GRACE_MINUTES = 60
 
 
 def _ensure_storage_dir(path: Path) -> None:
@@ -277,6 +283,28 @@ def _resumable_visual_api_checkpoint(
         return {}
     stage_input = dict(stage.input_json or {})
     visual_api = dict(stage_input.get("visual_api") or {})
+    source_replay_digest = str(
+        visual_api.get("checkpoint_source_replay_context_digest") or ""
+    ).strip()
+    stage_replay_digest = str(
+        stage_input.get("replay_context_digest") or ""
+    ).strip()
+    if (
+        int(stage_input.get("resumed_visual_checkpoint_stage_id") or 0) > 0
+        and not source_replay_digest
+    ):
+        # Old deliveries did not stamp the creative-plan digest onto imported
+        # boards. Once such a board has crossed into a successor row, using
+        # the successor's own digest would falsely re-authorize old-plan
+        # pixels after a Production Plan revision. Fail closed and regenerate.
+        return {}
+    checkpoint_replay_digest = source_replay_digest or stage_replay_digest
+    media_authorization = dict(
+        stage_input.get("director_media_authorization") or {}
+    )
+    production_plan_sha256 = str(
+        media_authorization.get("production_plan_sha256") or ""
+    ).strip()
     completed_boards: dict[str, dict[str, Any]] = {}
     for raw_index, raw_board in dict(visual_api.get("boards") or {}).items():
         if not isinstance(raw_board, dict):
@@ -322,6 +350,8 @@ def _resumable_visual_api_checkpoint(
         "source_instruction": str(stage.instruction or "").strip() or None,
         "variant_index": int(stage_input.get("variant_index") or 1),
         "api_route": str(stage_input.get("api_route") or "").strip() or None,
+        "replay_context_digest": checkpoint_replay_digest or None,
+        "production_plan_sha256": production_plan_sha256 or None,
         "visual_api": checkpoint,
     }
 
@@ -340,8 +370,40 @@ def _latest_resumable_visual_api_checkpoint(
     within the active variant and reuse only boards whose local files or exact
     in-flight identities remain durable.
     """
+    paused_input = dict(
+        paused_current_stage.input_json or {}
+    ) if paused_current_stage is not None else {}
+    current_replay_digest = str(
+        paused_input.get("replay_context_digest") or ""
+    ).strip()
+    current_plan_sha256 = str(
+        dict(dict(project.state_json or {}).get("approved_production_plan") or {})
+        .get("plan_sha256")
+        or ""
+    ).strip()
+
+    def matches_current_plan(checkpoint: dict[str, Any]) -> bool:
+        checkpoint_plan_sha256 = str(
+            checkpoint.get("production_plan_sha256") or ""
+        ).strip()
+        if current_plan_sha256:
+            # The signed Production Plan, not a coincidentally similar prompt,
+            # owns paid visual pixels. Missing provenance is not permission to
+            # import an older plan's frame into the active creative.
+            if checkpoint_plan_sha256 != current_plan_sha256:
+                return False
+        checkpoint_digest = str(
+            checkpoint.get("replay_context_digest") or ""
+        ).strip()
+        if current_replay_digest:
+            # Once the active row is signed, provenance is mandatory.  A
+            # missing digest is not evidence that paid pixels belong to the
+            # same Production Plan and must fail closed.
+            return checkpoint_digest == current_replay_digest
+        return True
+
     direct = _resumable_visual_api_checkpoint(paused_current_stage)
-    if direct:
+    if direct and matches_current_plan(direct):
         return direct
     if str(project.current_stage or "").upper() not in {
         "VISUAL_PREVIEW",
@@ -361,7 +423,7 @@ def _latest_resumable_visual_api_checkpoint(
         if _stage_variant_index(candidate, fallback=active_variant) != active_variant:
             continue
         checkpoint = _resumable_visual_api_checkpoint(candidate)
-        if checkpoint:
+        if checkpoint and matches_current_plan(checkpoint):
             checkpoint["recovered_across_fallback"] = True
             checkpoint["fallback_stage_id"] = upper_stage_id
             return checkpoint
@@ -643,7 +705,20 @@ def _bridge_is_api_video_dormant(
     if project is None or int(bridge.active_project_id or 0) != int(project.id or 0):
         return False
     config = dict(project.config_json or {})
-    if _agent_slot_mode(bridge) != "dormant" or bool(config.get("manual_paused", False)):
+    state = dict(project.state_json or {})
+    # The project row is the durable server-side intent.  A bridge lease may
+    # be released/reacquired between the recovery decision and the next Agent
+    # heartbeat, leaving the bridge row with a stale ``active`` mode.  Requiring
+    # both rows to already agree made the heartbeat reopen Chrome and thereby
+    # erase the API recovery's hibernation request.  A real browser wake calls
+    # ``_request_locked_agent_slot_restart`` and atomically changes the project
+    # state back to ``active``, so accepting either current durable marker is
+    # safe while the resolved stage below remains API-owned.
+    dormant_intent = bool(
+        _agent_slot_mode(bridge) == "dormant"
+        or str(state.get("browser_slot_mode") or "").strip().lower() == "dormant"
+    )
+    if not dormant_intent or bool(config.get("manual_paused", False)):
         return False
     # The bounded parallel pipeline can advance the project from
     # WAITING_VIDEO_INPUT into the next variant's Director/visual stages while
@@ -708,12 +783,13 @@ def hibernate_project_browser_slot_for_api_video(
         bridge.meta_json = meta
         db.add(bridge)
         changed = True
-    if changed:
-        state = dict(project.state_json or {})
+    state = dict(project.state_json or {})
+    if str(state.get("browser_slot_mode") or "").strip().lower() != "dormant":
         state["browser_slot_mode"] = "dormant"
         state["browser_slot_dormant_requested_at"] = now.isoformat()
         project.state_json = state
         db.add(project)
+        changed = True
     return changed
 
 
@@ -1201,71 +1277,6 @@ def _allocate_bridge_port(db: Session) -> int:
     raise APIError("CONTENT_BROWSER_PORTS_EXHAUSTED", "No browser bridge tunnel port is available. Please wait and retry.", 429)
 
 
-def _port_from_url(value: str) -> int | None:
-    try:
-        parsed = urlparse(value)
-        return parsed.port
-    except Exception:
-        return None
-
-
-def _ensure_bridge_endpoint_not_reused(
-    db: Session,
-    *,
-    workspace_id: int,
-    user_id: int,
-    device_id: str,
-    cdp_url: str,
-    row_id: int | None = None,
-) -> None:
-    """A CDP reverse-tunnel endpoint belongs to exactly one user device.
-
-    Without this guard a different account can register a bridge row that
-    points at an already-existing 127.0.0.1:<server_port> tunnel, which makes
-    that user's projects drive another user's local Chrome session.
-    """
-    url = str(cdp_url or "").strip().rstrip("/")
-    port = _port_from_url(url)
-    if not url and port is None:
-        return
-    query = db.query(HermesBrowserBridge)
-    if row_id is not None:
-        query = query.filter(HermesBrowserBridge.id != int(row_id))
-    if port is not None:
-        query = query.filter(
-            (HermesBrowserBridge.server_port == int(port))
-            | (HermesBrowserBridge.cdp_url == url)
-        )
-    else:
-        query = query.filter(HermesBrowserBridge.cdp_url == url)
-    conflict = query.first()
-    if conflict is None:
-        return
-    same_owner = (
-        int(conflict.workspace_id) == int(workspace_id)
-        and int(conflict.user_id or 0) == int(user_id)
-        and str(conflict.device_id or "") == str(device_id or "")
-    )
-    if not same_owner:
-        raise APIError(
-            "CONTENT_BROWSER_ENDPOINT_IN_USE",
-            "This browser bridge endpoint is already registered to another user or device. "
-            "Please start this user's own bridge executable instead of reusing an existing tunnel.",
-            409,
-        )
-
-
-def _bridge_command(port: int) -> str:
-    return (
-        "自动模式：下载并运行一次自启动安装脚本，之后本机将自动启动 Chrome 和 SSH 隧道。\n"
-        "临时手动命令：ssh -N -R 127.0.0.1:{server_port}:127.0.0.1:{local_port} {target}"
-    ).format(server_port=int(port), local_port=BRIDGE_LOCAL_CDP_PORT, target=BRIDGE_SSH_TARGET)
-
-
-def _ps_single_quote(value: str) -> str:
-    return "'" + str(value or "").replace("'", "''") + "'"
-
-
 def _agent_b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -1308,8 +1319,24 @@ def build_bridge_agent_executable(
 ) -> tuple[str, bytes]:
     if not BRIDGE_AGENT_BINARY.is_file():
         raise APIError("CONTENT_BROWSER_AGENT_BINARY_MISSING", "Windows browser agent is not installed on the server.", 503)
+    config = bridge_agent_binding_config(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        device_id=device_id,
+        device_name=device_name,
+        api_base_url=api_base_url,
+    )
+    payload = json.dumps(config, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    filename = "MYUPONA-HermesBridge.exe"
+    return filename, BRIDGE_AGENT_BINARY.read_bytes() + BRIDGE_AGENT_CONFIG_MARKER + payload
+
+
+def bridge_agent_binding_config(
+    *, workspace_id: int, user_id: int, device_id: str, device_name: str | None,
+    api_base_url: str,
+) -> dict[str, Any]:
     token = create_bridge_agent_token(workspace_id=workspace_id, user_id=user_id, device_id=device_id)
-    config = {
+    return {
         "api_url": f"{api_base_url.rstrip('/')}/api/v1/tenants/{int(workspace_id)}/hermes-agent/content-factory/bridge/agent",
         "token": token,
         "workspace_id": int(workspace_id),
@@ -1317,10 +1344,141 @@ def build_bridge_agent_executable(
         "device_id": str(device_id or "").strip()[:128],
         "device_name": str(device_name or "Windows device").strip()[:255],
         "local_capacity": 4,
+        "profile_capacity": BRIDGE_PROFILE_CAPACITY_DEFAULT,
     }
-    payload = json.dumps(config, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    filename = "MYUPONA-HermesBridge.exe"
-    return filename, BRIDGE_AGENT_BINARY.read_bytes() + BRIDGE_AGENT_CONFIG_MARKER + payload
+
+
+def assign_bridge_device_to_host(
+    db: Session, *, target_workspace_id: int, target_user_id: int, target_device_id: str,
+    source_workspace_id: int, source_user_id: int, source_device_id: str,
+    assigned_by: int,
+) -> dict[str, Any]:
+    source_rows = _agent_rows(
+        db,
+        workspace_id=source_workspace_id,
+        user_id=source_user_id,
+        device_id=source_device_id,
+    )
+    source = max(
+        source_rows,
+        key=lambda row: str(dict(row.meta_json or {}).get("agent_last_heartbeat_at") or ""),
+        default=None,
+    )
+    source_meta = dict(source.meta_json or {}) if source is not None else {}
+    host_id = str(source_meta.get("agent_host_id") or "").strip()
+    if not re.fullmatch(r"[a-f0-9]{32}", host_id):
+        raise APIError(
+            "CONTENT_BROWSER_HOST_NOT_OBSERVED",
+            "The selected Windows host has not reported a current physical host identity.",
+            409,
+        )
+    target_rows = _agent_rows(
+        db,
+        workspace_id=target_workspace_id,
+        user_id=target_user_id,
+        device_id=target_device_id,
+    )
+    if not target_rows:
+        raise APIError("CONTENT_BROWSER_DEVICE_NOT_FOUND", "The target Bridge device was not found.", 404)
+    assignment = {
+        "host_id": host_id,
+        "source_workspace_id": int(source_workspace_id),
+        "source_user_id": int(source_user_id),
+        "source_device_id": str(source_device_id),
+        "assigned_by": int(assigned_by),
+        "assigned_at": _now().isoformat(),
+    }
+    for row in target_rows:
+        meta = dict(row.meta_json or {})
+        meta["bridge_host_assignment"] = assignment
+        row.meta_json = meta
+        db.add(row)
+    db.flush()
+    return assignment
+
+
+def observed_bridge_hosts(db: Session) -> list[dict[str, Any]]:
+    """Return physical hosts reported by recent authenticated bindings.
+
+    A host is deliberately represented by its signed logical source binding,
+    never inferred from an IP address or hostname.
+    """
+    rows = (
+        db.query(HermesBrowserBridge)
+        .filter(HermesBrowserBridge.status != "retired")
+        .order_by(HermesBrowserBridge.id.desc())
+        .all()
+    )
+    hosts: dict[tuple[str, int, int, str], dict[str, Any]] = {}
+    for row in rows:
+        if row.user_id is None:
+            continue
+        meta = dict(row.meta_json or {})
+        host_id = str(meta.get("agent_host_id") or "").strip()
+        heartbeat = str(meta.get("agent_last_heartbeat_at") or "").strip()
+        if not re.fullmatch(r"[a-f0-9]{32}", host_id) or not heartbeat:
+            continue
+        device_id = _bridge_base_device_id(row)
+        key = (host_id, int(row.workspace_id), int(row.user_id), device_id)
+        current = hosts.get(key)
+        if current is not None and str(current["last_heartbeat_at"]) >= heartbeat:
+            continue
+        hosts[key] = {
+            "host_id": host_id,
+            "workspace_id": int(row.workspace_id),
+            "user_id": int(row.user_id),
+            "device_id": device_id,
+            "device_name": str(meta.get("agent_device_name") or row.device_name or "Windows device"),
+            "agent_version": str(meta.get("agent_version") or "legacy"),
+            "last_heartbeat_at": heartbeat,
+            "installed_binding_count": len(list(meta.get("agent_installed_bindings") or [])),
+        }
+    return sorted(hosts.values(), key=lambda item: str(item["last_heartbeat_at"]), reverse=True)
+
+
+def _bridge_binding_enrollments(
+    db: Session, *, source_workspace_id: int, source_user_id: int, source_device_id: str,
+    host_id: str | None, installed_bindings: list[str], api_base_url: str,
+) -> list[dict[str, Any]]:
+    if not re.fullmatch(r"[a-f0-9]{32}", str(host_id or "")):
+        return []
+    installed = {str(value) for value in installed_bindings if re.fullmatch(r"[a-f0-9]{16}", str(value))}
+    candidates = (
+        db.query(HermesBrowserBridge)
+        .filter(HermesBrowserBridge.status != "retired")
+        .order_by(HermesBrowserBridge.id.asc())
+        .all()
+    )
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[int, int, str]] = set()
+    for row in candidates:
+        meta = dict(row.meta_json or {})
+        assignment = dict(meta.get("bridge_host_assignment") or {})
+        if (
+            str(assignment.get("host_id") or "") != str(host_id)
+            or int(assignment.get("source_workspace_id") or 0) != int(source_workspace_id)
+            or int(assignment.get("source_user_id") or 0) != int(source_user_id)
+            or str(assignment.get("source_device_id") or "") != str(source_device_id)
+            or row.user_id is None
+        ):
+            continue
+        target = (int(row.workspace_id), int(row.user_id), _bridge_base_device_id(row))
+        if not target[2] or target in seen:
+            continue
+        seen.add(target)
+        identity = hashlib.sha256(f"{target[0]}:{target[1]}:{target[2]}".encode("utf-8")).hexdigest()[:16]
+        if identity in installed:
+            continue
+        result.append(
+            bridge_agent_binding_config(
+                workspace_id=target[0],
+                user_id=target[1],
+                device_id=target[2],
+                device_name=str(row.device_name or "Windows device"),
+                api_base_url=api_base_url,
+            )
+        )
+    return result
 
 
 def _agent_rows(db: Session, *, workspace_id: int, user_id: int, device_id: str) -> list[HermesBrowserBridge]:
@@ -1370,6 +1528,8 @@ def _account_device_rows(
 
 
 def browser_devices(db: Session, *, workspace_id: int, user_id: int) -> list[dict[str, Any]]:
+    from app.services.jimeng_lab import is_external_account_slot
+
     groups: dict[str, list[HermesBrowserBridge]] = {}
     for row in _account_device_rows(db, workspace_id=workspace_id, user_id=user_id):
         device_id = _bridge_base_device_id(row)
@@ -1377,11 +1537,12 @@ def browser_devices(db: Session, *, workspace_id: int, user_id: int) -> list[dic
             groups.setdefault(device_id, []).append(row)
     devices: list[dict[str, Any]] = []
     for device_id, rows in groups.items():
+        content_rows = [row for row in rows if not is_external_account_slot(row)]
         bound = any(_bridge_device_bound(row) for row in rows)
         agent_online = any(_bridge_agent_recent(row) for row in rows)
         connected = any(bound and _bridge_connected(row) for row in rows)
-        login_ready_slots = sum(1 for row in rows if bound and _bridge_connected(row) and _bridge_login_ready(row))
-        login_required_slots = sum(1 for row in rows if bound and _bridge_auth_status(row) == "login_required")
+        login_ready_slots = sum(1 for row in content_rows if bound and _bridge_connected(row) and _bridge_login_ready(row))
+        login_required_slots = sum(1 for row in content_rows if bound and _bridge_auth_status(row) == "login_required")
         selected = bound and any(bool(dict(row.meta_json or {}).get("account_device_selected")) for row in rows)
         active_projects = sorted({int(row.active_project_id) for row in rows if row.active_project_id})
         heartbeat_values = [
@@ -1389,6 +1550,35 @@ def browser_devices(db: Session, *, workspace_id: int, user_id: int) -> list[dic
             for row in rows
             if str(dict(row.meta_json or {}).get("agent_last_heartbeat_at") or "")
         ]
+        heartbeat_rows = sorted(
+            rows,
+            key=lambda row: str(dict(row.meta_json or {}).get("agent_last_heartbeat_at") or ""),
+            reverse=True,
+        )
+        latest_meta = dict(heartbeat_rows[0].meta_json or {}) if heartbeat_rows else {}
+        reported_version = str(latest_meta.get("agent_version") or "legacy")[:64]
+        profile_capacity = _agent_profile_capacity(
+            db,
+            workspace_id=int(workspace_id),
+            user_id=int(user_id),
+            device_id=device_id,
+        )
+        profile_indices = _agent_used_slot_indices(
+            db,
+            workspace_id=int(workspace_id),
+            user_id=int(user_id),
+            device_id=device_id,
+        )
+        profile_usage = {"flow": 0, "doubao": 0, "jimeng": 0, "yt_dlp": 0, "content": 0}
+        reclaimable_count = 0
+        inventory_now = _now()
+        for row in rows:
+            if str(row.status or "").lower() == "retired":
+                continue
+            kind = _agent_profile_kind(row)
+            profile_usage[kind] = int(profile_usage.get(kind, 0)) + 1
+            if _verified_orphan_profile(row, now=inventory_now):
+                reclaimable_count += 1
         devices.append({
             "device_id": device_id,
             "device_name": next((str(row.device_name) for row in reversed(rows) if row.device_name), "Windows device"),
@@ -1396,11 +1586,21 @@ def browser_devices(db: Session, *, workspace_id: int, user_id: int) -> list[dic
             "selected": selected,
             "online": agent_online,
             "connected": connected,
-            "slot_count": len(rows),
+            "slot_count": len(content_rows),
             "login_ready_slot_count": login_ready_slots,
             "login_required_slot_count": login_required_slots,
             "active_project_ids": active_projects,
             "last_heartbeat_at": max(heartbeat_values) if heartbeat_values else None,
+            "agent_version": reported_version,
+            "server_agent_version": BRIDGE_AGENT_VERSION,
+            "agent_update_required": reported_version != BRIDGE_AGENT_VERSION,
+            "agent_update_state": str(latest_meta.get("agent_update_state") or "")[:32],
+            "agent_update_error": str(latest_meta.get("agent_update_error") or "")[:1000],
+            "profile_capacity": profile_capacity,
+            "profile_used_count": len(profile_indices),
+            "profile_available_count": max(0, profile_capacity - len(profile_indices)),
+            "profile_reclaimable_count": reclaimable_count,
+            "profile_usage": profile_usage,
         })
     devices.sort(key=lambda item: (not item["online"], not item["bound"], str(item["device_name"]), item["device_id"]))
     return devices
@@ -1516,6 +1716,165 @@ def _agent_used_slot_indices(db: Session, *, workspace_id: int, user_id: int, de
     return indices
 
 
+def _clamp_agent_profile_capacity(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = BRIDGE_PROFILE_CAPACITY_DEFAULT
+    return max(1, min(BRIDGE_PROFILE_CAPACITY_MAX, parsed))
+
+
+def _agent_profile_capacity(
+    db: Session, *, workspace_id: int, user_id: int, device_id: str
+) -> int:
+    """Return the persistent Profile capacity advertised by this device.
+
+    Active Chrome process concurrency is deliberately governed elsewhere. This
+    capacity describes stable on-disk account Profiles and therefore must not
+    be derived from CPU/load-based active-slot limits.
+    """
+
+    rows = _agent_rows(
+        db,
+        workspace_id=int(workspace_id),
+        user_id=int(user_id),
+        device_id=str(device_id),
+    )
+    reported = [
+        dict(row.meta_json or {}).get("agent_profile_capacity")
+        for row in reversed(rows)
+        if dict(row.meta_json or {}).get("agent_profile_capacity") not in (None, "")
+    ]
+    if reported:
+        return _clamp_agent_profile_capacity(reported[0])
+    return _clamp_agent_profile_capacity(
+        os.getenv("HERMES_BROWSER_PROFILE_CAPACITY", BRIDGE_PROFILE_CAPACITY_DEFAULT)
+    )
+
+
+def _agent_profile_kind(row: HermesBrowserBridge) -> str:
+    meta = dict(row.meta_json or {})
+    if meta.get("flow_account_slot"):
+        return "flow"
+    if meta.get("doubao_lab_slot"):
+        return "doubao"
+    if meta.get("jimeng_lab_slot"):
+        return "jimeng"
+    if meta.get("yt_dlp_account_slot"):
+        return "yt_dlp"
+    return "content"
+
+
+def _verified_orphan_profile(row: HermesBrowserBridge, *, now: datetime) -> bool:
+    """Identify only Profiles that are provably safe to retire automatically."""
+
+    if str(row.status or "").lower() == "retired":
+        return False
+    if row.active_project_id is not None or row.active_stage_id is not None:
+        return False
+    if row.lease_expires_at is not None and row.lease_expires_at > now:
+        return False
+    meta = dict(row.meta_json or {})
+    if bool(meta.get("manual_pool_slot")):
+        return False
+
+    # Explicit retirement markers are authoritative and should agree with the
+    # row state even if an earlier transaction stopped between both writes.
+    if any(
+        bool(meta.get(key))
+        for key in (
+            "flow_profile_retired",
+            "doubao_profile_retired",
+            "jimeng_profile_retired",
+            "yt_dlp_profile_retired",
+        )
+    ):
+        return True
+
+    # A failed/cancelled Flow onboarding with no upstream token can never be
+    # routed or reauthorized. Keep a one-hour diagnostic window, then reclaim
+    # only that unbound Profile. Bound token Profiles are never auto-retired.
+    if not meta.get("flow_account_slot") or meta.get("flow_token_id") not in (None, ""):
+        return False
+    if str(meta.get("flow_capture_state") or "").lower() not in {"failed", "cancelled"}:
+        return False
+    terminal_at = _parse_bridge_timestamp(
+        meta.get("flow_capture_updated_at")
+        or meta.get("flow_capture_created_at")
+        or row.updated_at
+        or row.created_at
+    )
+    return bool(
+        terminal_at
+        and terminal_at <= now - timedelta(minutes=BRIDGE_PROFILE_ORPHAN_GRACE_MINUTES)
+    )
+
+
+def _retire_verified_orphan_profiles(
+    db: Session, *, workspace_id: int, user_id: int, device_id: str
+) -> int:
+    now = _now()
+    retired = 0
+    for row in _agent_rows(
+        db,
+        workspace_id=int(workspace_id),
+        user_id=int(user_id),
+        device_id=str(device_id),
+    ):
+        if not _verified_orphan_profile(row, now=now):
+            continue
+        meta = dict(row.meta_json or {})
+        meta["profile_orphan_reclaimed_at"] = now.isoformat()
+        meta["retired_at"] = now.isoformat()
+        meta["retired_reason"] = "verified_unbound_profile_orphan"
+        row.meta_json = meta
+        row.status = "retired"
+        row.active_project_id = None
+        row.active_stage_id = None
+        row.lease_expires_at = None
+        db.add(row)
+        retired += 1
+    if retired:
+        db.flush()
+    return retired
+
+
+def _next_agent_profile_slot_index(
+    db: Session,
+    *,
+    workspace_id: int,
+    user_id: int,
+    device_id: str,
+    error_code: str,
+) -> int:
+    _retire_verified_orphan_profiles(
+        db,
+        workspace_id=int(workspace_id),
+        user_id=int(user_id),
+        device_id=str(device_id),
+    )
+    capacity = _agent_profile_capacity(
+        db,
+        workspace_id=int(workspace_id),
+        user_id=int(user_id),
+        device_id=str(device_id),
+    )
+    used = _agent_used_slot_indices(
+        db,
+        workspace_id=int(workspace_id),
+        user_id=int(user_id),
+        device_id=str(device_id),
+    )
+    available = next((index for index in range(capacity) if index not in used), None)
+    if available is None:
+        raise APIError(
+            error_code,
+            f"当前设备已达到 {capacity} 个持久化浏览器 Profile 上限。",
+            429,
+        )
+    return int(available)
+
+
 def _agent_target_slot_count(
     *, capacity: int, active_project_ids: set[int], requested_project_ids: set[int],
 ) -> int:
@@ -1574,7 +1933,17 @@ def _retire_dead_agent_rows(
         stale_minutes = 20
     stale_cutoff = now - timedelta(minutes=stale_minutes)
     kept: list[HermesBrowserBridge] = []
+    from app.services.jimeng_lab import is_external_account_slot
+
     for row in rows:
+        # Flow accounts own long-lived, purpose-scoped browser profiles.  An
+        # omitted desired slot means "close Chrome until the next keepalive",
+        # not "discard this profile and allocate a different one".
+        if is_external_account_slot(row) and str(row.bridge_id) not in reports:
+            row.status = "standby"
+            db.add(row)
+            kept.append(row)
+            continue
         if row.active_project_id is not None:
             kept.append(row)
             continue
@@ -1758,6 +2127,11 @@ def _new_agent_slot(
         # the next heartbeat with it. Adopt that row in place so the Agent does
         # not repeatedly stop and recreate the same Chrome profile.
         meta = dict(existing.meta_json or {})
+        legacy_meta_removed = False
+        for legacy_key in ("connect_command", "installer_filename", "install_command"):
+            if legacy_key in meta:
+                meta.pop(legacy_key, None)
+                legacy_meta_removed = True
         expected_meta = {
             "agent_managed": True,
             "agent_device_id": device_id,
@@ -1765,7 +2139,7 @@ def _new_agent_slot(
             "slot_index": int(slot_index),
             "local_port": int(BRIDGE_LOCAL_CDP_PORT + slot_index),
         }
-        if any(meta.get(key) != value for key, value in expected_meta.items()):
+        if legacy_meta_removed or any(meta.get(key) != value for key, value in expected_meta.items()):
             now = _now()
             meta.update(expected_meta)
             meta["agent_last_heartbeat_at"] = now.isoformat()
@@ -1807,9 +2181,18 @@ def _new_agent_slot(
     }
 
     if existing is not None:
-        # A retired row still owns this device/slot identity and its stable
-        # Chrome profile. Revive it in place rather than violating the unique
-        # key or forcing the user to sign in to a replacement profile.
+        old_meta = dict(existing.meta_json or {})
+        reset_profile = str(old_meta.get("retired_reason") or "") == "verified_unbound_profile_orphan"
+        if reset_profile:
+            values["meta_json"] = {
+                **dict(values["meta_json"]),
+                "reset_profile_required": True,
+                "profile_generation": int(old_meta.get("profile_generation") or 0) + 1,
+            }
+        # A retired row still owns this device/slot identity. Revive it in
+        # place rather than violating the unique key. Only a verified unbound
+        # orphan requests a local profile wipe; ordinary manual/content slot
+        # revival intentionally preserves its authenticated browser state.
         for key, value in values.items():
             if key not in {"bridge_id", "workspace_id", "user_id", "device_id"}:
                 setattr(existing, key, value)
@@ -1916,10 +2299,13 @@ def prepare_browser_slot(
             429,
         )
     sample = rows[-1]
-    used_indices = _agent_used_slot_indices(
-        db, workspace_id=workspace_id, user_id=user_id, device_id=device_id,
+    slot_index = _next_agent_profile_slot_index(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        device_id=device_id,
+        error_code="CONTENT_BROWSER_PROFILE_CAPACITY_FULL",
     )
-    slot_index = next(index for index in range(32) if index not in used_indices)
     row = _new_agent_slot(
         db,
         workspace_id=workspace_id,
@@ -1971,6 +2357,12 @@ def reconcile_bridge_agent(
     db: Session, *, workspace_id: int, user_id: int, device_id: str, device_name: str,
     agent_version: str, public_key: str, inbox_root: str, local_capacity: int,
     reported_slots: list[dict[str, Any]],
+    profile_capacity: int = BRIDGE_PROFILE_CAPACITY_DEFAULT,
+    update_state: str | None = None,
+    update_error: str | None = None,
+    host_id: str | None = None,
+    installed_bindings: list[str] | None = None,
+    api_base_url: str = "",
 ) -> dict[str, Any]:
     _authorize_bridge_agent_key(public_key=public_key, device_id=device_id, user_id=user_id)
     reconcile_bridge_project_leases(
@@ -2007,12 +2399,65 @@ def reconcile_bridge_agent(
     except ValueError:
         connected_dead_minutes = 5
     connected_dead_cutoff = now - timedelta(minutes=connected_dead_minutes)
+    from app.services.flow_browser_onboarding import (
+        flow_slot_should_wake,
+        flow_slot_spec,
+        is_flow_account_slot,
+        record_flow_browser_report,
+    )
+    from app.services.jimeng_lab import (
+        is_external_account_slot,
+        is_jimeng_lab_slot,
+        jimeng_slot_should_wake,
+        jimeng_slot_spec,
+        record_jimeng_browser_report,
+    )
+    from app.services.doubao_lab import (
+        doubao_slot_should_wake,
+        doubao_slot_spec,
+        is_doubao_lab_slot,
+        record_doubao_browser_report,
+    )
+    from app.services.yt_dlp_browser_onboarding import (
+        is_yt_dlp_account_slot,
+        record_yt_dlp_browser_report,
+        yt_dlp_slot_should_wake,
+        yt_dlp_slot_spec,
+    )
+
     device_bound = not rows or any(_bridge_device_bound(row) for row in rows)
     for row in rows:
+        row_meta = dict(row.meta_json or {})
+        legacy_meta_removed = False
+        for legacy_key in ("connect_command", "installer_filename", "install_command"):
+            if legacy_key in row_meta:
+                row_meta.pop(legacy_key, None)
+                legacy_meta_removed = True
+        if legacy_meta_removed:
+            row.meta_json = row_meta
+            db.add(row)
+        external_account_slot = (
+            is_flow_account_slot(row)
+            or is_jimeng_lab_slot(row)
+            or is_doubao_lab_slot(row)
+            or is_yt_dlp_account_slot(row)
+        )
+        if external_account_slot:
+            # Account probes and the Agent heartbeat update the same JSON
+            # column in separate transactions. Reload and lock even when this
+            # heartbeat did not report the dormant slot; otherwise an older
+            # ORM snapshot can silently erase a freshly created probe lease.
+            db.refresh(row, with_for_update=True)
         meta = dict(row.meta_json or {})
         meta["agent_last_heartbeat_at"] = now.isoformat()
         meta["agent_device_name"] = str(device_name or row.device_name or "Windows device")[:255]
         meta["agent_version"] = str(agent_version or "legacy")[:64]
+        meta["agent_update_state"] = str(update_state or "")[:32]
+        meta["agent_update_error"] = str(update_error or "")[:1000]
+        meta["agent_profile_capacity"] = _clamp_agent_profile_capacity(profile_capacity)
+        if re.fullmatch(r"[a-f0-9]{32}", str(host_id or "")):
+            meta["agent_host_id"] = str(host_id)
+            meta["agent_installed_bindings"] = list(installed_bindings or [])[:64]
         meta.setdefault("account_device_bound", True)
         row.meta_json = meta
         row.device_name = str(device_name or row.device_name or "Windows device")[:255]
@@ -2027,12 +2472,88 @@ def reconcile_bridge_agent(
         if not report:
             db.add(row)
             continue
+        if external_account_slot:
+            if is_flow_account_slot(row):
+                report_accepted = record_flow_browser_report(row, report, now=now)
+                if not report_accepted:
+                    # A prior browser cycle may report once after a new
+                    # capture_id has already been issued. Preserve the current
+                    # state and return the new desired spec; do not publish the
+                    # stale report as the account's live status.
+                    db.add(row)
+                    continue
+            elif is_jimeng_lab_slot(row):
+                record_jimeng_browser_report(row, report, now=now)
+            elif is_doubao_lab_slot(row):
+                record_doubao_browser_report(row, report, now=now)
+            else:
+                report_accepted = record_yt_dlp_browser_report(row, report, now=now)
+                if not report_accepted:
+                    db.add(row)
+                    continue
+            # Account slots have their own state machines.  Do not fall through
+            # to the content/ChatGPT heartbeat path below: that path writes the
+            # pre-report ``meta`` snapshot back to the row and can erase a
+            # just-recorded login_complete -> capture_pending transition.  This
+            # exact transition is what lets the Agent reopen the same fixed
+            # Profile once, under CDP, and submit the Flow capture.
+            refreshed_meta = dict(row.meta_json or {})
+            if bool(report.get("profile_reset")):
+                refreshed_meta.pop("reset_profile_required", None)
+                refreshed_meta["profile_reset_completed_at"] = now.isoformat()
+            row.meta_json = refreshed_meta
+            connected = bool(report.get("connected"))
+            reachable = False
+            probe_browser = None
+            probe_error = None
+            if connected:
+                reachable, probe_browser, probe_error = _probe_bridge(row)
+            row.status = "active" if reachable else ("pending" if connected else "offline")
+            row.last_seen_at = now if reachable else row.last_seen_at
+            row.browser = str(probe_browser or report.get("browser") or row.browser or "Chrome")[:255]
+            agent_error = str(report.get("error") or "").strip()
+            row.load_json = {
+                # The Agent owns browser/SSH startup and therefore has the
+                # actionable error. A server-side refused CDP probe is only a
+                # consequence and used to overwrite that root cause.
+                "agent_error": agent_error[:500],
+                "server_probe_error": str(probe_error or "")[:500],
+                "reported_capture_id": str(report.get("capture_id") or "")[:128],
+                "connected": connected,
+                "account_status": str(report.get("flow_status") or "checking")[:32],
+            }
+            db.add(row)
+            continue
         report_mode = str(report.get("mode") or "active").strip().lower()
         if report_mode == "dormant":
             # Only accept a dormant acknowledgement while the server still
             # requests dormancy.  A one-heartbeat stale report after a wake
             # request must not put a slot back to sleep.
-            if _agent_slot_mode(row) == "dormant":
+            dormant_project = (
+                db.get(HermesContentFactoryProject, int(row.active_project_id))
+                if row.active_project_id
+                else None
+            )
+            dormant_stage = None
+            if dormant_project is not None:
+                dormant_stage = (
+                    db.query(HermesContentFactoryStage)
+                    .filter(
+                        HermesContentFactoryStage.project_id == int(dormant_project.id),
+                        HermesContentFactoryStage.status.in_(("queued", "running", "retrying")),
+                    )
+                    .order_by(HermesContentFactoryStage.id.desc())
+                    .first()
+                )
+            if _bridge_is_api_video_dormant(
+                row,
+                dormant_project,
+                active_stage=dormant_stage,
+            ):
+                meta["agent_slot_mode"] = "dormant"
+                meta.setdefault("agent_slot_mode_requested_at", now.isoformat())
+                meta["agent_slot_mode_project_id"] = int(dormant_project.id)
+                row.meta_json = meta
                 row.status = "dormant"
                 row.last_seen_at = now
                 row.load_json = {
@@ -2127,13 +2648,24 @@ def reconcile_bridge_agent(
             "server_load": _server_load_snapshot(),
             "slots": [],
             "project_keys": [],
+            "binding_enrollments": _bridge_binding_enrollments(
+                db,
+                source_workspace_id=workspace_id,
+                source_user_id=user_id,
+                source_device_id=device_id,
+                host_id=host_id,
+                installed_bindings=list(installed_bindings or []),
+                api_base_url=api_base_url,
+            ),
         }
 
     load = _server_load_snapshot()
     requested_capacity = max(1, min(8, int(local_capacity or 1)))
     capacity = max(1, min(requested_capacity, int(load["capacity"])))
+    account_rows = [row for row in rows if is_external_account_slot(row)]
+    content_rows = [row for row in rows if not is_external_account_slot(row)]
     active_rows = [
-        row for row in rows
+        row for row in content_rows
         if row.active_project_id is not None
         and (row.lease_expires_at is None or row.lease_expires_at > now)
     ]
@@ -2170,7 +2702,7 @@ def reconcile_bridge_agent(
         if preferred and preferred != str(device_id):
             continue
         bridge_id = str(stage_input.get("browser_bridge_id") or state.get("browser_bridge_id") or "").strip()
-        bridge = next((row for row in rows if str(row.bridge_id) == bridge_id), None)
+        bridge = next((row for row in content_rows if str(row.bridge_id) == bridge_id), None)
         if bridge is None or not _bridge_connected(bridge):
             requested_project_ids.add(int(project.id))
     request_candidates = (
@@ -2198,13 +2730,18 @@ def reconcile_bridge_agent(
         active_project_ids=active_project_ids,
         requested_project_ids=requested_project_ids,
     )
-    manual_rows = [row for row in rows if bool(dict(row.meta_json or {}).get("manual_pool_slot"))]
+    manual_rows = [row for row in content_rows if bool(dict(row.meta_json or {}).get("manual_pool_slot"))]
     persistent_row_ids = {int(row.id) for row in active_rows} | {int(row.id) for row in manual_rows}
     target_count = min(capacity, max(target_count, len(persistent_row_ids)))
-    used_indices = _agent_used_slot_indices(db, workspace_id=workspace_id, user_id=user_id, device_id=device_id)
-    while len(rows) < target_count:
-        slot_index = next(index for index in range(32) if index not in used_indices)
-        rows.append(_new_agent_slot(
+    while len(content_rows) < target_count:
+        slot_index = _next_agent_profile_slot_index(
+            db,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            device_id=device_id,
+            error_code="CONTENT_BROWSER_PROFILE_CAPACITY_FULL",
+        )
+        new_row = _new_agent_slot(
             db,
             workspace_id=workspace_id,
             user_id=user_id,
@@ -2212,8 +2749,9 @@ def reconcile_bridge_agent(
             device_name=device_name,
             inbox_root=inbox_root,
             slot_index=slot_index,
-        ))
-        used_indices.add(slot_index)
+        )
+        rows.append(new_row)
+        content_rows.append(new_row)
 
     desired_rows = list(active_rows)
     desired_ids = {int(row.id) for row in desired_rows}
@@ -2223,12 +2761,93 @@ def reconcile_bridge_agent(
         if int(row.id) not in desired_ids:
             desired_rows.append(row)
             desired_ids.add(int(row.id))
-    for row in sorted(rows, key=lambda item: int(dict(item.meta_json or {}).get("slot_index") or 0)):
+    for row in sorted(content_rows, key=lambda item: int(dict(item.meta_json or {}).get("slot_index") or 0)):
         if len(desired_rows) >= target_count:
             break
         if int(row.id) not in desired_ids:
             desired_rows.append(row)
             desired_ids.add(int(row.id))
+    # Ordinary account keepalive is serialized per Windows device and uses only
+    # otherwise-free capacity.  Bounded provider requests are different: each
+    # one owns an exact account/Profile/port and has a worker waiting for that
+    # CDP tunnel.  Returning only one such row made the Agent stop a sibling
+    # production slot whenever a manual verification/probe slot was selected,
+    # so two independent queues appeared to fight and Chrome reopened on every
+    # heartbeat.  Keep every bounded request desired (up to advertised device
+    # capacity), then use at most one remaining slot for ordinary upkeep.
+    if account_rows:
+        waking_account_rows: list[tuple[int, int, HermesBrowserBridge]] = []
+        for row in account_rows:
+            if is_flow_account_slot(row):
+                should_wake = flow_slot_should_wake(row, now=now)
+                provider_request = False
+            elif is_jimeng_lab_slot(row):
+                should_wake = jimeng_slot_should_wake(db, row, now=now)
+                provider_request = False
+            elif is_doubao_lab_slot(row):
+                should_wake = doubao_slot_should_wake(row, now=now)
+                # A generation, probe, or operator-owned CAPTCHA request has
+                # a bounded worker waiting for this exact account's CDP
+                # tunnel.  It must outrank ordinary login/keepalive slots;
+                # sorting only by database id made another account evict the
+                # requested browser before Seedance parameters were applied.
+                provider_request = bool(
+                    should_wake
+                    and doubao_slot_spec(db, row).get("provider_request")
+                )
+            else:
+                should_wake = yt_dlp_slot_should_wake(row, now=now)
+                provider_request = False
+            if should_wake:
+                request_priority = 2
+                if provider_request:
+                    lease_id = str(
+                        dict(row.meta_json or {}).get("doubao_pool_lease_task_id")
+                        or ""
+                    )
+                    # Production task ids are numeric.  Manual verification,
+                    # lab tests and capability probes use named leases.  Both
+                    # may run concurrently when capacity permits, but bounded
+                    # production must never be evicted by account maintenance.
+                    request_priority = 0 if lease_id.isdigit() else 1
+                waking_account_rows.append(
+                    (request_priority, int(row.id), row)
+                )
+        provider_requests = sorted(
+            item for item in waking_account_rows if item[0] < 2
+        )
+        ordinary_upkeep = sorted(
+            item for item in waking_account_rows if item[0] == 2
+        )
+        # An idle content-profile warm spare is useful only when the device has
+        # no bounded provider work.  Do not let it consume the last advertised
+        # slot while paid/production video submissions are waiting.
+        provider_capacity_needed = max(
+            0, len(provider_requests) - (capacity - len(desired_rows))
+        )
+        if provider_capacity_needed:
+            preemptable_idle_content = [
+                row
+                for row in reversed(desired_rows)
+                if row.active_project_id is None
+                and not is_external_account_slot(row)
+                and not bool(dict(row.meta_json or {}).get("manual_pool_slot"))
+            ]
+            for idle_row in preemptable_idle_content[:provider_capacity_needed]:
+                desired_rows.remove(idle_row)
+                desired_ids.discard(int(idle_row.id))
+        for _, _, selected_account in provider_requests:
+            if len(desired_rows) >= capacity:
+                break
+            if int(selected_account.id) in desired_ids:
+                continue
+            desired_rows.append(selected_account)
+            desired_ids.add(int(selected_account.id))
+        if len(desired_rows) < capacity and ordinary_upkeep:
+            _, _, selected_account = ordinary_upkeep[0]
+            if int(selected_account.id) not in desired_ids:
+                desired_rows.append(selected_account)
+                desired_ids.add(int(selected_account.id))
     for row in rows:
         row.inbox_root = str(inbox_root or row.inbox_root or WINDOWS_INBOX)[:1024]
         if int(row.id) not in desired_ids and row.active_project_id is None:
@@ -2252,7 +2871,7 @@ def reconcile_bridge_agent(
         "update_required": str(agent_version or "legacy") != BRIDGE_AGENT_VERSION,
         "server_load": load,
         "slots": [
-            {
+            ({
                 "bridge_id": row.bridge_id,
                 "desired": True,
                 "local_port": int(dict(row.meta_json or {}).get("local_port") or BRIDGE_LOCAL_CDP_PORT),
@@ -2275,10 +2894,31 @@ def reconcile_bridge_agent(
                     and str(dict(row.load_json or {}).get("agent_error") or "").strip()
                 ),
                 "server_probe_error": str(dict(row.load_json or {}).get("agent_error") or "")[:500],
-            }
+                "reset_profile": bool(dict(row.meta_json or {}).get("reset_profile_required")),
+            } | (flow_slot_spec(row) if is_flow_account_slot(row) else (
+                jimeng_slot_spec(db, row) if is_jimeng_lab_slot(row) else (
+                doubao_slot_spec(db, row) if is_doubao_lab_slot(row) else (
+                yt_dlp_slot_spec(row) if is_yt_dlp_account_slot(row) else {
+                "purpose": "content_factory",
+                "target_url": "https://chatgpt.com/",
+                "capture_id": "",
+                "capture_required": False,
+                "login_only": False,
+                "flow_token_id": None,
+                "proxy_url": "",
+            })))))
             for row in desired_rows
         ],
         "project_keys": sorted(project_keys),
+        "binding_enrollments": _bridge_binding_enrollments(
+            db,
+            source_workspace_id=workspace_id,
+            source_user_id=user_id,
+            source_device_id=device_id,
+            host_id=host_id,
+            installed_bindings=list(installed_bindings or []),
+            api_base_url=api_base_url,
+        ),
     }
 
 
@@ -2452,313 +3092,6 @@ def ensure_bridge_agent_file_access(db: Session, *, workspace_id: int, user_id: 
     return bridge_agent_inbox_file(workspace_id=workspace_id, user_id=user_id, relative_path=normalized)
 
 
-def _bridge_installer_filename(bridge: HermesBrowserBridge) -> str:
-    suffix = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(bridge.bridge_id or "bridge")).strip("-")[:48] or "bridge"
-    return f"Install-MYUPONA-HermesBridge-{suffix}.ps1"
-
-
-def _bridge_install_command(bridge: HermesBrowserBridge) -> str:
-    return f"powershell -NoProfile -ExecutionPolicy Bypass -File .\\{_bridge_installer_filename(bridge)}"
-
-
-def _bridge_installer_script(bridge: HermesBrowserBridge) -> str:
-    server_port = int(bridge.server_port or _port_from_url(bridge.cdp_url or "") or BRIDGE_PORT_START)
-    local_port = int(dict(bridge.meta_json or {}).get("local_port") or BRIDGE_LOCAL_CDP_PORT)
-    bridge_id = str(bridge.bridge_id or "bridge")
-    config_json = json.dumps(
-        {
-            "BridgeId": bridge_id,
-            "Server": BRIDGE_SSH_TARGET,
-            "ServerPort": server_port,
-            "LocalPort": local_port,
-            "InboxRoot": str(bridge.inbox_root or WINDOWS_INBOX),
-            "ServerInboxRoot": BROWSER_INBOX.as_posix(),
-            "WorkspaceId": int(bridge.workspace_id),
-            "DeviceId": str(bridge.device_id or ""),
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-    return f'''$ErrorActionPreference = "Stop"
-
-$BridgeId = {_ps_single_quote(bridge_id)}
-$InstallRoot = Join-Path $env:LOCALAPPDATA ("MYUPONA\\HermesBridge\\" + $BridgeId)
-$ConfigFile = Join-Path $InstallRoot "bridge.config.json"
-$RunnerFile = Join-Path $InstallRoot "Start-HermesBridge.ps1"
-$TaskName = "MYUPONA Hermes Browser Bridge " + $BridgeId.Substring(0, [Math]::Min(10, $BridgeId.Length))
-
-New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
-@'
-{config_json}
-'@ | Set-Content -LiteralPath $ConfigFile -Encoding UTF8
-
-@'
-$ErrorActionPreference = "Continue"
-$ConfigFile = Join-Path $PSScriptRoot "bridge.config.json"
-$Config = Get-Content -Raw -LiteralPath $ConfigFile | ConvertFrom-Json
-$Root = $PSScriptRoot
-$Profile = Join-Path $Root "ChromeProfile"
-$Inbox = [string]$Config.InboxRoot
-$StatusFile = Join-Path $Root "HermesBridge.status"
-$LogFile = Join-Path $Root "HermesBridge.log"
-$TunnelErrorFile = Join-Path $Root "HermesBridge.ssh-error.log"
-
-New-Item -ItemType Directory -Force -Path $Profile | Out-Null
-New-Item -ItemType Directory -Force -Path $Inbox | Out-Null
-
-function Set-BridgeStatus([string]$Status) {{
-    $line = "$(Get-Date -Format o) $Status"
-    $line | Set-Content -LiteralPath $StatusFile -Encoding UTF8
-    $line | Add-Content -LiteralPath $LogFile -Encoding UTF8
-}}
-
-function Get-ChromePath {{
-    $candidates = @(
-        "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe",
-        "${{env:ProgramFiles(x86)}}\\Google\\Chrome\\Application\\chrome.exe",
-        "$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe"
-    )
-    foreach ($item in $candidates) {{
-        if ($item -and (Test-Path -LiteralPath $item)) {{ return $item }}
-    }}
-    throw "Google Chrome was not found."
-}}
-
-function Test-HermesChrome {{
-    try {{
-        $null = Invoke-RestMethod -Uri ("http://127.0.0.1:" + $Config.LocalPort + "/json/version") -TimeoutSec 2
-        return $true
-    }} catch {{
-        return $false
-    }}
-}}
-
-function Start-HermesChrome {{
-    if (Test-HermesChrome) {{ return $true }}
-    $chrome = Get-ChromePath
-    Set-BridgeStatus "starting-browser"
-    Start-Process -FilePath $chrome -ArgumentList @(
-        "--remote-debugging-address=127.0.0.1",
-        "--remote-debugging-port=$($Config.LocalPort)",
-        "--remote-allow-origins=*",
-        "--user-data-dir=$Profile",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--new-window",
-        "https://chatgpt.com/"
-    ) | Out-Null
-    $deadline = (Get-Date).AddSeconds(45)
-    do {{
-        Start-Sleep -Seconds 1
-        if (Test-HermesChrome) {{ return $true }}
-    }} until ((Get-Date) -gt $deadline)
-    return $false
-}}
-
-function Clear-StaleRemoteBridge {{
-    Set-BridgeStatus "clearing-stale-remote-listener"
-    & ssh.exe -o BatchMode=yes -o ConnectTimeout=10 $Config.Server "fuser -k $($Config.ServerPort)/tcp >/dev/null 2>&1 || true"
-    return ($LASTEXITCODE -eq 0)
-}}
-
-$createdNew = $false
-$mutex = New-Object System.Threading.Mutex($true, ("Local\\MYUPONA_HermesBridge_" + $Config.BridgeId), [ref]$createdNew)
-if (-not $createdNew) {{ exit 0 }}
-
-try {{
-    while ($true) {{
-        try {{
-            if (-not (Start-HermesChrome)) {{
-                Set-BridgeStatus "browser-start-failed"
-                Start-Sleep -Seconds 10
-                continue
-            }}
-            [void](Clear-StaleRemoteBridge)
-            Remove-Item -LiteralPath $TunnelErrorFile -Force -ErrorAction SilentlyContinue
-            Set-BridgeStatus "starting-tunnel"
-            $tunnel = Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -PassThru -ArgumentList @(
-                "-N",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=10",
-                "-o", "ExitOnForwardFailure=yes",
-                "-o", "ServerAliveInterval=30",
-                "-o", "ServerAliveCountMax=3",
-                "-R", ("127.0.0.1:" + $Config.ServerPort + ":127.0.0.1:" + $Config.LocalPort),
-                $Config.Server
-            ) -RedirectStandardError $TunnelErrorFile
-            Start-Sleep -Seconds 2
-            if ($tunnel.HasExited) {{
-                $detail = if (Test-Path -LiteralPath $TunnelErrorFile) {{ [string](Get-Content -Raw -LiteralPath $TunnelErrorFile) }} else {{ "unknown ssh error" }}
-                Set-BridgeStatus ("tunnel-start-failed:" + $detail.Trim())
-                Start-Sleep -Seconds 8
-                continue
-            }}
-            Set-BridgeStatus "connected"
-            $lastSync = [datetime]::MinValue
-            while (-not $tunnel.HasExited) {{
-                Start-Sleep -Seconds 3
-                if (-not (Test-HermesChrome)) {{
-                    Set-BridgeStatus "browser-disconnected"
-                    Stop-Process -Id $tunnel.Id -Force -ErrorAction SilentlyContinue
-                    break
-                }}
-                if (((Get-Date) - $lastSync).TotalSeconds -ge 10) {{
-                    & scp.exe -q -r ($Config.Server + ":" + $Config.ServerInboxRoot + "/.") $Inbox
-                    if ($LASTEXITCODE -eq 0) {{ $lastSync = Get-Date }}
-                }}
-            }}
-        }} catch {{
-            Set-BridgeStatus ("loop-error:" + $_.Exception.Message)
-            Start-Sleep -Seconds 10
-        }}
-        Set-BridgeStatus "reconnecting"
-        Start-Sleep -Seconds 3
-    }}
-}} finally {{
-    Set-BridgeStatus "stopped"
-    if ($tunnel -and -not $tunnel.HasExited) {{ Stop-Process -Id $tunnel.Id -Force -ErrorAction SilentlyContinue }}
-    $mutex.ReleaseMutex()
-    $mutex.Dispose()
-}}
-'@ | Set-Content -LiteralPath $RunnerFile -Encoding UTF8
-
-$Action = New-ScheduledTaskAction `
-    -Execute "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" `
-    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RunnerFile`""
-$LogonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$WatchdogTrigger = New-ScheduledTaskTrigger `
-    -Once `
-    -At (Get-Date).AddMinutes(1) `
-    -RepetitionInterval (New-TimeSpan -Minutes 5) `
-    -RepetitionDuration (New-TimeSpan -Days 3650)
-$Settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -RestartCount 999 `
-    -RestartInterval (New-TimeSpan -Minutes 1) `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -MultipleInstances IgnoreNew
-$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $Action `
-    -Trigger @($LogonTrigger, $WatchdogTrigger) `
-    -Settings $Settings `
-    -Principal $Principal `
-    -Description "Starts Chrome CDP and maintains the reverse SSH tunnel for GMV Ops Hermes." `
-    -Force | Out-Null
-
-Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-Get-CimInstance Win32_Process |
-    Where-Object {{ $_.CommandLine -like "*$RunnerFile*" -and $_.Name -eq "powershell.exe" }} |
-    ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
-
-Start-Sleep -Seconds 2
-Start-ScheduledTask -TaskName $TaskName
-Write-Output ("Installed and started: " + $TaskName)
-Write-Output ("Status file: " + (Join-Path $InstallRoot "HermesBridge.status"))
-'''
-
-
-def register_browser_bridge(
-    db: Session,
-    *,
-    workspace_id: int,
-    user_id: int,
-    device_id: str,
-    device_name: str | None = None,
-    cdp_url: str | None = None,
-    inbox_root: str | None = None,
-    outbox_root: str | None = None,
-    browser: str | None = None,
-    load_json: dict[str, Any] | None = None,
-) -> HermesBrowserBridge:
-    device = str(device_id or "").strip()[:128]
-    if not device:
-        raise APIError("CONTENT_BROWSER_DEVICE_REQUIRED", "Browser bridge device_id is required.", 400)
-    normalized_cdp = (cdp_url or "").strip().rstrip("/")
-    row = (
-        db.query(HermesBrowserBridge)
-        .filter(
-            HermesBrowserBridge.workspace_id == int(workspace_id),
-            HermesBrowserBridge.user_id == int(user_id),
-            HermesBrowserBridge.device_id == device,
-        )
-        .one_or_none()
-    )
-    if row is None:
-        if normalized_cdp:
-            _ensure_bridge_endpoint_not_reused(
-                db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                device_id=device,
-                cdp_url=normalized_cdp,
-            )
-        port = _port_from_url(normalized_cdp) or _allocate_bridge_port(db)
-        row = HermesBrowserBridge(
-            bridge_id=f"br_{uuid4().hex}",
-            workspace_id=int(workspace_id),
-            user_id=int(user_id),
-            device_id=device,
-            device_name=(device_name or "").strip()[:255] or None,
-            cdp_url=(normalized_cdp or f"http://127.0.0.1:{port}").strip().rstrip("/"),
-            server_port=port,
-            inbox_root=(inbox_root or WINDOWS_INBOX).strip() or WINDOWS_INBOX,
-            outbox_root=(outbox_root or "").strip() or None,
-            browser=(browser or "").strip()[:255] or None,
-            status="active",
-            last_seen_at=_now(),
-            load_json=load_json or {},
-            meta_json={"connect_command": _bridge_command(port)},
-        )
-        db.add(row)
-    else:
-        if normalized_cdp:
-            _ensure_bridge_endpoint_not_reused(
-                db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                device_id=device,
-                cdp_url=normalized_cdp,
-                row_id=int(row.id),
-            )
-            row.cdp_url = normalized_cdp
-            row.server_port = _port_from_url(row.cdp_url) or row.server_port
-        if device_name is not None:
-            row.device_name = device_name.strip()[:255] or row.device_name
-        if inbox_root is not None:
-            row.inbox_root = inbox_root.strip() or row.inbox_root
-        if outbox_root is not None:
-            row.outbox_root = outbox_root.strip() or None
-        if browser is not None:
-            row.browser = browser.strip()[:255] or row.browser
-        row.status = "active"
-        row.last_seen_at = _now()
-        row.load_json = load_json or row.load_json or {}
-        meta = dict(row.meta_json or {})
-        meta["account_device_bound"] = True
-        meta.pop("account_device_unbound_at", None)
-        if row.server_port:
-            meta["connect_command"] = _bridge_command(int(row.server_port))
-        row.meta_json = meta
-        db.add(row)
-    db.flush()
-    meta = dict(row.meta_json or {})
-    meta["account_device_bound"] = True
-    meta.pop("account_device_unbound_at", None)
-    if row.server_port:
-        meta["connect_command"] = _bridge_command(int(row.server_port))
-    meta["installer_filename"] = _bridge_installer_filename(row)
-    meta["install_command"] = _bridge_install_command(row)
-    row.meta_json = meta
-    db.add(row)
-    db.flush()
-    return row
-
-
 def _bridge_out(bridge: HermesBrowserBridge, *, connected: bool, browser: str | None = None, detail: str | None = None, queue: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     meta = dict(bridge.meta_json or {})
     active_project = (queue or [None])[0] if queue else None
@@ -2792,10 +3125,6 @@ def _bridge_out(bridge: HermesBrowserBridge, *, connected: bool, browser: str | 
         "account_name": meta.get("chatgpt_account_name") or None,
         "chatgpt_page_url": meta.get("chatgpt_page_url") or None,
         "manual_pool_slot": bool(meta.get("manual_pool_slot")),
-        "connect_command": meta.get("connect_command"),
-        "installer_filename": meta.get("installer_filename") or _bridge_installer_filename(bridge),
-        "installer_script": _bridge_installer_script(bridge),
-        "install_command": meta.get("install_command") or _bridge_install_command(bridge),
     }
 
 
@@ -3102,7 +3431,13 @@ def _acquire_project_bridge(db: Session, *, project: HermesContentFactoryProject
             .order_by(HermesBrowserBridge.active_project_id.desc(), HermesBrowserBridge.last_seen_at.desc())
             .all()
         )
-        candidates = [item for item in candidates if _bridge_device_bound(item)]
+        from app.services.jimeng_lab import is_external_account_slot
+
+        candidates = [
+            item
+            for item in candidates
+            if _bridge_device_bound(item) and not is_external_account_slot(item)
+        ]
         if preferred_device_id:
             candidates = [item for item in candidates if _bridge_matches_preferred_device(item, preferred_device_id)]
         connected_candidates = [item for item in candidates if _bridge_connected(item)]
@@ -3586,29 +3921,219 @@ def find_product_knowledge(
     return None
 
 
+def _normalize_copy_contract_duration_targets(
+    value: dict[str, Any] | None,
+    *,
+    normalized_duration: int,
+) -> dict[str, Any]:
+    contract = dict(value or {})
+    deliverables: list[dict[str, Any]] = []
+    for raw in list(contract.get("required_verbatim_voiceovers") or []):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        requested_target = item.get("target_duration_seconds")
+        if requested_target is not None:
+            try:
+                requested_target_int = int(float(requested_target))
+            except (TypeError, ValueError):
+                requested_target_int = int(normalized_duration)
+            if requested_target_int != int(normalized_duration):
+                item["requested_target_duration_seconds"] = requested_target_int
+                item["target_duration_seconds"] = int(normalized_duration)
+        deliverables.append(item)
+    if deliverables:
+        contract["required_verbatim_voiceovers"] = deliverables
+    return contract
+
+
+def _copy_contract_has_locked_script(value: dict[str, Any] | None) -> bool:
+    """Recognize both supported immutable-copy envelope shapes.
+
+    The scalar form owns one locked script; the plural form owns one script per
+    deliverable.  Treating only the plural form as locked produced different
+    loop policies for semantically identical authority decisions.
+    """
+
+    contract = dict(value or {})
+    if str(contract.get("required_verbatim_voiceover") or "").strip():
+        return True
+    return any(
+        isinstance(item, dict) and str(item.get("text") or "").strip()
+        for item in list(contract.get("required_verbatim_voiceovers") or [])
+    )
+
+
+def ensure_project_video_duration_plan(
+    db: Session,
+    project: HermesContentFactoryProject,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Persist one provider-aware timing authority before creative execution.
+
+    A saved plan is intentionally stable across transient provider health
+    changes. Replanning occurs only for a project that predates this contract
+    or after an explicit production-setting update.
+    """
+    config = dict(project.config_json or {})
+    existing = dict(config.get("video_duration_plan") or {})
+    if (
+        not force
+        and existing.get("schema_version")
+        in {
+            "provider-model-duration-v1",
+            "provider-model-duration-v2",
+            "provider-model-duration-v3",
+            "provider-model-duration-v4",
+        }
+        and int(existing.get("normalized_seconds") or 0) > 0
+    ):
+        return existing
+    model = normalize_video_model_id(str(config.get("video_model") or ""))
+    if model not in {"omni_flash", "seedance_2_0_mini"}:
+        raise APIError(
+            "CONTENT_VIDEO_MODEL_REQUIRED",
+            "Select a supported video model before production planning.",
+            409,
+        )
+    minimum = int(config.get("video_duration_min_seconds") or 10)
+    maximum = int(config.get("video_duration_max_seconds") or minimum)
+    generation_mode = str(
+        config.get("video_generation_mode") or "image_to_video"
+    ).strip().lower()
+    reference_limit = int(config.get("video_reference_limit") or 7)
+    from app.services.hermes_agent.video_duration_planner import (
+        plan_project_video_duration,
+    )
+
+    plan = plan_project_video_duration(
+        db,
+        model_id=model,
+        minimum_seconds=minimum,
+        maximum_seconds=maximum,
+        preferred_seconds=round((minimum + maximum) / 2),
+        preferred_segment_durations_seconds=list(
+            config.get("preferred_segment_durations_seconds") or []
+        ),
+        reference_count=(
+            0 if generation_mode == "text_to_video" else reference_limit
+        ),
+        reference_video_count=(
+            1
+            if generation_mode == "video_to_video"
+            and bool(config.get("allow_reference_video", False))
+            else 0
+        ),
+        aspect_ratio=str(config.get("video_aspect_ratio") or "9:16"),
+        reference_mode=str(config.get("video_frame_mode") or "reference"),
+        resolution=str(config.get("video_resolution") or "720p"),
+        generation_mode=generation_mode,
+        routing_strategy=str(
+            config.get("video_duration_strategy")
+            or "creative_flexibility"
+        ),
+    )
+    normalized = int(plan["normalized_seconds"])
+    contract = dict(plan["production_contract"])
+    config["video_duration_plan"] = plan
+    config["preferred_segment_durations_seconds"] = (
+        list(plan.get("preferred_segment_durations_seconds") or []) or None
+    )
+    config["creative_copy_contract"] = (
+        _normalize_copy_contract_duration_targets(
+            dict(config.get("creative_copy_contract") or {}),
+            normalized_duration=normalized,
+        )
+    )
+    raw_series = config.get("director_series_brief")
+    if isinstance(raw_series, dict):
+        series = dict(raw_series)
+        series["minimum_duration_seconds"] = float(normalized)
+        series["maximum_duration_seconds"] = float(normalized)
+        series["production_contract"] = contract
+        truth = dict(series.get("truth_payload") or {})
+        truth["video_duration_authority"] = {
+            "normalized_seconds": normalized,
+            "planning_strategy": plan.get("planning_strategy"),
+            "capability_sha256": plan.get("capability_sha256"),
+        }
+        series["truth_payload"] = truth
+        config["director_series_brief"] = series
+    raw_briefs = config.get("director_briefs_by_variant")
+    if isinstance(raw_briefs, dict):
+        repaired: dict[str, dict[str, Any]] = {}
+        for key, raw in raw_briefs.items():
+            if not isinstance(raw, dict):
+                continue
+            brief = dict(raw)
+            previous_target = brief.get("target_duration_seconds")
+            brief["target_duration_seconds"] = float(normalized)
+            brief["production_contract"] = contract
+            truth = dict(brief.get("truth_payload") or {})
+            if previous_target is not None and float(previous_target) != float(
+                normalized
+            ):
+                truth["requested_target_duration_seconds"] = float(
+                    previous_target
+                )
+            truth["normalized_target_duration_seconds"] = float(normalized)
+            truth["video_duration_plan_sha256"] = str(
+                plan.get("capability_sha256") or ""
+            )
+            brief["truth_payload"] = truth
+            repaired[str(key)] = brief
+        config["director_briefs_by_variant"] = repaired
+    state = dict(project.state_json or {})
+    state["planned_video_duration_seconds"] = normalized
+    state["video_duration_plan_sha256"] = str(
+        plan.get("capability_sha256") or ""
+    )
+    history = list(state.get("video_duration_plan_history") or [])[-9:]
+    history.append({
+        "normalized_seconds": normalized,
+        "requested_range_seconds": dict(
+            plan.get("requested_range_seconds") or {}
+        ),
+        "planning_strategy": plan.get("planning_strategy"),
+        "capability_sha256": plan.get("capability_sha256"),
+        "at": _now().isoformat(),
+    })
+    state["video_duration_plan_history"] = history
+    project.config_json = config
+    project.state_json = state
+    db.add(project)
+    db.flush()
+    return plan
+
+
 def create_project(
     db: Session, *, workspace_id: int, user_id: int, title: str, product_name: str,
     market: str, product_brief: str | None, brand_name: str = "",
     content_objective: str | None = None,
     target_audience: str | None = None,
     content_mode: str = "product",
+    product_use_mode: str | None = None,
     product_required: bool | None = None,
     product_id: int | None = None,
     video_count: int = 10,
     max_api_video_variants_in_flight: int | None = None,
-    video_duration_seconds: int | None = None,
     video_duration_min_seconds: int = 10, video_duration_max_seconds: int = 10,
-    video_model: str = "omni_flash", video_reference_limit: int = 7,
+    video_model: str | None = None, video_reference_limit: int = 7,
+    video_duration_strategy: str = "creative_flexibility",
+    preferred_segment_durations_seconds: list[int] | None = None,
     video_resolution: str = "720p", video_aspect_ratio: str = "9:16",
     video_language: str = "en-US",
     video_frame_mode: str = "reference", allow_reference_video: bool = False,
-    visual_reference_generation_mode: str = "individual",
+    video_generation_mode: str = "image_to_video",
+    visual_reference_generation_mode: str = "board",
     visual_image_model_chain: list[str] | None = None,
     confirmed_claims: str | None = None, confirmed_selling_points: str | None = None,
     confirmed_promotions: str | None = None, promotion_cta: str | None = None,
     allow_promotional_cta: bool = True,
     publishing_profile: dict[str, Any] | None = None,
     creative_copy_contract: dict[str, Any] | None = None,
+    producer_intent_spec: dict[str, Any] | None = None,
     creative_cast_policy: dict[str, Any] | None = None,
     product_presentation_policy: dict[str, Any] | None = None,
     content_director_mode: str = "enforce",
@@ -3629,11 +4154,27 @@ def create_project(
         "-",
         str(content_mode or "general").strip().lower(),
     ).strip("-._") or "general"
+    normalized_product_use_mode = str(
+        product_use_mode
+        or ("required" if normalized_content_mode == "product" else "none")
+    ).strip().lower()
+    if normalized_product_use_mode not in {"required", "context_only", "none"}:
+        raise APIError(
+            "CONTENT_PRODUCT_USE_MODE_INVALID",
+            "Product use mode must be required, context_only, or none.",
+            400,
+        )
     product_required = (
-        normalized_content_mode == "product"
+        normalized_product_use_mode == "required"
         if product_required is None
         else bool(product_required)
     )
+    if product_required != (normalized_product_use_mode == "required"):
+        raise APIError(
+            "CONTENT_PRODUCT_USE_CONTRACT_CONFLICT",
+            "Product use mode and product_required must describe the same output boundary.",
+            400,
+        )
     library_product = (
         get_product(db, workspace_id=workspace_id, product_id=product_id)
         if product_required and product_id
@@ -3646,16 +4187,32 @@ def create_project(
         product_brief = product_brief or library_product.product_brief
     model = normalize_video_model_id(video_model)
     if model not in {"omni_flash", "seedance_2_0_mini"}:
-        model = "omni_flash"
+        raise APIError(
+            "CONTENT_VIDEO_MODEL_REQUIRED",
+            "Select Omni Flash or Seedance 2.0 Mini before creating the project.",
+            400,
+        )
+    duration_strategy = str(
+        video_duration_strategy or "creative_flexibility"
+    ).strip().lower()
+    if duration_strategy not in {
+        "creative_flexibility", "cross_provider_portable"
+    }:
+        raise APIError(
+            "CONTENT_VIDEO_DURATION_STRATEGY_INVALID",
+            "Video duration strategy must be creative_flexibility or "
+            "cross_provider_portable.",
+            400,
+        )
     target_count = max(1, min(50, int(video_count)))
     variant_parallelism = resolve_project_variant_parallelism(
         model_id=model,
         requested=max_api_video_variants_in_flight,
         target_count=target_count,
     )
-    model_limit = 9 if model == "seedance_2_0_mini" else 7
+    model_limit = 10 if model == "seedance_2_0_mini" else 7
     reference_generation_mode = str(
-        visual_reference_generation_mode or "individual"
+        visual_reference_generation_mode or "board"
     ).strip().lower()
     if reference_generation_mode not in {"individual", "board"}:
         raise APIError(
@@ -3663,6 +4220,35 @@ def create_project(
             "Visual reference generation mode must be individual or board.",
             400,
         )
+    generation_mode = str(video_generation_mode or "image_to_video").strip().lower()
+    if generation_mode not in {
+        "text_to_video", "image_to_video", "video_to_video"
+    }:
+        raise APIError(
+            "CONTENT_VIDEO_GENERATION_MODE_INVALID",
+            "Video generation mode must be text_to_video, image_to_video, "
+            "or video_to_video.",
+            400,
+        )
+    if generation_mode != "video_to_video":
+        allow_reference_video = False
+    effective_director_creative_constraints = list(
+        director_creative_constraints or []
+    )
+    if generation_mode == "text_to_video":
+        text_to_video_constraint = (
+            "Production mode is text-to-video. Every segment prompt must be "
+            "self-contained and independently generatable from text. Runtime "
+            "must not generate, extract, upload, or attach reference images, "
+            "product anchors, first/last frames, continuity frames, or "
+            "reference videos. Any schema-required visual references are "
+            "semantic shot-planning metadata only; no beat may depend on "
+            "rendered or uploaded reference media."
+        )
+        if text_to_video_constraint not in effective_director_creative_constraints:
+            effective_director_creative_constraints.append(
+                text_to_video_constraint
+            )
     image_model_aliases = {
         "gpt-image-2.0": "gpt-image-2",
         "gpt-image-2": "gpt-image-2",
@@ -3696,15 +4282,54 @@ def create_project(
         )
     language_raw = str(video_language or "en-US").strip().lower().replace("_", "-")
     language = {"en": "en-US", "en-us": "en-US", "zh": "zh-CN", "zh-cn": "zh-CN", "cn": "zh-CN"}.get(language_raw, "en-US")
-    legacy_duration = int(video_duration_seconds) if video_duration_seconds is not None else None
-    duration_min = max(1, min(120, int(legacy_duration or video_duration_min_seconds)))
-    duration_max = max(duration_min, min(120, int(legacy_duration or video_duration_max_seconds)))
-    if model == "omni_flash" and not any(duration_min <= value <= duration_max for value in range(10, 121, 10)):
+    duration_min = max(1, min(120, int(video_duration_min_seconds)))
+    duration_max = max(duration_min, min(120, int(video_duration_max_seconds)))
+    effective_reference_limit = max(
+        1,
+        min(model_limit, int(video_reference_limit)),
+    )
+    from app.services.hermes_agent.video_duration_planner import (
+        plan_project_video_duration,
+    )
+
+    try:
+        duration_plan = plan_project_video_duration(
+            db,
+            model_id=model,
+            minimum_seconds=duration_min,
+            maximum_seconds=duration_max,
+            preferred_seconds=round((duration_min + duration_max) / 2),
+            preferred_segment_durations_seconds=(
+                preferred_segment_durations_seconds
+            ),
+            reference_count=(
+                0
+                if generation_mode == "text_to_video"
+                else effective_reference_limit
+            ),
+            reference_video_count=(1 if allow_reference_video else 0),
+            aspect_ratio=aspect_ratio,
+            reference_mode=video_frame_mode,
+            resolution=resolution,
+            generation_mode=generation_mode,
+            routing_strategy=duration_strategy,
+        )
+    except ValueError as exc:
         raise APIError(
             "CONTENT_DURATION_RANGE_INVALID",
-            "Omni Flash duration range must include a multiple of 10 seconds.",
+            str(exc),
             400,
-        )
+        ) from exc
+    normalized_duration = int(duration_plan["normalized_seconds"])
+    normalized_copy_contract = _normalize_copy_contract_duration_targets(
+        creative_copy_contract,
+        normalized_duration=normalized_duration,
+    )
+    normalized_producer_intent = (
+        dict(producer_intent_spec)
+        if isinstance(producer_intent_spec, dict)
+        else {}
+    )
     brand = brand_name.strip() if product_required else ""
     if product_required and not brand:
         raise APIError("CONTENT_PRODUCT_BRAND_REQUIRED", "Brand name is required.", 400)
@@ -3782,11 +4407,14 @@ def create_project(
                 )
             ),
             target_count=target_count,
-            minimum_duration_seconds=duration_min,
-            maximum_duration_seconds=duration_max,
+            minimum_duration_seconds=normalized_duration,
+            maximum_duration_seconds=normalized_duration,
             video_model=model,
             video_reference_limit=video_reference_limit,
             allow_reference_video=allow_reference_video,
+            production_contract_override=dict(
+                duration_plan["production_contract"]
+            ),
             aspect_ratio=aspect_ratio,
             product_required=product_required,
             brand_name=brand,
@@ -3798,11 +4426,14 @@ def create_project(
             confirmed_promotions=confirmed_promotions,
             promotion_cta=promotion_cta,
             allow_promotional_cta=allow_promotional_cta,
-            creative_copy_contract=creative_copy_contract,
+            creative_copy_contract=normalized_copy_contract,
+            producer_intent_spec=normalized_producer_intent,
             creative_cast_policy=creative_cast_policy,
             product_presentation_policy=product_presentation_policy,
             product_truth=product_knowledge,
-            additional_creative_constraints=director_creative_constraints,
+            additional_creative_constraints=(
+                effective_director_creative_constraints
+            ),
             additional_copy_review_criteria=(
                 director_copy_review_criteria
             ),
@@ -3822,7 +4453,18 @@ def create_project(
         normalized_series_brief = compiled.model_dump(mode="json")
         normalized_director_policy = (
             normalized_director_policy
-            or default_director_loop_policy()
+            or default_director_loop_policy(
+                target_count=target_count,
+                has_reference_transfer=bool(
+                    dict(normalized_producer_intent or {})
+                    .get("intent_manifest", {})
+                    .get("transformation_contract")
+                ),
+                has_locked_script=_copy_contract_has_locked_script(
+                    normalized_copy_contract
+                ),
+                product_required=product_required,
+            )
         )
         director_series_brief_source = "universal_profile"
     if normalized_director_mode == "enforce":
@@ -3921,6 +4563,7 @@ def create_project(
         "approvals": {},
         "repair_counts": {},
         "active_variant_index": 1,
+        "planned_video_duration_seconds": normalized_duration,
         "video_variant_pipeline": {
             "target_count": target_count,
             "active_index": 1,
@@ -3962,17 +4605,30 @@ def create_project(
             "workflow_version": "2.0", "video_count": target_count,
             "max_api_video_variants_in_flight": variant_parallelism,
             "content_mode": normalized_content_mode,
+            "product_use_mode": normalized_product_use_mode,
             "product_required": product_required,
             "video_duration_min_seconds": duration_min,
             "video_duration_max_seconds": duration_max,
+            "video_duration_plan": duration_plan,
+            "video_duration_strategy": duration_strategy,
+            "preferred_segment_durations_seconds": (
+                list(
+                    duration_plan.get(
+                        "preferred_segment_durations_seconds"
+                    )
+                    or []
+                )
+                or None
+            ),
             "video_model": model,
             "video_resolution": resolution,
             "video_aspect_ratio": aspect_ratio,
             "video_language": language,
             "content_execution_key": f"{project_key}:run:{uuid4().hex[:16]}",
-            "video_reference_limit": max(1, min(model_limit, int(video_reference_limit))),
+            "video_reference_limit": effective_reference_limit,
             "video_frame_mode": video_frame_mode if video_frame_mode in {"reference", "first_last"} else "reference",
             "allow_reference_video": bool(allow_reference_video),
+            "video_generation_mode": generation_mode,
             "visual_reference_generation_mode": reference_generation_mode,
             "visual_image_model_chain": image_model_chain,
             "confirmed_claims": (confirmed_claims or "").strip() or None,
@@ -3987,7 +4643,8 @@ def create_project(
             "target_audience": (
                 str(target_audience or "").strip() or None
             ),
-            "creative_copy_contract": dict(creative_copy_contract or {}),
+            "creative_copy_contract": normalized_copy_contract,
+            "producer_intent_spec": normalized_producer_intent,
             "creative_cast_policy": dict(creative_cast_policy or {}),
             "product_presentation_policy": dict(
                 product_presentation_policy or {}
@@ -3997,8 +4654,8 @@ def create_project(
             "director_series_brief_source": director_series_brief_source,
             "director_briefs_by_variant": normalized_director_briefs,
             "director_loop_policy": normalized_director_policy,
-            "director_creative_constraints": list(
-                director_creative_constraints or []
+            "director_creative_constraints": (
+                effective_director_creative_constraints
             ),
             "director_copy_review_criteria": list(
                 director_copy_review_criteria or []
@@ -4079,14 +4736,15 @@ def update_project(
     production_contract_defaults: dict[str, Any] = {
         "video_duration_min_seconds": 10,
         "video_duration_max_seconds": 10,
-        "video_model": "omni_flash",
         "video_resolution": "720p",
         "video_aspect_ratio": "9:16",
         "video_language": "en-US",
         "video_reference_limit": 7,
         "video_frame_mode": "reference",
         "allow_reference_video": False,
-        "visual_reference_generation_mode": "individual",
+        "video_generation_mode": "image_to_video",
+        "video_duration_strategy": "creative_flexibility",
+        "visual_reference_generation_mode": "board",
         "visual_image_model_chain": ["gpt-image-2", "nano_banana_pro"],
     }
     production_contract_keys = {
@@ -4100,11 +4758,14 @@ def update_project(
         "video_reference_limit",
         "video_frame_mode",
         "allow_reference_video",
+        "video_generation_mode",
+        "video_duration_strategy",
         "visual_reference_generation_mode",
         "visual_image_model_chain",
         "content_objective",
         "target_audience",
         "content_mode",
+        "product_use_mode",
         "product_required",
         "confirmed_claims",
         "confirmed_selling_points",
@@ -4196,13 +4857,14 @@ def update_project(
     for key in (
         "video_count", "max_api_video_variants_in_flight",
         "video_duration_min_seconds", "video_duration_max_seconds",
+        "video_duration_strategy",
         "video_model", "video_resolution", "video_aspect_ratio", "video_language", "video_reference_limit",
-        "video_frame_mode", "allow_reference_video", "confirmed_claims",
+        "video_frame_mode", "allow_reference_video", "video_generation_mode", "confirmed_claims",
         "visual_reference_generation_mode", "visual_image_model_chain",
         "confirmed_selling_points", "confirmed_promotions", "promotion_cta",
         "allow_promotional_cta", "publishing_profile",
         "content_objective", "target_audience",
-        "content_mode", "product_required",
+        "content_mode", "product_use_mode", "product_required",
         "creative_copy_contract", "creative_cast_policy",
         "product_presentation_policy", "content_director_mode",
         "director_series_brief", "director_briefs_by_variant",
@@ -4216,6 +4878,49 @@ def update_project(
         if key in values and values[key] is not None:
             config[key] = values[key]
 
+    if values.get("product_use_mode") is not None and values.get(
+        "product_required"
+    ) is None:
+        config["product_required"] = (
+            str(values["product_use_mode"]).strip().lower() == "required"
+        )
+    elif values.get("product_required") is not None and values.get(
+        "product_use_mode"
+    ) is None:
+        config["product_use_mode"] = (
+            "required"
+            if bool(values["product_required"])
+            else (
+                "context_only"
+                if str(config.get("content_mode") or "").strip().lower()
+                == "product"
+                else "none"
+            )
+        )
+    normalized_product_use_mode = str(
+        config.get("product_use_mode")
+        or (
+            "required"
+            if bool(config.get("product_required", True))
+            else "none"
+        )
+    ).strip().lower()
+    if normalized_product_use_mode not in {"required", "context_only", "none"}:
+        raise APIError(
+            "CONTENT_PRODUCT_USE_MODE_INVALID",
+            "Product use mode must be required, context_only, or none.",
+            400,
+        )
+    if bool(config.get("product_required", True)) != (
+        normalized_product_use_mode == "required"
+    ):
+        raise APIError(
+            "CONTENT_PRODUCT_USE_CONTRACT_CONFLICT",
+            "Product use mode and product_required must describe the same output boundary.",
+            400,
+        )
+    config["product_use_mode"] = normalized_product_use_mode
+
     aspect_ratio = str(config.get("video_aspect_ratio") or "9:16").strip()
     if aspect_ratio not in {"9:16", "16:9", "1:1"}:
         raise APIError(
@@ -4224,6 +4929,124 @@ def update_project(
             400,
         )
     config["video_aspect_ratio"] = aspect_ratio
+
+    generation_mode = str(
+        config.get("video_generation_mode") or "image_to_video"
+    ).strip().lower()
+    if generation_mode not in {
+        "text_to_video", "image_to_video", "video_to_video"
+    }:
+        raise APIError(
+            "CONTENT_VIDEO_GENERATION_MODE_INVALID",
+            "Video generation mode must be text_to_video, image_to_video, "
+            "or video_to_video.",
+            400,
+        )
+    config["video_generation_mode"] = generation_mode
+    if generation_mode != "video_to_video":
+        config["allow_reference_video"] = False
+    if generation_mode == "text_to_video":
+        constraints = list(
+            config.get("director_creative_constraints") or []
+        )
+        text_to_video_constraint = (
+            "Production mode is text-to-video. Every segment prompt must be "
+            "self-contained and independently generatable from text. Runtime "
+            "must not generate, extract, upload, or attach reference images, "
+            "product anchors, first/last frames, continuity frames, or "
+            "reference videos. Any schema-required visual references are "
+            "semantic shot-planning metadata only; no beat may depend on "
+            "rendered or uploaded reference media."
+        )
+        if text_to_video_constraint not in constraints:
+            constraints.append(text_to_video_constraint)
+        config["director_creative_constraints"] = constraints
+
+    duration_min = int(config.get("video_duration_min_seconds") or 10)
+    duration_max = int(
+        config.get("video_duration_max_seconds") or duration_min
+    )
+    if duration_min > duration_max:
+        raise APIError(
+            "CONTENT_DURATION_RANGE_INVALID",
+            "Minimum duration cannot exceed maximum duration.",
+            400,
+        )
+    model = normalize_video_model_id(str(config.get("video_model") or ""))
+    if model not in {"omni_flash", "seedance_2_0_mini"}:
+        raise APIError(
+            "CONTENT_VIDEO_MODEL_REQUIRED",
+            "Select a supported video model before updating the project.",
+            400,
+        )
+    duration_strategy = str(
+        config.get("video_duration_strategy") or "creative_flexibility"
+    ).strip().lower()
+    if duration_strategy not in {
+        "creative_flexibility", "cross_provider_portable"
+    }:
+        raise APIError(
+            "CONTENT_VIDEO_DURATION_STRATEGY_INVALID",
+            "Video duration strategy must be creative_flexibility or "
+            "cross_provider_portable.",
+            400,
+        )
+    resolution = str(config.get("video_resolution") or "720p").lower()
+    resolution = resolution if resolution in {"480p", "720p"} else "720p"
+    model_limit = 10 if model == "seedance_2_0_mini" else 7
+    reference_limit = max(
+        1,
+        min(
+            model_limit,
+            int(config.get("video_reference_limit") or model_limit),
+        ),
+    )
+    from app.services.hermes_agent.video_duration_planner import (
+        plan_project_video_duration,
+    )
+
+    try:
+        duration_plan = plan_project_video_duration(
+            db,
+            model_id=model,
+            minimum_seconds=duration_min,
+            maximum_seconds=duration_max,
+            preferred_seconds=round((duration_min + duration_max) / 2),
+            preferred_segment_durations_seconds=list(
+                config.get("preferred_segment_durations_seconds") or []
+            ),
+            reference_count=(
+                0 if generation_mode == "text_to_video" else reference_limit
+            ),
+            reference_video_count=(
+                1 if bool(config.get("allow_reference_video", False)) else 0
+            ),
+            aspect_ratio=aspect_ratio,
+            reference_mode=str(
+                config.get("video_frame_mode") or "reference"
+            ),
+            resolution=resolution,
+            generation_mode=generation_mode,
+            routing_strategy=duration_strategy,
+        )
+    except ValueError as exc:
+        raise APIError(
+            "CONTENT_DURATION_RANGE_INVALID",
+            str(exc),
+            400,
+        ) from exc
+    normalized_duration = int(duration_plan["normalized_seconds"])
+    config["video_duration_plan"] = duration_plan
+    config["preferred_segment_durations_seconds"] = (
+        list(duration_plan.get("preferred_segment_durations_seconds") or [])
+        or None
+    )
+    config["creative_copy_contract"] = (
+        _normalize_copy_contract_duration_targets(
+            dict(config.get("creative_copy_contract") or {}),
+            normalized_duration=normalized_duration,
+        )
+    )
 
     requested_director_mode = values.get("content_director_mode")
     if (
@@ -4295,20 +5118,17 @@ def update_project(
                     )
                 ),
                 target_count=int(config.get("video_count") or 1),
-                minimum_duration_seconds=int(
-                    config.get("video_duration_min_seconds") or 10
-                ),
-                maximum_duration_seconds=int(
-                    config.get("video_duration_max_seconds") or 10
-                ),
-                video_model=str(
-                    config.get("video_model") or "omni_flash"
-                ),
+                minimum_duration_seconds=normalized_duration,
+                maximum_duration_seconds=normalized_duration,
+                video_model=model,
                 video_reference_limit=int(
                     config.get("video_reference_limit") or 7
                 ),
                 allow_reference_video=bool(
                     config.get("allow_reference_video", False)
+                ),
+                production_contract_override=dict(
+                    duration_plan["production_contract"]
                 ),
                 aspect_ratio=aspect_ratio,
                 product_required=bool(
@@ -4331,6 +5151,9 @@ def update_project(
                 ),
                 creative_copy_contract=dict(
                     config.get("creative_copy_contract") or {}
+                ),
+                producer_intent_spec=dict(
+                    config.get("producer_intent_spec") or {}
                 ),
                 creative_cast_policy=dict(
                     config.get("creative_cast_policy") or {}
@@ -4373,7 +5196,18 @@ def update_project(
             )
             if not config.get("director_loop_policy"):
                 config["director_loop_policy"] = (
-                    default_director_loop_policy()
+                    default_director_loop_policy(
+                        target_count=int(config.get("video_count") or 1),
+                        has_reference_transfer=bool(
+                            dict(config.get("producer_intent_spec") or {})
+                            .get("intent_manifest", {})
+                            .get("transformation_contract")
+                        ),
+                        has_locked_script=_copy_contract_has_locked_script(
+                            config.get("creative_copy_contract")
+                        ),
+                        product_required=bool(project.product_id),
+                    )
                 )
         if (
             not isinstance(raw_series_brief, dict)
@@ -4424,16 +5258,8 @@ def update_project(
                 400,
             ) from exc
 
-    duration_min = int(config.get("video_duration_min_seconds") or 10)
-    duration_max = int(config.get("video_duration_max_seconds") or duration_min)
-    if duration_min > duration_max:
-        raise APIError("CONTENT_DURATION_RANGE_INVALID", "Minimum duration cannot exceed maximum duration.", 400)
-    model = normalize_video_model_id(str(config.get("video_model") or "omni_flash"))
-    if model == "omni_flash" and not any(duration_min <= value <= duration_max for value in range(10, 121, 10)):
-        raise APIError("CONTENT_DURATION_RANGE_INVALID", "Omni Flash duration range must include a multiple of 10 seconds.", 400)
-    if model not in {"omni_flash", "seedance_2_0_mini"}:
-        model = "omni_flash"
     config["video_model"] = model
+    config["video_duration_strategy"] = duration_strategy
     config["max_api_video_variants_in_flight"] = (
         resolve_project_variant_parallelism(
             model_id=model,
@@ -4441,10 +5267,9 @@ def update_project(
             target_count=int(config.get("video_count") or 1),
         )
     )
-    model_limit = 9 if model == "seedance_2_0_mini" else 7
-    config["video_reference_limit"] = max(1, min(model_limit, int(config.get("video_reference_limit") or model_limit)))
+    config["video_reference_limit"] = reference_limit
     reference_generation_mode = str(
-        config.get("visual_reference_generation_mode") or "individual"
+        config.get("visual_reference_generation_mode") or "board"
     ).strip().lower()
     if reference_generation_mode not in {"individual", "board"}:
         raise APIError(
@@ -4486,6 +5311,12 @@ def update_project(
         or str(config.get("promotion_cta") or "").strip()
     )
     project.config_json = config
+    state = dict(project.state_json or {})
+    state["planned_video_duration_seconds"] = normalized_duration
+    state["video_duration_plan_sha256"] = str(
+        duration_plan.get("capability_sha256") or ""
+    )
+    project.state_json = state
     _record_project_transition(project, reason="project_settings_updated")
     db.flush()
     return project
@@ -4556,14 +5387,86 @@ def restart_project(
     db: Session, project: HermesContentFactoryProject, *, stage: str,
     instruction: str | None = None,
     allowed_audio_modes: list[str] | None = None,
+    replace_completed: bool = False,
 ) -> HermesContentFactoryProject:
     project = _lock_project_for_operator_control(db, project)
     target_stage = str(stage or "DIRECTOR").upper()
     if target_stage not in RESTARTABLE_STAGES:
         raise APIError("CONTENT_STAGE_INVALID", "The requested restart stage is invalid.", 400)
+    if replace_completed and target_stage != "SERIES_DIRECTOR":
+        raise APIError(
+            "CONTENT_FULL_SERIES_RESTART_STAGE_INVALID",
+            "Replacing completed videos requires a SERIES_DIRECTOR restart.",
+            409,
+        )
 
     state = _clear_project_pause_metadata(dict(project.state_json or {}))
     config = dict(project.config_json or {})
+    producer_intent_spec = dict(config.get("producer_intent_spec") or {})
+    transformation_contract = dict(
+        dict(producer_intent_spec.get("intent_manifest") or {}).get(
+            "transformation_contract"
+        )
+        or producer_intent_spec.get("transformation_contract")
+        or {}
+    )
+    if (
+        target_stage in {"SERIES_DIRECTOR", "DIRECTOR"}
+        and str(
+            transformation_contract.get("execution_strategy") or ""
+        ).strip().lower()
+        == "full_regeneration"
+    ):
+        # A project can be corrected from a bounded local edit to a fully
+        # regenerated creative. The old result rows are retired below; remove
+        # their convenience pointer as well so the UI cannot present a prior
+        # source-preserving render as the new AI reconstruction.
+        state.pop("source_transformation_revisions", None)
+
+    # A provider-visible variant attempt freezes the execution ledger's
+    # creative/media digest.  An operator restart is a new production attempt,
+    # so it must receive a new execution identity instead of inheriting the
+    # paid run's immutable digest.  Without this fence a legitimate AI replan
+    # can finish its copy, plan, and images only to fail at VIDEO_PROMPTS with
+    # CONTENT_EXECUTION_CONTRACT_DRIFT.  Rotate only when the currently
+    # configured execution actually owns variant attempts; a retry before a
+    # new ledger row exists keeps the same freshly allocated key.
+    execution_key = str(config.get("content_execution_key") or "").strip()
+    prior_execution = None
+    if execution_key:
+        prior_execution = (
+            db.query(HermesContentExecution)
+            .filter(
+                HermesContentExecution.project_id == int(project.id),
+                HermesContentExecution.execution_key == execution_key,
+            )
+            .one_or_none()
+        )
+    prior_variant_attempt = None
+    if prior_execution is not None:
+        prior_variant_attempt = (
+            db.query(HermesContentVariantRun.id)
+            .filter(
+                HermesContentVariantRun.execution_id
+                == int(prior_execution.id)
+            )
+            .first()
+        )
+    if prior_variant_attempt is not None:
+        next_execution_key = (
+            f"{project.project_key}:run:{uuid4().hex[:16]}"
+        )
+        config["content_execution_key"] = next_execution_key
+        state["content_execution_restart"] = {
+            "previous_execution_id": int(prior_execution.id),
+            "previous_execution_key": execution_key,
+            "next_execution_key": next_execution_key,
+            "restart_stage": target_stage,
+            "reason": "operator_restart_after_variant_attempt",
+            "at": datetime.now(timezone.utc)
+            .replace(tzinfo=None)
+            .isoformat(),
+        }
     pipeline = dict(state.get("video_variant_pipeline") or {})
     target_count = max(
         1,
@@ -4571,7 +5474,9 @@ def restart_project(
     )
     active_variant = _project_active_variant_index(project)
     continuation_series_restart = bool(
-        target_count > 1 and target_stage == "SERIES_DIRECTOR"
+        target_count > 1
+        and target_stage == "SERIES_DIRECTOR"
+        and not replace_completed
     )
     if allowed_audio_modes is not None and target_stage != "SERIES_DIRECTOR":
         raise APIError(
@@ -4639,6 +5544,59 @@ def restart_project(
     if target_stage == "SERIES_DIRECTOR":
         state.pop("approved_series_slate", None)
         config.pop("approved_series_slate_sha256", None)
+        if not continuation_series_restart:
+            # A full-series replacement is a new lineage, not a continuation
+            # from the ordinal that happened to be active when production was
+            # stopped.  Keeping these pointers made a freshly approved slate
+            # jump straight to the old active variant and present an obsolete
+            # accepted Director artifact as its immutable ancestor.  The
+            # independent critic then (correctly) refused the contradictory
+            # revision and the project entered a quality-pause loop before any
+            # new media could be authorized.
+            for key in (
+                "approved_director_artifact",
+                "approved_director_artifacts_by_variant",
+                "approved_production_plan",
+                "approved_production_plans_by_variant",
+                "content_director_quality_pause",
+                "content_series_quality_pause",
+                "automatic_quality_recovery",
+                "automatic_quality_upstream_replan",
+                "final_video_quality_recovery",
+                "production_plan_repair_counts",
+                "creative_review_visual_repair_counts",
+            ):
+                state.pop(key, None)
+            prior_pipeline = dict(state.get("video_variant_pipeline") or {})
+            state["active_variant_index"] = 1
+            state["video_variant_pipeline"] = {
+                "target_count": target_count,
+                "active_index": 1,
+                "submitted_indices": [],
+                "completed_indices": [],
+                "failed_indices": [],
+                "mode": str(
+                    prior_pipeline.get("mode")
+                    or (
+                        "serial_one_complete_video_at_a_time"
+                        if target_count > 1
+                        else "single_batch"
+                    )
+                ),
+                "max_api_video_variants_in_flight": max(
+                    1,
+                    int(
+                        prior_pipeline.get(
+                            "max_api_video_variants_in_flight"
+                        )
+                        or 1
+                    ),
+                ),
+                "started_at": datetime.now(timezone.utc)
+                .replace(tzinfo=None)
+                .isoformat(),
+                "restart_reason": "full_series_replacement",
+            }
         if allowed_audio_modes is not None:
             from app.services.hermes_agent.content_director import (
                 DirectorSeriesBrief,
@@ -4677,57 +5635,60 @@ def restart_project(
                 .replace(tzinfo=None)
                 .isoformat(),
             }
-        if continuation_series_restart:
-            # An approved slate is an immutable audit record.  A continuation
-            # replan must therefore receive a fresh version before the new
-            # Director run starts; reusing the last approved version lets the
-            # expensive control loop finish and only then fail at persistence.
-            # Keep an already-unpersisted version stable across retries, while
-            # allocating max+1 when the configured version is already owned.
-            raw_series_brief = config.get("director_series_brief")
-            if isinstance(raw_series_brief, dict):
-                next_series_brief = dict(raw_series_brief)
-                series_id = str(
-                    next_series_brief.get("series_id") or ""
-                ).strip()
-                configured_version = max(
-                    1,
-                    int(next_series_brief.get("series_version") or 1),
+        # An approved slate is an immutable audit record. Every Series Director
+        # restart, including a one-video full remake, must therefore receive a
+        # fresh version before the new control loop starts. The previous guard
+        # handled only multi-video continuation replans, so a completed single
+        # video paid for a full Director run and failed only at persistence with
+        # an identity conflict. Keep an already-unpersisted version stable
+        # across retries, while allocating max+1 when the configured version is
+        # already owned.
+        raw_series_brief = config.get("director_series_brief")
+        if isinstance(raw_series_brief, dict):
+            next_series_brief = dict(raw_series_brief)
+            series_id = str(
+                next_series_brief.get("series_id") or ""
+            ).strip()
+            configured_version = max(
+                1,
+                int(next_series_brief.get("series_version") or 1),
+            )
+            if series_id:
+                persisted_version = int(
+                    db.query(
+                        func.max(
+                            HermesContentSeriesSlate.series_version
+                        )
+                    )
+                    .filter(
+                        HermesContentSeriesSlate.project_id
+                        == int(project.id),
+                        HermesContentSeriesSlate.series_id == series_id,
+                    )
+                    .scalar()
+                    or 0
                 )
-                if series_id:
-                    persisted_version = int(
-                        db.query(
-                            func.max(
-                                HermesContentSeriesSlate.series_version
-                            )
-                        )
-                        .filter(
-                            HermesContentSeriesSlate.project_id
-                            == int(project.id),
-                            HermesContentSeriesSlate.series_id == series_id,
-                        )
-                        .scalar()
-                        or 0
-                    )
-                    allocated_version = (
-                        persisted_version + 1
-                        if persisted_version >= configured_version
-                        else configured_version
-                    )
-                    next_series_brief["series_version"] = (
-                        allocated_version
-                    )
-                    config["director_series_brief"] = next_series_brief
-                    state["series_director_version_allocation"] = {
-                        "series_id": series_id,
-                        "previous_configured_version": configured_version,
-                        "latest_persisted_version": persisted_version,
-                        "allocated_version": allocated_version,
-                        "reason": "continuation_replan",
-                        "at": datetime.now(timezone.utc)
-                        .replace(tzinfo=None)
-                        .isoformat(),
-                    }
+                allocated_version = (
+                    persisted_version + 1
+                    if persisted_version >= configured_version
+                    else configured_version
+                )
+                next_series_brief["series_version"] = allocated_version
+                config["director_series_brief"] = next_series_brief
+                state["series_director_version_allocation"] = {
+                    "series_id": series_id,
+                    "previous_configured_version": configured_version,
+                    "latest_persisted_version": persisted_version,
+                    "allocated_version": allocated_version,
+                    "reason": (
+                        "continuation_replan"
+                        if continuation_series_restart
+                        else "full_replan"
+                    ),
+                    "at": datetime.now(timezone.utc)
+                    .replace(tzinfo=None)
+                    .isoformat(),
+                }
         existing_briefs = dict(
             config.get("director_briefs_by_variant") or {}
         )
@@ -4956,6 +5917,7 @@ def restart_project(
     state["last_restart"] = {
         "stage": target_stage,
         "instruction": (instruction or "").strip() or None,
+        "replace_completed": bool(replace_completed),
         "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     }
     project.state_json = state
@@ -5394,6 +6356,62 @@ def configure_variant_rollout_gate(
         "released_by_user_id": released_by_user_id,
     }
     state.pop("variant_rollout_checkpoint", None)
+
+    # A user can narrow a paused rollout after the next ordinal has already
+    # entered a control stage.  Merely saving the new manifest leaves that
+    # paused, now-unauthorized stage as ``current_stage``; a later Resume then
+    # republishes it only for the worker gate to pause again.  Retire only
+    # paused (therefore non-running and non-billable) unauthorized variant
+    # stages and move the control pointer to the first authorized incomplete
+    # ordinal.  Active stages and provider work were rejected above.
+    authorized = {int(value) for value in gate.authorized_variant_indices}
+    paused_variant_stages = (
+        db.query(HermesContentFactoryStage)
+        .filter(
+            HermesContentFactoryStage.project_id == int(project.id),
+            HermesContentFactoryStage.status == "paused",
+        )
+        .all()
+    )
+    retired_stage_ids: list[int] = []
+    retired_variant_indices: set[int] = set()
+    for paused_stage in paused_variant_stages:
+        paused_variant = _stage_variant_index(
+            paused_stage,
+            fallback=_project_active_variant_index(project),
+        )
+        if paused_variant in authorized:
+            continue
+        paused_stage.status = "failed"
+        paused_stage.completed_at = paused_stage.completed_at or _now()
+        paused_stage.error_message = (
+            "Superseded by a paused rollout manifest that excludes variant "
+            f"{paused_variant}."
+        )
+        retired_stage_ids.append(int(paused_stage.id))
+        retired_variant_indices.add(int(paused_variant))
+        db.add(paused_stage)
+    if retired_stage_ids:
+        authorized_incomplete = [
+            index
+            for index in gate.authorized_variant_indices
+            if status_by_index.get(int(index)) != "complete"
+        ]
+        if authorized_incomplete:
+            next_variant = int(authorized_incomplete[0])
+            pipeline = dict(state.get("video_variant_pipeline") or {})
+            pipeline["active_index"] = next_variant
+            state["video_variant_pipeline"] = pipeline
+            state["active_variant_index"] = next_variant
+            project.current_stage = "WAITING_VIDEO_INPUT"
+        state.pop("pending_visual_api_resume", None)
+        state.pop("pending_visual_partial_repair", None)
+        state["rollout_retired_unauthorized_variant"] = {
+            "stage_ids": retired_stage_ids,
+            "variant_indices": sorted(retired_variant_indices),
+            "authorized_variant_indices": list(gate.authorized_variant_indices),
+            "at": released_at,
+        }
     project.config_json = config
     project.state_json = state
     project.last_error = (
@@ -5543,7 +6561,16 @@ def _promote_approved_paused_control_stage(
         by_variant[str(int(variant_index))] = pointer
         values["approved_production_plans_by_variant"] = by_variant
         values["approved_production_plan"] = pointer
-        project.current_stage = "VISUAL_PREVIEW"
+        project.current_stage = (
+            "VIDEO_PROMPTS"
+            if str(
+                dict(project.config_json or {}).get(
+                    "video_generation_mode"
+                )
+                or "image_to_video"
+            ).strip().lower() == "text_to_video"
+            else "VISUAL_PREVIEW"
+        )
     else:
         return state, False
     stage.status = "success"
@@ -5614,6 +6641,7 @@ def _refresh_stale_universal_director_profile(
         return False
 
     from app.services.hermes_agent.content_director_profile import (
+        default_director_loop_policy,
         load_universal_director_profile,
         refresh_project_director_brief_from_facts,
     )
@@ -5648,6 +6676,26 @@ def _refresh_stale_universal_director_profile(
     upgraded_brief = dict(config.get("director_series_brief") or {})
     upgraded_brief["series_version"] = next_series_version
     config["director_series_brief"] = upgraded_brief
+    current_loop_policy = dict(config.get("director_loop_policy") or {})
+    shipped_loop_policy = default_director_loop_policy(
+        target_count=int(config.get("video_count") or 1),
+        has_reference_transfer=bool(
+            dict(config.get("producer_intent_spec") or {})
+            .get("intent_manifest", {})
+            .get("transformation_contract")
+        ),
+        has_locked_script=bool(
+            dict(config.get("creative_copy_contract") or {})
+            .get("required_verbatim_voiceovers")
+        ),
+        product_required=bool(project.product_id),
+    )
+    for key, value in shipped_loop_policy.items():
+        current_loop_policy[key] = max(
+            int(current_loop_policy.get(key) or 0),
+            int(value),
+        )
+    config["director_loop_policy"] = current_loop_policy
     config.pop("approved_series_slate_sha256", None)
     project.config_json = config
 
@@ -5703,8 +6751,159 @@ def _resume_production_plan_is_authoritative(
     return audit is not None and stage is not None
 
 
-def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesContentFactoryProject:
+def _restore_missing_approved_production_plan_pointer(
+    db: Session,
+    project: HermesContentFactoryProject,
+    state: dict[str, Any],
+    *,
+    variant_index: int,
+) -> tuple[dict[str, Any], bool]:
+    """Republish a lost redundant pointer from immutable accepted evidence.
+
+    A provider-video waiter used to merge an old ``state_json`` snapshot after
+    a long media check and could erase a Production Plan pointer committed in
+    parallel.  The signed successful stage plus its accepted audit row remain
+    authoritative, so a paused project can recover without paying for another
+    Director/Plan turn.  Existing non-empty pointers are never rewritten here.
+    """
+
+    variant = max(1, int(variant_index))
+    values = dict(state or {})
+    by_variant = dict(
+        values.get("approved_production_plans_by_variant") or {}
+    )
+    if dict(by_variant.get(str(variant)) or {}):
+        return values, False
+
+    candidates = (
+        db.query(HermesContentFactoryStage)
+        .filter(
+            HermesContentFactoryStage.project_id == int(project.id),
+            HermesContentFactoryStage.stage == "PRODUCTION_PLAN",
+            HermesContentFactoryStage.status == "success",
+        )
+        .order_by(HermesContentFactoryStage.id.desc())
+        .limit(20)
+        .all()
+    )
+    stage = next(
+        (
+            row
+            for row in candidates
+            if int(
+                dict(row.input_json or {}).get("variant_index")
+                or dict(row.output_json or {}).get(
+                    "content_factory_variant_index"
+                )
+                or 0
+            )
+            == variant
+        ),
+        None,
+    )
+    if stage is None:
+        return values, False
+    envelope = dict(stage.output_json or {})
+    result = dict(envelope.get("result") or {})
+    raw_plan = result.get("production_plan")
+    compiled = result.get("compiled_media_design")
+    if (
+        str(envelope.get("status") or "").upper() != "PASS"
+        or str(result.get("loop_status") or "").lower() != "approved"
+        or not isinstance(raw_plan, dict)
+        or not isinstance(compiled, dict)
+    ):
+        return values, False
+
+    from app.services.hermes_agent.content_production_plan import (
+        DirectedProductionPlan,
+    )
+
+    plan = DirectedProductionPlan.model_validate(raw_plan)
+    lock = dict(compiled.get("production_plan_lock") or {})
+    expected_lock = {
+        "plan_id": plan.plan_id,
+        "plan_revision": int(plan.revision),
+        "plan_sha256": plan.plan_sha256,
+        "director_artifact_sha256": (
+            plan.visual.director_artifact_sha256
+        ),
+    }
+    if any(lock.get(key) != value for key, value in expected_lock.items()):
+        return values, False
+    audit = (
+        db.query(HermesContentProductionPlanAudit)
+        .filter(
+            HermesContentProductionPlanAudit.project_id == int(project.id),
+            HermesContentProductionPlanAudit.stage_id == int(stage.id),
+            HermesContentProductionPlanAudit.variant_index == variant,
+            HermesContentProductionPlanAudit.plan_sha256 == plan.plan_sha256,
+            HermesContentProductionPlanAudit.director_artifact_sha256
+            == plan.visual.director_artifact_sha256,
+            HermesContentProductionPlanAudit.accepted.is_(True),
+        )
+        .one_or_none()
+    )
+    director_pointer = dict(
+        dict(
+            values.get("approved_director_artifacts_by_variant") or {}
+        ).get(str(variant))
+        or {}
+    )
+    if (
+        audit is None
+        or str(director_pointer.get("artifact_sha256") or "")
+        != plan.visual.director_artifact_sha256
+    ):
+        return values, False
+    pointer = {
+        "variant_index": variant,
+        "plan_id": plan.plan_id,
+        "plan_sha256": plan.plan_sha256,
+        "director_artifact_sha256": (
+            plan.visual.director_artifact_sha256
+        ),
+        "production_plan_stage_id": int(stage.id),
+        "audit_row_id": int(audit.id),
+    }
+    by_variant[str(variant)] = pointer
+    values["approved_production_plans_by_variant"] = by_variant
+    values["approved_production_plan"] = pointer
+    values["restored_production_plan_pointer"] = {
+        **pointer,
+        "at": _now().isoformat(),
+        "reason": "recovered_after_concurrent_video_state_merge",
+    }
+    return values, True
+
+
+def resume_project(
+    db: Session,
+    project: HermesContentFactoryProject,
+    *,
+    resume_reason: str = "manual_resume",
+) -> HermesContentFactoryProject:
+    normalized_resume_reason = str(resume_reason or "manual_resume").strip()
+    if normalized_resume_reason not in {
+        "manual_resume",
+        "automatic_quality_recovery",
+    }:
+        raise ValueError("unsupported content project resume reason")
+    automatic_quality_recovery = (
+        normalized_resume_reason == "automatic_quality_recovery"
+    )
     project = _lock_project_for_operator_control(db, project)
+    project_status = str(project.status or "").strip().lower()
+    project_is_paused = bool(
+        project_status in {"paused", "failed"}
+        or dict(project.config_json or {}).get("manual_paused", False)
+    )
+    if not project_is_paused:
+        raise APIError(
+            "CONTENT_PROJECT_NOT_RESUMABLE",
+            "Only a paused or failed content project can be resumed.",
+            409,
+        )
     config = dict(project.config_json or {})
     config["manual_paused"] = False
     project.config_json = config
@@ -5750,15 +6949,59 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
         )
     })
     state["ai_video_pending_task_ids"] = active_video_task_ids
+    # The waiter removes terminal provider rows from
+    # ``ai_video_pending_task_ids`` before it persists the final bounded
+    # provider-cycle pause. An explicit operator resume must therefore use
+    # the waiter's recoverability verdict as well as the pending list.
+    group_recoverable_ids = {
+        int(value)
+        for item in list(state.get("ai_video_group_statuses") or [])
+        if isinstance(item, dict)
+        for value in list(item.get("recoverable_failed_task_ids") or [])
+        if str(value).strip().isdigit()
+    }
     failed_video_recovery_ids = sorted({
         task_id
-        for task_id in declared_pending_ids
+        for task_id in declared_pending_ids | group_recoverable_ids
         if (
             task_id in task_by_id
             and str(task_by_id[task_id].state or "").lower()
             in {"failed", "fail", "error", "timeout"}
         )
     })
+    if failed_video_recovery_ids and not automatic_quality_recovery:
+        # Manual resume opens a new, still-bounded provider-availability
+        # epoch. Preserve ordinary retry counts and unrelated segments; clear
+        # only the exhausted cooldown markers for the exact recoverable
+        # segment identities selected above.
+        recovery_generations = dict(
+            state.get("ai_video_exhausted_cooldown_retry_generations") or {}
+        )
+        reset_retry_keys: list[str] = []
+        for task_id in failed_video_recovery_ids:
+            task_input = dict(task_by_id[task_id].input_json or {})
+            video_index = int(
+                task_input.get("content_factory_video_index")
+                or task_input.get("content_factory_variant_index")
+                or 0
+            )
+            segment_index = int(
+                task_input.get("content_factory_segment_index") or 0
+            )
+            if video_index <= 0 or segment_index <= 0:
+                continue
+            retry_key = f"{video_index}:{segment_index}"
+            recovery_generations.pop(retry_key, None)
+            reset_retry_keys.append(retry_key)
+        state["ai_video_exhausted_cooldown_retry_generations"] = (
+            recovery_generations
+        )
+        state["ai_video_manual_provider_recovery"] = {
+            "resume_generation": int(state.get("resume_generation") or 0) + 1,
+            "task_ids": failed_video_recovery_ids,
+            "retry_keys": sorted(set(reset_retry_keys)),
+            "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+        }
     if failed_video_recovery_ids:
         state["ai_video_resume_failed_task_ids"] = failed_video_recovery_ids
     else:
@@ -5838,11 +7081,20 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
         # already-paid product-free scene remain valid. Resume at the local
         # placement boundary so a newer resolver policy can re-analyze those
         # pixels before either another Director turn or another image render.
-        project.current_stage = "VISUAL_PREVIEW"
+        project.current_stage = (
+            "VIDEO_PROMPTS"
+            if str(
+                dict(project.config_json or {}).get(
+                    "video_generation_mode"
+                )
+                or "image_to_video"
+            ).strip().lower() == "text_to_video"
+            else "VISUAL_PREVIEW"
+        )
         state["resume_control_reset"] = {
             "reason": "recover_paid_product_scene_after_failed_replan",
             "variant_index": active_variant,
-            "next_stage": "VISUAL_PREVIEW",
+            "next_stage": str(project.current_stage),
             "source_stage_id": int(
                 visual_checkpoint.get("source_stage_id") or 0
             ),
@@ -5862,8 +7114,7 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
         project,
         state,
     )
-    media_or_legacy_stage = str(project.current_stage or "").upper() in {
-        "CREATIVE",
+    media_stage = str(project.current_stage or "").upper() in {
         "VISUAL_PREVIEW",
         "CREATIVE_REVIEW",
         "FINAL_ASSETS",
@@ -5879,21 +7130,30 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
             "next_stage": "SERIES_DIRECTOR",
             "at": _now().isoformat(),
         }
-    elif media_or_legacy_stage and not _resume_production_plan_is_authoritative(
-        db,
-        project,
-        state,
-        variant_index=active_variant,
-    ):
-        project.current_stage = "DIRECTOR"
-        state.pop("pending_visual_api_resume", None)
-        state.pop("pending_visual_partial_repair", None)
-        state["resume_control_reset"] = {
-            "reason": "approved_production_plan_missing",
-            "variant_index": active_variant,
-            "next_stage": "DIRECTOR",
-            "at": _now().isoformat(),
-        }
+    elif media_stage:
+        state, _pointer_restored = (
+            _restore_missing_approved_production_plan_pointer(
+                db,
+                project,
+                state,
+                variant_index=active_variant,
+            )
+        )
+        if not _resume_production_plan_is_authoritative(
+            db,
+            project,
+            state,
+            variant_index=active_variant,
+        ):
+            project.current_stage = "DIRECTOR"
+            state.pop("pending_visual_api_resume", None)
+            state.pop("pending_visual_partial_repair", None)
+            state["resume_control_reset"] = {
+                "reason": "approved_production_plan_missing",
+                "variant_index": active_variant,
+                "next_stage": "DIRECTOR",
+                "at": _now().isoformat(),
+            }
     state["resumed_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     state["resume_priority"] = 9
     state["resume_generation"] = int(state.get("resume_generation") or 0) + 1
@@ -5911,7 +7171,11 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
         .all()
     ):
         stage.status = "failed"
-        stage.error_message = "Superseded by manual resume."
+        stage.error_message = (
+            "Superseded by automatic quality recovery."
+            if automatic_quality_recovery
+            else "Superseded by manual resume."
+        )
         stage.completed_at = _now()
     current = (
         db.query(HermesContentFactoryStage)
@@ -5925,10 +7189,18 @@ def resume_project(db: Session, project: HermesContentFactoryProject) -> HermesC
     if current is not None:
         stage_input = dict(current.input_json or {})
         stage_input["self_heal_count"] = 0
-        stage_input["manual_resume_generation"] = int(state["resume_generation"])
+        stage_input[
+            "automatic_quality_resume_generation"
+            if automatic_quality_recovery
+            else "manual_resume_generation"
+        ] = int(state["resume_generation"])
         stage_input.pop("retry_after", None)
         current.input_json = stage_input
-    _record_project_transition(project, status=project.status, reason="manual_resume")
+    _record_project_transition(
+        project,
+        status=project.status,
+        reason=normalized_resume_reason,
+    )
     db.flush()
     return project
 
@@ -5952,6 +7224,47 @@ def resume_waiting_project_production(
     state = dict(project.state_json or {})
     if state.get("ai_video_pending_task_ids") or state.get("ai_video_resume_failed_task_ids"):
         return None
+
+    # A manual pause can occur after every provider segment has reached a
+    # terminal state but before the waiter composed the successful groups.
+    # Those are paid, locally recoverable media results.  Releasing the first
+    # missing variant immediately would let its cleanup replace the global
+    # task/group ledger and force an already-successful sibling to regenerate.
+    # Run one idempotent reconciliation pass first; it composes successful
+    # groups, records their deliverables, then prioritizes any terminal failed
+    # hole under the rollout gate.
+    recorded_task_ids = [
+        int(value)
+        for value in list(state.get("ai_video_task_ids") or [])
+        if str(value).strip().isdigit()
+    ]
+    recorded_groups = [
+        dict(value)
+        for value in list(state.get("ai_video_groups") or [])
+        if isinstance(value, dict)
+    ]
+    if recorded_task_ids and recorded_groups:
+        from app.tasks.hermes_agent.content_factory_tasks import (
+            wait_for_content_factory_videos,
+        )
+
+        wait_task = wait_for_content_factory_videos.apply_async(
+            kwargs={"project_id": int(project.id)},
+            countdown=1,
+            queue="gmv.tasks.hermes_agent",
+            priority=9,
+        )
+        state["ai_video_wait_task_id"] = wait_task.id
+        state["ai_video_wait_reason"] = (
+            "resume reconciles terminal paid media before missing-variant repair"
+        )
+        state["ai_video_wait_resume_requested_at"] = (
+            datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        )
+        project.state_json = state
+        db.add(project)
+        db.flush()
+        return str(wait_task.id)
 
     # Imported lazily to preserve the service/task dependency boundary during
     # API and migration startup.  The task module owns stage leases, rollout
@@ -6488,7 +7801,11 @@ async def bridge_status(db: Session | None = None, *, workspace_id: int | None =
         if user_id is not None:
             query = query.filter(HermesBrowserBridge.user_id == int(user_id))
         rows = query.order_by(HermesBrowserBridge.last_seen_at.desc(), HermesBrowserBridge.id.desc()).all()
+    from app.services.jimeng_lab import is_external_account_slot
+
     for bridge in rows:
+        if is_external_account_slot(bridge):
+            continue
         if not _bridge_is_displayable(bridge) or not _bridge_device_bound(bridge):
             continue
         url = bridge.cdp_url
@@ -6530,6 +7847,7 @@ async def bridge_status(db: Session | None = None, *, workspace_id: int | None =
         "devices": devices,
         "selected_device_id": selected_device_id,
         "selection_required": selection_required,
+        "server_agent_version": BRIDGE_AGENT_VERSION,
     }
 
 
@@ -6554,10 +7872,47 @@ def _stage_api_route(db: Session, stage: str) -> str | None:
         # Missing role configuration must fail explicitly on the API path;
         # it must never wake a browser slot as an accidental fallback.
         return "ai-routing:unconfigured"
-    if stage_name == "VISUAL_PREVIEW" and has_active_key(
-        db, provider_key=BANDIANWA_PROVIDER_KEY
-    ):
-        return "bandianwa:gpt-image-2"
+    if stage_name == "VISUAL_PREVIEW":
+        try:
+            configured = (
+                db.query(AiModelRoute)
+                .join(KieApiKey, KieApiKey.id == AiModelRoute.key_id)
+                .filter(
+                    AiModelRoute.workload == "content_factory_visual",
+                    AiModelRoute.logical_model_id.in_(
+                        ("gpt-image-2", "nano_banana_pro")
+                    ),
+                    AiModelRoute.capability == "image",
+                    AiModelRoute.is_enabled.is_(True),
+                    AiModelRoute.is_verified.is_(True),
+                    KieApiKey.is_active.is_(True),
+                )
+                .order_by(AiModelRoute.priority.asc(), AiModelRoute.id.asc())
+                .first()
+            )
+        except Exception:  # compatibility with isolated route-test doubles
+            configured = None
+        if configured is not None:
+            return (
+                f"{str(configured.provider_key or '').strip().lower()}:"
+                f"{str(configured.logical_model_id or '').strip().lower()}"
+            )
+        for provider_key in (
+            SUB2API_PROVIDER_KEY,
+            FLOW2API_PROVIDER_KEY,
+            BANDIANWA_PROVIDER_KEY,
+            TOAPIS_PROVIDER_KEY,
+        ):
+            if has_active_key(db, provider_key=provider_key):
+                # The final pre-submit boundary resolves the authoritative
+                # platform-admin route priority. This early route only keeps
+                # API work off browser queues while a stage is being created.
+                model = (
+                    "nano_banana_pro"
+                    if provider_key == FLOW2API_PROVIDER_KEY
+                    else "gpt-image-2"
+                )
+                return f"{provider_key}:{model}"
     if stage_name in {"FACTS", "EDIT_PACKAGE"} and has_active_key(
         db, provider_key=TOAPIS_PROVIDER_KEY
     ):
@@ -6578,9 +7933,78 @@ def _select_visual_variant_api_route(
     back to Bandianwa even after Bandianwa had exhausted its bounded budget.
     A genuinely new variant has no matching history and uses the default.
     """
+    records = [dict(raw or {}) for raw in prior_stage_inputs]
+
+    def _owned_route(values: dict[str, Any]) -> str | None:
+        visual_api = dict(values.get("visual_api") or {})
+        route = str(values.get("api_route") or "").strip().lower()
+        provider = str(visual_api.get("provider") or "").strip().lower()
+        model = str(visual_api.get("model") or "").strip().lower()
+        if model == "gpt-image-2.0":
+            model = "gpt-image-2"
+        if ":" in route:
+            route_provider, route_model = route.split(":", 1)
+            route_model = (
+                "gpt-image-2"
+                if route_model == "gpt-image-2.0"
+                else route_model
+            )
+            if (
+                route_provider in {
+                    SUB2API_PROVIDER_KEY,
+                    FLOW2API_PROVIDER_KEY,
+                    BANDIANWA_PROVIDER_KEY,
+                    TOAPIS_PROVIDER_KEY,
+                }
+                and route_model in {"gpt-image-2", "nano_banana_pro"}
+                and (route_provider != TOAPIS_PROVIDER_KEY or toapis_available)
+            ):
+                return f"{route_provider}:{route_model}"
+        if (
+            provider in {
+                SUB2API_PROVIDER_KEY,
+                FLOW2API_PROVIDER_KEY,
+                BANDIANWA_PROVIDER_KEY,
+                TOAPIS_PROVIDER_KEY,
+            }
+            and model in {"gpt-image-2", "nano_banana_pro"}
+            and (provider != TOAPIS_PROVIDER_KEY or toapis_available)
+        ):
+            return f"{provider}:{model}"
+        if provider == SUB2API_PROVIDER_KEY:
+            return "sub2api:gpt-image-2"
+        if provider == FLOW2API_PROVIDER_KEY:
+            return "flow2api:nano_banana_pro"
+        if provider == BANDIANWA_PROVIDER_KEY:
+            return "bandianwa:gpt-image-2"
+        if provider == TOAPIS_PROVIDER_KEY and toapis_available:
+            return "toapis:gpt-image-2"
+        return None
+
+    # A successful render is the strongest provider authority for a partial
+    # repair.  Older failed handoffs remain valuable audit history but must
+    # not override a newer Bandianwa/Nano success and send the next repair
+    # back to an account already known to have no quota.
+    for values in records:
+        visual_api = dict(values.get("visual_api") or {})
+        stage_succeeded = str(values.get("_stage_status") or "").lower() == "success"
+        visual_completed = str(visual_api.get("status") or "").lower() == "completed"
+        if not (stage_succeeded or visual_completed):
+            continue
+        if owned_route := _owned_route(values):
+            return owned_route
+
+    # A recovery epoch intentionally resets stale provider exhaustion.  It is
+    # the next-best authority when no prior visual stage completed.
+    for values in records:
+        visual_api = dict(values.get("visual_api") or {})
+        if int(visual_api.get("api_recovery_epoch") or 0) <= 0:
+            continue
+        if owned_route := _owned_route(values):
+            return owned_route
+
     if toapis_available:
-        for raw in prior_stage_inputs:
-            values = dict(raw or {})
+        for values in records:
             visual_api = dict(values.get("visual_api") or {})
             if (
                 str(values.get("api_route") or "").strip() == "toapis:gpt-image-2"
@@ -6609,7 +8033,7 @@ def _visual_variant_api_route(
         .all()
     )
     inputs = [
-        dict(row.input_json or {})
+        {**dict(row.input_json or {}), "_stage_status": str(row.status or "")}
         for row in candidates
         if int(dict(row.input_json or {}).get("variant_index") or variant_index)
         == int(variant_index)
@@ -6618,6 +8042,77 @@ def _visual_variant_api_route(
         inputs,
         default_route=default_route,
         toapis_available=has_active_key(db, provider_key=TOAPIS_PROVIDER_KEY),
+    )
+
+
+def _select_visual_variant_image_model_index(
+    prior_stage_inputs: list[dict[str, Any]],
+    *,
+    configured_chain: list[str],
+    default_index: int = 0,
+) -> int:
+    normalized_chain = [
+        "gpt-image-2" if str(value or "").strip().lower() == "gpt-image-2.0"
+        else str(value or "").strip().lower()
+        for value in configured_chain
+        if str(value or "").strip()
+    ]
+    if not normalized_chain:
+        return 0
+    fallback = max(0, min(int(default_index or 0), len(normalized_chain) - 1))
+    for raw in prior_stage_inputs:
+        values = dict(raw or {})
+        visual_api = dict(values.get("visual_api") or {})
+        if not (
+            str(values.get("_stage_status") or "").lower() == "success"
+            or str(visual_api.get("status") or "").lower() == "completed"
+        ):
+            continue
+        try:
+            saved_index = int(values.get("visual_image_model_index"))
+        except (TypeError, ValueError):
+            saved_index = -1
+        if 0 <= saved_index < len(normalized_chain):
+            return saved_index
+        model = str(visual_api.get("model") or "").strip().lower()
+        if model == "gpt-image-2.0":
+            model = "gpt-image-2"
+        if model in normalized_chain:
+            return normalized_chain.index(model)
+    return fallback
+
+
+def _visual_variant_image_model_index(
+    db: Session,
+    project: HermesContentFactoryProject,
+    *,
+    variant_index: int,
+    default_index: int = 0,
+) -> int:
+    candidates = (
+        db.query(HermesContentFactoryStage)
+        .filter(
+            HermesContentFactoryStage.project_id == int(project.id),
+            HermesContentFactoryStage.stage == "VISUAL_PREVIEW",
+        )
+        .order_by(HermesContentFactoryStage.id.desc())
+        .limit(20)
+        .all()
+    )
+    inputs = [
+        {**dict(row.input_json or {}), "_stage_status": str(row.status or "")}
+        for row in candidates
+        if int(dict(row.input_json or {}).get("variant_index") or variant_index)
+        == int(variant_index)
+    ]
+    config = dict(project.config_json or {})
+    return _select_visual_variant_image_model_index(
+        inputs,
+        configured_chain=list(
+            config.get("visual_image_model_chain")
+            or ["gpt-image-2", "nano_banana_pro"]
+        ),
+        default_index=default_index,
     )
 
 
@@ -6634,6 +8129,108 @@ def _control_transition_checkpoint_clear_keys(
         "last_creative_review",
         "quality_pause_preserved_visual_asset_ids",
     )
+
+
+def _production_plan_repair_matches_current_director_generation(
+    *,
+    latest_director_stage_id: int | None,
+    latest_successful_plan_stage_id: int | None,
+) -> bool:
+    """Return true only when the accepted plan is newer than its Director.
+
+    A visual-review repair may revise the signed plan while keeping the same
+    Director artifact.  After automatic quality recovery creates a newer
+    Director artifact, however, the older successful plan is no longer a
+    repair source.  Treating the normal successor PRODUCTION_PLAN as an
+    external repair reused that stale plan and failed immediately with
+    PRODUCTION_PLAN_MEDIA_GATE_DIRECTOR_MISMATCH on every self-heal retry.
+    """
+    if not latest_successful_plan_stage_id:
+        return False
+    if not latest_director_stage_id:
+        return True
+    return int(latest_successful_plan_stage_id) > int(latest_director_stage_id)
+
+
+def _durable_director_replan_resume_context(
+    state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Restore an interrupted, already-authorized Director replan packet.
+
+    Automatic quality recovery may create a fresh Director stage with
+    multimodal review evidence that authorizes a new immutable revision.  If
+    an operator pauses that stage before delivery, ``resume_project`` creates
+    a successor row.  The generic resume path previously copied none of that
+    evidence, so the immutable-copy guard correctly rejected the successor as
+    an unaudited rewrite.  Rehydrate only the durable, project-owned packet;
+    ordinary retries and generic manual resumes still cannot rewrite accepted
+    copy.
+    """
+    values = dict(state or {})
+    recovery = dict(values.get("automatic_quality_recovery") or {})
+    upstream = dict(values.get("automatic_quality_upstream_replan") or {})
+    if (
+        str(recovery.get("status") or "").strip().lower() != "replanning"
+        or str(upstream.get("to_stage") or "").strip().upper() != "DIRECTOR"
+    ):
+        return {}
+    pause_reason = str(recovery.get("pause_reason_code") or "").strip().lower()
+    if pause_reason not in {
+        "creative_visual_replan_exhausted",
+        "production_plan_quality_pause",
+        "final_video_quality_gate",
+    }:
+        return {}
+    try:
+        source_stage_id = int(upstream.get("source_stage_id") or 0)
+    except (TypeError, ValueError):
+        source_stage_id = 0
+    feedback: list[dict[str, Any]] = []
+    for raw in list(upstream.get("feedback") or [])[:16]:
+        row = dict(raw or {}) if isinstance(raw, dict) else {}
+        code = str(row.get("code") or "").strip()
+        evidence = str(row.get("evidence") or "").strip()
+        repair_instruction = str(row.get("repair_instruction") or "").strip()
+        if not (code and evidence and repair_instruction):
+            continue
+        feedback.append({
+            "code": code[:128],
+            "line_ids": [
+                str(value)[:128]
+                for value in list(row.get("line_ids") or [])[:64]
+                if str(value).strip()
+            ],
+            "evidence": evidence[:2000],
+            "repair_instruction": repair_instruction[:2000],
+        })
+    if not source_stage_id or not feedback:
+        return {}
+    result: dict[str, Any] = {
+        "force_fresh_response": True,
+        "clear_stale_composer_before_send": True,
+        "automatic_quality_pause_reason": pause_reason,
+        "director_replan_feedback": feedback,
+        "director_replan_source_stage_id": source_stage_id,
+        "manual_resume_restored_director_replan": True,
+    }
+    for source_key, target_key in (
+        ("attempt_count", "automatic_quality_recovery_attempt"),
+        ("generation", "automatic_quality_recovery_generation"),
+        ("incident_key", "automatic_quality_recovery_incident_key"),
+    ):
+        value = recovery.get(source_key)
+        if value not in (None, ""):
+            result[target_key] = value
+    restart = dict(values.get("last_restart") or {})
+    operator_instruction = str(restart.get("instruction") or "").strip()
+    if operator_instruction:
+        result["inherited_operator_instruction"] = True
+        result["inherited_operator_instruction_source"] = "project_last_restart"
+        result["inherited_operator_instruction_restart_stage"] = (
+            str(restart.get("stage") or "").strip().upper() or None
+        )
+        result["operator_instruction"] = operator_instruction[:16000]
+    return result
 
 
 def queue_stage(
@@ -6662,13 +8259,12 @@ def queue_stage(
     if target_stage:
         if target_stage not in STAGE_ORDER or target_stage == "COMPLETE":
             raise APIError("CONTENT_STAGE_INVALID", "The requested stage is invalid.", 400)
-    if str(intended_stage or "").upper() == "CREATIVE":
-        raise APIError(
-            "CONTENT_LEGACY_CREATIVE_REMOVED",
-            "Projects must run DIRECTOR then PRODUCTION_PLAN; the legacy "
-            "CREATIVE authoring stage has been removed.",
-            409,
-        )
+    if str(intended_stage or "").upper() in {"SERIES_DIRECTOR", "DIRECTOR"}:
+        # Older projects may have been created while duration legality was
+        # still model-wide. Migrate them at the queue boundary, before a new
+        # Director attempt can inherit an impossible total such as 55 seconds
+        # for a fixed-10-second fallback route.
+        ensure_project_video_duration_plan(db, project=project)
     pre_transition_state = dict(project.state_json or {})
     pre_transition_review = dict(
         pre_transition_state.get("last_creative_review") or {}
@@ -6678,6 +8274,29 @@ def queue_stage(
         and bool(str(instruction or "").strip())
         and pre_transition_review.get("approved_for_split") is False
     )
+    if production_plan_external_repair:
+        latest_director_stage_id = db.query(
+            func.max(HermesContentFactoryStage.id)
+        ).filter(
+            HermesContentFactoryStage.project_id == project.id,
+            HermesContentFactoryStage.stage == "DIRECTOR",
+            HermesContentFactoryStage.status == "success",
+        ).scalar()
+        latest_successful_plan_stage_id = db.query(
+            func.max(HermesContentFactoryStage.id)
+        ).filter(
+            HermesContentFactoryStage.project_id == project.id,
+            HermesContentFactoryStage.stage == "PRODUCTION_PLAN",
+            HermesContentFactoryStage.status == "success",
+        ).scalar()
+        production_plan_external_repair = (
+            _production_plan_repair_matches_current_director_generation(
+                latest_director_stage_id=latest_director_stage_id,
+                latest_successful_plan_stage_id=(
+                    latest_successful_plan_stage_id
+                ),
+            )
+        )
     active_rows = (
         db.query(HermesContentFactoryStage)
         .filter(
@@ -6753,6 +8372,7 @@ def queue_stage(
     ):
         partial_visual_repair = {}
     api_route = None if force_browser else _stage_api_route(db, project.current_stage)
+    visual_image_model_index = 0
     if (
         str(project.current_stage or "").upper() == "VISUAL_PREVIEW"
         and not force_browser
@@ -6762,6 +8382,11 @@ def queue_stage(
             project,
             variant_index=variant_index,
             default_route=api_route,
+        )
+        visual_image_model_index = _visual_variant_image_model_index(
+            db,
+            project,
+            variant_index=variant_index,
         )
     execution_backend = stage_execution_backend(
         project.current_stage,
@@ -6789,8 +8414,20 @@ def queue_stage(
                 "variant_index": variant_index,
                 "variant_total": variant_total,
                 "variant_mode": "serial_one_complete_video_at_a_time" if variant_total > 1 else "single_batch",
+                "visual_image_model_index": visual_image_model_index,
             },
         )
+        if str(project.current_stage or "").upper() == "DIRECTOR":
+            restored_replan = _durable_director_replan_resume_context(state)
+            if restored_replan:
+                restored_instruction = str(
+                    restored_replan.pop("operator_instruction", "") or ""
+                ).strip()
+                stage_input = dict(stage.input_json or {})
+                stage_input.update(restored_replan)
+                stage.input_json = stage_input
+                if restored_instruction:
+                    stage.instruction = restored_instruction
         if creative_replan_requested:
             stage_input = dict(stage.input_json or {})
             semantic_copy_replan = bool(
@@ -6870,21 +8507,61 @@ def queue_stage(
                 )
                 stage.input_json = stage_input
         pending_visual_resume = dict(state.get("pending_visual_api_resume") or {})
+        current_visual_plan_sha256 = str(
+            dict(state.get("approved_production_plan") or {}).get(
+                "plan_sha256"
+            )
+            or ""
+        ).strip()
+        pending_visual_plan_sha256 = str(
+            pending_visual_resume.get("production_plan_sha256") or ""
+        ).strip()
+        if (
+            pending_visual_resume
+            and current_visual_plan_sha256
+            and pending_visual_plan_sha256 != current_visual_plan_sha256
+        ):
+            # A control-plane replan may complete between pause capture and
+            # VISUAL_PREVIEW queueing. Retire the old paid checkpoint instead
+            # of silently seeding a new AI concept with prior-plan pixels.
+            pending_visual_resume = {}
+            state.pop("pending_visual_api_resume", None)
+            project.state_json = state
         if (
             str(project.current_stage or "").upper() == "VISUAL_PREVIEW"
             and int(pending_visual_resume.get("variant_index") or 0) == int(variant_index)
             and isinstance(pending_visual_resume.get("visual_api"), dict)
         ):
             resumed_visual_api = dict(pending_visual_resume["visual_api"])
+            rejected_reference_indices = {
+                int(value)
+                for value in list(
+                    partial_visual_repair.get("failed_indices") or []
+                )
+                if str(value).strip().isdigit() and int(value) > 0
+            }
             resumed_boards = {
                 str(index): dict(board)
                 for index, board in dict(resumed_visual_api.get("boards") or {}).items()
                 if isinstance(board, dict)
                 and _is_resumable_visual_board(board)
+                and str(index).strip().isdigit()
+                # A downloaded file is resumable provider progress, not an
+                # approval.  When the latest visual review rejected this
+                # exact reference, never seed it back into the successor
+                # stage merely because the paid file still exists.
+                and int(index) not in rejected_reference_indices
             }
             if resumed_boards:
                 resumed_visual_api["boards"] = resumed_boards
                 resumed_visual_api["status"] = "partial_resumable"
+                checkpoint_replay_digest = str(
+                    pending_visual_resume.get("replay_context_digest") or ""
+                ).strip()
+                if checkpoint_replay_digest:
+                    resumed_visual_api[
+                        "checkpoint_source_replay_context_digest"
+                    ] = checkpoint_replay_digest
                 stage_input = dict(stage.input_json or {})
                 stage_input = _restore_visual_resume_instruction(
                     stage,
@@ -6921,6 +8598,10 @@ def queue_stage(
                     ),
                     "visual_repair_preserved_references": list(
                         partial_visual_repair.get("preserved_references") or []
+                    ),
+                    "visual_repair_continuity_anchor_indices": list(
+                        partial_visual_repair.get("continuity_anchor_indices")
+                        or []
                     ),
                     "visual_repair_source_review_stage_id": int(
                         partial_visual_repair.get("source_review_stage_id") or 0
@@ -7046,6 +8727,9 @@ def queue_stage(
             ),
             "visual_repair_preserved_references": list(
                 partial_visual_repair.get("preserved_references") or []
+            ),
+            "visual_repair_continuity_anchor_indices": list(
+                partial_visual_repair.get("continuity_anchor_indices") or []
             ),
             "visual_repair_source_review_stage_id": int(
                 partial_visual_repair.get("source_review_stage_id") or 0

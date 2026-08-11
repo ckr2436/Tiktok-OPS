@@ -5,6 +5,18 @@ from typing import Any, Mapping
 
 LOCAL_WORKER_STAGES = frozenset({"FINAL_ASSETS", "VIDEO_PROMPTS"})
 
+EXTERNAL_RETRY_BARRIER_KEYS = frozenset({
+    "retry_after",
+    "retry_release_strategy",
+    "recovery_api_probe_pending",
+    "recovery_api_probe_reason",
+    "recovery_api_last_probe_at",
+    "self_heal_circuit_open",
+    "api_force_browser_fallback",
+    "visual_api_force_browser_fallback",
+    "force_browser",
+})
+
 
 def is_local_worker_stage(
     stage: str | None,
@@ -27,6 +39,29 @@ def is_local_worker_stage(
     if stage_name == "VIDEO_PROMPTS":
         return True
     return True
+
+
+def clear_external_retry_barriers_for_local_stage(
+    stage: str | None,
+    stage_input: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Remove stale provider/browser waits from a server-local stage.
+
+    A retry row can outlive the worker version that classified it.  In
+    particular, normal FINAL_ASSETS splitting used to inherit API cooldown and
+    browser fallback fields even though it only materializes already-approved
+    files on local RAID.  Keep the durable stage payload, but discard routing
+    barriers that this execution path can never satisfy or use.
+    """
+
+    values = dict(stage_input or {})
+    if not is_local_worker_stage(stage, values):
+        return values
+    for key in EXTERNAL_RETRY_BARRIER_KEYS:
+        values.pop(key, None)
+    if str(values.get("execution_backend") or "").strip().lower() == "browser":
+        values.pop("execution_backend", None)
+    return values
 
 
 def stage_execution_backend(

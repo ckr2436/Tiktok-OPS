@@ -16,6 +16,7 @@ from app.tasks.hermes_agent.content_factory_tasks import (
     _authoritative_reference_count,
     _compact_packet_for_chatgpt,
     _compact_provider_segment_prompt,
+    _exclude_blocked_reference_indices_from_video_plan,
     _normalize_segment_timeline,
     _omni_reference_prompt,
     _guidance_is_internal_variant_label,
@@ -28,6 +29,71 @@ from app.tasks.hermes_agent.content_factory_tasks import (
     _select_segment_refs,
     _write_local_overlay_ass,
 )
+
+
+def test_blocked_visual_anchor_is_removed_without_restoring_its_action_panel():
+    plan = [{
+        "segments": [{
+            "segment_index": 1,
+            "reference_indices": [1, 3],
+        }],
+    }]
+    refs = [
+        {"index": 1, "asset_id": 5749},
+        {"index": 3, "asset_id": 5751},
+    ]
+
+    blocked = _exclude_blocked_reference_indices_from_video_plan(
+        plan,
+        refs,
+        {5751},
+    )
+
+    assert blocked == {3}
+    assert plan[0]["segments"][0]["reference_indices"] == [1]
+    assert plan[0]["segments"][0]["reference_selection_authoritative"] is True
+
+
+def test_blocked_provider_reference_does_not_transfer_action_role_to_scene():
+    task = SimpleNamespace(
+        fail_code="provider_reference_blocked",
+        fail_msg="image reference 2 blocked by provider",
+    )
+    payload = {
+        "prompt": "A timed prompt owns the complete action.",
+        "content_factory_base_prompt": "A timed prompt owns the complete action.",
+        "reference_file_paths": [
+            {
+                "asset_id": 10,
+                "path": "/tmp/scene.png",
+                "semantic_roles": ["scene_anchor"],
+                "is_product_anchor": False,
+            },
+            {
+                "asset_id": 11,
+                "path": "/tmp/bad-hands.png",
+                "semantic_roles": ["action_anchor"],
+                "is_product_anchor": False,
+            },
+        ],
+    }
+    source_files = [
+        SimpleNamespace(id=20, kind="reference_upload"),
+        SimpleNamespace(id=21, kind="reference_upload"),
+    ]
+
+    repaired, _files, evidence = (
+        content_factory_tasks._repair_blocked_omni_reference(
+            task,
+            payload,
+            source_files,
+        )
+    )
+
+    assert evidence["blocked_asset_id"] == 11
+    assert repaired["reference_file_paths"][0]["semantic_roles"] == [
+        "scene_anchor"
+    ]
 
 
 def test_media_manifest_is_idempotent_and_fails_closed_after_provider_submit():
@@ -179,7 +245,7 @@ def test_provider_prompt_contains_only_current_segment_fields():
         _segment(),
         resolution="720p",
         language_label="English (US)",
-        fast_pacing=True,
+        requirement_contract=[],
         product_required=False,
     )
 
@@ -193,12 +259,71 @@ def test_provider_prompt_contains_only_current_segment_fields():
     assert len(prompt) < 1500
 
 
+def test_provider_prompt_never_adds_provider_ui_command_prefix():
+    prompt = _compact_provider_segment_prompt(
+        _segment(),
+        resolution="720p",
+        language_label="English (US)",
+        requirement_contract=[],
+        product_required=False,
+    )
+
+    assert not prompt.lstrip().startswith(
+        ("生成视频：", "生成视频:", "视频生成：", "Generate video:")
+    )
+
+
+def test_timeline_prompt_does_not_import_whole_video_hook_actions():
+    prompt = _compact_provider_segment_prompt(
+        {
+            "compile_source": "signed_production_plan",
+            "prompt": "Segment 2: quiet product resolution.",
+            "timeline": [{
+                "start_second": 0,
+                "end_second": 10,
+                "action": "Settle the bottle under the warm bedside lamp.",
+                "camera": "Slow product push-in.",
+            }],
+            "pacing": "Whip-pan into flashing alarms from the opening hook.",
+            "camera_direction": "Crash zoom on the opening alarm.",
+        },
+        resolution="720p",
+        language_label="English (US)",
+        requirement_contract=[],
+    )
+
+    assert "Settle the bottle" in prompt
+    assert "Slow product push-in" in prompt
+    assert "Signed rhythm:" not in prompt
+    assert "Whip-pan" not in prompt
+    assert "Crash zoom" not in prompt
+
+
+def test_retry_prompt_removes_legacy_whole_video_motion_lines():
+    prompt = content_factory_tasks._scope_retry_prompt_to_segment_timeline(
+        "\n".join(
+            (
+                "Segment 2: quiet product resolution.",
+                "Timeline (this segment only): 0-10s: Hold on the product hero.",
+                "Pacing: Whip-pan into flashing alarms from segment 1.",
+                "Camera: Crash zoom on the opening alarm.",
+                "Dialogue: 'Find MYUPONA on TikTok Shop.'",
+            )
+        ),
+    )
+
+    assert "Hold on the product hero" in prompt
+    assert "Find MYUPONA" in prompt
+    assert "Whip-pan" not in prompt
+    assert "Crash zoom" not in prompt
+
+
 def test_omni_prompt_binds_only_selected_segment_references():
     base = _compact_provider_segment_prompt(
         _segment(),
         resolution="720p",
         language_label="English (US)",
-        fast_pacing=True,
+        requirement_contract=[],
         product_required=False,
     )
     refs = [
@@ -226,8 +351,73 @@ def test_omni_prompt_binds_only_selected_segment_references():
     assert "uploaded order is authoritative" in prompt
     assert len(prompt) < 2100
     assert VIDEO_PROMPT_POLICY_VERSION == (
-        "2026-07-22-provider-product-reference-v27"
+        "2026-08-04-prompt-authority-sparse-anchors-v45"
     )
+
+
+def test_provider_dialogue_keeps_native_emotion_and_does_not_request_silence():
+    segment = _segment()
+    segment["dialogue_lines"] = [{
+        "line_id": "l1",
+        "speaker": "woman_1",
+        "line": "I am ending the scroll tonight.",
+        "delivery_mode": "spoken",
+        "delivery_method": "provider_dialogue",
+    }]
+    segment["voice_lock"] = [{
+        "identity": "woman_1",
+        "gender": "female",
+        "screen_relation": "character_voiceover",
+        "timbre": "warm intimate alto",
+        "pitch": "medium-low",
+        "accent": "US",
+        "delivery": "emotionally alive, relieved but decisive",
+        "speech_rate": 175,
+    }]
+
+    prompt = _compact_provider_segment_prompt(
+        segment,
+        resolution="720p",
+        language_label="English (US)",
+        requirement_contract=[],
+        product_required=False,
+        audio_mode="spoken",
+    )
+
+    assert "I am ending the scroll tonight." in prompt
+    assert "emotionally alive" in prompt
+    assert "visible characters remain silent" not in prompt
+    assert "voiceover is added" not in prompt
+
+
+def test_provider_dialogue_does_not_leak_truncated_speaker_metadata():
+    segment = _segment()
+    segment["dialogue_lines"] = [{
+        "line_id": "l1",
+        "speaker": "adult_american_english_narrator",
+        "line": "Post-Pilates reset? Meet MYUPONA.",
+        "delivery_mode": "spoken",
+        "delivery_method": "provider_dialogue",
+    }]
+    segment["voice_lock"] = [{
+        "identity": "adult American English female narrator",
+        "gender": "female",
+        "screen_relation": "off_screen_narrator",
+        "accent": "general American",
+    }]
+
+    prompt = _compact_provider_segment_prompt(
+        segment,
+        resolution="720p",
+        language_label="English (US)",
+        requirement_contract=[],
+        product_required=False,
+        audio_mode="spoken",
+    )
+
+    assert "Post-Pilates reset? Meet MYUPONA." in prompt
+    assert "adult_american_english_narr" not in prompt
+    assert "..." not in prompt
 
 
 def test_local_overlay_preserves_complete_director_copy_and_wraps_it():
@@ -266,6 +456,58 @@ def test_local_overlay_uses_director_placement_not_hardcoded_top(tmp_path):
     assert ",TopSafeBox," not in next(
         line for line in contents.splitlines() if line.startswith("Dialogue:")
     )
+
+
+def test_local_overlay_supports_bottom_right_watermark_cover_placement(tmp_path):
+    target = tmp_path / "copy.ass"
+    assert _write_local_overlay_ass(
+        [{
+            "line": "Find on TikTok Shop",
+            "start_seconds": 0,
+            "end_seconds": 2,
+            "overlay_presentation": {
+                "placement": "bottom_right",
+                "emphasis": "standard",
+                "background": "box",
+                "max_lines": 1,
+            },
+        }],
+        target,
+        width=720,
+        height=1280,
+        duration=2,
+    )
+    contents = target.read_text(encoding="utf-8")
+    assert ",BottomRightBox," in next(
+        line for line in contents.splitlines() if line.startswith("Dialogue:")
+    )
+
+
+def test_local_overlay_band_draws_full_width_cover_behind_fresh_copy(tmp_path):
+    target = tmp_path / "copy.ass"
+    assert _write_local_overlay_ass(
+        [{
+            "line": "Find on TikTok Shop",
+            "start_seconds": 0,
+            "end_seconds": 2,
+            "overlay_presentation": {
+                "placement": "bottom_right",
+                "emphasis": "standard",
+                "background": "band",
+                "max_lines": 1,
+            },
+        }],
+        target,
+        width=720,
+        height=1280,
+        duration=2,
+    )
+    contents = target.read_text(encoding="utf-8")
+    dialogue_rows = [
+        line for line in contents.splitlines() if line.startswith("Dialogue:")
+    ]
+    assert any(r"\p1" in line and "l 720" in line for line in dialogue_rows)
+    assert any(",BottomRightShadow," in line for line in dialogue_rows)
 
 
 
@@ -438,6 +680,69 @@ def test_final_video_gate_reads_landscape_ratio_from_frozen_group(tmp_path):
     assert report["expected_aspect_ratio"] == "16:9"
 
 
+def test_final_video_gate_preserves_intent_repair_coordinates(tmp_path):
+    target = tmp_path / "intent-failure.mp4"
+    subprocess.run(
+        [
+            "/opt/apps/bin/ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=0x204080:s=360x640:d=1:r=30",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(target),
+        ],
+        check=True,
+        timeout=60,
+    )
+    try:
+        _audit_composed_content_video(
+            target,
+            group={
+                "duration": 1,
+                "aspect_ratio": "9:16",
+                "media_manifest_sha256": "d" * 64,
+            },
+            segments=[{
+                "segment_index": 1,
+                "duration": 1,
+                "audio_mode": "silent",
+                "product_anchor_required": False,
+                "display_lines": [],
+            }],
+            local_postproduction=[{
+                "segment_index": 1,
+                "display_line_ids": [],
+            }],
+            intent_fidelity={
+                "status": "fail",
+                "blocking": True,
+                "policy_version": "intent-test-v1",
+                "video_index": 3,
+                "blocking_requirement_ids": ["R-001"],
+                "blocking_reasons": ["Opening mechanism is not readable."],
+                "repair_scope": "segment_regeneration",
+                "affected_segment_indices": [1],
+                "affected_task_ids": [901],
+                "repair_instruction": "Regenerate only the opening segment.",
+                "requirement_evidence": {
+                    "R-001": {"status": "fail"},
+                },
+                "result_sha256": "e" * 64,
+                "contact_sheet_path": "/tmp/final-review-result.jpg",
+                "benchmark_contact_sheet_path": "/tmp/benchmark-review.jpg",
+                "reviewed_at": "2026-08-05T01:00:00",
+            },
+        )
+    except ValueError as exc:
+        message = str(exc)
+        assert "CONTENT_FINAL_INTENT_QA_FAILED" in message
+        assert '"blocking_requirement_ids": ["R-001"]' in message
+        assert '"affected_task_ids": [901]' in message
+        assert '"repair_scope": "segment_regeneration"' in message
+        assert '"result_sha256": "eeee' in message
+        assert '"contact_sheet_path": "/tmp/final-review-result.jpg"' in message
+        assert '"benchmark_contact_sheet_path": "/tmp/benchmark-review.jpg"' in message
+    else:
+        raise AssertionError("final video gate accepted failed signed intent")
+
+
 
 
 
@@ -472,7 +777,7 @@ def test_signed_plan_provider_prompt_preserves_exact_conversion_copy():
         segment,
         resolution="720p",
         language_label="English (US)",
-        fast_pacing=False,
+        requirement_contract=[],
         product_required=True,
     )
 
@@ -562,6 +867,16 @@ def test_explicit_product_action_or_selected_product_reference_requests_anchor()
     ) is True
 
 
+def test_time_scoped_no_product_does_not_hide_later_product_reveal():
+    prompt = (
+        "0-3s: no product is visible; phone glows in the dark | "
+        "3-6s: she puts the phone face-down | "
+        "6-9s: she holds the MYUPONA bottle and presents exactly two gummies"
+    )
+
+    assert _segment_needs_product_anchor(prompt, []) is True
+
+
 def test_segment_reference_selection_rejects_other_segment_panels_even_when_model_selects_all():
     refs = [
         {
@@ -648,6 +963,40 @@ def test_segment_reference_selection_bounds_unknown_all_selected_board():
     assert any("action_anchor" in ref["semantic_roles"] for ref in selected)
 
 
+def test_reference_ranking_does_not_require_an_action_panel():
+    refs = [
+        {
+            "index": 1,
+            "path": "/tmp/identity.png",
+            "reference_segment": 1,
+            "semantic_roles": ["character_anchor", "scene_anchor"],
+            "is_product_anchor": False,
+        },
+        *[
+            {
+                "index": index,
+                "path": f"/tmp/action-{index}.png",
+                "reference_segment": 1,
+                "semantic_roles": ["action_anchor"],
+                "is_product_anchor": False,
+            }
+            for index in range(2, 8)
+        ],
+    ]
+
+    selected = _select_segment_refs(
+        refs,
+        [1, 2, 3, 4, 5, 6, 7],
+        limit=4,
+        prompt="Text owns every timed action and camera cut.",
+        product_required=False,
+        segment_index=1,
+    )
+
+    assert selected[0]["index"] == 1
+    assert len(selected) <= 4
+
+
 def test_segment_reference_repair_never_borrows_another_segments_anchor():
     refs = [
         {
@@ -706,6 +1055,47 @@ def test_segment_reference_selection_returns_empty_instead_of_borrowing_later_pr
     )
 
     assert selected == []
+
+
+def test_authoritative_multimodal_reference_selection_does_not_restore_action_or_scene_panels():
+    refs = [
+        {
+            "index": 1,
+            "filename": "scene.png",
+            "path": "/tmp/scene.png",
+            "reference_segment": 1,
+            "semantic_roles": ["scene_anchor", "action_anchor"],
+            "is_product_anchor": False,
+        },
+        {
+            "index": 2,
+            "filename": "malformed-hands.png",
+            "path": "/tmp/malformed-hands.png",
+            "reference_segment": 1,
+            "semantic_roles": ["action_anchor"],
+            "is_product_anchor": False,
+        },
+        {
+            "index": 3,
+            "filename": "package.png",
+            "path": "/tmp/package.png",
+            "reference_segment": 0,
+            "semantic_roles": ["product_anchor"],
+            "is_product_anchor": True,
+        },
+    ]
+
+    selected = _select_segment_refs(
+        refs,
+        [],
+        limit=10,
+        prompt="Prompt text owns the opening, application, pacing and narration.",
+        product_required=True,
+        segment_index=1,
+        authoritative_selection=True,
+    )
+
+    assert [ref["index"] for ref in selected] == [3]
 
 
 def test_creative_reference_plan_count_is_authoritative_over_review_prose():

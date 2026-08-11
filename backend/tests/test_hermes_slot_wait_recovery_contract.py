@@ -36,9 +36,9 @@ def test_self_heal_consumes_durable_draft_slot_requests():
     assert 'stats["waiting_slot_started"] += 1' in TASK_SOURCE
 
 
-def test_create_project_returns_while_local_agent_builds_slot():
+def test_producer_confirmation_returns_while_local_agent_builds_slot():
     create_section = ROUTER_SOURCE[
-        ROUTER_SOURCE.index("def create_content_factory_project(") :
+        ROUTER_SOURCE.index("def confirm_content_factory_producer_project(") :
         ROUTER_SOURCE.index("def update_content_factory_project(")
     ]
     assert "except APIError as exc:" in create_section

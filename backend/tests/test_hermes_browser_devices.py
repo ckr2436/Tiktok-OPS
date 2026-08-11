@@ -16,6 +16,7 @@ from app.core.errors import APIError
 from app.services.hermes_agent.content_factory import (
     _authorize_bridge_agent_key,
     _agent_target_slot_count,
+    _bridge_binding_enrollments,
     _bridge_is_api_video_dormant,
     _bridge_base_device_id,
     _bridge_device_bound,
@@ -30,6 +31,8 @@ from app.services.hermes_agent.content_factory import (
     reconcile_bridge_agent,
     reconcile_bridge_project_leases,
     bridge_agent_inbox_manifest,
+    browser_devices,
+    assign_bridge_device_to_host,
     build_bridge_agent_executable,
     ensure_bridge_agent_file_access,
     queue_stage,
@@ -48,6 +51,189 @@ def test_bridge_slot_is_grouped_under_agent_device():
 
     assert _bridge_base_device_id(bridge) == "device-a"
     assert _bridge_device_bound(bridge) is True
+
+
+def test_browser_device_reports_persistent_profile_inventory(db_session):
+    flow = _new_agent_slot(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="inventory-device",
+        device_name="Inventory Device",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    flow.meta_json = {
+        **dict(flow.meta_json or {}),
+        "agent_profile_capacity": 64,
+        "agent_last_heartbeat_at": datetime.now().isoformat(),
+        "flow_account_slot": True,
+        "flow_token_id": 11,
+    }
+    doubao = _new_agent_slot(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="inventory-device",
+        device_name="Inventory Device",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=1,
+    )
+    doubao.meta_json = {
+        **dict(doubao.meta_json or {}),
+        "doubao_lab_slot": True,
+    }
+    db_session.flush()
+
+    devices = browser_devices(db_session, workspace_id=3, user_id=101)
+
+    assert len(devices) == 1
+    assert devices[0]["profile_capacity"] == 64
+    assert devices[0]["profile_used_count"] == 2
+    assert devices[0]["profile_available_count"] == 62
+    assert devices[0]["profile_usage"]["flow"] == 1
+    assert devices[0]["profile_usage"]["doubao"] == 1
+
+
+def test_browser_device_reports_agent_update_state_and_manual_fallback(db_session):
+    bridge = _new_agent_slot(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="versioned-device",
+        device_name="Versioned Device",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    bridge.meta_json = {
+        **dict(bridge.meta_json or {}),
+        "agent_last_heartbeat_at": datetime.now().isoformat(),
+        "agent_version": "2026.08.10.3",
+        "agent_update_state": "failed",
+        "agent_update_error": "download interrupted",
+    }
+    db_session.flush()
+
+    device = browser_devices(db_session, workspace_id=3, user_id=101)[0]
+
+    assert device["agent_version"] == "2026.08.10.3"
+    assert device["server_agent_version"] == content_factory.BRIDGE_AGENT_VERSION
+    assert device["agent_update_required"] is True
+    assert device["agent_update_state"] == "failed"
+    assert device["agent_update_error"] == "download interrupted"
+
+
+def test_explicit_physical_host_assignment_enrolls_missing_scoped_binding(db_session):
+    source = _new_agent_slot(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="tenant-device",
+        device_name="Shared Windows",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    source.meta_json = {
+        **dict(source.meta_json or {}),
+        "agent_host_id": "a" * 32,
+        "agent_last_heartbeat_at": datetime.now().isoformat(),
+    }
+    target = _new_agent_slot(
+        db_session,
+        workspace_id=1,
+        user_id=1,
+        device_id="flow-provider-device",
+        device_name="Shared Windows",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    db_session.flush()
+
+    assignment = assign_bridge_device_to_host(
+        db_session,
+        target_workspace_id=1,
+        target_user_id=1,
+        target_device_id="flow-provider-device",
+        source_workspace_id=3,
+        source_user_id=101,
+        source_device_id="tenant-device",
+        assigned_by=1,
+    )
+    enrollments = _bridge_binding_enrollments(
+        db_session,
+        source_workspace_id=3,
+        source_user_id=101,
+        source_device_id="tenant-device",
+        host_id="a" * 32,
+        installed_bindings=[],
+        api_base_url="https://gmv.example.test",
+    )
+
+    assert assignment["host_id"] == "a" * 32
+    assert len(enrollments) == 1
+    assert enrollments[0]["workspace_id"] == 1
+    assert enrollments[0]["user_id"] == 1
+    assert enrollments[0]["device_id"] == "flow-provider-device"
+    assert enrollments[0]["token"]
+    assert dict(target.meta_json or {})["bridge_host_assignment"]["source_device_id"] == "tenant-device"
+
+    identity = content_factory.hashlib.sha256(b"1:1:flow-provider-device").hexdigest()[:16]
+    assert _bridge_binding_enrollments(
+        db_session,
+        source_workspace_id=3,
+        source_user_id=101,
+        source_device_id="tenant-device",
+        host_id="a" * 32,
+        installed_bindings=[identity],
+        api_base_url="https://gmv.example.test",
+    ) == []
+
+
+def test_host_assignment_is_not_disclosed_to_an_unrelated_binding(db_session):
+    source = _new_agent_slot(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="tenant-device-a",
+        device_name="Shared Windows",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    source.meta_json = {
+        **dict(source.meta_json or {}),
+        "agent_host_id": "b" * 32,
+        "agent_last_heartbeat_at": datetime.now().isoformat(),
+    }
+    _new_agent_slot(
+        db_session,
+        workspace_id=1,
+        user_id=1,
+        device_id="flow-provider-device-b",
+        device_name="Shared Windows",
+        inbox_root=r"C:\HermesInbox",
+        slot_index=0,
+    )
+    db_session.flush()
+    assign_bridge_device_to_host(
+        db_session,
+        target_workspace_id=1,
+        target_user_id=1,
+        target_device_id="flow-provider-device-b",
+        source_workspace_id=3,
+        source_user_id=101,
+        source_device_id="tenant-device-a",
+        assigned_by=1,
+    )
+
+    assert _bridge_binding_enrollments(
+        db_session,
+        source_workspace_id=3,
+        source_user_id=102,
+        source_device_id="tenant-device-b",
+        host_id="b" * 32,
+        installed_bindings=[],
+        api_base_url="https://gmv.example.test",
+    ) == []
 
 
 def test_operator_control_reloads_and_locks_project_row():
@@ -300,6 +486,7 @@ def test_agent_slot_adopts_legacy_nonretired_row_in_place(db_session):
     assert adopted.meta_json["slot_index"] == 0
     assert adopted.meta_json["local_port"] == 9222
     assert adopted.meta_json["agent_last_heartbeat_at"]
+    assert "connect_command" not in adopted.meta_json
     assert adopted.last_seen_at is not None
 
 
@@ -724,6 +911,122 @@ def test_manual_resume_resets_current_stage_self_heal_budget(db_session):
     assert "retry_after" not in stage.input_json
 
 
+def test_manual_resume_restores_authorized_director_replan_packet(
+    db_session,
+    monkeypatch,
+):
+    from app.tasks.hermes_agent import content_factory_tasks
+
+    project = _content_project(key="cf_resume_director_replan", user_id=101)
+    project.status = "paused"
+    project.current_stage = "DIRECTOR"
+    project.config_json = {
+        "manual_paused": True,
+        "video_count": 5,
+        "video_model": "seedance_2_0_mini",
+    }
+    project.state_json = {
+        "active_variant_index": 2,
+        "automatic_quality_recovery": {
+            "status": "replanning",
+            "generation": "self-heal-103:profile-v7",
+            "incident_key": "creative_visual_replan_exhausted:stage-88:variant-2",
+            "attempt_count": 1,
+            "pause_reason_code": "creative_visual_replan_exhausted",
+        },
+        "automatic_quality_upstream_replan": {
+            "from_stage": "CREATIVE_REVIEW",
+            "to_stage": "DIRECTOR",
+            "source_stage_id": 88,
+            "feedback": [{
+                "code": "CREATIVE_VISUAL_REPLAN_EXHAUSTED",
+                "line_ids": [],
+                "evidence": "The approved visual program missed the hook.",
+                "repair_instruction": "Create a materially new opening.",
+            }],
+        },
+        "last_restart": {
+            "stage": "SERIES_DIRECTOR",
+            "instruction": "Preserve the user's binding high-energy hook request.",
+        },
+    }
+    db_session.add(project)
+    db_session.flush()
+    paused_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="DIRECTOR",
+        attempt=3,
+        status="paused",
+        input_json={"self_heal_count": 0},
+    )
+    db_session.add(paused_stage)
+    db_session.commit()
+
+    resume_project(db_session, project)
+    monkeypatch.setattr(
+        content_factory,
+        "ensure_project_video_duration_plan",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        content_factory,
+        "_stage_api_route",
+        lambda *_args, **_kwargs: "hermes:content-director",
+    )
+    monkeypatch.setattr(
+        content_factory_tasks.run_content_factory_stage,
+        "apply_async",
+        lambda **_kwargs: SimpleNamespace(id="resume-director-replan-task"),
+    )
+
+    resumed_stage = queue_stage(
+        db_session,
+        project=project,
+        user_id=project.user_id,
+        instruction="Resume from the manually paused breakpoint.",
+        queue_priority=9,
+    )
+
+    resumed_input = dict(resumed_stage.input_json or {})
+    assert resumed_input["force_fresh_response"] is True
+    assert resumed_input["manual_resume_restored_director_replan"] is True
+    assert resumed_input["automatic_quality_pause_reason"] == (
+        "creative_visual_replan_exhausted"
+    )
+    assert resumed_input["director_replan_source_stage_id"] == 88
+    assert resumed_input["director_replan_feedback"][0]["code"] == (
+        "CREATIVE_VISUAL_REPLAN_EXHAUSTED"
+    )
+    assert resumed_stage.instruction == (
+        "Preserve the user's binding high-energy hook request."
+    )
+
+
+def test_manual_resume_rejects_an_already_running_project(db_session):
+    project = _content_project(key="cf_resume_running", user_id=101)
+    project.status = "running"
+    project.current_stage = "VISUAL_PREVIEW"
+    project.state_json = {
+        "pending_visual_api_resume": {"source_stage_id": 999},
+        "resume_generation": 7,
+    }
+    db_session.add(project)
+    db_session.commit()
+
+    with pytest.raises(APIError) as raised:
+        resume_project(db_session, project)
+
+    assert raised.value.code == "CONTENT_PROJECT_NOT_RESUMABLE"
+    db_session.refresh(project)
+    assert project.status == "running"
+    assert project.state_json["resume_generation"] == 7
+    assert project.state_json["pending_visual_api_resume"] == {
+        "source_stage_id": 999,
+    }
+
+
 def test_manual_resume_invalidates_stale_global_video_waiter(db_session):
     project = _content_project(key="cf_resume_parallel_video", user_id=101)
     project.status = "paused"
@@ -839,6 +1142,83 @@ def test_manual_resume_requeues_waiter_for_declared_failed_segment(db_session):
 
 
 
+def test_manual_resume_recovers_terminal_provider_failure_after_pool_returns(
+    db_session,
+):
+    project = _content_project(
+        key="cf_resume_recovered_provider_pool",
+        user_id=101,
+    )
+    project.status = "failed"
+    project.current_stage = "WAITING_VIDEO_INPUT"
+    project.config_json = {"manual_paused": False, "video_count": 3}
+    db_session.add(project)
+    key = KieApiKey(
+        name="resume-recovered-provider-key",
+        provider_key="doubao_web",
+        api_key_ciphertext="test",
+        is_active=True,
+        is_default=True,
+    )
+    db_session.add(key)
+    db_session.flush()
+    task = KieTask(
+        workspace_id=project.workspace_id,
+        created_by_user_id=project.user_id,
+        key_id=key.id,
+        model="seedance_2_0_mini",
+        task_id="resume-recovered-provider-task",
+        state="failed",
+        fail_code="doubao_pool_unavailable",
+        fail_msg="provider pool temporarily unavailable",
+        input_json={
+            "content_factory_project_key": project.project_key,
+            "content_factory_video_index": 1,
+            "content_factory_segment_index": 2,
+        },
+    )
+    db_session.add(task)
+    db_session.flush()
+    project.state_json = {
+        "ai_video_task_ids": [int(task.id)],
+        # Terminal rows are intentionally absent from the pending list.
+        "ai_video_pending_task_ids": [],
+        "ai_video_group_statuses": [{
+            "video_index": 1,
+            "status": "pending",
+            "failed_task_ids": [int(task.id)],
+            "recoverable_failed_task_ids": [int(task.id)],
+        }],
+        "ai_video_exhausted_cooldown_retry_generations": {
+            "1:2": {"round": 5, "round_limit": 5},
+            "3:1": {"round": 2, "round_limit": 5},
+        },
+        "ai_video_segment_retry_counts": {"1:2": 7, "3:1": 2},
+        "ai_video_wait_task_id": "exhausted-provider-waiter",
+    }
+    db_session.commit()
+
+    resume_project(db_session, project)
+
+    state = dict(project.state_json or {})
+    assert state["ai_video_pending_task_ids"] == []
+    assert state["ai_video_resume_failed_task_ids"] == [int(task.id)]
+    assert "1:2" not in state[
+        "ai_video_exhausted_cooldown_retry_generations"
+    ]
+    assert state["ai_video_exhausted_cooldown_retry_generations"]["3:1"] == {
+        "round": 2,
+        "round_limit": 5,
+    }
+    assert state["ai_video_segment_retry_counts"] == {"1:2": 7, "3:1": 2}
+    assert state["ai_video_manual_provider_recovery"]["task_ids"] == [
+        int(task.id)
+    ]
+    assert state["ai_video_manual_provider_recovery"]["retry_keys"] == ["1:2"]
+    assert state["ai_video_wait_takeover_from"] == "exhausted-provider-waiter"
+    assert state["ai_video_wait_resume_requested_at"]
+
+
 def test_manual_resume_reuses_downloaded_visual_api_checkpoint(
     db_session,
     tmp_path,
@@ -921,6 +1301,104 @@ def test_manual_resume_reuses_downloaded_visual_api_checkpoint(
     assert "pending_visual_api_resume" not in dict(project.state_json or {})
 
 
+def test_manual_resume_drops_review_rejected_downloaded_reference(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    from app.tasks.hermes_agent import content_factory_tasks
+
+    accepted = tmp_path / "accepted-reference-01.png"
+    rejected = tmp_path / "rejected-reference-02.png"
+    accepted.write_bytes(b"accepted-provider-result")
+    rejected.write_bytes(b"rejected-provider-result")
+    project = _content_project(key="cf_visual_resume_rejected", user_id=101)
+    project.status = "paused"
+    project.current_stage = "VISUAL_PREVIEW"
+    project.config_json = {"manual_paused": True, "video_count": 4}
+    project.state_json = {
+        "active_variant_index": 3,
+        "video_variant_pipeline": {"active_index": 3, "target_count": 4},
+        "last_creative_review": {
+            "approved_for_split": False,
+            "repair_brief": "Regenerate reference 2 only.",
+            "partial_repair": {
+                "variant_index": 3,
+                "failed_indices": [2],
+                "preserved_references": [],
+            },
+        },
+        "pending_visual_partial_repair": {
+            "variant_index": 3,
+            "failed_indices": [2],
+            "preserved_references": [],
+        },
+    }
+    db_session.add(project)
+    db_session.flush()
+    paused_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=8,
+        status="paused",
+        input_json={
+            "variant_index": 3,
+            "replay_context_digest": "same-signed-plan",
+            "execution_backend": "api",
+            "visual_api": {
+                "status": "completed",
+                "boards": {
+                    "1": {
+                        "status": "completed",
+                        "task_id": "accepted-task",
+                        "output_path": str(accepted),
+                    },
+                    "2": {
+                        "status": "completed",
+                        "task_id": "rejected-task",
+                        "output_path": str(rejected),
+                    },
+                },
+            },
+        },
+    )
+    db_session.add(paused_stage)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        content_factory,
+        "_resume_production_plan_is_authoritative",
+        lambda *_args, **_kwargs: True,
+    )
+    resume_project(db_session, project)
+    monkeypatch.setattr(
+        content_factory,
+        "has_active_key",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        content_factory_tasks.run_content_factory_stage,
+        "apply_async",
+        lambda **_kwargs: SimpleNamespace(id="resume-task"),
+    )
+
+    resumed_stage = queue_stage(
+        db_session,
+        project=project,
+        user_id=project.user_id,
+        instruction="Resume only approved paid references.",
+        queue_priority=9,
+    )
+
+    resumed_input = dict(resumed_stage.input_json or {})
+    boards = dict(resumed_input["visual_api"]["boards"])
+    assert boards["1"]["task_id"] == "accepted-task"
+    assert "2" not in boards
+    assert resumed_input["visual_repair_failed_indices"] == [2]
+
+
 def test_manual_resume_recovers_paid_visuals_from_failed_api_predecessor(
     db_session,
     tmp_path,
@@ -949,6 +1427,7 @@ def test_manual_resume_recovers_paid_visuals_from_failed_api_predecessor(
         status="failed",
         input_json={
             "variant_index": 9,
+            "replay_context_digest": "same-signed-plan",
             "api_route": "bandianwa:auto-image",
             "execution_backend": "api",
             "visual_api": {
@@ -980,6 +1459,7 @@ def test_manual_resume_recovers_paid_visuals_from_failed_api_predecessor(
         status="paused",
         input_json={
             "variant_index": 9,
+            "replay_context_digest": "same-signed-plan",
             "execution_backend": "browser",
             "visual_api_force_browser_fallback": True,
         },
@@ -997,6 +1477,7 @@ def test_manual_resume_recovers_paid_visuals_from_failed_api_predecessor(
     assert checkpoint["source_stage_id"] == paid_api_stage.id
     assert checkpoint["recovered_across_fallback"] is True
     assert checkpoint["fallback_stage_id"] == browser_fallback_stage.id
+    assert checkpoint["replay_context_digest"] == "same-signed-plan"
     assert checkpoint["visual_api"]["provider_retry_generation"] == 0
     assert checkpoint["visual_api"]["account_quota_exhausted"] is False
     assert "provider_failures" not in checkpoint["visual_api"]
@@ -1025,8 +1506,191 @@ def test_manual_resume_recovers_paid_visuals_from_failed_api_predecessor(
         paid_reference
     )
     assert resumed_input["visual_api"]["provider_retry_generation"] == 0
+    assert resumed_input["visual_api"][
+        "checkpoint_source_replay_context_digest"
+    ] == "same-signed-plan"
     assert resumed_input["visual_api"]["account_quota_exhausted"] is False
     assert "visual_api_force_browser_fallback" not in resumed_input
+
+
+def test_manual_resume_does_not_reuse_visuals_from_prior_production_plan(
+    db_session,
+    tmp_path,
+):
+    paid_reference = tmp_path / "old-plan-reference.png"
+    paid_reference.write_bytes(b"paid-provider-result")
+    project = _content_project(key="cf_visual_plan_boundary", user_id=101)
+    project.status = "paused"
+    project.current_stage = "VISUAL_PREVIEW"
+    project.config_json = {"manual_paused": True, "video_count": 4}
+    project.state_json = {
+        "active_variant_index": 3,
+        "video_variant_pipeline": {"active_index": 3, "target_count": 4},
+    }
+    db_session.add(project)
+    db_session.flush()
+    old_plan_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=5,
+        status="success",
+        input_json={
+            "variant_index": 3,
+            "replay_context_digest": "old-plan-digest",
+            "visual_api": {
+                "status": "completed",
+                "boards": {
+                    "3": {
+                        "status": "completed",
+                        "output_path": str(paid_reference),
+                    },
+                },
+            },
+        },
+    )
+    db_session.add(old_plan_stage)
+    db_session.flush()
+    paused_new_plan_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=6,
+        status="paused",
+        input_json={
+            "variant_index": 3,
+            "replay_context_digest": "new-plan-digest",
+            "visual_api": {
+                "status": "failed",
+                "boards": {"1": {"status": "failed"}},
+            },
+        },
+    )
+    db_session.add(paused_new_plan_stage)
+    db_session.commit()
+
+    checkpoint = content_factory._latest_resumable_visual_api_checkpoint(
+        db_session,
+        project,
+        paused_new_plan_stage,
+    )
+
+    assert checkpoint == {}
+
+
+def test_manual_resume_does_not_reuse_unversioned_visuals_for_signed_plan(
+    db_session,
+    tmp_path,
+):
+    paid_reference = tmp_path / "unversioned-reference.png"
+    paid_reference.write_bytes(b"paid-provider-result")
+    project = _content_project(key="cf_visual_unsigned_boundary", user_id=101)
+    project.status = "paused"
+    project.current_stage = "VISUAL_PREVIEW"
+    project.config_json = {"manual_paused": True, "video_count": 4}
+    project.state_json = {
+        "active_variant_index": 3,
+        "video_variant_pipeline": {"active_index": 3, "target_count": 4},
+    }
+    db_session.add(project)
+    db_session.flush()
+    db_session.add(HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=4,
+        status="success",
+        input_json={
+            "variant_index": 3,
+            "visual_api": {
+                "status": "completed",
+                "boards": {
+                    "1": {
+                        "status": "completed",
+                        "output_path": str(paid_reference),
+                    },
+                },
+            },
+        },
+    ))
+    paused = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=5,
+        status="paused",
+        input_json={
+            "variant_index": 3,
+            "replay_context_digest": "signed-current-plan",
+            "visual_api": {"status": "failed", "boards": {}},
+        },
+    )
+    db_session.add(paused)
+    db_session.commit()
+
+    checkpoint = content_factory._latest_resumable_visual_api_checkpoint(
+        db_session,
+        project,
+        paused,
+    )
+
+    assert checkpoint == {}
+
+
+def test_manual_resume_rejects_visual_checkpoint_from_previous_signed_plan(
+    db_session,
+    tmp_path,
+):
+    paid_reference = tmp_path / "previous-plan-reference.png"
+    paid_reference.write_bytes(b"paid-provider-result")
+    project = _content_project(key="cf_visual_plan_sha_boundary", user_id=101)
+    project.status = "paused"
+    project.current_stage = "PRODUCTION_PLAN"
+    project.config_json = {"manual_paused": True, "video_count": 1}
+    project.state_json = {
+        "active_variant_index": 1,
+        "approved_production_plan": {"plan_sha256": "new-plan-sha"},
+        "video_variant_pipeline": {"active_index": 1, "target_count": 1},
+    }
+    db_session.add(project)
+    db_session.flush()
+    db_session.add(HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=4,
+        status="success",
+        input_json={
+            "variant_index": 1,
+            "replay_context_digest": "coincidentally-stable-digest",
+            "director_media_authorization": {
+                "production_plan_sha256": "old-plan-sha",
+            },
+            "visual_api": {
+                "status": "completed",
+                "boards": {
+                    "1": {
+                        "status": "completed",
+                        "output_path": str(paid_reference),
+                    },
+                },
+            },
+        },
+    ))
+    db_session.commit()
+
+    checkpoint = content_factory._latest_resumable_visual_api_checkpoint(
+        db_session,
+        project,
+        None,
+    )
+
+    assert checkpoint == {}
 
 
 def test_resume_failed_product_replan_returns_to_paid_visual_scene(
@@ -1217,6 +1881,43 @@ def test_api_video_wait_hibernates_the_sticky_slot_without_releasing_it(db_sessi
     assert bridge.lease_expires_at is not None
 
 
+def test_api_stage_persists_dormant_intent_after_degraded_bridge_release(db_session):
+    project = _content_project(key="cf_api_dormant_without_bridge", user_id=101)
+    project.current_stage = "VISUAL_PREVIEW"
+    project.status = "retrying"
+    project.state_json = {"browser_slot_mode": "active"}
+    db_session.add(project)
+    db_session.flush()
+    stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=3,
+        status="retrying",
+        input_json={
+            "execution_backend": "api",
+            "api_route": "bandianwa:gpt-image-2",
+            "api_fallback_to_browser": False,
+        },
+    )
+    db_session.add(stage)
+    db_session.flush()
+
+    assert hibernate_project_browser_slot_for_api_video(
+        db_session,
+        project=project,
+        active_stage=stage,
+    ) is True
+    assert project.state_json["browser_slot_mode"] == "dormant"
+    assert project.state_json["browser_slot_dormant_requested_at"]
+    assert hibernate_project_browser_slot_for_api_video(
+        db_session,
+        project=project,
+        active_stage=stage,
+    ) is False
+
+
 def test_parallel_api_stage_keeps_dormant_slot_asleep_during_video_generation(db_session):
     project = _content_project(key="cf_parallel_api_dormant", user_id=101)
     project.current_stage = "CREATIVE"
@@ -1388,6 +2089,97 @@ def test_agent_desired_slots_keep_parallel_api_stage_dormant(monkeypatch, db_ses
     assert bridge.active_project_id == project.id
 
 
+def test_project_dormant_intent_overrides_stale_active_bridge_heartbeat(
+    monkeypatch,
+    db_session,
+):
+    project = _content_project(key="cf_project_dormant_authority", user_id=101)
+    project.current_stage = "VISUAL_PREVIEW"
+    project.status = "queued"
+    project.state_json = {"browser_slot_mode": "dormant"}
+    db_session.add(project)
+    db_session.flush()
+    stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        user_id=project.user_id,
+        stage="VISUAL_PREVIEW",
+        attempt=4,
+        status="retrying",
+        input_json={
+            "execution_backend": "api",
+            "api_route": "bandianwa:gpt-image-2",
+            "api_fallback_to_browser": False,
+        },
+    )
+    bridge = HermesBrowserBridge(
+        bridge_id="br_project_dormant_authority",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:7",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9329",
+        server_port=9329,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="active",
+        active_project_id=project.id,
+        lease_expires_at=datetime.now() + timedelta(hours=1),
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 7,
+            "local_port": 9229,
+            "agent_slot_mode": "active",
+        },
+    )
+    db_session.add_all([stage, bridge])
+    db_session.commit()
+    monkeypatch.setattr(content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None)
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.07.25.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=8,
+        reported_slots=[{
+            "bridge_id": bridge.bridge_id,
+            "connected": False,
+            "mode": "active",
+        }],
+    )
+
+    desired = next(item for item in response["slots"] if item["bridge_id"] == bridge.bridge_id)
+    assert desired["mode"] == "dormant"
+
+    acknowledged = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.07.25.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=8,
+        reported_slots=[{
+            "bridge_id": bridge.bridge_id,
+            "connected": False,
+            "mode": "dormant",
+        }],
+    )
+
+    assert acknowledged["slots"][0]["mode"] == "dormant"
+    assert bridge.status == "dormant"
+    assert bridge.meta_json["agent_slot_mode"] == "dormant"
+
+
 def test_agent_heartbeat_does_not_create_chrome_for_unleased_api_stage(
     monkeypatch,
     db_session,
@@ -1431,6 +2223,491 @@ def test_agent_heartbeat_does_not_create_chrome_for_unleased_api_stage(
     registration = db_session.query(HermesBrowserBridge).one()
     assert registration.status == "standby"
     assert registration.active_project_id is None
+
+
+def test_agent_heartbeat_preserves_concurrent_doubao_probe_on_unreported_slot(
+    monkeypatch,
+    db_session,
+):
+    bridge = HermesBrowserBridge(
+        bridge_id="doubao_profile_heartbeat_race",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:9",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9331",
+        server_port=9331,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 9,
+            "local_port": 9231,
+            "doubao_lab_slot": True,
+            "doubao_seedance_capability_state": "unknown",
+        },
+    )
+    db_session.add(bridge)
+    db_session.commit()
+    monkeypatch.setattr(content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None)
+
+    original_retire = content_factory._retire_dead_agent_rows
+
+    def inject_concurrent_probe(db, rows, *, reports, now):
+        kept = original_retire(db, rows, reports=reports, now=now)
+        fresh_meta = dict(bridge.meta_json or {})
+        fresh_meta.update(
+            {
+                "doubao_seedance_capability_state": "probing",
+                "doubao_seedance_probe_id": "dp_concurrent",
+                "doubao_seedance_capability_probe_started_at": now.isoformat(),
+            }
+        )
+        db.query(HermesBrowserBridge).filter(
+            HermesBrowserBridge.id == bridge.id
+        ).update(
+            {HermesBrowserBridge.meta_json: fresh_meta},
+            synchronize_session=False,
+        )
+        return kept
+
+    monkeypatch.setattr(content_factory, "_retire_dead_agent_rows", inject_concurrent_probe)
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.07.29.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=8,
+        reported_slots=[],
+    )
+
+    assert response["slots"] == []
+    assert bridge.meta_json["doubao_seedance_capability_state"] == "probing"
+    assert bridge.meta_json["doubao_seedance_probe_id"] == "dp_concurrent"
+    assert bridge.meta_json["agent_last_heartbeat_at"]
+
+
+def test_agent_heartbeat_preserves_flow_login_complete_transition(
+    monkeypatch,
+    db_session,
+):
+    now = datetime.now()
+    bridge = HermesBrowserBridge(
+        bridge_id="flow_login_completion",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:1",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9323",
+        server_port=9323,
+        inbox_root=r"C:\HermesInbox",
+        browser="Chrome",
+        status="offline",
+        last_seen_at=now,
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 1,
+            "local_port": 9223,
+            "flow_account_slot": True,
+            "flow_capture_id": "flow_capture_login_complete",
+            "flow_capture_state": "awaiting_login",
+            "flow_capture_updated_at": now.isoformat(),
+            "flow_browser_status": "login_required",
+        },
+    )
+    db_session.add(bridge)
+    db_session.commit()
+    monkeypatch.setattr(
+        content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None
+    )
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.08.08.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root=r"C:\HermesInbox",
+        local_capacity=3,
+        reported_slots=[
+            {
+                "bridge_id": bridge.bridge_id,
+                "connected": False,
+                "mode": "active",
+                "purpose": "flow_account",
+                "flow_status": "login_complete",
+                "capture_id": "flow_capture_login_complete",
+            }
+        ],
+    )
+
+    db_session.refresh(bridge)
+    assert bridge.meta_json["flow_capture_state"] == "capture_pending"
+    assert bridge.meta_json["flow_browser_status"] == "login_complete"
+    assert "chatgpt_auth_checked_at" not in bridge.meta_json
+    desired = next(
+        item for item in response["slots"] if item["bridge_id"] == bridge.bridge_id
+    )
+    assert desired["login_only"] is False
+    assert desired["capture_required"] is True
+
+
+def test_agent_heartbeat_ignores_stale_flow_capture_report(
+    monkeypatch,
+    db_session,
+):
+    now = datetime.now()
+    bridge = HermesBrowserBridge(
+        bridge_id="flow_new_capture",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:1",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9323",
+        server_port=9323,
+        inbox_root=r"C:\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        last_seen_at=now,
+        load_json={"reported_capture_id": "flow_previous"},
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 1,
+            "local_port": 9223,
+            "flow_account_slot": True,
+            "flow_token_id": 7,
+            "flow_capture_id": "flow_current",
+            "flow_capture_state": "capture_pending",
+            "flow_capture_purpose": "auto_reauth",
+            "flow_capture_updated_at": now.isoformat(),
+            "flow_auto_reauth_attempts": 1,
+        },
+    )
+    db_session.add(bridge)
+    db_session.commit()
+    monkeypatch.setattr(
+        content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None
+    )
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.08.10.6",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root=r"C:\HermesInbox",
+        local_capacity=3,
+        reported_slots=[
+            {
+                "bridge_id": bridge.bridge_id,
+                "connected": True,
+                "mode": "active",
+                "purpose": "flow_account",
+                "flow_status": "login_required",
+                "capture_id": "flow_previous",
+            }
+        ],
+    )
+
+    db_session.refresh(bridge)
+    assert bridge.meta_json["flow_capture_id"] == "flow_current"
+    assert bridge.meta_json["flow_capture_state"] == "capture_pending"
+    assert bridge.meta_json.get("flow_capture_error") is None
+    assert bridge.load_json == {"reported_capture_id": "flow_previous"}
+    desired = next(
+        item for item in response["slots"] if item["bridge_id"] == bridge.bridge_id
+    )
+    assert desired["capture_id"] == "flow_current"
+    assert desired["capture_required"] is True
+    assert desired["login_only"] is False
+    assert desired["automatic_visit"] is False
+
+
+def test_agent_heartbeat_prioritizes_bounded_doubao_request_over_other_account(
+    monkeypatch,
+    db_session,
+):
+    flow_bridge = HermesBrowserBridge(
+        bridge_id="flow_interactive_lower_id",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:1",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9323",
+        server_port=9323,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 1,
+            "local_port": 9223,
+            "flow_account_slot": True,
+            "flow_capture_id": "flow_capture_waiting",
+            "flow_capture_state": "awaiting_login",
+            "flow_capture_updated_at": datetime.now().isoformat(),
+        },
+    )
+    db_session.add(flow_bridge)
+    db_session.flush()
+    challenge = "mvc_priority"
+    lease_id = f"manual-capture:{challenge}"
+    doubao_bridge = HermesBrowserBridge(
+        bridge_id="doubao_manual_higher_id",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:2",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9324",
+        server_port=9324,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 2,
+            "local_port": 9224,
+            "doubao_lab_slot": True,
+            "doubao_network_mode": "direct",
+            "doubao_capture_id": "doubao_capture_priority",
+            "doubao_capture_state": "captcha_required",
+            "doubao_pool_lease_task_id": lease_id,
+            "doubao_pool_lease_expires_at": (
+                datetime.now() + timedelta(minutes=10)
+            ).isoformat(),
+            "doubao_provider_browser_task_id": lease_id,
+            "doubao_manual_verification_state": "preparing",
+        },
+    )
+    db_session.add(doubao_bridge)
+    db_session.commit()
+    monkeypatch.setattr(
+        content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None
+    )
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.07.30.3",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=1,
+        reported_slots=[],
+    )
+
+    assert [item["bridge_id"] for item in response["slots"]] == [
+        doubao_bridge.bridge_id
+    ]
+    assert response["slots"][0]["capture_id"] == lease_id
+    assert response["slots"][0]["provider_request"] is True
+    assert response["slots"][0]["interactive"] is True
+
+
+def test_agent_heartbeat_keeps_parallel_doubao_provider_slots_desired(
+    monkeypatch,
+    db_session,
+):
+    now = datetime.now()
+    production_task_id = 3585
+    manual_challenge_id = "mvc_parallel"
+    manual_lease_id = f"manual-capture:{manual_challenge_id}"
+    production = HermesBrowserBridge(
+        bridge_id="doubao_production_parallel",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:9",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9331",
+        server_port=9331,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 9,
+            "local_port": 9231,
+            "doubao_lab_slot": True,
+            "doubao_network_mode": "direct",
+            "doubao_capture_id": "doubao_production_capture",
+            "doubao_capture_state": "ready",
+            "doubao_pool_lease_task_id": production_task_id,
+            "doubao_pool_lease_expires_at": (
+                now + timedelta(minutes=10)
+            ).isoformat(),
+            "doubao_provider_browser_task_id": production_task_id,
+        },
+    )
+    maintenance = HermesBrowserBridge(
+        bridge_id="doubao_maintenance_parallel",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:30",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9352",
+        server_port=9352,
+        inbox_root="C:\\HermesInbox",
+        browser="Chrome",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 30,
+            "local_port": 9252,
+            "doubao_lab_slot": True,
+            "doubao_network_mode": "direct",
+            "doubao_capture_id": "doubao_maintenance_capture",
+            "doubao_capture_state": "captcha_required",
+            "doubao_pool_lease_task_id": manual_lease_id,
+            "doubao_pool_lease_expires_at": (
+                now + timedelta(minutes=10)
+            ).isoformat(),
+            "doubao_provider_browser_task_id": manual_lease_id,
+            "doubao_manual_verification_state": "preparing",
+        },
+    )
+    db_session.add_all([production, maintenance])
+    db_session.commit()
+    monkeypatch.setattr(
+        content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None
+    )
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.08.06.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=4,
+        reported_slots=[],
+    )
+
+    desired = {item["bridge_id"]: item for item in response["slots"]}
+    assert production.bridge_id in desired
+    assert maintenance.bridge_id in desired
+    assert desired[production.bridge_id]["capture_id"] == str(production_task_id)
+    assert desired[production.bridge_id]["provider_request"] is True
+    assert desired[production.bridge_id]["interactive"] is False
+    assert desired[maintenance.bridge_id]["capture_id"] == manual_lease_id
+    assert desired[maintenance.bridge_id]["provider_request"] is True
+    assert desired[maintenance.bridge_id]["interactive"] is True
+
+
+def test_agent_heartbeat_production_preempts_maintenance_when_capacity_is_full(
+    monkeypatch,
+    db_session,
+):
+    now = datetime.now()
+    manual_lease_id = "manual-capture:mvc_lower_id"
+    maintenance = HermesBrowserBridge(
+        bridge_id="doubao_maintenance_lower_id",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:2",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9324",
+        server_port=9324,
+        inbox_root="C:\\HermesInbox",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 2,
+            "local_port": 9224,
+            "doubao_lab_slot": True,
+            "doubao_network_mode": "direct",
+            "doubao_capture_id": "maintenance_capture",
+            "doubao_capture_state": "captcha_required",
+            "doubao_pool_lease_task_id": manual_lease_id,
+            "doubao_pool_lease_expires_at": (
+                now + timedelta(minutes=10)
+            ).isoformat(),
+            "doubao_provider_browser_task_id": manual_lease_id,
+            "doubao_manual_verification_state": "preparing",
+        },
+    )
+    production_task_id = 3601
+    production = HermesBrowserBridge(
+        bridge_id="doubao_production_higher_id",
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a::slot:9",
+        device_name="Device A",
+        cdp_url="http://127.0.0.1:9331",
+        server_port=9331,
+        inbox_root="C:\\HermesInbox",
+        status="standby",
+        meta_json={
+            "agent_managed": True,
+            "agent_device_id": "device-a",
+            "account_device_bound": True,
+            "slot_index": 9,
+            "local_port": 9231,
+            "doubao_lab_slot": True,
+            "doubao_network_mode": "direct",
+            "doubao_capture_id": "production_capture",
+            "doubao_capture_state": "ready",
+            "doubao_pool_lease_task_id": production_task_id,
+            "doubao_pool_lease_expires_at": (
+                now + timedelta(minutes=10)
+            ).isoformat(),
+            "doubao_provider_browser_task_id": production_task_id,
+        },
+    )
+    db_session.add(maintenance)
+    db_session.flush()
+    db_session.add(production)
+    db_session.commit()
+    monkeypatch.setattr(
+        content_factory, "_authorize_bridge_agent_key", lambda **_kwargs: None
+    )
+
+    response = reconcile_bridge_agent(
+        db_session,
+        workspace_id=3,
+        user_id=101,
+        device_id="device-a",
+        device_name="Device A",
+        agent_version="2026.08.06.1",
+        public_key="ssh-ed25519 " + "A" * 44,
+        inbox_root="C:\\HermesInbox",
+        local_capacity=1,
+        reported_slots=[],
+    )
+
+    assert [item["bridge_id"] for item in response["slots"]] == [
+        production.bridge_id
+    ]
+    assert response["slots"][0]["capture_id"] == str(production_task_id)
 
 
 def test_agent_heartbeat_acknowledges_dormant_slot_without_recovery(monkeypatch, db_session):
