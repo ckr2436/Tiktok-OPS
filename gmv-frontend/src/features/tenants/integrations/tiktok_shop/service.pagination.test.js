@@ -10,6 +10,8 @@ vi.mock('@/core/httpClient.js', () => ({
 
 import http from '@/core/httpClient.js'
 import {
+  createTikTokShopVideoAnalysisHandoff,
+  downloadTikTokShopVideoAnalysisReport,
   getAllTikTokShopAnalytics,
   getAllTikTokShopProducts,
   lookupTikTokShopVideoMedia,
@@ -170,5 +172,31 @@ describe('TikTok Shop analytics pagination', () => {
       {},
     )
     expect(result).toMatchObject({ queued: true, item: { status: 'QUEUED' } })
+  })
+
+  it('exports the frozen report and creates one explicit content-factory handoff', async () => {
+    const blob = new Blob(['report'], { type: 'text/markdown' })
+    http.get.mockResolvedValue({
+      data: blob,
+      headers: { 'content-disposition': 'attachment; filename="report.md"' },
+    })
+    http.post.mockResolvedValue({
+      data: { session_key: 'video-opt-9', content_factory_url: '/tenants/3/hermes-agent/content-factory' },
+    })
+
+    const report = await downloadTikTokShopVideoAnalysisReport(3, 9)
+    const handoff = await createTikTokShopVideoAnalysisHandoff(3, 9)
+
+    expect(http.get).toHaveBeenCalledWith(
+      '/tenants/3/tiktok-shop/video-content-analyses/9/report',
+      { params: { format: 'markdown' }, responseType: 'blob' },
+    )
+    expect(report).toMatchObject({ blob, contentDisposition: 'attachment; filename="report.md"' })
+    expect(http.post).toHaveBeenCalledWith(
+      '/tenants/3/tiktok-shop/video-content-analyses/9/content-factory-handoff',
+      {},
+      {},
+    )
+    expect(handoff.session_key).toBe('video-opt-9')
   })
 })

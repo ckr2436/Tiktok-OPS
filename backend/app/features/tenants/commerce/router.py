@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -21,6 +23,7 @@ from app.data.models.commerce import CommerceProductCostVersion
 from app.data.models.oauth_tiktok_shop import OAuthTikTokShopShop
 from app.data.models.tiktok_shop import (
     TikTokShopFlashSalePolicy,
+    TikTokShopFlashSaleSchedule,
     TikTokShopProduct,
     TikTokShopSku,
     TikTokShopSyncRun,
@@ -107,6 +110,45 @@ class ProductCostRequest(BaseModel):
 class FlashSalePolicyRequest(BaseModel):
     shop_id: int = Field(gt=0)
     activity_price_amount: Decimal = Field(gt=0, le=1_000_000, decimal_places=2)
+    activity_duration_minutes: int | None = Field(default=None, ge=60, le=72 * 60)
+
+
+class FlashSalePlanProductRequest(BaseModel):
+    product_id: str = Field(min_length=1, max_length=128)
+    enabled: bool
+    activity_price_amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        le=1_000_000,
+        decimal_places=2,
+    )
+
+    @field_validator("product_id", mode="before")
+    @classmethod
+    def normalize_product_id(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+    @model_validator(mode="after")
+    def validate_price(self) -> "FlashSalePlanProductRequest":
+        if self.enabled and self.activity_price_amount is None:
+            raise ValueError("activity_price_amount is required for enabled products")
+        if not self.enabled:
+            self.activity_price_amount = None
+        return self
+
+
+class FlashSalePlanRequest(BaseModel):
+    shop_id: int = Field(gt=0)
+    activity_duration_minutes: int = Field(ge=60, le=72 * 60)
+    base_configuration_token: str = Field(min_length=64, max_length=64)
+    products: list[FlashSalePlanProductRequest] = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def validate_unique_products(self) -> "FlashSalePlanRequest":
+        product_ids = [item.product_id for item in self.products]
+        if len(product_ids) != len(set(product_ids)):
+            raise ValueError("products must not contain duplicate product_id values")
+        return self
 
 
 def _shop(
@@ -161,6 +203,8 @@ def _effective_utc(value: datetime | None, shop: OAuthTikTokShopShop) -> datetim
 def _flash_sale_policy_item(
     row: TikTokShopFlashSalePolicy,
     shop: OAuthTikTokShopShop,
+    *,
+    activity_duration_minutes: int,
 ) -> dict[str, Any]:
     zone = ZoneInfo(str(shop.timezone_name or settings.TT_SHOP_DEFAULT_TIMEZONE))
 
@@ -179,6 +223,7 @@ def _flash_sale_policy_item(
         "product_id": str(row.product_id),
         "enabled": bool(row.enabled),
         "activity_price_amount": str(row.activity_price_amount),
+        "activity_duration_minutes": int(activity_duration_minutes),
         "currency": str(row.currency),
         "status": str(row.status),
         "policy_revision": int(row.policy_revision),
@@ -194,6 +239,66 @@ def _flash_sale_policy_item(
         "last_error_message": row.last_error_message,
         "shop_timezone": str(shop.timezone_name),
     }
+
+
+def _flash_sale_schedule(
+    db: Session,
+    shop: OAuthTikTokShopShop,
+) -> TikTokShopFlashSaleSchedule | None:
+    return db.scalar(
+        select(TikTokShopFlashSaleSchedule).where(
+            TikTokShopFlashSaleSchedule.workspace_id == int(shop.workspace_id),
+            TikTokShopFlashSaleSchedule.shop_row_id == int(shop.id),
+        )
+    )
+
+
+def _flash_sale_schedule_item(
+    schedule: TikTokShopFlashSaleSchedule | None,
+) -> dict[str, int]:
+    duration_minutes = int(
+        schedule.activity_duration_minutes
+        if schedule is not None
+        else settings.TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES
+    )
+    target_seconds = int(settings.TT_SHOP_FLASH_SALE_TARGET_COVERAGE_SECONDS)
+    duration_seconds = duration_minutes * 60
+    return {
+        "activity_duration_minutes": duration_minutes,
+        "target_coverage_seconds": target_seconds,
+        "planned_activity_count": max(
+            1,
+            (target_seconds + duration_seconds - 1) // duration_seconds,
+        ),
+    }
+
+
+def _flash_sale_configuration_token(
+    schedule: TikTokShopFlashSaleSchedule | None,
+    policies: list[TikTokShopFlashSalePolicy],
+) -> str:
+    payload = {
+        "activity_duration_minutes": int(
+            schedule.activity_duration_minutes
+            if schedule is not None
+            else settings.TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES
+        ),
+        "policies": [
+            {
+                "product_id": str(row.product_id),
+                "enabled": bool(row.enabled),
+                "activity_price_amount": format(
+                    Decimal(row.activity_price_amount).quantize(Decimal("0.01")),
+                    "f",
+                ),
+                "currency": str(row.currency),
+                "policy_revision": int(row.policy_revision),
+            }
+            for row in sorted(policies, key=lambda item: str(item.product_id))
+        ],
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @router.get("/context")
@@ -469,22 +574,239 @@ def flash_sale_policies(
             .order_by(TikTokShopFlashSalePolicy.product_id.asc())
         )
     )
+    schedule = _flash_sale_schedule(db, shop)
+    schedule_item = _flash_sale_schedule_item(schedule)
     return {
-        "items": [_flash_sale_policy_item(row, shop) for row in rows],
+        "items": [
+            _flash_sale_policy_item(
+                row,
+                shop,
+                activity_duration_minutes=schedule_item["activity_duration_minutes"],
+            )
+            for row in rows
+        ],
         "total": len(rows),
         "shop_id": int(shop.id),
         "shop_timezone": str(shop.timezone_name),
+        "schedule": schedule_item,
+        "configuration_token": _flash_sale_configuration_token(schedule, rows),
         "automation": {
             "check_interval_seconds": int(
                 settings.TT_SHOP_FLASH_SALE_AUTOMATION_INTERVAL_SECONDS
             ),
-            "activity_duration_seconds": int(
-                settings.TT_SHOP_FLASH_SALE_DURATION_SECONDS
+            "target_coverage_seconds": int(
+                settings.TT_SHOP_FLASH_SALE_TARGET_COVERAGE_SECONDS
             ),
             "minimum_coverage_seconds": int(
                 settings.TT_SHOP_FLASH_SALE_MIN_COVERAGE_SECONDS
             ),
         },
+    }
+
+
+@router.post("/flash-sales/apply", status_code=202)
+def apply_flash_sale_plan(
+    workspace_id: int,
+    payload: FlashSalePlanRequest,
+    request: Request,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Atomically publish one complete shop-wide flash-sale configuration."""
+
+    shop = _shop(db, workspace_id=int(workspace_id), shop_id=int(payload.shop_id))
+    # The shop row is the configuration mutex even before schedule/policy rows exist.
+    shop = db.scalar(
+        select(OAuthTikTokShopShop)
+        .where(
+            OAuthTikTokShopShop.id == int(shop.id),
+            OAuthTikTokShopShop.workspace_id == int(workspace_id),
+        )
+        .with_for_update()
+    )
+    if shop is None:  # pragma: no cover - fenced by _shop, retained for race safety
+        raise APIError("COMMERCE_SHOP_NOT_FOUND", "Active TikTok Shop not found.", 404)
+    schedule = db.scalar(
+        select(TikTokShopFlashSaleSchedule)
+        .where(
+            TikTokShopFlashSaleSchedule.workspace_id == int(workspace_id),
+            TikTokShopFlashSaleSchedule.shop_row_id == int(shop.id),
+        )
+        .with_for_update()
+    )
+    policies = list(
+        db.scalars(
+            select(TikTokShopFlashSalePolicy)
+            .where(
+                TikTokShopFlashSalePolicy.workspace_id == int(workspace_id),
+                TikTokShopFlashSalePolicy.shop_row_id == int(shop.id),
+            )
+            .order_by(TikTokShopFlashSalePolicy.product_id.asc())
+            .with_for_update()
+        )
+    )
+    current_token = _flash_sale_configuration_token(schedule, policies)
+    if payload.base_configuration_token != current_token:
+        raise APIError(
+            "FLASH_SALE_CONFIGURATION_CHANGED",
+            "Flash-sale settings changed after this page was loaded. Refresh and review before applying.",
+            409,
+        )
+
+    requested = {item.product_id: item for item in payload.products}
+    product_rows = list(
+        db.scalars(
+            select(TikTokShopProduct).where(
+                TikTokShopProduct.workspace_id == int(workspace_id),
+                TikTokShopProduct.shop_row_id == int(shop.id),
+                TikTokShopProduct.product_id.in_(list(requested)),
+            )
+        )
+    )
+    products = {str(row.product_id): row for row in product_rows}
+    missing = sorted(set(requested) - set(products))
+    if missing:
+        raise APIError(
+            "COMMERCE_PRODUCT_NOT_FOUND",
+            "One or more TikTok Shop products are no longer available. Refresh before applying.",
+            409,
+            data={"missing_product_ids": missing},
+        )
+
+    previous_duration_minutes = int(
+        schedule.activity_duration_minutes
+        if schedule is not None
+        else settings.TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES
+    )
+    duration_minutes = int(payload.activity_duration_minutes)
+    duration_changed = duration_minutes != previous_duration_minutes
+    if schedule is None:
+        schedule = TikTokShopFlashSaleSchedule(
+            workspace_id=int(workspace_id),
+            account_id=int(shop.account_id),
+            shop_row_id=int(shop.id),
+            activity_duration_minutes=duration_minutes,
+            created_by_user_id=int(me.id),
+        )
+        db.add(schedule)
+    else:
+        schedule.account_id = int(shop.account_id)
+        schedule.activity_duration_minutes = duration_minutes
+
+    policies_by_product = {str(row.product_id): row for row in policies}
+    revised_product_ids: set[str] = set()
+    for product_id in sorted(set(policies_by_product) | set(requested)):
+        plan = requested.get(product_id)
+        row = policies_by_product.get(product_id)
+        desired_enabled = bool(plan.enabled) if plan is not None else False
+        if row is None:
+            if not desired_enabled or plan is None:
+                continue
+            product = products[product_id]
+            row = TikTokShopFlashSalePolicy(
+                workspace_id=int(workspace_id),
+                account_id=int(shop.account_id),
+                shop_row_id=int(shop.id),
+                product_id=product_id,
+                enabled=True,
+                activity_price_amount=Decimal(plan.activity_price_amount).quantize(
+                    Decimal("0.01")
+                ),
+                currency=str(product.currency or "USD").strip().upper(),
+                status="active",
+                policy_revision=1,
+                applied_revision=0,
+                created_by_user_id=int(me.id),
+            )
+            db.add(row)
+            policies.append(row)
+            policies_by_product[product_id] = row
+            revised_product_ids.add(product_id)
+            continue
+
+        desired_price = (
+            Decimal(plan.activity_price_amount).quantize(Decimal("0.01"))
+            if desired_enabled and plan is not None
+            else Decimal(row.activity_price_amount)
+        )
+        desired_currency = (
+            str(products[product_id].currency or row.currency or "USD").strip().upper()
+            if product_id in products
+            else str(row.currency)
+        )
+        changed = (
+            bool(row.enabled) != desired_enabled
+            or (desired_enabled and Decimal(row.activity_price_amount) != desired_price)
+            or (desired_enabled and str(row.currency) != desired_currency)
+        )
+        row.account_id = int(shop.account_id)
+        row.enabled = desired_enabled
+        row.status = "active" if desired_enabled else "paused"
+        if desired_enabled:
+            row.activity_price_amount = desired_price
+            row.currency = desired_currency
+        if changed:
+            row.policy_revision = int(row.policy_revision) + 1
+            revised_product_ids.add(product_id)
+        row.last_error_code = None
+        row.last_error_message = None
+
+    if duration_changed:
+        for row in policies:
+            product_id = str(row.product_id)
+            if bool(row.enabled) and product_id not in revised_product_ids:
+                row.policy_revision = int(row.policy_revision) + 1
+                revised_product_ids.add(product_id)
+
+    db.flush()
+    pending_reconcile = any(
+        int(row.applied_revision) < int(row.policy_revision) for row in policies
+    )
+    enabled_count = sum(1 for row in policies if bool(row.enabled))
+    disabled_count = len(policies) - enabled_count
+    next_token = _flash_sale_configuration_token(schedule, policies)
+    log_event(
+        db,
+        action="commerce.flash_sale_plan_applied",
+        resource_type="tiktok_shop_shop",
+        resource_id=int(shop.id),
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id),
+        actor_ip=client_ip(request),
+        workspace_id=int(workspace_id),
+        details={
+            "shop_id": int(shop.id),
+            "activity_duration_minutes": duration_minutes,
+            "duration_changed": duration_changed,
+            "enabled_count": enabled_count,
+            "disabled_count": disabled_count,
+            "changed_product_ids": sorted(revised_product_ids),
+        },
+    )
+    db.commit()
+
+    task_id: str | None = None
+    if revised_product_ids or pending_reconcile or duration_changed:
+        task = celery_app.send_task(
+            "tiktok_shop.reconcile_flash_sale_shop",
+            kwargs={
+                "workspace_id": int(workspace_id),
+                "account_id": int(shop.account_id),
+                "shop_row_id": int(shop.id),
+                "trigger": "user_batch_apply",
+                "force_replace": True,
+            },
+            queue="tiktok_shop",
+        )
+        task_id = str(task.id)
+    return {
+        "status": "queued" if task_id else "unchanged",
+        "task_id": task_id,
+        "shop_id": int(shop.id),
+        "enabled_count": enabled_count,
+        "disabled_count": disabled_count,
+        "changed_count": len(revised_product_ids),
+        "configuration_token": next_token,
     }
 
 
@@ -506,6 +828,30 @@ def save_flash_sale_policy(
     )
     price = payload.activity_price_amount.quantize(Decimal("0.01"))
     currency = str(product.currency or "USD").strip().upper()
+    schedule = _flash_sale_schedule(db, shop)
+    previous_duration_minutes = int(
+        schedule.activity_duration_minutes
+        if schedule is not None
+        else settings.TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES
+    )
+    duration_minutes = int(
+        payload.activity_duration_minutes
+        if payload.activity_duration_minutes is not None
+        else previous_duration_minutes
+    )
+    duration_changed = duration_minutes != previous_duration_minutes
+    if schedule is None:
+        schedule = TikTokShopFlashSaleSchedule(
+            workspace_id=int(workspace_id),
+            account_id=int(shop.account_id),
+            shop_row_id=int(shop.id),
+            activity_duration_minutes=duration_minutes,
+            created_by_user_id=int(me.id),
+        )
+        db.add(schedule)
+    else:
+        schedule.account_id = int(shop.account_id)
+        schedule.activity_duration_minutes = duration_minutes
     row = db.scalar(
         select(TikTokShopFlashSalePolicy).where(
             TikTokShopFlashSalePolicy.workspace_id == int(workspace_id),
@@ -518,6 +864,7 @@ def save_flash_sale_policy(
         or not bool(row.enabled)
         or Decimal(row.activity_price_amount) != price
         or str(row.currency) != currency
+        or duration_changed
     )
     if row is None:
         row = TikTokShopFlashSalePolicy(
@@ -545,6 +892,19 @@ def save_flash_sale_policy(
         row.last_error_code = None
         row.last_error_message = None
     db.flush()
+    if duration_changed:
+        sibling_policies = list(
+            db.scalars(
+                select(TikTokShopFlashSalePolicy).where(
+                    TikTokShopFlashSalePolicy.workspace_id == int(workspace_id),
+                    TikTokShopFlashSalePolicy.shop_row_id == int(shop.id),
+                    TikTokShopFlashSalePolicy.enabled.is_(True),
+                    TikTokShopFlashSalePolicy.id != int(row.id),
+                )
+            )
+        )
+        for sibling in sibling_policies:
+            sibling.policy_revision = int(sibling.policy_revision) + 1
     log_event(
         db,
         action="commerce.flash_sale_policy_saved",
@@ -559,6 +919,8 @@ def save_flash_sale_policy(
             "product_id": str(product_id),
             "activity_price_amount": str(price),
             "currency": currency,
+            "activity_duration_minutes": duration_minutes,
+            "duration_changed": duration_changed,
             "policy_revision": int(row.policy_revision),
             "force_replace": changed,
         },
@@ -570,7 +932,7 @@ def save_flash_sale_policy(
             "workspace_id": int(workspace_id),
             "account_id": int(shop.account_id),
             "shop_row_id": int(shop.id),
-            "trigger": "user_price_update",
+            "trigger": "user_policy_update",
             "force_replace": bool(changed),
         },
         queue="tiktok_shop",
@@ -578,7 +940,11 @@ def save_flash_sale_policy(
     return {
         "status": "queued",
         "task_id": str(task.id),
-        "policy": _flash_sale_policy_item(row, shop),
+        "policy": _flash_sale_policy_item(
+            row,
+            shop,
+            activity_duration_minutes=duration_minutes,
+        ),
     }
 
 
@@ -614,6 +980,7 @@ def disable_flash_sale_policy(
     row.enabled = False
     row.status = "paused"
     row.policy_revision = int(row.policy_revision) + 1
+    schedule_item = _flash_sale_schedule_item(_flash_sale_schedule(db, shop))
     log_event(
         db,
         action="commerce.flash_sale_policy_disabled",
@@ -628,7 +995,11 @@ def disable_flash_sale_policy(
     db.commit()
     return {
         "status": "paused",
-        "policy": _flash_sale_policy_item(row, shop),
+        "policy": _flash_sale_policy_item(
+            row,
+            shop,
+            activity_duration_minutes=schedule_item["activity_duration_minutes"],
+        ),
         "note": "Existing TikTok Shop activity is left unchanged; no further renewal will be created.",
     }
 

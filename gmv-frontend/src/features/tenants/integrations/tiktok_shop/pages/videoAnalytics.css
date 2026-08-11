@@ -703,7 +703,8 @@ button.shop-video-thumb:hover { border-color: #2563eb; box-shadow: 0 5px 14px rg
 .shop-ops-evidence small, .shop-ops-evidence em { color: var(--muted); font-size: 11px; font-style: normal; }
 .shop-ops-explain p { margin: 0; color: var(--muted); line-height: 1.65; }
 .shop-ops-explain > div { display: flex; gap: 6px; flex-wrap: wrap; }
-.shop-ops-drawer__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.shop-ops-drawer__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.shop-video-handoff-note { flex: 1 0 100%; margin: 0 0 4px; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: right; }
 .shop-hermes-analysis { display: grid; gap: 14px; padding: 18px; border: 1px solid #dbe5f2; border-radius: 13px; background: linear-gradient(145deg, #f7faff 0%, var(--panel) 68%); }
 .shop-hermes-analysis__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .shop-hermes-analysis__header h3 { margin: 3px 0; color: var(--txt); font-size: 15px; }

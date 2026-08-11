@@ -32,7 +32,10 @@ from app.services.hermes_agent.client import (
 logger = logging.getLogger("gmv.tiktok_shop.video_analysis")
 PROMPT_VERSION = "shop-video-analyst-v4-zh-compact"
 TRANSCRIPT_PIPELINE_VERSION = "openai-whisper-v1"
-PROVIDER_MODEL = "toapis/gpt-5.4-mini"
+# Persist the platform-owned logical role, never a guessed upstream provider.
+# The actual provider/model is available in metadata-only AiRouteAttempt rows
+# and may change transparently when the gateway fails over.
+PROVIDER_MODEL = "gmv-shop-video-analyst-v1"
 MAX_PRODUCTS = 20
 MAX_IMAGE_BYTES = 2_000_000
 FINAL_STATUSES = {"SUCCEEDED", "FAILED", "UNAVAILABLE"}

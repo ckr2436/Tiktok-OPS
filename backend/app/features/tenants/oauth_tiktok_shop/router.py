@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -67,6 +68,7 @@ class AuthzCreateIn(BaseModel):
     provider_app_id: int | None = Field(default=None, gt=0)
     return_to: str | None = Field(default=None, max_length=512)
     alias: str | None = Field(default=None, max_length=128)
+    authorization_type: Literal["seller", "creator"] = "seller"
 
 
 class AuthzCreateOut(BaseModel):
@@ -93,6 +95,7 @@ def create_authz(
         user_agent=request.headers.get("user-agent"),
         return_to=payload.return_to,
         alias=payload.alias,
+        authorization_type=payload.authorization_type,
     )
     response.set_cookie(
         "gmv_tiktok_shop_oauth_state",
@@ -113,7 +116,10 @@ def create_authz(
         actor_ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
         workspace_id=int(workspace_id),
-        details={"provider_app_id": int(session.provider_app_id)},
+        details={
+            "provider_app_id": int(session.provider_app_id),
+            "authorization_type": session.authorization_type,
+        },
     )
     return AuthzCreateOut(
         state=session.state,
@@ -140,6 +146,9 @@ class AccountOut(BaseModel):
     provider_app_id: int
     alias: str | None = None
     seller_name: str | None = None
+    user_type: int | None = None
+    account_type: str
+    content_posting_ready: bool
     open_id_masked: str
     status: str
     granted_scopes: list[str]
@@ -206,6 +215,13 @@ def list_accounts(
                 provider_app_id=int(account.provider_app_id),
                 alias=account.alias,
                 seller_name=account.seller_name,
+                user_type=account.user_type,
+                account_type="creator" if account.user_type == 1 else "seller",
+                content_posting_ready=(
+                    account.status == "active"
+                    and account.user_type == 1
+                    and "creator.video.write" in set(account.granted_scopes_json or [])
+                ),
                 open_id_masked=_mask(account.open_id),
                 status=account.status,
                 granted_scopes=list(account.granted_scopes_json or []),
@@ -270,14 +286,20 @@ async def sync_shops(
     me: SessionUser = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
 ):
+    account = db.get(OAuthTikTokShopAccount, int(account_id))
+    if not account or int(account.workspace_id) != int(workspace_id):
+        raise APIError("NOT_FOUND", "TikTok Shop authorization not found.", 404)
+    if account.user_type == 1:
+        raise APIError(
+            "CREATOR_ACCOUNT_NO_SHOP_SYNC",
+            "Creator authorization does not expose seller shop synchronization.",
+            409,
+        )
     shops = await sync_authorized_shops(
         db,
         workspace_id=int(workspace_id),
         account_id=int(account_id),
     )
-    account = db.get(OAuthTikTokShopAccount, int(account_id))
-    if not account:
-        raise APIError("NOT_FOUND", "TikTok Shop authorization not found.", 404)
     log_event(
         db,
         action="tiktok_shop.shops_synced",

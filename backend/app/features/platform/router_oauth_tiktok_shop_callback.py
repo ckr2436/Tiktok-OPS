@@ -66,16 +66,17 @@ async def tiktok_shop_callback(request: Request, db: Session = Depends(get_db)):
             callback_app_key=callback_app_key,
         )
         shop_count = 0
-        try:
-            shops = await sync_authorized_shops(
-                db,
-                workspace_id=int(session.workspace_id),
-                account_id=int(account.id),
-            )
-            shop_count = len(shops)
-        except APIError:
-            # Authorization is valid even if the first metadata sync is delayed.
-            shop_count = 0
+        if account.user_type != 1:
+            try:
+                shops = await sync_authorized_shops(
+                    db,
+                    workspace_id=int(session.workspace_id),
+                    account_id=int(account.id),
+                )
+                shop_count = len(shops)
+            except APIError:
+                # Authorization is valid even if the first metadata sync is delayed.
+                shop_count = 0
     except APIError as exc:
         session = fail_session(
             db,
@@ -98,6 +99,7 @@ async def tiktok_shop_callback(request: Request, db: Session = Depends(get_db)):
                 "shop_oauth": "success",
                 "account_id": int(account.id),
                 "shop_count": shop_count,
+                "account_type": "creator" if account.user_type == 1 else "seller",
             },
         )
 

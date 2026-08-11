@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import {
   createTikTokShopAuthorization,
+  createTikTokShopCreatorAuthorization,
   deleteTikTokShopAccount,
   disconnectTikTokShopAccount,
   getTikTokShopReadiness,
@@ -53,6 +54,8 @@ const oauthErrorMessages = Object.freeze({
   AUTH_DENIED: '你已取消授权，TikTok Shop 未向本系统授予访问权限。',
   TIKTOK_SHOP_UNAVAILABLE: 'TikTok Shop 授权服务暂时不可用，请稍后重试。',
   TOKEN_EXCHANGE_FAILED: 'TikTok Shop 未能签发访问令牌，请重新授权；若仍失败，请联系平台管理员。',
+  CREATOR_TOKEN_REQUIRED: '当前返回的是卖家授权，视频发布必须使用达人授权，请重新授权达人账号。',
+  CREATOR_VIDEO_SCOPE_REQUIRED: '达人授权缺少 creator.video.write 权限，请重新授权并确认视频发布权限。',
   AUTHORIZATION_FAILED: 'TikTok Shop 授权未完成，请重新尝试。',
 })
 
@@ -64,6 +67,14 @@ export function oauthCallbackErrorText(code, reason) {
     || oauthErrorMessages[normalizedCode]
     || oauthErrorMessages.AUTHORIZATION_FAILED
   return normalizedCode ? `${message}（错误代码：${normalizedCode}）` : message
+}
+
+
+export function authorizationActionLabel(accountType, hasExistingAccount) {
+  if (accountType === 'creator') {
+    return hasExistingAccount ? '重新授权达人' : '授权达人账号'
+  }
+  return hasExistingAccount ? '重新授权卖家' : '连接卖家账号'
 }
 
 
@@ -89,10 +100,20 @@ export default function TiktokShopAuthList() {
   const refreshList = () => queryClient.invalidateQueries({ queryKey: ['tiktok-shop-accounts', wid] })
 
   const connectMutation = useMutation({
-    mutationFn: () => createTikTokShopAuthorization(wid, {
+    mutationFn: ({ requestedAlias } = {}) => createTikTokShopAuthorization(wid, {
       provider_app_id: readinessQuery.data?.provider_app_id || null,
-      alias: alias.trim() || null,
+      alias: String(requestedAlias || alias).trim() || null,
       return_to: `/tenants/${encodeURIComponent(wid)}/tiktok-shop`,
+      authorization_type: 'seller',
+    }),
+    onSuccess: ({ auth_url: authUrl }) => window.location.assign(authUrl),
+    onError: (error) => setNotice({ type: 'error', text: errorText(error) }),
+  })
+  const creatorConnectMutation = useMutation({
+    mutationFn: ({ requestedAlias } = {}) => createTikTokShopCreatorAuthorization(wid, {
+      provider_app_id: readinessQuery.data?.provider_app_id || null,
+      alias: String(requestedAlias || 'TikTok 达人账号').trim() || 'TikTok 达人账号',
+      return_to: `/tenants/${encodeURIComponent(wid)}/tiktok-shop/content-posting`,
     }),
     onSuccess: ({ auth_url: authUrl }) => window.location.assign(authUrl),
     onError: (error) => setNotice({ type: 'error', text: errorText(error) }),
@@ -109,7 +130,7 @@ export default function TiktokShopAuthList() {
     mutationFn: (accountId) => refreshTikTokShopAccount(wid, accountId),
     onSuccess: async () => {
       await refreshList()
-      setNotice({ type: 'success', text: '访问令牌已安全刷新。' })
+      setNotice({ type: 'success', text: '现有访问令牌已刷新；本操作只延长有效期，不会新增授权范围。' })
     },
     onError: (error) => setNotice({ type: 'error', text: errorText(error) }),
   })
@@ -136,9 +157,12 @@ export default function TiktokShopAuthList() {
     if (!result) return
     if (result === 'success') {
       const count = Number(params.get('shop_count') || 0)
+      const accountType = params.get('account_type')
       setNotice({
         type: 'success',
-        text: count > 0 ? `TikTok Shop 授权成功，已同步 ${count} 个店铺。` : 'TikTok Shop 授权成功，店铺资料正在等待同步。',
+        text: accountType === 'creator'
+          ? 'TikTok 达人授权成功，视频发布权限已接入。'
+          : (count > 0 ? `TikTok Shop 授权成功，已同步 ${count} 个店铺。` : 'TikTok Shop 授权成功，店铺资料正在等待同步。'),
       })
       refreshList()
     } else {
@@ -152,12 +176,16 @@ export default function TiktokShopAuthList() {
   }, [])
 
   const accounts = accountsQuery.data || []
+  const hasSellerAccount = accounts.some((item) => item.account_type !== 'creator')
+  const hasCreatorAccount = accounts.some((item) => item.account_type === 'creator')
   const activeCount = accounts.filter((item) => item.status === 'active').length
+  const creatorCount = accounts.filter((item) => item.content_posting_ready).length
   const shopCount = useMemo(
     () => accounts.reduce((total, item) => total + (item.shops || []).filter((shop) => shop.is_active).length, 0),
     [accounts],
   )
-  const busy = syncMutation.isPending || tokenMutation.isPending || disconnectMutation.isPending || deleteMutation.isPending
+  const authorizationBusy = connectMutation.isPending || creatorConnectMutation.isPending
+  const busy = authorizationBusy || syncMutation.isPending || tokenMutation.isPending || disconnectMutation.isPending || deleteMutation.isPending
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -165,17 +193,25 @@ export default function TiktokShopAuthList() {
         <div>
           <h1 style={{ margin: 0, fontSize: 24 }}>TikTok Shop 授权</h1>
           <p className="small-muted" style={{ margin: '6px 0 0' }}>
-            管理卖家授权、令牌有效期和已授权店铺。TikTok Shop 与 TikTok Business 使用独立凭证。
+            分别管理卖家授权与达人授权。两类令牌身份不同，刷新令牌也不会增加新的权限。
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Link className="btn ghost" to={`/tenants/${wid}/tiktok-shop/content-posting`}>视频发布</Link>
           <Link className="btn ghost" to={`/tenants/${wid}/tiktok-shop/videos`}>短视频分析</Link>
           <button
-            className="btn"
-            onClick={() => connectMutation.mutate()}
-            disabled={!readinessQuery.data?.configured || connectMutation.isPending}
+            className="btn ghost"
+            onClick={() => creatorConnectMutation.mutate({ requestedAlias: 'TikTok 达人账号' })}
+            disabled={!readinessQuery.data?.configured || authorizationBusy}
           >
-            {connectMutation.isPending ? '正在跳转...' : '连接 TikTok Shop'}
+            {creatorConnectMutation.isPending ? '正在跳转...' : authorizationActionLabel('creator', hasCreatorAccount)}
+          </button>
+          <button
+            className="btn"
+            onClick={() => connectMutation.mutate({ requestedAlias: alias })}
+            disabled={!readinessQuery.data?.configured || authorizationBusy}
+          >
+            {connectMutation.isPending ? '正在跳转...' : authorizationActionLabel('seller', hasSellerAccount)}
           </button>
         </div>
       </header>
@@ -186,10 +222,15 @@ export default function TiktokShopAuthList() {
         </div>
       )}
       {notice && <div className={`alert alert--${notice.type}`}>{notice.text}</div>}
+      <div className="alert alert--info" role="note">
+        <strong>重新授权</strong>用于重新确认身份或取得新增权限；<strong>仅刷新令牌</strong>只延长当前授权有效期。
+        卖家授权负责店铺、商品、订单和分析，达人授权负责视频发布，两者互不替代。
+      </div>
 
       <section className="card" aria-label="授权概览">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           <Summary label="有效授权" value={activeCount} />
+          <Summary label="可发布达人" value={creatorCount} />
           <Summary label="已授权店铺" value={shopCount} />
           <Summary label="目标区域" value="美国" />
           <Summary label="回调状态" value={readinessQuery.data?.configured ? '已配置' : '待配置'} />
@@ -199,12 +240,12 @@ export default function TiktokShopAuthList() {
       <section className="card">
         <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18 }}>卖家授权</h2>
+            <h2 style={{ margin: 0, fontSize: 18 }}>卖家与达人授权</h2>
             <p className="small-muted" style={{ margin: '4px 0 0' }}>访问令牌仅以加密密文保存，不会在页面或日志中回显。</p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
             <label style={{ display: 'grid', gap: 5 }}>
-              <span className="small-muted">授权名称</span>
+              <span className="small-muted">卖家授权名称</span>
               <input className="input" value={alias} onChange={(event) => setAlias(event.target.value)} maxLength={128} />
             </label>
             <button className="btn ghost" onClick={() => accountsQuery.refetch()} disabled={accountsQuery.isFetching}>
@@ -218,6 +259,7 @@ export default function TiktokShopAuthList() {
             <thead style={{ background: 'var(--panel-2)' }}>
               <tr>
                 <Th>授权主体</Th>
+                <Th>授权类型</Th>
                 <Th>状态</Th>
                 <Th>已授权店铺</Th>
                 <Th>访问令牌到期</Th>
@@ -227,15 +269,19 @@ export default function TiktokShopAuthList() {
             </thead>
             <tbody>
               {accountsQuery.isLoading ? (
-                <tr><td colSpan={6} style={{ padding: 24 }}>正在加载授权...</td></tr>
+                <tr><td colSpan={7} style={{ padding: 24 }}>正在加载授权...</td></tr>
               ) : accounts.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 24, color: 'var(--muted)' }}>暂无卖家授权。</td></tr>
+                <tr><td colSpan={7} style={{ padding: 24, color: 'var(--muted)' }}>暂无 TikTok Shop 授权。</td></tr>
               ) : accounts.map((account) => (
                 <tr key={account.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <Td>
                     <div style={{ fontWeight: 700 }}>{account.alias || account.seller_name || 'TikTok Shop 卖家'}</div>
                     <div className="small-muted">{account.open_id_masked}</div>
                     {account.last_error_message && <div style={{ color: '#b42318', marginTop: 4 }}>{account.last_error_message}</div>}
+                  </Td>
+                  <Td>
+                    <strong>{account.account_type === 'creator' ? '达人' : '卖家'}</strong>
+                    {account.content_posting_ready && <div className="small-muted">可发布视频</div>}
                   </Td>
                   <Td><Status value={account.status} /></Td>
                   <Td>
@@ -252,8 +298,29 @@ export default function TiktokShopAuthList() {
                   <Td>{formatDate(account.last_synced_at)}</Td>
                   <Td>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button className="btn sm ghost" onClick={() => syncMutation.mutate(account.id)} disabled={busy || account.status !== 'active'}>同步店铺</button>
-                      <button className="btn sm ghost" onClick={() => tokenMutation.mutate(account.id)} disabled={busy || account.status !== 'active'}>刷新令牌</button>
+                      <button
+                        className="btn sm ghost"
+                        onClick={() => (
+                          account.account_type === 'creator'
+                            ? creatorConnectMutation.mutate({ requestedAlias: account.alias || account.seller_name || 'TikTok 达人账号' })
+                            : connectMutation.mutate({ requestedAlias: account.alias || account.seller_name || alias })
+                        )}
+                        disabled={busy}
+                        title="重新打开 TikTok 授权页，用于更新身份或新增权限"
+                      >
+                        {account.account_type === 'creator' ? '重新授权达人' : '重新授权卖家'}
+                      </button>
+                      {account.account_type !== 'creator' && (
+                        <button className="btn sm ghost" onClick={() => syncMutation.mutate(account.id)} disabled={busy || account.status !== 'active'}>同步店铺</button>
+                      )}
+                      <button
+                        className="btn sm ghost"
+                        onClick={() => tokenMutation.mutate(account.id)}
+                        disabled={busy || account.status !== 'active'}
+                        title="只延长现有令牌有效期，不会新增权限"
+                      >
+                        仅刷新令牌
+                      </button>
                       {account.status === 'active' ? (
                         <button
                           className="btn sm danger"

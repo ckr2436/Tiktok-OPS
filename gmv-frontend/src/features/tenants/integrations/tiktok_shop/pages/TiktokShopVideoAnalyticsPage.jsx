@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import Loading from '@/components/ui/Loading.jsx'
 import { getCommerceContext } from '@/features/tenants/commerce/api.js'
@@ -20,6 +20,8 @@ import {
   getAllTikTokShopAnalytics,
   getTikTokShopAnalytics,
   getTikTokShopGuardFeed,
+  createTikTokShopVideoAnalysisHandoff,
+  downloadTikTokShopVideoAnalysisReport,
   lookupTikTokShopVideoMedia,
   lookupTikTokShopVideoAnalyses,
   requestTikTokShopVideoAnalysis,
@@ -399,8 +401,12 @@ export function VideoDiagnosisDrawer({
   analysis,
   analysisError,
   analyzing,
+  exporting,
+  optimizing,
   workspaceId,
   onAnalyze,
+  onExport,
+  onOptimize,
   onClose,
   onPlay,
 }) {
@@ -545,7 +551,14 @@ export function VideoDiagnosisDrawer({
           </section>
         )}
         <footer className="shop-ops-drawer__actions">
+          {hermes && (
+            <p className="shop-video-handoff-note">
+              导入后会创建你的制片助理草稿并附上分析资料；不会自动创建项目或开始生成。
+            </p>
+          )}
           {presentation?.preview_url && <button className="btn ghost" type="button" onClick={onPlay}>播放视频</button>}
+          {hermes && <button className="btn ghost" type="button" disabled={exporting || optimizing} onClick={onExport}>{exporting ? '导出中…' : '导出分析报告'}</button>}
+          {hermes && <button className="btn" type="button" disabled={exporting || optimizing} onClick={onOptimize}>{optimizing ? '正在准备…' : '前往内容工厂优化'}</button>}
           <Link className="btn" to={`/tenants/${workspaceId}/gmvmax`}>前往 GMV Max 执行</Link>
         </footer>
       </aside>
@@ -582,6 +595,7 @@ function GuardTimeline({ items = [], workspaceId }) {
 
 export default function TiktokShopVideoAnalyticsPage() {
   const { wid } = useParams()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('today')
   const [shopId, setShopId] = useState('')
   const [preset, setPreset] = useState('today')
@@ -756,6 +770,35 @@ export default function TiktokShopVideoAnalyticsPage() {
       retry_failed: ['FAILED', 'UNAVAILABLE'].includes(analysisQuery.data?.items?.[0]?.status),
     }),
     onSuccess: () => analysisQuery.refetch(),
+  })
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const analysis = analysisQuery.data?.items?.[0]
+      if (!analysis?.id) throw new Error('请先完成视频分析。')
+      const result = await downloadTikTokShopVideoAnalysisReport(wid, analysis.id)
+      const disposition = String(result.contentDisposition || '')
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i)
+      const filename = filenameMatch?.[1] || `tiktok-video-analysis-${analysis.video_id || detailVideoId}.md`
+      const url = window.URL.createObjectURL(result.blob)
+      try {
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = filename
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+      } finally {
+        window.URL.revokeObjectURL(url)
+      }
+    },
+  })
+  const handoffMutation = useMutation({
+    mutationFn: async () => {
+      const analysis = analysisQuery.data?.items?.[0]
+      if (!analysis?.id) throw new Error('请先完成视频分析。')
+      return createTikTokShopVideoAnalysisHandoff(wid, analysis.id)
+    },
+    onSuccess: (result) => navigate(result.content_factory_url),
   })
   const mediaMap = useMemo(
     () => buildVideoMediaMap(mediaQuery.data?.items),
@@ -1163,10 +1206,14 @@ export default function TiktokShopVideoAnalyticsPage() {
         presentation={detailPresentation}
         execution={detailExecution}
         analysis={detailAnalysis}
-        analysisError={analysisQuery.error || analysisMutation.error}
+        analysisError={analysisQuery.error || analysisMutation.error || exportMutation.error || handoffMutation.error}
         analyzing={analysisMutation.isPending || analysisQuery.isFetching}
+        exporting={exportMutation.isPending}
+        optimizing={handoffMutation.isPending}
         workspaceId={wid}
         onAnalyze={() => analysisMutation.mutate()}
+        onExport={() => exportMutation.mutate()}
+        onOptimize={() => handoffMutation.mutate()}
         onClose={() => setDetailVideoId(null)}
         onPlay={() => detailVideo && setPlayback({ video: detailVideo, presentation: detailPresentation })}
       />

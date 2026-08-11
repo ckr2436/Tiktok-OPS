@@ -112,8 +112,12 @@ def create_authorization_session(
     user_agent: str | None,
     return_to: str | None,
     alias: str | None,
+    authorization_type: str = "seller",
 ) -> tuple[OAuthTikTokShopAuthzSession, str]:
     app = _get_enabled_app(db, provider_app_id)
+    normalized_type = str(authorization_type or "seller").strip().lower()
+    if normalized_type not in {"seller", "creator"}:
+        raise APIError("INVALID_AUTHORIZATION_TYPE", "authorization_type must be seller or creator.", 400)
     state = str(uuid.uuid4())
     ttl = max(300, min(int(getattr(settings, "OAUTH_SESSION_TTL_SECONDS", 3600)), 3600))
     session = OAuthTikTokShopAuthzSession(
@@ -122,6 +126,7 @@ def create_authorization_session(
         provider_app_id=int(app.id),
         return_to=_normalize_return_to(return_to, int(workspace_id)),
         alias=_normalize_alias(alias),
+        authorization_type=normalized_type,
         created_by_user_id=created_by_user_id,
         ip_address=_ip_to_bytes(client_ip),
         user_agent=str(user_agent or "")[:512] or None,
@@ -130,12 +135,17 @@ def create_authorization_session(
     )
     db.add(session)
     db.flush()
-    query = urlencode({"service_id": str(app.service_id), "state": state})
-    auth_url = f"{settings.TT_SHOP_US_AUTH_URL.rstrip('/')}?{query}"
+    if normalized_type == "creator":
+        query = urlencode({"app_key": str(app.client_id), "state": state})
+        auth_url = f"{settings.TT_SHOP_CREATOR_AUTH_URL.rstrip('/')}?{query}"
+    else:
+        query = urlencode({"service_id": str(app.service_id), "state": state})
+        auth_url = f"{settings.TT_SHOP_US_AUTH_URL.rstrip('/')}?{query}"
     logger.info(
-        "TikTok Shop authorization started workspace_id=%s provider_app_id=%s state=%s",
+        "TikTok Shop authorization started workspace_id=%s provider_app_id=%s authorization_type=%s state=%s",
         workspace_id,
         app.id,
+        normalized_type,
         state,
     )
     return session, auth_url
@@ -207,6 +217,10 @@ def oauth_callback_error_reason(error_code: str | None, error_message: str | Non
         return "AUTH_DENIED"
     if code == "TIKTOK_SHOP_UNAVAILABLE":
         return "TIKTOK_SHOP_UNAVAILABLE"
+    if code == "CREATOR_TOKEN_REQUIRED":
+        return "CREATOR_TOKEN_REQUIRED"
+    if code == "CREATOR_VIDEO_SCOPE_REQUIRED":
+        return "CREATOR_VIDEO_SCOPE_REQUIRED"
     if code == "TOKEN_EXCHANGE_FAILED" and (
         "auth_code" in message
         or "auth code" in message
@@ -368,6 +382,39 @@ def _persist_token(
     return account
 
 
+def _validate_authorization_token(
+    session: OAuthTikTokShopAuthzSession,
+    token: Mapping[str, Any],
+) -> None:
+    authorization_type = str(getattr(session, "authorization_type", None) or "seller").lower()
+    raw_user_type = token.get("user_type")
+    try:
+        user_type = int(raw_user_type) if raw_user_type is not None else None
+    except (TypeError, ValueError):
+        user_type = None
+    scopes = {str(value) for value in (token.get("granted_scopes") or [])}
+    if authorization_type == "creator":
+        if user_type != 1:
+            raise APIError(
+                "CREATOR_TOKEN_REQUIRED",
+                "TikTok Shop returned a non-creator token. Authorize with a creator account.",
+                409,
+            )
+        if "creator.video.write" not in scopes:
+            raise APIError(
+                "CREATOR_VIDEO_SCOPE_REQUIRED",
+                "Creator authorization is missing creator.video.write. Re-authorize after approving the scope.",
+                409,
+                data={"required_scope": "creator.video.write"},
+            )
+    elif user_type == 1:
+        raise APIError(
+            "SELLER_TOKEN_REQUIRED",
+            "TikTok Shop returned a creator token for a seller authorization request.",
+            409,
+        )
+
+
 async def handle_callback(
     db: Session,
     *,
@@ -399,6 +446,7 @@ async def handle_callback(
             400,
         )
     token = await exchange_authorization_code(app, code)
+    _validate_authorization_token(session, token)
     account = _persist_token(db, app=app, session=session, token=token)
     session.status = "consumed"
     session.consumed_at = _utcnow_naive()
@@ -484,6 +532,7 @@ async def refresh_account_token(
         workspace_id=int(account.workspace_id),
         provider_app_id=int(account.provider_app_id),
         alias=account.alias,
+        authorization_type="creator" if account.user_type == 1 else "seller",
         created_by_user_id=account.created_by_user_id,
         state=str(uuid.uuid4()),
         return_to=None,

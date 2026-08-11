@@ -17,6 +17,7 @@ from app.data.models.oauth_tiktok_shop import OAuthTikTokShopShop
 from app.data.models.tiktok_shop import (
     TikTokShopFlashSalePolicy,
     TikTokShopFlashSaleRun,
+    TikTokShopFlashSaleSchedule,
 )
 from app.services.tiktok_shop_api import TikTokShopAPIClient
 
@@ -24,7 +25,6 @@ from app.services.tiktok_shop_api import TikTokShopAPIClient
 logger = logging.getLogger("gmv.tiktok_shop.flash_sale")
 
 ACTIVE_STATUSES = {"ONGOING", "NOT_START"}
-CONFLICT_PROVIDER_CODES = {17029022, 17029079, 17029103}
 MAX_PRODUCTS_PER_REQUEST = 300
 LockOwnershipVerifier = Callable[[], bool]
 
@@ -118,15 +118,6 @@ def _next_page_token(value: Any) -> str:
     return str(data.get("next_page_token") or data.get("page_token") or "").strip()
 
 
-def _error_provider_code(exc: APIError) -> int | None:
-    if not isinstance(exc.data, Mapping):
-        return None
-    try:
-        return int(exc.data.get("provider_code"))
-    except (TypeError, ValueError):
-        return None
-
-
 def build_product_payload(prices: Mapping[str, Decimal]) -> dict[str, Any]:
     return {
         "products": [
@@ -167,6 +158,35 @@ def activity_title(shop: OAuthTikTokShopShop, begin_at: datetime) -> str:
         f"{int(shop.id)}:{_utc_timestamp(begin_at)}".encode("utf-8")
     ).hexdigest()[:6]
     return f"MYUPONA Flash {local:%m%d-%H%M}-{digest}"[:50]
+
+
+def activity_windows(
+    *,
+    begin_at: datetime,
+    target_until: datetime,
+    duration_minutes: int,
+    boundary_seconds: int,
+) -> list[tuple[datetime, datetime]]:
+    """Build adjacent provider windows without overlapping inclusive timestamps."""
+
+    duration = timedelta(minutes=int(duration_minutes))
+    boundary = timedelta(seconds=int(boundary_seconds))
+    if duration_minutes < 1 or boundary_seconds < 1 or boundary >= duration:
+        raise ValueError("Invalid flash-sale duration or boundary")
+    windows: list[tuple[datetime, datetime]] = []
+    cursor = begin_at
+    while cursor < target_until:
+        end_at = cursor + duration - boundary
+        windows.append((cursor, end_at))
+        cursor = end_at + boundary
+    return windows
+
+
+def _coverage_gap_seconds() -> int:
+    return max(
+        int(settings.TT_SHOP_FLASH_SALE_MAX_GAP_SECONDS),
+        int(settings.TT_SHOP_FLASH_SALE_START_DELAY_SECONDS) + 5,
+    )
 
 
 @dataclass(slots=True)
@@ -301,6 +321,37 @@ def _latest_activity(
     return max(matches, key=lambda item: item.end_at) if matches else None
 
 
+def _matches_configured_schedule(
+    activities: Sequence[LiveActivity],
+    policies: Sequence[TikTokShopFlashSalePolicy],
+    *,
+    duration_minutes: int,
+    boundary_seconds: int,
+) -> bool:
+    expected_prices = {
+        str(policy.product_id): Decimal(policy.activity_price_amount)
+        for policy in policies
+    }
+    managed_ids = set(expected_prices)
+    expected_span = timedelta(minutes=duration_minutes) - timedelta(
+        seconds=boundary_seconds
+    )
+    matches = [
+        activity
+        for activity in activities
+        if managed_ids.intersection(activity.products)
+    ]
+    return bool(matches) and all(
+        managed_ids.issubset(activity.products)
+        and activity.end_at - activity.begin_at == expected_span
+        and all(
+            activity.products.get(product_id) == price
+            for product_id, price in expected_prices.items()
+        )
+        for activity in matches
+    )
+
+
 def _mark_policies(
     policies: Sequence[TikTokShopFlashSalePolicy],
     activities: Sequence[LiveActivity],
@@ -316,7 +367,7 @@ def _mark_policies(
         covered_until = coverage_end(
             _policy_intervals(activities, str(policy.product_id)),
             now=now,
-            max_gap_seconds=int(settings.TT_SHOP_FLASH_SALE_GAP_SECONDS) + 5,
+            max_gap_seconds=_coverage_gap_seconds(),
         )
         policy.status = "active"
         policy.current_activity_id = current.activity_id if current else None
@@ -326,6 +377,27 @@ def _mark_policies(
         policy.next_renewal_at = (
             covered_until - coverage_threshold if covered_until else now
         )
+        policy.last_checked_at = now
+        if applied:
+            policy.applied_revision = int(policy.policy_revision)
+            policy.last_applied_at = now
+        policy.last_error_code = None
+        policy.last_error_message = None
+
+
+def _mark_disabled_policies(
+    policies: Sequence[TikTokShopFlashSalePolicy],
+    *,
+    now: datetime,
+    applied: bool,
+) -> None:
+    for policy in policies:
+        policy.status = "paused"
+        policy.current_activity_id = None
+        policy.current_activity_status = None
+        policy.current_begin_at = None
+        policy.current_end_at = None
+        policy.next_renewal_at = None
         policy.last_checked_at = now
         if applied:
             policy.applied_revision = int(policy.policy_revision)
@@ -463,25 +535,58 @@ async def reconcile_flash_sales(
         or not bool(shop.is_active)
     ):
         raise APIError("TIKTOK_SHOP_NOT_FOUND", "Active TikTok Shop not found.", 404)
-    policies = list(
+    all_policies = list(
         db.scalars(
             select(TikTokShopFlashSalePolicy)
             .where(
                 TikTokShopFlashSalePolicy.workspace_id == int(workspace_id),
                 TikTokShopFlashSalePolicy.shop_row_id == int(shop_row_id),
-                TikTokShopFlashSalePolicy.enabled.is_(True),
             )
             .order_by(TikTokShopFlashSalePolicy.product_id.asc())
         )
     )
-    if not policies:
-        return {"status": "skipped", "reason": "no_enabled_policies", "shop_id": int(shop.id)}
-
-    revision = max(int(policy.policy_revision) for policy in policies)
-    replace_requested = force_replace or any(
+    if not all_policies:
+        return {"status": "skipped", "reason": "no_policies", "shop_id": int(shop.id)}
+    policies = [policy for policy in all_policies if bool(policy.enabled)]
+    disabled_policies = [policy for policy in all_policies if not bool(policy.enabled)]
+    if not policies and not force_replace and not any(
         int(policy.applied_revision) < int(policy.policy_revision)
-        for policy in policies
+        for policy in disabled_policies
+    ):
+        return {
+            "status": "skipped",
+            "reason": "no_enabled_policies",
+            "shop_id": int(shop.id),
+        }
+
+    schedule = db.scalar(
+        select(TikTokShopFlashSaleSchedule).where(
+            TikTokShopFlashSaleSchedule.workspace_id == int(workspace_id),
+            TikTokShopFlashSaleSchedule.shop_row_id == int(shop_row_id),
+        )
     )
+    duration_minutes = int(
+        schedule.activity_duration_minutes
+        if schedule is not None
+        else settings.TT_SHOP_FLASH_SALE_DEFAULT_DURATION_MINUTES
+    )
+    if duration_minutes < 60 or duration_minutes > 72 * 60:
+        raise APIError(
+            "TIKTOK_SHOP_FLASH_SALE_DURATION_INVALID",
+            "Flash-sale activity duration must be between 1 and 72 hours.",
+            409,
+        )
+
+    # Revisions only increase, so their sum is a monotonic shop-wide generation.
+    # Using max() can collide when a different product is edited in the same slot.
+    revision = sum(int(policy.policy_revision) for policy in all_policies)
+    revision_pending = any(
+        int(policy.applied_revision) < int(policy.policy_revision)
+        for policy in all_policies
+    )
+    replace_requested = force_replace or revision_pending
+    resume_existing = False
+    action = "replace" if replace_requested else "renew"
     run: TikTokShopFlashSaleRun | None = None
     client = await TikTokShopAPIClient.create(
         db,
@@ -495,16 +600,108 @@ async def reconcile_flash_sales(
             threshold = now + timedelta(
                 seconds=int(settings.TT_SHOP_FLASH_SALE_MIN_COVERAGE_SECONDS)
             )
+            target_until = now + timedelta(
+                seconds=int(settings.TT_SHOP_FLASH_SALE_TARGET_COVERAGE_SECONDS)
+            )
             coverage = {
                 str(policy.product_id): coverage_end(
                     _policy_intervals(activities, str(policy.product_id)),
                     now=now,
-                    max_gap_seconds=int(settings.TT_SHOP_FLASH_SALE_GAP_SECONDS) + 5,
+                    max_gap_seconds=_coverage_gap_seconds(),
                 )
                 for policy in policies
             }
+            managed_ids = {str(policy.product_id) for policy in all_policies}
+            disabled_ids = {str(policy.product_id) for policy in disabled_policies}
+            conflicts = [
+                activity
+                for activity in activities
+                if managed_ids.intersection(activity.products)
+            ]
+
+            if not policies:
+                action = "disable"
+                _assert_lock_owned(verify_lock_ownership)
+                run = _new_run(
+                    db,
+                    shop=shop,
+                    trigger=trigger,
+                    action=action,
+                    revision=revision,
+                    begin_at=None,
+                )
+                if run.status == "succeeded":
+                    return {
+                        "status": "skipped",
+                        "reason": "idempotent_replay",
+                        "run_id": int(run.id),
+                    }
+                request_ids = await _deactivate(
+                    client,
+                    conflicts,
+                    verify_lock_ownership=verify_lock_ownership,
+                )
+                applied_at = utc_now()
+                _mark_disabled_policies(
+                    disabled_policies,
+                    now=applied_at,
+                    applied=True,
+                )
+                run.previous_activity_ids_json = [
+                    item.activity_id for item in conflicts
+                ]
+                run.provider_request_ids_json = request_ids
+                run.details_json = {
+                    "reason": "all_products_disabled",
+                    "product_ids": sorted(disabled_ids),
+                    "deactivated_activity_count": len(conflicts),
+                }
+                run.status = "succeeded"
+                run.completed_at = applied_at
+                _assert_lock_owned(verify_lock_ownership)
+                db.commit()
+                return {
+                    "status": "succeeded",
+                    "action": action,
+                    "products": 0,
+                    "deactivated_activities": len(conflicts),
+                }
+
+            resume_existing = (
+                replace_requested
+                and revision_pending
+                and not any(
+                    disabled_ids.intersection(activity.products)
+                    for activity in conflicts
+                )
+                and _matches_configured_schedule(
+                    activities,
+                    policies,
+                    duration_minutes=duration_minutes,
+                    boundary_seconds=int(
+                        settings.TT_SHOP_FLASH_SALE_SLOT_BOUNDARY_SECONDS
+                    ),
+                )
+            )
+            if resume_existing:
+                replace_requested = False
+                action = "resume"
+
+            # Enabled products are intentionally kept on one shop-wide schedule.
+            # If official state drifted into different coverage frontiers, rebuild
+            # it instead of creating a gap for the shorter product set.
+            covered_ends = [value for value in coverage.values() if value is not None]
+            if not replace_requested and not resume_existing and covered_ends:
+                spread_seconds = (max(covered_ends) - min(covered_ends)).total_seconds()
+                if len(covered_ends) != len(policies) or spread_seconds > int(
+                    settings.TT_SHOP_FLASH_SALE_MAX_GAP_SECONDS
+                ):
+                    replace_requested = True
+                    action = "repair"
+
+            required_until = target_until if resume_existing else threshold
             if not replace_requested and all(
-                end_at is not None and end_at >= threshold
+                end_at is not None and end_at >= required_until
                 for end_at in coverage.values()
             ):
                 _assert_lock_owned(verify_lock_ownership)
@@ -512,73 +709,84 @@ async def reconcile_flash_sales(
                     db,
                     shop=shop,
                     trigger=trigger,
-                    action="hold",
+                    action="confirm" if resume_existing else "hold",
                     revision=revision,
                     begin_at=None,
                 )
-                _mark_policies(policies, activities, now=now, applied=False)
+                _mark_policies(
+                    policies,
+                    activities,
+                    now=now,
+                    applied=resume_existing,
+                )
+                _mark_disabled_policies(
+                    disabled_policies,
+                    now=now,
+                    applied=resume_existing,
+                )
                 run.status = "succeeded"
                 run.details_json = {
                     "reason": "coverage_sufficient",
                     "minimum_coverage_until": min(coverage.values()).isoformat(),
-                    "required_until": threshold.isoformat(),
+                    "required_until": required_until.isoformat(),
+                    "activity_duration_minutes": duration_minutes,
+                    "resumed": resume_existing,
                 }
                 run.completed_at = utc_now()
                 _assert_lock_owned(verify_lock_ownership)
                 db.commit()
                 return {
                     "status": "succeeded",
-                    "action": "hold",
+                    "action": "confirm" if resume_existing else "hold",
                     "coverage_until": min(coverage.values()).isoformat(),
+                    "activity_duration_minutes": duration_minutes,
                 }
 
-            due_ids = {
-                str(policy.product_id)
+            prices: dict[str, Decimal] = {
+                str(policy.product_id): Decimal(policy.activity_price_amount)
                 for policy in policies
-                if replace_requested
-                or coverage[str(policy.product_id)] is None
-                or coverage[str(policy.product_id)] < threshold
             }
-            conflicts = [
-                activity
-                for activity in activities
-                if due_ids.intersection(activity.products)
-            ]
-            preserved_prices: dict[str, Decimal] = {}
-            for activity in conflicts:
-                preserved_prices.update(activity.products)
-            for policy in policies:
-                if replace_requested or str(policy.product_id) in due_ids:
-                    preserved_prices[str(policy.product_id)] = Decimal(
-                        policy.activity_price_amount
-                    )
+            if resume_existing:
+                for activity in conflicts:
+                    for product_id, price in activity.products.items():
+                        prices.setdefault(product_id, price)
 
             if replace_requested:
                 begin_at = now + timedelta(
                     seconds=int(settings.TT_SHOP_FLASH_SALE_START_DELAY_SECONDS)
                 )
                 activities_to_deactivate = conflicts
-                action = "replace"
+                # Preserve unmanaged products that happened to share an official
+                # activity with an enabled automation product.
+                for activity in conflicts:
+                    for product_id, price in activity.products.items():
+                        if product_id not in managed_ids:
+                            prices.setdefault(product_id, price)
             else:
-                due_ends = [coverage[product_id] for product_id in due_ids if coverage[product_id]]
+                coverage_ends = [value for value in coverage.values() if value is not None]
                 begin_at = max(
                     [now + timedelta(seconds=int(settings.TT_SHOP_FLASH_SALE_START_DELAY_SECONDS))]
                     + [
-                        end_at + timedelta(seconds=int(settings.TT_SHOP_FLASH_SALE_GAP_SECONDS))
-                        for end_at in due_ends
+                        end_at
+                        + timedelta(
+                            seconds=int(settings.TT_SHOP_FLASH_SALE_SLOT_BOUNDARY_SECONDS)
+                        )
+                        for end_at in coverage_ends
                     ]
                 )
                 activities_to_deactivate = []
-                action = "renew"
-                preserved_prices = {
-                    str(policy.product_id): Decimal(policy.activity_price_amount)
-                    for policy in policies
-                    if str(policy.product_id) in due_ids
-                }
-
-            end_at = begin_at + timedelta(
-                seconds=int(settings.TT_SHOP_FLASH_SALE_DURATION_SECONDS)
+            windows = activity_windows(
+                begin_at=begin_at,
+                target_until=target_until,
+                duration_minutes=duration_minutes,
+                boundary_seconds=int(settings.TT_SHOP_FLASH_SALE_SLOT_BOUNDARY_SECONDS),
             )
+            if not windows:
+                raise APIError(
+                    "TIKTOK_SHOP_FLASH_SALE_PLAN_EMPTY",
+                    "Flash-sale schedule did not produce a future activity window.",
+                    409,
+                )
             _assert_lock_owned(verify_lock_ownership)
             run = _new_run(
                 db,
@@ -602,73 +810,51 @@ async def reconcile_flash_sales(
             run.previous_activity_ids_json = [
                 item.activity_id for item in activities_to_deactivate
             ]
-            try:
+            new_activity_ids: list[str] = []
+            synthetic: list[LiveActivity] = []
+            for window_begin, window_end in windows:
                 new_activity_id, create_request_ids = await _create_with_products(
                     client,
                     shop=shop,
-                    begin_at=begin_at,
-                    end_at=end_at,
-                    prices=preserved_prices,
+                    begin_at=window_begin,
+                    end_at=window_end,
+                    prices=prices,
                     verify_lock_ownership=verify_lock_ownership,
                 )
-            except APIError as exc:
-                provider_code = _error_provider_code(exc)
-                if provider_code not in CONFLICT_PROVIDER_CODES or activities_to_deactivate:
-                    raise
-                conflicts = [
-                    activity
-                    for activity in activities
-                    if set(preserved_prices).intersection(activity.products)
-                ]
-                request_ids.extend(
-                    await _deactivate(
-                        client,
-                        conflicts,
-                        verify_lock_ownership=verify_lock_ownership,
+                request_ids.extend(create_request_ids)
+                new_activity_ids.append(new_activity_id)
+                synthetic.append(
+                    LiveActivity(
+                        activity_id=new_activity_id,
+                        title=activity_title(shop, window_begin),
+                        status="NOT_START",
+                        begin_at=window_begin,
+                        end_at=window_end,
+                        products=dict(prices),
                     )
                 )
-                run.previous_activity_ids_json = [
-                    item.activity_id for item in conflicts
-                ]
-                begin_at = utc_now() + timedelta(
-                    seconds=int(settings.TT_SHOP_FLASH_SALE_START_DELAY_SECONDS)
-                )
-                end_at = begin_at + timedelta(
-                    seconds=int(settings.TT_SHOP_FLASH_SALE_DURATION_SECONDS)
-                )
-                for activity in conflicts:
-                    for product_id, price in activity.products.items():
-                        preserved_prices.setdefault(product_id, price)
-                new_activity_id, create_request_ids = await _create_with_products(
-                    client,
-                    shop=shop,
-                    begin_at=begin_at,
-                    end_at=end_at,
-                    prices=preserved_prices,
-                    verify_lock_ownership=verify_lock_ownership,
-                )
-            request_ids.extend(create_request_ids)
-            synthetic = LiveActivity(
-                activity_id=new_activity_id,
-                title=activity_title(shop, begin_at),
-                status="NOT_START",
-                begin_at=begin_at,
-                end_at=end_at,
-                products=dict(preserved_prices),
-            )
             remaining = [
                 item
                 for item in activities
                 if item.activity_id not in set(run.previous_activity_ids_json or [])
             ]
-            _mark_policies(policies, [*remaining, synthetic], now=now, applied=True)
-            run.new_activity_id = new_activity_id
+            _mark_policies(policies, [*remaining, *synthetic], now=now, applied=True)
+            _mark_disabled_policies(
+                disabled_policies,
+                now=now,
+                applied=True,
+            )
+            run.new_activity_id = new_activity_ids[-1]
+            run.new_activity_ids_json = new_activity_ids
             run.provider_request_ids_json = request_ids
             run.details_json = {
-                "begin_at": begin_at.isoformat(),
-                "end_at": end_at.isoformat(),
-                "product_ids": sorted(preserved_prices),
-                "price_count": len(preserved_prices),
+                "begin_at": windows[0][0].isoformat(),
+                "end_at": windows[-1][1].isoformat(),
+                "product_ids": sorted(prices),
+                "price_count": len(prices),
+                "activity_count": len(new_activity_ids),
+                "activity_duration_minutes": duration_minutes,
+                "target_coverage_until": target_until.isoformat(),
             }
             run.status = "succeeded"
             run.completed_at = utc_now()
@@ -677,10 +863,13 @@ async def reconcile_flash_sales(
             return {
                 "status": "succeeded",
                 "action": action,
-                "activity_id": new_activity_id,
-                "begin_at": begin_at.isoformat(),
-                "end_at": end_at.isoformat(),
-                "products": len(preserved_prices),
+                "activity_id": new_activity_ids[-1],
+                "activity_ids": new_activity_ids,
+                "activity_count": len(new_activity_ids),
+                "activity_duration_minutes": duration_minutes,
+                "begin_at": windows[0][0].isoformat(),
+                "end_at": windows[-1][1].isoformat(),
+                "products": len(prices),
             }
     except Exception as exc:
         db.rollback()
@@ -693,7 +882,6 @@ async def reconcile_flash_sales(
                 select(TikTokShopFlashSalePolicy).where(
                     TikTokShopFlashSalePolicy.workspace_id == int(workspace_id),
                     TikTokShopFlashSalePolicy.shop_row_id == int(shop_row_id),
-                    TikTokShopFlashSalePolicy.enabled.is_(True),
                 )
             )
         )
@@ -702,7 +890,7 @@ async def reconcile_flash_sales(
             db,
             shop=shop,
             trigger=trigger,
-            action="replace" if replace_requested else "renew",
+            action=action,
             revision=revision,
             begin_at=None,
         )

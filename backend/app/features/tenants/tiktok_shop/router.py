@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, Response
 
 from app.celery_app import WHISPER_TASK_QUEUE, celery_app
 from app.core.config import settings
@@ -46,6 +46,7 @@ from app.data.models.tiktok_shop import (
 )
 from app.services.audit import log_event
 from app.services.gmvmax_creative_media_cache import resolve_creative_media
+from app.services.hermes_agent.service import ensure_user_can_use_task
 from app.services.tiktok_shop_api import TikTokShopAPIClient
 from app.services.tiktok_shop_sync import SUPPORTED_DOMAINS, serialize_model, shop_today
 from app.services.tiktok_shop_video_analysis import (
@@ -56,6 +57,11 @@ from app.services.tiktok_shop_video_analysis import (
     find_media_identity,
     serialize_analysis,
     utcnow,
+)
+from app.services.tiktok_shop_video_handoff import (
+    create_content_factory_video_handoff,
+    render_video_analysis_report,
+    video_analysis_report_filename,
 )
 
 
@@ -1137,6 +1143,145 @@ def _validate_video_analysis_range(start: date, end_exclusive: date) -> None:
             "Video analysis range must be between 1 and 366 days.",
             400,
         )
+
+
+def _scoped_video_analysis(
+    db: Session,
+    *,
+    workspace_id: int,
+    analysis_id: int,
+) -> TikTokShopVideoContentAnalysis:
+    row = db.scalar(
+        select(TikTokShopVideoContentAnalysis).where(
+            TikTokShopVideoContentAnalysis.id == int(analysis_id),
+            TikTokShopVideoContentAnalysis.workspace_id == int(workspace_id),
+        )
+    )
+    if row is None:
+        raise APIError("VIDEO_ANALYSIS_NOT_FOUND", "Video analysis not found.", 404)
+    return row
+
+
+@router.get("/video-content-analyses/{analysis_id}/report")
+def download_video_content_analysis_report(
+    workspace_id: int,
+    analysis_id: int = Path(gt=0),
+    report_format: str = Query(default="markdown", alias="format", pattern="^(markdown|json)$"),
+    _: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+) -> Response:
+    row = _scoped_video_analysis(
+        db,
+        workspace_id=int(workspace_id),
+        analysis_id=int(analysis_id),
+    )
+    if str(row.status).upper() != "SUCCEEDED" or not isinstance(row.analysis_json, dict):
+        raise APIError(
+            "VIDEO_ANALYSIS_NOT_READY",
+            "Complete the video analysis before exporting its report.",
+            409,
+        )
+    body = render_video_analysis_report(row, report_format=report_format)
+    filename = video_analysis_report_filename(row, report_format=report_format)
+    media_type = "application/json" if report_format == "json" else "text/markdown"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type=f"{media_type}; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/video-content-analyses/{analysis_id}/content-factory-handoff")
+async def handoff_video_content_analysis_to_content_factory(
+    workspace_id: int,
+    request: Request,
+    analysis_id: int = Path(gt=0),
+    me: SessionUser = Depends(require_tenant_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_user_can_use_task(
+        db,
+        workspace_id=int(workspace_id),
+        me=me,
+        task_type="general",
+    )
+    row = _scoped_video_analysis(
+        db,
+        workspace_id=int(workspace_id),
+        analysis_id=int(analysis_id),
+    )
+    shop = _get_shop(
+        db,
+        workspace_id=int(workspace_id),
+        shop_id=int(row.shop_row_id),
+    )
+    media_row, _asset_id, _fingerprint = find_media_identity(
+        db,
+        workspace_id=int(workspace_id),
+        shop=shop,
+        video_id=str(row.video_id),
+    )
+    media = resolve_creative_media(media_row, "video") if media_row else None
+    result = await create_content_factory_video_handoff(
+        db,
+        row=row,
+        user_id=int(me.id),
+        media=media,
+    )
+    log_event(
+        db,
+        action="tiktok_shop.video_analysis_handed_to_content_factory",
+        resource_type="tiktok_shop_video_content_analysis",
+        resource_id=int(row.id),
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id),
+        actor_ip=client_ip(request),
+        workspace_id=int(workspace_id),
+        details={
+            "video_id": str(row.video_id),
+            "producer_session": result["session_key"],
+            "report_attached": bool(result["report_attached"]),
+            "video_attached": bool(result["video_attached"]),
+            "reused": bool(result["reused"]),
+        },
+    )
+    db.commit()
+    result["multimodal_analysis"] = _dispatch_content_factory_handoff_analyses(
+        result.pop("pending_multimodal_attachment_ids", [])
+    )
+    return result
+
+
+def _dispatch_content_factory_handoff_analyses(
+    raw_attachment_ids: Any,
+) -> dict[str, Any]:
+    pending_analysis_ids = sorted({
+        int(value)
+        for value in list(raw_attachment_ids or [])
+        if str(value).strip().isdigit() and int(value) > 0
+    })
+    dispatched_analysis_ids: list[int] = []
+    for attachment_id in pending_analysis_ids:
+        try:
+            celery_app.send_task(
+                "openai_whisper.analyze_content_producer_reference",
+                kwargs={"attachment_id": int(attachment_id)},
+                queue=str(WHISPER_TASK_QUEUE),
+            )
+            dispatched_analysis_ids.append(int(attachment_id))
+        except Exception:  # noqa: BLE001 - durable recovery owns broker outages
+            logger.exception(
+                "content factory handoff analysis dispatch failed attachment_id=%s",
+                attachment_id,
+            )
+    return {
+        "status": (
+            "queued"
+            if len(dispatched_analysis_ids) == len(pending_analysis_ids)
+            else "pending_recovery"
+        ),
+        "attachment_count": len(pending_analysis_ids),
+    }
 
 
 @router.post("/video-content-analyses/lookup")

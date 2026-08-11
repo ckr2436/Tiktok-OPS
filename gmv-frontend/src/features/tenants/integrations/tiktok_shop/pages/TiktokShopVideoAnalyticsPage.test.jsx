@@ -32,6 +32,8 @@ describe('TikTok Shop video player lifecycle', () => {
   })
 
   it('shows no spoken copy separately from missing transcript evidence and renders detailed analysis', () => {
+    const onExport = vi.fn()
+    const onOptimize = vi.fn()
     render(
       <MemoryRouter>
         <VideoDiagnosisDrawer
@@ -54,6 +56,8 @@ describe('TikTok Shop video player lifecycle', () => {
           analyzing={false}
           workspaceId="3"
           onAnalyze={vi.fn()}
+          onExport={onExport}
+          onOptimize={onOptimize}
           onClose={vi.fn()}
           onPlay={vi.fn()}
         />
@@ -69,5 +73,10 @@ describe('TikTok Shop video player lifecycle', () => {
     expect(screen.getByText('38')).toBeInTheDocument()
     expect(screen.getByText('44.6%')).toBeInTheDocument()
     expect(screen.getByText(/按商品广告曝光加权聚合/)).toBeInTheDocument()
+    expect(screen.getByText(/不会自动创建项目或开始生成/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '导出分析报告' }))
+    fireEvent.click(screen.getByRole('button', { name: '前往内容工厂优化' }))
+    expect(onExport).toHaveBeenCalledTimes(1)
+    expect(onOptimize).toHaveBeenCalledTimes(1)
   })
 })

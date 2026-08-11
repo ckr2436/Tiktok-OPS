@@ -5,13 +5,12 @@ import { useParams } from 'react-router-dom';
 import Loading from '@/components/ui/Loading.jsx';
 import { useSessionQuery } from '@/features/platform/auth/hooks.js';
 import {
-  disableFlashSalePolicy,
+  applyFlashSalePlan,
   getCommerceContext,
   getCommerceOverview,
   getCommerceSyncStatus,
   getFlashSalePolicies,
   getProductCostHistory,
-  saveFlashSalePolicy,
   saveProductCost,
   syncCommerceData,
 } from './api.js';
@@ -34,37 +33,64 @@ function shopLocalTime(value) {
 
 function flashSaleStatus(policy) {
   if (!policy) return { text: '未设置', tone: 'muted' };
-  if (!policy.enabled) return { text: '已暂停', tone: 'muted' };
   if (policy.status === 'error') return { text: '需要处理', tone: 'error' };
   if (policy.applied_revision < policy.policy_revision) {
     return { text: '正在应用', tone: 'pending' };
   }
+  if (!policy.enabled) return { text: '已暂停', tone: 'muted' };
   return { text: '自动续期中', tone: 'success' };
+}
+
+export function buildFlashSalePlan(products, policiesByProduct, draftsByProduct) {
+  return (products || []).map((product) => {
+    const productId = String(product.product_id);
+    const policy = policiesByProduct?.[productId];
+    const draft = draftsByProduct?.[productId];
+    const enabled = draft ? Boolean(draft.enabled) : Boolean(policy?.enabled);
+    const price = draft?.activity_price_amount ?? policy?.activity_price_amount ?? null;
+    return {
+      product_id: productId,
+      enabled,
+      activity_price_amount: enabled ? Number(price) : null,
+    };
+  });
 }
 
 function FlashSaleDialog({
   product,
   policy,
-  shopId,
-  workspaceId,
+  draft,
+  schedule,
   onClose,
-  onSaved,
+  onStage,
 }) {
-  const [price, setPrice] = useState(
-    policy?.activity_price_amount ? String(Number(policy.activity_price_amount)) : '',
+  const [enabled, setEnabled] = useState(
+    draft ? Boolean(draft.enabled) : Boolean(policy?.enabled),
   );
-  const saveMutation = useMutation({
-    mutationFn: () => saveFlashSalePolicy(workspaceId, product.product_id, {
-      shop_id: Number(shopId),
-      activity_price_amount: Number(price),
-    }),
-    onSuccess: onSaved,
-  });
-  const disableMutation = useMutation({
-    mutationFn: () => disableFlashSalePolicy(workspaceId, product.product_id, Number(shopId)),
-    onSuccess: onSaved,
-  });
-  const invalid = !Number.isFinite(Number(price)) || Number(price) <= 0;
+  const [price, setPrice] = useState(
+    draft?.activity_price_amount != null
+      ? String(Number(draft.activity_price_amount))
+      : policy?.activity_price_amount
+        ? String(Number(policy.activity_price_amount))
+        : '',
+  );
+  const configuredDurationMinutes = Number(
+    schedule?.activity_duration_minutes || policy?.activity_duration_minutes || 72 * 60,
+  );
+  const [durationHours, setDurationHours] = useState(
+    String(configuredDurationMinutes / 60),
+  );
+  const durationMinutes = Math.round(Number(durationHours) * 60);
+  const targetCoverageSeconds = Number(schedule?.target_coverage_seconds || 72 * 60 * 60);
+  const plannedActivityCount = Number.isFinite(durationMinutes) && durationMinutes > 0
+    ? Math.max(1, Math.ceil(targetCoverageSeconds / (durationMinutes * 60)))
+    : 0;
+  const invalid = (enabled && (
+    !Number.isFinite(Number(price)) || Number(price) <= 0
+  ))
+    || !Number.isInteger(durationMinutes)
+    || durationMinutes < 60
+    || durationMinutes > 72 * 60;
   const status = flashSaleStatus(policy);
 
   return (
@@ -87,14 +113,12 @@ function FlashSaleDialog({
           <button type="button" className="modal__close" onClick={onClose} aria-label="关闭">×</button>
         </header>
         <div className="modal__body">
-          {saveMutation.error || disableMutation.error ? (
-            <div className="alert alert--error">
-              {errorMessage(saveMutation.error || disableMutation.error)}
-            </div>
-          ) : null}
+          <div className="commerce-flash-sale-draft-note">
+            此处只保存到本次配置，不会立即修改 TikTok Shop。全部商品设置完成后再统一确认执行。
+          </div>
           <div className="commerce-flash-sale-summary">
             <div>
-              <span>状态</span>
+              <span>当前线上状态</span>
               <strong className={`commerce-flash-state commerce-flash-state--${status.tone}`}>
                 {status.text}
               </strong>
@@ -108,48 +132,83 @@ function FlashSaleDialog({
               <strong>{shopLocalTime(policy?.next_renewal_at)}</strong>
             </div>
           </div>
-          <label className="commerce-flash-sale-price">
-            <span>活动价</span>
-            <div className="commerce-input-addon">
-              <i>{product.currency || 'USD'}</i>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={price}
-                autoFocus
-                onChange={(event) => setPrice(event.target.value)}
-                placeholder="输入活动价"
-              />
-            </div>
+          <div className="commerce-flash-sale-choice" role="group" aria-label="是否参加闪购">
+            <button
+              type="button"
+              className={enabled ? 'is-active' : ''}
+              onClick={() => setEnabled(true)}
+            >
+              参加闪购
+            </button>
+            <button
+              type="button"
+              className={!enabled ? 'is-active' : ''}
+              onClick={() => setEnabled(false)}
+            >
+              不设置闪购
+            </button>
+          </div>
+          <div className="commerce-flash-sale-config">
+            <label className="commerce-flash-sale-price">
+              <span>活动价</span>
+              <div className="commerce-input-addon">
+                <i>{product.currency || 'USD'}</i>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={price}
+                  autoFocus
+                  disabled={!enabled}
+                  onChange={(event) => setPrice(event.target.value)}
+                  placeholder="输入活动价"
+                />
+              </div>
+            </label>
+            <label className="commerce-flash-sale-price">
+              <span>每场活动时长</span>
+              <div className="commerce-input-addon commerce-input-addon--suffix">
+                <input
+                  type="number"
+                  min="1"
+                  max="72"
+                  step="0.5"
+                  value={durationHours}
+                  onChange={(event) => setDurationHours(event.target.value)}
+                  placeholder="例如 3"
+                />
+                <i>小时</i>
+              </div>
+            </label>
+          </div>
+          <div className="commerce-flash-sale-plan">
+            <strong>
+              {enabled
+                ? `确认后将连续预建 ${plannedActivityCount || '—'} 场`
+                : '确认后该商品不再参加自动闪购'}
+            </strong>
             <small>
-              系统每 15 分钟检查一次，单次活动约 72 小时，并始终保持未来至少 2 天有效覆盖。
-              时间按商店 UTC-8 换算。
+              该时长为本店闪购的统一设置，会应用到所有已开启商品。系统保持约 72 小时连续覆盖；
+              例如 3 小时会排满 24 场，后续补建也严格沿用 3 小时。时间按商店 UTC-8 换算。
             </small>
-          </label>
+          </div>
           {policy?.last_error_message ? (
             <div className="alert alert--error">{policy.last_error_message}</div>
           ) : null}
         </div>
         <footer className="commerce-dialog-actions">
-          {policy?.enabled ? (
-            <button
-              type="button"
-              className="btn ghost commerce-danger-button"
-              onClick={() => disableMutation.mutate()}
-              disabled={disableMutation.isPending || saveMutation.isPending}
-            >
-              {disableMutation.isPending ? '正在暂停…' : '暂停自动续期'}
-            </button>
-          ) : null}
           <button type="button" className="btn ghost" onClick={onClose}>取消</button>
           <button
             type="button"
             className="btn"
-            onClick={() => saveMutation.mutate()}
-            disabled={invalid || saveMutation.isPending || disableMutation.isPending}
+            onClick={() => onStage({
+              enabled,
+              activity_price_amount: enabled ? Number(price) : null,
+              activity_duration_minutes: durationMinutes,
+            })}
+            disabled={invalid}
           >
-            {saveMutation.isPending ? '正在保存…' : policy ? '保存活动价' : '开启自动续期'}
+            保存到本次配置
           </button>
         </footer>
       </section>
@@ -382,6 +441,9 @@ export default function ProductSettingsPage() {
   const [costFilter, setCostFilter] = useState('all');
   const [editingProduct, setEditingProduct] = useState(null);
   const [editingFlashSale, setEditingFlashSale] = useState(null);
+  const [flashSaleDrafts, setFlashSaleDrafts] = useState({});
+  const [flashSaleDraftDuration, setFlashSaleDraftDuration] = useState(null);
+  const [flashSaleDraftBaseToken, setFlashSaleDraftBaseToken] = useState('');
   const [notice, setNotice] = useState(null);
 
   const contextQuery = useQuery({
@@ -403,6 +465,13 @@ export default function ProductSettingsPage() {
         : String(context.default_shop_id || shops[0].id)
     ));
   }, [context.default_shop_id, shops]);
+
+  useEffect(() => {
+    setFlashSaleDrafts({});
+    setFlashSaleDraftDuration(null);
+    setFlashSaleDraftBaseToken('');
+    setEditingFlashSale(null);
+  }, [shopId]);
 
   const advertisers = useMemo(
     () => advertisersForShop(context, shopId),
@@ -487,18 +556,82 @@ export default function ProductSettingsPage() {
     },
     onError: (error) => setNotice({ type: 'error', text: errorMessage(error) }),
   });
+  const allProducts = useMemo(
+    () => (Array.isArray(overviewQuery.data?.products) ? overviewQuery.data.products : []),
+    [overviewQuery.data?.products],
+  );
   const products = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const source = Array.isArray(overviewQuery.data?.products)
-      ? overviewQuery.data.products
-      : [];
-    return source.filter((product) => {
+    return allProducts.filter((product) => {
       if (costFilter === 'configured' && !product.current_cost) return false;
       if (costFilter === 'missing' && product.current_cost) return false;
       if (!needle) return true;
       return `${product.title} ${product.product_id}`.toLowerCase().includes(needle);
     });
-  }, [costFilter, overviewQuery.data?.products, search]);
+  }, [allProducts, costFilter, search]);
+  const flashSalePlanProducts = useMemo(
+    () => buildFlashSalePlan(allProducts, flashSaleByProduct, flashSaleDrafts),
+    [allProducts, flashSaleByProduct, flashSaleDrafts],
+  );
+  const flashSaleDraftCount = Object.keys(flashSaleDrafts).length;
+  const flashSaleEnabledCount = flashSalePlanProducts.filter((item) => item.enabled).length;
+  const effectiveFlashSaleDuration = Number(
+    flashSaleDraftDuration
+      || flashSaleQuery.data?.schedule?.activity_duration_minutes
+      || 72 * 60,
+  );
+  const flashSalePlanInvalid = flashSalePlanProducts.some((item) => (
+    item.enabled
+    && (!Number.isFinite(item.activity_price_amount) || item.activity_price_amount <= 0)
+  ));
+  const applyFlashSaleMutation = useMutation({
+    mutationFn: () => applyFlashSalePlan(wid, {
+      shop_id: Number(shopId),
+      activity_duration_minutes: effectiveFlashSaleDuration,
+      base_configuration_token: flashSaleDraftBaseToken,
+      products: flashSalePlanProducts,
+    }),
+    onSuccess: async (result) => {
+      setFlashSaleDrafts({});
+      setFlashSaleDraftDuration(null);
+      setFlashSaleDraftBaseToken('');
+      setNotice({
+        type: 'success',
+        text: result?.status === 'unchanged'
+          ? '闪购配置没有变化，无需执行。'
+          : `已统一提交：${result?.enabled_count ?? flashSaleEnabledCount} 个商品参加闪购，后台只执行一次。`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['commerce', 'flash-sales'] });
+    },
+    onError: async (error) => {
+      const code = String(
+        error?.response?.data?.error?.code
+        || error?.response?.data?.code
+        || error?.code
+        || '',
+      );
+      if (code === 'FLASH_SALE_CONFIGURATION_CHANGED') {
+        setFlashSaleDrafts({});
+        setFlashSaleDraftDuration(null);
+        setFlashSaleDraftBaseToken('');
+      }
+      setNotice({ type: 'error', text: errorMessage(error) });
+      await queryClient.invalidateQueries({ queryKey: ['commerce', 'flash-sales'] });
+    },
+  });
+  const discardFlashSaleDrafts = () => {
+    setFlashSaleDrafts({});
+    setFlashSaleDraftDuration(null);
+    setFlashSaleDraftBaseToken('');
+    setNotice({ type: 'success', text: '已放弃本次尚未执行的闪购修改。' });
+  };
+  const confirmFlashSalePlan = () => {
+    const disabledCount = flashSalePlanProducts.length - flashSaleEnabledCount;
+    const confirmed = window.confirm(
+      `确认统一执行闪购配置？\n参加闪购：${flashSaleEnabledCount} 个\n不参加闪购：${disabledCount} 个\n本次只会创建一个后台执行任务。`,
+    );
+    if (confirmed) applyFlashSaleMutation.mutate();
+  };
   const currency = overviewQuery.data?.scope?.currency || advertiser?.currency || 'USD';
   const configuredCount = (overviewQuery.data?.products || []).filter((item) => item.current_cost).length;
   const totalCount = (overviewQuery.data?.products || []).length;
@@ -574,6 +707,45 @@ export default function ProductSettingsPage() {
           </div>
         </div>
 
+        <div className={`commerce-flash-batch ${flashSaleDraftCount ? 'is-dirty' : ''}`}>
+          <div>
+            <strong>
+              {flashSaleDraftCount
+                ? `本次配置已有 ${flashSaleDraftCount} 个商品修改，尚未执行`
+                : '逐个设置商品，最后统一确认执行'}
+            </strong>
+            <small>
+              当前计划：{flashSaleEnabledCount} 个参加闪购，
+              {Math.max(0, flashSalePlanProducts.length - flashSaleEnabledCount)} 个不参加；
+              每场 {effectiveFlashSaleDuration / 60} 小时。
+            </small>
+          </div>
+          {flashSaleDraftCount ? (
+            <div className="commerce-flash-batch__actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={discardFlashSaleDrafts}
+                disabled={applyFlashSaleMutation.isPending}
+              >
+                放弃修改
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={confirmFlashSalePlan}
+                disabled={
+                  flashSalePlanInvalid
+                  || !flashSaleDraftBaseToken
+                  || applyFlashSaleMutation.isPending
+                }
+              >
+                {applyFlashSaleMutation.isPending ? '统一提交中…' : '确认开始执行'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         {contextQuery.isLoading || overviewQuery.isLoading ? (
           <Loading text="正在读取商品目录…" />
         ) : shops.length === 0 ? (
@@ -601,7 +773,16 @@ export default function ProductSettingsPage() {
                 ) : products.map((product) => {
                   const cost = product.current_cost;
                   const flashPolicy = flashSaleByProduct[String(product.product_id)];
-                  const flashState = flashSaleStatus(flashPolicy);
+                  const flashDraft = flashSaleDrafts[String(product.product_id)];
+                  const flashState = flashDraft
+                    ? { text: '待统一提交', tone: 'pending' }
+                    : flashSaleStatus(flashPolicy);
+                  const effectiveFlashEnabled = flashDraft
+                    ? Boolean(flashDraft.enabled)
+                    : Boolean(flashPolicy?.enabled);
+                  const effectiveFlashPrice = flashDraft
+                    ? flashDraft.activity_price_amount
+                    : flashPolicy?.activity_price_amount;
                   const rate = cost
                     ? Number(cost.platform_fee_rate || 0)
                       + Number(cost.payment_fee_rate || 0)
@@ -642,17 +823,23 @@ export default function ProductSettingsPage() {
                           <span className={`commerce-flash-state commerce-flash-state--${flashState.tone}`}>
                             {flashState.text}
                           </span>
-                          {flashPolicy?.enabled ? (
+                          {effectiveFlashEnabled ? (
                             <>
                               <strong>
                                 {formatMoney(
-                                  flashPolicy.activity_price_amount,
-                                  flashPolicy.currency,
+                                  effectiveFlashPrice,
+                                  flashPolicy?.currency || product.currency || currency,
                                 )}
                               </strong>
-                              <small>覆盖至 {shopLocalTime(flashPolicy.current_end_at)}</small>
+                              <small>
+                                {flashDraft
+                                  ? '确认后才会执行'
+                                  : `覆盖至 ${shopLocalTime(flashPolicy?.current_end_at)}`}
+                              </small>
                             </>
-                          ) : <small>点击设置活动价</small>}
+                          ) : (
+                            <small>{flashDraft ? '本次选择不参加闪购' : '点击设置活动价'}</small>
+                          )}
                         </button>
                       </td>
                       <td>
@@ -688,13 +875,30 @@ export default function ProductSettingsPage() {
         <FlashSaleDialog
           product={editingFlashSale}
           policy={flashSaleByProduct[String(editingFlashSale.product_id)]}
-          shopId={shopId}
-          workspaceId={wid}
+          draft={flashSaleDrafts[String(editingFlashSale.product_id)]}
+          schedule={{
+            ...(flashSaleQuery.data?.schedule || {}),
+            activity_duration_minutes: effectiveFlashSaleDuration,
+          }}
           onClose={() => setEditingFlashSale(null)}
-          onSaved={async () => {
+          onStage={(draft) => {
+            const productId = String(editingFlashSale.product_id);
+            setFlashSaleDrafts((current) => ({
+              ...current,
+              [productId]: {
+                enabled: Boolean(draft.enabled),
+                activity_price_amount: draft.activity_price_amount,
+              },
+            }));
+            setFlashSaleDraftDuration(Number(draft.activity_duration_minutes));
+            setFlashSaleDraftBaseToken((current) => (
+              current || String(flashSaleQuery.data?.configuration_token || '')
+            ));
             setEditingFlashSale(null);
-            setNotice({ type: 'success', text: '闪购活动价已保存，后台正在校验冲突并安排续期。' });
-            await queryClient.invalidateQueries({ queryKey: ['commerce', 'flash-sales'] });
+            setNotice({
+              type: 'success',
+              text: '已保存到本次配置，尚未执行。请继续修改其他商品，最后点击“确认开始执行”。',
+            });
           }}
         />
       ) : null}

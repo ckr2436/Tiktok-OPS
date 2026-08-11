@@ -480,6 +480,39 @@ class TikTokShopPromotionActivity(Base):
     )
 
 
+class TikTokShopFlashSaleSchedule(Base):
+    __tablename__ = "tiktok_shop_flash_sale_schedules"
+    __table_args__ = (
+        UniqueConstraint("shop_row_id", name="uq_ttshop_flash_sale_schedule_shop"),
+    )
+
+    id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(UBigInt, ForeignKey("workspaces.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(
+        UBigInt, ForeignKey("oauth_tiktok_shop_accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    shop_row_id: Mapped[int] = mapped_column(
+        UBigInt,
+        ForeignKey("oauth_tiktok_shop_shops.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    activity_duration_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("4320")
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        UBigInt, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        MySQL_DATETIME(fsp=6),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=text("CURRENT_TIMESTAMP(6)"),
+    )
+
+
 class TikTokShopFlashSalePolicy(Base):
     __tablename__ = "tiktok_shop_flash_sale_policies"
     __table_args__ = (
@@ -566,6 +599,7 @@ class TikTokShopFlashSaleRun(Base):
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
     previous_activity_ids_json: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     new_activity_id: Mapped[str | None] = mapped_column(String(128), default=None)
+    new_activity_ids_json: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     provider_request_ids_json: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     details_json: Mapped[dict | None] = mapped_column(JSON, default=None)
     error_code: Mapped[str | None] = mapped_column(String(128), default=None)

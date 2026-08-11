@@ -11,6 +11,11 @@ function dataPrefix(workspaceId) {
 }
 
 
+function contentPostingPrefix(workspaceId) {
+  return `${dataPrefix(workspaceId)}/content-posting`
+}
+
+
 function payload(response) {
   return response?.data ?? response
 }
@@ -33,6 +38,14 @@ export async function getTikTokShopReadiness(workspaceId) {
 export async function createTikTokShopAuthorization(workspaceId, payload = {}) {
   const response = await http.post(`${prefix(workspaceId)}/authz`, payload)
   return response?.data ?? response
+}
+
+
+export async function createTikTokShopCreatorAuthorization(workspaceId, payload = {}) {
+  return createTikTokShopAuthorization(workspaceId, {
+    ...payload,
+    authorization_type: 'creator',
+  })
 }
 
 
@@ -75,6 +88,88 @@ export async function deleteTikTokShopAccount(workspaceId, accountId) {
     `${prefix(workspaceId)}/accounts/${encodeURIComponent(accountId)}`,
   )
   return response?.data ?? response
+}
+
+
+export async function listTikTokShopCreatorAccounts(workspaceId, config = {}) {
+  const response = payload(await http.get(`${contentPostingPrefix(workspaceId)}/accounts`, config))
+  return Array.isArray(response?.items) ? response.items : []
+}
+
+
+export async function getTikTokShopCreatorProfile(workspaceId, accountId, config = {}) {
+  return payload(await http.get(
+    `${contentPostingPrefix(workspaceId)}/accounts/${encodeURIComponent(accountId)}/profile`,
+    config,
+  ))
+}
+
+
+export async function getTikTokShopCreatorProducts(workspaceId, accountId, params = {}, config = {}) {
+  return payload(await http.get(
+    `${contentPostingPrefix(workspaceId)}/accounts/${encodeURIComponent(accountId)}/shop-products`,
+    { ...config, params },
+  ))
+}
+
+
+export async function addTikTokShopCreatorShowcaseProducts(workspaceId, accountId, productIds, config = {}) {
+  return payload(await http.post(
+    `${contentPostingPrefix(workspaceId)}/accounts/${encodeURIComponent(accountId)}/showcase-products`,
+    { product_ids: productIds },
+    config,
+  ))
+}
+
+
+export async function createTikTokShopContentPost(workspaceId, values, config = {}) {
+  const form = new FormData()
+  form.append('account_id', String(values.accountId))
+  form.append('product_id', String(values.productId))
+  form.append('product_link_title', values.productLinkTitle)
+  form.append('video', values.video)
+  if (values.videoTitle) form.append('video_title', values.videoTitle)
+  if (values.coverTimestampMs !== '' && values.coverTimestampMs != null) {
+    form.append('cover_timestamp_ms', String(values.coverTimestampMs))
+  }
+  if (values.musicId) form.append('music_id', values.musicId)
+  return payload(await http.post(
+    `${contentPostingPrefix(workspaceId)}/posts`,
+    form,
+    {
+      ...config,
+      headers: {
+        ...(config.headers || {}),
+        'Idempotency-Key': values.idempotencyKey,
+      },
+    },
+  ))
+}
+
+
+export async function listTikTokShopContentPosts(workspaceId, params = {}, config = {}) {
+  return payload(await http.get(
+    `${contentPostingPrefix(workspaceId)}/posts`,
+    { ...config, params },
+  ))
+}
+
+
+export async function publishTikTokShopContentPost(workspaceId, postId, config = {}) {
+  return payload(await http.post(
+    `${contentPostingPrefix(workspaceId)}/posts/${encodeURIComponent(postId)}/publish`,
+    {},
+    config,
+  ))
+}
+
+
+export async function refreshTikTokShopContentPost(workspaceId, postId, config = {}) {
+  return payload(await http.post(
+    `${contentPostingPrefix(workspaceId)}/posts/${encodeURIComponent(postId)}/refresh`,
+    {},
+    config,
+  ))
 }
 
 
@@ -258,6 +353,40 @@ export async function requestTikTokShopVideoAnalysis(
   return payload(await http.post(
     `${dataPrefix(workspaceId)}/video-content-analyses`,
     payloadValue,
+    config,
+  ))
+}
+
+
+export async function downloadTikTokShopVideoAnalysisReport(
+  workspaceId,
+  analysisId,
+  reportFormat = 'markdown',
+  config = {},
+) {
+  const response = await http.get(
+    `${dataPrefix(workspaceId)}/video-content-analyses/${encodeURIComponent(analysisId)}/report`,
+    {
+      ...config,
+      params: { ...(config.params || {}), format: reportFormat },
+      responseType: 'blob',
+    },
+  )
+  return {
+    blob: response?.data ?? response,
+    contentDisposition: response?.headers?.['content-disposition'] || '',
+  }
+}
+
+
+export async function createTikTokShopVideoAnalysisHandoff(
+  workspaceId,
+  analysisId,
+  config = {},
+) {
+  return payload(await http.post(
+    `${dataPrefix(workspaceId)}/video-content-analyses/${encodeURIComponent(analysisId)}/content-factory-handoff`,
+    {},
     config,
   ))
 }

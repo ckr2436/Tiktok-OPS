@@ -71,21 +71,9 @@ export async function getFlashSalePolicies(workspaceId, params = {}, config = {}
   );
 }
 
-export async function saveFlashSalePolicy(workspaceId, productId, values) {
+export async function applyFlashSalePlan(workspaceId, values) {
   return payload(
-    await http.put(
-      `${prefix(workspaceId)}/products/${encodeURIComponent(productId)}/flash-sale`,
-      values,
-    ),
-  );
-}
-
-export async function disableFlashSalePolicy(workspaceId, productId, shopId) {
-  return payload(
-    await http.delete(
-      `${prefix(workspaceId)}/products/${encodeURIComponent(productId)}/flash-sale`,
-      { params: { shop_id: shopId } },
-    ),
+    await http.post(`${prefix(workspaceId)}/flash-sales/apply`, values),
   );
 }
 

@@ -34,6 +34,11 @@ class OAuthTikTokShopAuthzSession(Base):
     )
     return_to: Mapped[str | None] = mapped_column(String(512), default=None)
     alias: Mapped[str | None] = mapped_column(String(128), default=None)
+    authorization_type: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'seller'"),
+    )
     created_by_user_id: Mapped[int | None] = mapped_column(UBigInt, ForeignKey("users.id"), default=None)
     ip_address: Mapped[bytes | None] = mapped_column(LargeBinary(16), default=None)
     user_agent: Mapped[str | None] = mapped_column(String(512), default=None)

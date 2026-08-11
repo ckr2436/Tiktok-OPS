@@ -574,6 +574,17 @@
   color: var(--muted);
 }
 
+.commerce-flash-sale-draft-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #b9d2ff;
+  border-radius: 6px;
+  background: #f2f7ff;
+  color: #184f9e;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .commerce-flash-sale-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -611,12 +622,93 @@
 .commerce-flash-sale-price {
   display: grid;
   gap: 7px;
-  margin-top: 16px;
 }
 
 .commerce-flash-sale-price > small {
   color: var(--muted);
   line-height: 1.6;
+}
+
+.commerce-flash-sale-config {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.commerce-flash-sale-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.commerce-flash-sale-choice button {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.commerce-flash-sale-choice button.is-active {
+  border-color: #4b82ed;
+  background: #edf4ff;
+  color: #1856b3;
+}
+
+.commerce-flash-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-soft);
+}
+
+.commerce-flash-batch.is-dirty {
+  border-color: #91b8ff;
+  background: #f2f7ff;
+}
+
+.commerce-flash-batch > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.commerce-flash-batch small {
+  color: var(--muted);
+}
+
+.commerce-flash-batch__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.commerce-flash-sale-plan {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #b9d2ff;
+  border-radius: 6px;
+  background: #f2f7ff;
+}
+
+.commerce-flash-sale-plan strong {
+  color: #184f9e;
+  font-size: 13px;
+}
+
+.commerce-flash-sale-plan small {
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .commerce-flash-sale-cell {
@@ -728,6 +820,19 @@
 }
 
 @media (max-width: 680px) {
+  .commerce-flash-batch {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commerce-flash-batch__actions {
+    justify-content: flex-end;
+  }
+
+  .commerce-flash-sale-config {
+    grid-template-columns: 1fr;
+  }
+
   .commerce-flash-sale-summary {
     grid-template-columns: 1fr;
   }
