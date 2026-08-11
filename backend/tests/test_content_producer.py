@@ -1536,6 +1536,145 @@ async def test_docx_handoff_is_extracted_for_producer_and_transferred_as_project
 
 
 @pytest.mark.anyio
+async def test_xlsx_matrix_is_extracted_with_sheet_row_and_cell_structure(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(content_producer, "PRODUCER_STORAGE_ROOT", tmp_path / "intake")
+    conversation = get_or_create_producer_conversation(
+        db_session,
+        workspace_id=7,
+        user_id=19,
+        session_key="xlsx-matrix-session",
+    )
+    db_session.commit()
+    workbook = io.BytesIO()
+    with zipfile.ZipFile(workbook, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <sheets><sheet name="50 Video Matrix" sheetId="1" r:id="rId1"/>
+              <sheet name="Locked Rules" sheetId="2" r:id="rId2"/></sheets>
+            </workbook>""",
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Target="/xl/worksheets/sheet1.xml"/>
+              <Relationship Id="rId2" Target="worksheets/sheet2.xml"/>
+            </Relationships>""",
+        )
+        archive.writestr(
+            "xl/sharedStrings.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <si><t>Video ID</t></si><si><t>Hook</t></si>
+              <si><t>3:07 a.m. again?</t></si><si><t>Keep each script complete.</t></si>
+            </sst>""",
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <sheetData>
+                <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>
+                <row r="2"><c r="A2"><v>1</v></c><c r="B2" t="s"><v>2</v></c>
+                  <c r="C2" t="inlineStr"><is><t>Fast TikTok conversion script</t></is></c></row>
+              </sheetData>
+            </worksheet>""",
+        )
+        archive.writestr(
+            "xl/worksheets/sheet2.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <sheetData><row r="1"><c r="A1" t="s"><v>3</v></c></row></sheetData>
+            </worksheet>""",
+        )
+    workbook.seek(0)
+    attachment = await save_producer_attachment(
+        db_session,
+        conversation=conversation,
+        user_id=19,
+        upload=UploadFile(
+            filename="MYUPONA_50_video_matrix.xlsx",
+            file=workbook,
+            headers=Headers({
+                "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            }),
+        ),
+        kind="supporting_material",
+    )
+    db_session.commit()
+
+    extracted = attachment.analysis_json["document_text"]
+    assert attachment.kind == "brief_document"
+    assert attachment.analysis_json["document_format"] == "xlsx"
+    assert "[Sheet: 50 Video Matrix]" in extracted
+    assert "Row 2: A=1 | B=3:07 a.m. again? | C=Fast TikTok conversion script" in extracted
+    assert "[Sheet: Locked Rules]" in extracted
+    assert "A=Keep each script complete." in extracted
+
+
+@pytest.mark.anyio
+async def test_pptx_slides_and_speaker_notes_are_extracted(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(content_producer, "PRODUCER_STORAGE_ROOT", tmp_path / "intake")
+    conversation = get_or_create_producer_conversation(
+        db_session,
+        workspace_id=7,
+        user_id=19,
+        session_key="pptx-brief-session",
+    )
+    db_session.commit()
+    presentation = io.BytesIO()
+    with zipfile.ZipFile(presentation, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "ppt/slides/slide1.xml",
+            """<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+              <p:cSld><a:p><a:r><a:t>Opening visual hook</a:t></a:r></a:p>
+              <a:p><a:r><a:t>Show the product naturally</a:t></a:r></a:p></p:cSld>
+            </p:sld>""",
+        )
+        archive.writestr(
+            "ppt/notesSlides/notesSlide1.xml",
+            """<p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+              <a:p><a:r><a:t>Voiceover must stay energetic.</a:t></a:r></a:p>
+            </p:notes>""",
+        )
+    presentation.seek(0)
+    attachment = await save_producer_attachment(
+        db_session,
+        conversation=conversation,
+        user_id=19,
+        upload=UploadFile(
+            filename="creative_brief.pptx",
+            file=presentation,
+            headers=Headers({
+                "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            }),
+        ),
+        kind="supporting_material",
+    )
+    db_session.commit()
+
+    extracted = attachment.analysis_json["document_text"]
+    assert "[Slide 1]" in extracted
+    assert "Opening visual hook" in extracted
+    assert "Show the product naturally" in extracted
+    assert "[Speaker notes 1]" in extracted
+    assert "Voiceover must stay energetic." in extracted
+
+
+@pytest.mark.anyio
 async def test_reference_video_blocks_producer_until_audio_analysis_is_ready(
     db_session,
     monkeypatch,

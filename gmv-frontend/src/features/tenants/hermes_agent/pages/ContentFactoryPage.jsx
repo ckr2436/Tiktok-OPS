@@ -42,6 +42,17 @@ const EXECUTION_STAGES = ['FACTS', 'SERIES_DIRECTOR', 'DIRECTOR', 'PRODUCTION_PL
 const RESTART_STAGES = ['SERIES_DIRECTOR', 'DIRECTOR', 'PRODUCTION_PLAN', 'VISUAL_PREVIEW', 'CREATIVE_REVIEW', 'FINAL_ASSETS', 'VIDEO_PROMPTS', 'EDIT_PACKAGE']
 const PRODUCER_RECOVERY_DEADLINE_MS = 210_000
 const PRODUCER_RECOVERY_INTERVAL_MS = 2_000
+const PRODUCER_SUPPORTING_MATERIAL_ACCEPT = [
+  '.docx', '.docm', '.dotx', '.dotm',
+  '.xlsx', '.xlsm', '.xltx', '.xltm',
+  '.pptx', '.pptm', '.potx', '.potm', '.ppsx', '.ppsm',
+  '.odt', '.ods', '.odp', '.pdf',
+  '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.jsonl',
+  '.yaml', '.yml', '.xml', '.html', '.htm', '.tex', '.log',
+  '.c', '.cc', '.cpp', '.h', '.hpp', '.cs', '.css', '.go', '.java',
+  '.js', '.jsx', '.php', '.py', '.rb', '.sh', '.sql', '.ts', '.tsx',
+  'image/jpeg', 'image/png', 'image/webp', '.jpg', '.jpeg', '.png', '.webp',
+].join(',')
 const LABELS = {
   FACTS: '产品事实',
   SERIES_DIRECTOR: '整批编导',
@@ -1727,10 +1738,10 @@ export default function ContentFactoryPage() {
                       />
                     </label>
                     <label className="btn secondary" style={{ width: 'auto', cursor: producerBusy || producerUploadBusy ? 'not-allowed' : 'pointer', fontSize: 12 }}>
-                      + 上传文档 / 图片
+                      + 上传资料 / 图片
                       <input
                         type="file"
-                        accept=".docx,.pdf,.txt,.md,.csv,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                        accept={PRODUCER_SUPPORTING_MATERIAL_ACCEPT}
                         multiple
                         hidden
                         disabled={producerBusy || producerUploadBusy}
@@ -1739,7 +1750,7 @@ export default function ContentFactoryPage() {
                     </label>
                   </div>
                   <div className="muted content-factory-materials__help">
-                    支持爆款视频链接、本地视频、人物参考图和项目文档。视频将在后台完成口播与多模态拆解。
+                    支持爆款视频链接、本地视频、人物参考图，以及 Word、Excel、PowerPoint、PDF、OpenDocument、文本和常用图片。视频将在后台完成口播与多模态拆解。
                   </div>
                   {producerUploadBusy ? <div className="muted" style={{ fontSize: 12 }}>正在接收素材；对标视频会继续在后台下载、转写并进行多模态拆解…</div> : null}
                   {producerAttachments.length ? (

@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import posixpath
 import re
 import shutil
 import subprocess
@@ -72,7 +73,29 @@ MAX_FAST_CHINESE_CHARACTERS_PER_MINUTE = 320
 MAX_AUTHORITATIVE_SCRIPT_VERSIONS = 50
 PRODUCER_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 PRODUCER_VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm"}
-PRODUCER_DOCUMENT_EXTENSIONS = {".docx", ".pdf", ".txt", ".md", ".csv"}
+PRODUCER_WORD_EXTENSIONS = {".docx", ".docm", ".dotx", ".dotm"}
+PRODUCER_SPREADSHEET_EXTENSIONS = {
+    ".xlsx", ".xlsm", ".xltx", ".xltm",
+}
+PRODUCER_PRESENTATION_EXTENSIONS = {
+    ".pptx", ".pptm", ".potx", ".potm", ".ppsx", ".ppsm",
+}
+PRODUCER_OPEN_DOCUMENT_EXTENSIONS = {".odt", ".ods", ".odp"}
+PRODUCER_PLAIN_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl",
+    ".yaml", ".yml", ".xml", ".html", ".htm", ".tex", ".log",
+    ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".css", ".go",
+    ".java", ".js", ".jsx", ".php", ".py", ".rb", ".sh", ".sql",
+    ".ts", ".tsx",
+}
+PRODUCER_DOCUMENT_EXTENSIONS = {
+    ".pdf",
+    *PRODUCER_WORD_EXTENSIONS,
+    *PRODUCER_SPREADSHEET_EXTENSIONS,
+    *PRODUCER_PRESENTATION_EXTENSIONS,
+    *PRODUCER_OPEN_DOCUMENT_EXTENSIONS,
+    *PRODUCER_PLAIN_TEXT_EXTENSIONS,
+}
 
 
 class ContentProducerProposal(BaseModel):
@@ -748,13 +771,24 @@ def _normalize_extracted_text(value: str) -> str:
     return text.strip()
 
 
+def _validate_document_archive(archive: zipfile.ZipFile) -> set[str]:
+    members = archive.infolist()
+    if sum(int(item.file_size or 0) for item in members) > MAX_PRODUCER_DOCUMENT_ARCHIVE_BYTES:
+        raise ValueError("document archive is too large")
+    return {item.filename for item in members}
+
+
+def _read_document_xml(archive: zipfile.ZipFile, name: str) -> ET.Element:
+    info = archive.getinfo(name)
+    if int(info.file_size or 0) > MAX_PRODUCER_DOCUMENT_XML_BYTES:
+        raise ValueError("document XML is too large")
+    return ET.fromstring(archive.read(info))
+
+
 def _extract_docx_text(source: Path) -> str:
     try:
         with zipfile.ZipFile(source) as archive:
-            members = archive.infolist()
-            if sum(int(item.file_size or 0) for item in members) > MAX_PRODUCER_DOCUMENT_ARCHIVE_BYTES:
-                raise ValueError("document archive is too large")
-            names = {item.filename for item in members}
+            names = _validate_document_archive(archive)
             if "word/document.xml" not in names:
                 raise ValueError("word/document.xml is missing")
             ordered = ["word/document.xml"] + sorted(
@@ -765,10 +799,7 @@ def _extract_docx_text(source: Path) -> str:
             )
             blocks: list[str] = []
             for name in ordered:
-                info = archive.getinfo(name)
-                if int(info.file_size or 0) > MAX_PRODUCER_DOCUMENT_XML_BYTES:
-                    raise ValueError("document XML is too large")
-                root = ET.fromstring(archive.read(info))
+                root = _read_document_xml(archive, name)
                 output: list[str] = []
                 for node in root.iter():
                     local = str(node.tag).rsplit("}", 1)[-1]
@@ -788,6 +819,219 @@ def _extract_docx_text(source: Path) -> str:
         raise APIError(
             "CONTENT_PRODUCER_DOCUMENT_INVALID",
             "The DOCX attachment is not a readable Word document.",
+            400,
+        ) from exc
+
+
+def _spreadsheet_column_index(cell_reference: str) -> int:
+    letters = re.match(r"[A-Za-z]+", str(cell_reference or ""))
+    if not letters:
+        return 0
+    value = 0
+    for character in letters.group(0).upper():
+        value = value * 26 + (ord(character) - ord("A") + 1)
+    return max(0, value - 1)
+
+
+def _spreadsheet_cell_text(
+    cell: ET.Element,
+    *,
+    shared_strings: list[str],
+) -> str:
+    cell_type = str(cell.attrib.get("t") or "")
+    formula = next(
+        (str(node.text or "") for node in cell if str(node.tag).rsplit("}", 1)[-1] == "f"),
+        "",
+    ).strip()
+    value = next(
+        (str(node.text or "") for node in cell if str(node.tag).rsplit("}", 1)[-1] == "v"),
+        "",
+    )
+    if cell_type == "inlineStr":
+        value = "".join(
+            str(node.text or "")
+            for node in cell.iter()
+            if str(node.tag).rsplit("}", 1)[-1] == "t"
+        )
+    elif cell_type == "s":
+        try:
+            value = shared_strings[int(value)]
+        except (ValueError, IndexError):
+            value = ""
+    elif cell_type == "b":
+        value = "TRUE" if value == "1" else "FALSE"
+    value = _normalize_extracted_text(value).replace("\n", " ")
+    if formula and value:
+        return f"={formula} -> {value}"
+    if formula:
+        return f"={formula}"
+    return value
+
+
+def _extract_spreadsheet_text(source: Path) -> str:
+    try:
+        with zipfile.ZipFile(source) as archive:
+            names = _validate_document_archive(archive)
+            required = {"xl/workbook.xml", "xl/_rels/workbook.xml.rels"}
+            if not required.issubset(names):
+                raise ValueError("workbook metadata is missing")
+
+            shared_strings: list[str] = []
+            if "xl/sharedStrings.xml" in names:
+                shared_root = _read_document_xml(archive, "xl/sharedStrings.xml")
+                for item in shared_root:
+                    if str(item.tag).rsplit("}", 1)[-1] != "si":
+                        continue
+                    shared_strings.append("".join(
+                        str(node.text or "")
+                        for node in item.iter()
+                        if str(node.tag).rsplit("}", 1)[-1] == "t"
+                    ))
+
+            relationships_root = _read_document_xml(
+                archive, "xl/_rels/workbook.xml.rels"
+            )
+            relationships = {
+                str(node.attrib.get("Id") or ""): str(node.attrib.get("Target") or "")
+                for node in relationships_root
+                if str(node.tag).rsplit("}", 1)[-1] == "Relationship"
+            }
+            workbook_root = _read_document_xml(archive, "xl/workbook.xml")
+            sheets = [
+                node for node in workbook_root.iter()
+                if str(node.tag).rsplit("}", 1)[-1] == "sheet"
+            ]
+            blocks: list[str] = []
+            rendered_characters = 0
+            relationship_namespace = (
+                "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+            )
+            for sheet_index, sheet in enumerate(sheets, start=1):
+                sheet_name = str(sheet.attrib.get("name") or f"Sheet {sheet_index}")
+                relationship_id = str(sheet.attrib.get(relationship_namespace) or "")
+                target = relationships.get(relationship_id, "")
+                if not target:
+                    continue
+                normalized_target = posixpath.normpath(
+                    target.lstrip("/")
+                    if target.startswith("/")
+                    else posixpath.join("xl", target)
+                )
+                if normalized_target not in names:
+                    continue
+                sheet_root = _read_document_xml(archive, normalized_target)
+                lines = [f"[Sheet: {sheet_name}]"]
+                for row in (
+                    node for node in sheet_root.iter()
+                    if str(node.tag).rsplit("}", 1)[-1] == "row"
+                ):
+                    row_number = str(row.attrib.get("r") or "")
+                    cells: list[str] = []
+                    for cell in row:
+                        if str(cell.tag).rsplit("}", 1)[-1] != "c":
+                            continue
+                        reference = str(cell.attrib.get("r") or "")
+                        value = _spreadsheet_cell_text(
+                            cell,
+                            shared_strings=shared_strings,
+                        )
+                        if value:
+                            column_index = _spreadsheet_column_index(reference)
+                            column_label = re.sub(r"\d+$", "", reference) or str(
+                                column_index + 1
+                            )
+                            cells.append(f"{column_label}={value}")
+                    if cells:
+                        lines.append(f"Row {row_number or '?'}: " + " | ".join(cells))
+                    rendered_characters += sum(len(value) for value in cells)
+                    if rendered_characters > MAX_PRODUCER_DOCUMENT_TEXT_CHARS * 2:
+                        break
+                blocks.append("\n".join(lines))
+                if rendered_characters > MAX_PRODUCER_DOCUMENT_TEXT_CHARS * 2:
+                    break
+            return _normalize_extracted_text("\n\n".join(blocks))
+    except (OSError, KeyError, ET.ParseError, zipfile.BadZipFile, ValueError) as exc:
+        raise APIError(
+            "CONTENT_PRODUCER_DOCUMENT_INVALID",
+            "The spreadsheet attachment is not a readable XLSX workbook.",
+            400,
+        ) from exc
+
+
+def _extract_presentation_text(source: Path) -> str:
+    try:
+        with zipfile.ZipFile(source) as archive:
+            names = _validate_document_archive(archive)
+            slide_names = sorted(
+                (
+                    name for name in names
+                    if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)
+                ),
+                key=lambda value: int(re.search(r"(\d+)", value).group(1)),
+            )
+            if not slide_names:
+                raise ValueError("presentation slides are missing")
+            blocks: list[str] = []
+            for index, name in enumerate(slide_names, start=1):
+                root = _read_document_xml(archive, name)
+                paragraphs = []
+                for paragraph in (
+                    node for node in root.iter()
+                    if str(node.tag).rsplit("}", 1)[-1] == "p"
+                ):
+                    rendered = "".join(
+                        str(node.text or "")
+                        for node in paragraph.iter()
+                        if str(node.tag).rsplit("}", 1)[-1] == "t"
+                    ).strip()
+                    if rendered:
+                        paragraphs.append(rendered)
+                blocks.append(f"[Slide {index}]\n" + "\n".join(paragraphs))
+            notes = sorted(
+                (
+                    name for name in names
+                    if re.fullmatch(r"ppt/notesSlides/notesSlide\d+\.xml", name)
+                ),
+                key=lambda value: int(re.search(r"(\d+)", value).group(1)),
+            )
+            for index, name in enumerate(notes, start=1):
+                root = _read_document_xml(archive, name)
+                rendered = "\n".join(
+                    str(node.text or "").strip()
+                    for node in root.iter()
+                    if str(node.tag).rsplit("}", 1)[-1] == "t" and str(node.text or "").strip()
+                )
+                if rendered:
+                    blocks.append(f"[Speaker notes {index}]\n{rendered}")
+            return _normalize_extracted_text("\n\n".join(blocks))
+    except (OSError, KeyError, ET.ParseError, zipfile.BadZipFile, ValueError) as exc:
+        raise APIError(
+            "CONTENT_PRODUCER_DOCUMENT_INVALID",
+            "The presentation attachment is not a readable PPTX file.",
+            400,
+        ) from exc
+
+
+def _extract_open_document_text(source: Path) -> str:
+    try:
+        with zipfile.ZipFile(source) as archive:
+            names = _validate_document_archive(archive)
+            if "content.xml" not in names:
+                raise ValueError("content.xml is missing")
+            root = _read_document_xml(archive, "content.xml")
+            blocks: list[str] = []
+            for node in root.iter():
+                local = str(node.tag).rsplit("}", 1)[-1]
+                if local not in {"p", "h"}:
+                    continue
+                rendered = "".join(str(value or "") for value in node.itertext()).strip()
+                if rendered:
+                    blocks.append(rendered)
+            return _normalize_extracted_text("\n".join(blocks))
+    except (OSError, KeyError, ET.ParseError, zipfile.BadZipFile, ValueError) as exc:
+        raise APIError(
+            "CONTENT_PRODUCER_DOCUMENT_INVALID",
+            "The OpenDocument attachment is not readable.",
             400,
         ) from exc
 
@@ -830,8 +1074,14 @@ def _extract_plain_text(source: Path) -> str:
 
 
 def _extract_document_text(source: Path, extension: str) -> dict[str, Any]:
-    if extension == ".docx":
+    if extension in PRODUCER_WORD_EXTENSIONS:
         text = _extract_docx_text(source)
+    elif extension in PRODUCER_SPREADSHEET_EXTENSIONS:
+        text = _extract_spreadsheet_text(source)
+    elif extension in PRODUCER_PRESENTATION_EXTENSIONS:
+        text = _extract_presentation_text(source)
+    elif extension in PRODUCER_OPEN_DOCUMENT_EXTENSIONS:
+        text = _extract_open_document_text(source)
     elif extension == ".pdf":
         text = _extract_pdf_text(source)
     else:
@@ -957,7 +1207,7 @@ async def save_producer_attachment(
         else:
             raise APIError(
                 "CONTENT_PRODUCER_SUPPORTING_MATERIAL_INVALID",
-                "Supporting material must be DOCX, PDF, TXT, MD, CSV, JPG, PNG, or WebP.",
+                "Supporting material must be a supported document, spreadsheet, presentation, text, or image file.",
                 400,
             )
     if normalized_kind == "reference_video":
@@ -996,7 +1246,7 @@ async def save_producer_attachment(
         if extension not in PRODUCER_DOCUMENT_EXTENSIONS:
             raise APIError(
                 "CONTENT_PRODUCER_DOCUMENT_INVALID",
-                "Document material must be DOCX, PDF, TXT, MD, or CSV.",
+                "Document material must be a supported Word, Excel, PowerPoint, PDF, OpenDocument, or text file.",
                 400,
             )
         max_bytes = MAX_PRODUCER_DOCUMENT_BYTES
