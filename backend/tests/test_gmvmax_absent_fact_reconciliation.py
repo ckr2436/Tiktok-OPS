@@ -936,7 +936,7 @@ def test_creative_report_status_only_row_does_not_preserve_stale_metrics(
 
     row = db_session.query(GmvmaxProductCreativeMetricsDaily).one()
     assert row.cost_cents is None
-    assert row.creative_delivery_status == "NOT_DELIVERING"
+    assert row.creative_delivery_status == "NOT_DELIVERYING"
 
 
 class _FailingSecondPageClient:

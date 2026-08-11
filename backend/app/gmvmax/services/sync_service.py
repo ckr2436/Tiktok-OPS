@@ -522,6 +522,7 @@ class GmvMaxSyncService:
         item_group_ids: Optional[list[str]] = None,
         require_active_campaigns: bool = True,
         refresh_creative_assets: bool = False,
+        backfill_missing_creative_assets: bool = False,
     ) -> dict[str, dict[str, int]]:
         """Manually trigger GMV Max sync for specific levels scoped to an auth account."""
 
@@ -675,6 +676,7 @@ class GmvMaxSyncService:
                 campaign_ids=campaign_ids,
                 item_group_ids=item_group_ids,
                 refresh_creative_assets=bool(refresh_creative_assets),
+                backfill_missing_creative_assets=bool(backfill_missing_creative_assets),
             ),
             "LIVESTREAM": _sync_livestream_pair,
             "DURATION": _sync_duration_pair,
@@ -1732,6 +1734,7 @@ class GmvMaxSyncService:
         campaign_ids: Optional[list[str]] = None,
         item_group_ids: Optional[list[str]] = None,
         refresh_creative_assets: bool = False,
+        backfill_missing_creative_assets: bool = False,
     ) -> dict[str, int]:
         end = end_date or now.date()
         start = start_date or (end - timedelta(days=1))
@@ -1862,6 +1865,9 @@ class GmvMaxSyncService:
                                         end_date=current,
                                         include_current_statuses=(current == end),
                                         refresh_creative_assets=bool(refresh_creative_assets),
+                                        backfill_missing_creative_assets=bool(
+                                            backfill_missing_creative_assets and current == end
+                                        ),
                                     )
                                     written += int(rows or 0)
                                 except (TTBRateLimitBudgetError, TTBHttpError):

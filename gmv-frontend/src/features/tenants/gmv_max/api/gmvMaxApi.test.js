@@ -13,6 +13,7 @@ vi.mock('@/lib/http.js', () => {
 import http from '@/lib/http.js';
 import {
   createGmvMaxCampaign,
+  getAccountSyncRun,
   getGmvMaxMetrics,
   listAccounts,
   listGmvMaxCampaigns,
@@ -23,6 +24,7 @@ import {
   refreshGmvMaxCreativeAssets,
   startGmvMaxCreativeHeating,
   stopGmvMaxCreativeHeating,
+  waitForAccountSyncRun,
 } from './gmvMaxApi.js';
 import { GmvMaxMetricsLevel } from '../constants/metrics.js';
 
@@ -61,6 +63,56 @@ describe('GMV Max create request timeout', () => {
       { store_id: 'store-1' },
       { timeout: 180000, signal: 'signal-token' },
     );
+  });
+});
+
+describe('account foundation sync polling', () => {
+  beforeEach(() => {
+    http.get.mockReset();
+  });
+
+  it('keeps the run lookup inside the selected tenant and account route', async () => {
+    http.get.mockResolvedValue({ data: { id: 77, status: 'success' } });
+
+    await getAccountSyncRun(3, 'tiktok-business', 9, 77);
+
+    expect(http.get).toHaveBeenCalledWith(
+      '/tenants/3/providers/tiktok-business/accounts/9/sync-runs/77',
+      undefined,
+    );
+  });
+
+  it('waits for a terminal persisted run instead of treating 202 as completion', async () => {
+    http.get
+      .mockResolvedValueOnce({ data: { id: 77, status: 'running' } })
+      .mockResolvedValueOnce({ data: { id: 77, status: 'success' } });
+
+    const run = await waitForAccountSyncRun(3, 'tiktok-business', 9, 77, {
+      pollIntervalMs: 0,
+    });
+
+    expect(run.status).toBe('success');
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a failed terminal run so the page can show its stage error', async () => {
+    http.get.mockResolvedValue({
+      data: {
+        id: 77,
+        status: 'failed',
+        error_code: 'PAGINATION_ITEM_KEY_INVALID',
+        error_message: 'official row key missing',
+      },
+    });
+
+    const run = await waitForAccountSyncRun(3, 'tiktok-business', 9, 77, {
+      pollIntervalMs: 0,
+    });
+
+    expect(run).toMatchObject({
+      status: 'failed',
+      error_code: 'PAGINATION_ITEM_KEY_INVALID',
+    });
   });
 });
 
@@ -790,7 +842,7 @@ describe('creative heating action payloads', () => {
       'creative-1',
       {
         mode: 'MANUAL',
-        budget_delta: 2.5,
+        target_daily_budget: 25,
         currency: 'USD',
         max_duration_minutes: 60,
         note: 'manual safety test',
@@ -804,7 +856,7 @@ describe('creative heating action payloads', () => {
       action_type: 'BOOST_CREATIVE',
       creative_id: 'creative-1',
       mode: 'MANUAL',
-      budget_delta: 2.5,
+      target_daily_budget: 25,
       currency: 'USD',
       max_duration_minutes: 60,
       note: 'manual safety test',
@@ -832,7 +884,6 @@ describe('creative heating action payloads', () => {
       mode: 'STOP',
       product_id: 'product-1',
       item_id: 'creative-1',
-      budget_delta: 0,
     });
   });
 });

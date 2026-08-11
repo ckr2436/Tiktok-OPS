@@ -762,6 +762,46 @@ def _cached_ids(
     return {str(item) for item in rows if item}
 
 
+def _cached_ids_with_media(
+    session: Session,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    creative_ids: Sequence[str],
+) -> set[str]:
+    clean_ids = [str(item) for item in creative_ids if str(item or "") not in {"", "-1", "0"}]
+    if not clean_ids:
+        return set()
+    rows = session.execute(
+        text(
+            """
+            select item_id from gmvmax_creative_asset_cache
+            where workspace_id=:workspace_id
+              and auth_id=:auth_id
+              and advertiser_id=:advertiser_id
+              and store_id=:store_id
+              and item_id in :creative_ids
+              and (
+                   local_preview_path is not null
+                or local_cover_path is not null
+                or preview_url is not null
+                or video_cover_url is not null
+              )
+            """
+        ).bindparams(bindparam("creative_ids", expanding=True)),
+        {
+            "workspace_id": int(workspace_id),
+            "auth_id": int(auth_id),
+            "advertiser_id": str(advertiser_id),
+            "store_id": str(store_id),
+            "creative_ids": clean_ids,
+        },
+    ).scalars().all()
+    return {str(item) for item in rows if item}
+
+
 def _deactivate_absent_scope_assets(
     session: Session,
     *,
@@ -1043,6 +1083,146 @@ async def _sync_creative_assets_for_scope_unlocked(
     }
 
 
+async def _backfill_missing_creative_assets_for_scope_unlocked(
+    session: Session,
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    store_authorized_bc_id: str,
+    creative_refs: Sequence[Mapping[str, Any]],
+    item_group_ids: Sequence[str] | None = None,
+    max_pages: int = DEFAULT_MAX_PAGES,
+) -> dict[str, int]:
+    """Fill only uncached report creatives without scanning the video library.
+
+    This is the bounded enrichment path used by an interactive campaign sync.
+    The complete product candidate inventory remains owned by the scheduled
+    full sync above.
+    """
+
+    ensure_creative_asset_cache_table(session)
+    clean_item_group_ids = list(
+        dict.fromkeys(str(item).strip() for item in (item_group_ids or []) if str(item).strip())
+    )
+    refs_by_id: dict[str, dict[str, str | None]] = {}
+    for ref in creative_refs or []:
+        creative_id = str(ref.get("creative_id") or ref.get("item_id") or "").strip()
+        if not creative_id or creative_id in {"-1", "0"}:
+            continue
+        item_group_id = str(ref.get("item_group_id") or "").strip() or None
+        refs_by_id.setdefault(
+            creative_id,
+            {"creative_id": creative_id, "item_group_id": item_group_id},
+        )
+        if item_group_id and item_group_id not in clean_item_group_ids:
+            clean_item_group_ids.append(item_group_id)
+
+    requested_ids = list(refs_by_id)
+    cached_ids = _cached_ids_with_media(
+        session,
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        advertiser_id=advertiser_id,
+        store_id=store_id,
+        creative_ids=requested_ids,
+    )
+    missing_refs = [ref for creative_id, ref in refs_by_id.items() if creative_id not in cached_ids]
+    if not missing_refs:
+        return {
+            "requested": len(requested_ids),
+            "cached": len(cached_ids & set(requested_ids)),
+            "missing": 0,
+            "matched_requested": len(cached_ids & set(requested_ids)),
+            "upserted": 0,
+            "identities": 0,
+        }
+
+    identities = await load_gmvmax_identity_filter(
+        client,
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id),
+        store_authorized_bc_id=str(store_authorized_bc_id),
+    )
+    allowed_item_groups = set(clean_item_group_ids)
+    matched_payloads: dict[str, dict[str, Any]] = {}
+    for ref in missing_refs:
+        creative_id = str(ref["creative_id"])
+        fallback_groups = (
+            [str(ref["item_group_id"])]
+            if ref.get("item_group_id")
+            else clean_item_group_ids
+        )
+        async for entry in iter_gmvmax_video_entries(
+            client,
+            advertiser_id=str(advertiser_id),
+            store_id=str(store_id),
+            store_authorized_bc_id=str(store_authorized_bc_id),
+            identities=identities,
+            item_group_ids=fallback_groups,
+            keyword=creative_id,
+            max_pages=int(max_pages),
+        ):
+            payload = _asset_payload_from_entry(entry)
+            if not payload or str(payload.get("item_id") or "") != creative_id:
+                continue
+            payload_spu_ids = set(_normalize_spu_ids(payload.get("spu_id_list")))
+            if allowed_item_groups and not (payload_spu_ids & allowed_item_groups):
+                logger.warning(
+                    "ignored GMV Max creative backfill outside requested product scope",
+                    extra={
+                        "workspace_id": workspace_id,
+                        "auth_id": auth_id,
+                        "advertiser_id": advertiser_id,
+                        "store_id": store_id,
+                        "creative_id": creative_id,
+                    },
+                )
+                continue
+            matched_payloads[creative_id] = _merge_asset_payloads(
+                matched_payloads.get(creative_id),
+                payload,
+            )
+            # The keyword query is only a lookup for this exact report ID.
+            # Stop as soon as it is found instead of traversing unrelated
+            # candidate pages returned by a fuzzy upstream search.
+            break
+
+        if creative_id not in matched_payloads:
+            logger.info(
+                "gmvmax creative asset not returned by targeted video/get",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": advertiser_id,
+                    "store_id": store_id,
+                    "creative_id": creative_id,
+                },
+            )
+
+    for payload in matched_payloads.values():
+        _upsert_asset(
+            session,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            advertiser_id=advertiser_id,
+            store_id=store_id,
+            payload=payload,
+        )
+
+    matched_ids = cached_ids | set(matched_payloads)
+    return {
+        "requested": len(requested_ids),
+        "cached": len(cached_ids & set(requested_ids)),
+        "missing": len(missing_refs),
+        "matched_requested": len(set(requested_ids) & matched_ids),
+        "upserted": len(matched_payloads),
+        "identities": len(identities),
+    }
+
+
 async def sync_creative_assets_for_scope(
     session: Session,
     client: TikTokBusinessGMVMaxClient,
@@ -1113,7 +1293,69 @@ async def sync_creative_assets_for_scope(
             logger.exception("Failed to release GMV Max creative sync lock")
 
 
+async def backfill_missing_creative_assets_for_scope(
+    session: Session,
+    client: TikTokBusinessGMVMaxClient,
+    *,
+    workspace_id: int,
+    auth_id: int,
+    advertiser_id: str,
+    store_id: str,
+    store_authorized_bc_id: str,
+    creative_refs: Sequence[Mapping[str, Any]],
+    item_group_ids: Sequence[str] | None = None,
+    max_pages: int = DEFAULT_MAX_PAGES,
+) -> dict[str, Any]:
+    scope = f"{workspace_id}:{auth_id}:{advertiser_id}:{store_id}"
+    digest = hashlib.sha1(scope.encode("utf-8")).hexdigest()[:40]
+    lock_name = f"gmvmax:creative:{digest}"
+    acquired = session.execute(
+        text("select get_lock(:lock_name, 0)"),
+        {"lock_name": lock_name},
+    ).scalar()
+    if int(acquired or 0) != 1:
+        return {
+            "skipped": True,
+            "reason": "creative_sync_already_running",
+            "requested": len(creative_refs or []),
+            "upserted": 0,
+        }
+    try:
+        try:
+            return await _backfill_missing_creative_assets_for_scope_unlocked(
+                session,
+                client,
+                workspace_id=workspace_id,
+                auth_id=auth_id,
+                advertiser_id=advertiser_id,
+                store_id=store_id,
+                store_authorized_bc_id=store_authorized_bc_id,
+                creative_refs=creative_refs,
+                item_group_ids=item_group_ids,
+                max_pages=max_pages,
+            )
+        except OperationalError as exc:
+            if not _is_lock_wait_timeout(exc):
+                raise
+            session.rollback()
+            return {
+                "skipped": True,
+                "reason": "creative_cache_lock_wait",
+                "requested": len(creative_refs or []),
+                "upserted": 0,
+            }
+    finally:
+        try:
+            session.execute(
+                text("select release_lock(:lock_name)"),
+                {"lock_name": lock_name},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to release GMV Max creative backfill lock")
+
+
 __all__ = [
+    "backfill_missing_creative_assets_for_scope",
     "ensure_creative_asset_cache_table",
     "resolve_store_authorized_bc_id",
     "sync_creative_assets_for_scope",

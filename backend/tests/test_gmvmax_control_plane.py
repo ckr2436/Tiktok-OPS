@@ -9,7 +9,12 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.data.models.ttb_entities import TTBBindingConfig
+from app.data.models.ttb_entities import (
+    TTBAdvertiser,
+    TTBAdvertiserStoreLink,
+    TTBBCAdvertiserLink,
+    TTBBindingConfig,
+)
 from app.data.models.gmv_restructured import (
     GmvOverviewMetricsDaily,
     GmvOverviewMetricsHourly,
@@ -207,6 +212,186 @@ def test_sync_interval_and_manual_override_are_persistent(db_session):
         store_id="store-1",
         campaign_id="campaign-1",
     )
+
+
+def test_binding_switch_moves_minute_schedule_without_changing_interval(db_session):
+    context = _context(db_session)
+    db_session.add(
+        TTBBindingConfig(
+            workspace_id=7,
+            auth_id=11,
+            bc_id="bc-1",
+            advertiser_id="adv-1",
+            store_id="store-1",
+            auto_sync_products=False,
+        )
+    )
+    upsert_sync_schedule(
+        db_session,
+        workspace_id=7,
+        auth_id=11,
+        provider="tiktok-business",
+        advertiser_id="adv-1",
+        store_id="store-1",
+        interval_minutes=20,
+        actor_user_id=3,
+    )
+    db_session.commit()
+
+    changed = router_provider._persist_auto_binding(
+        context,
+        candidate=router_provider.AutoBindingCandidate(
+            advertiser_id="adv-2",
+            store_id="store-1",
+            store_authorized_bc_id="bc-1",
+            authorization_status="EFFECTIVE",
+        ),
+        actor_user_id=3,
+    )
+
+    binding = db_session.query(TTBBindingConfig).one()
+    schedule = get_sync_schedule(
+        db_session,
+        workspace_id=7,
+        auth_id=11,
+        provider="tiktok-business",
+    )
+    assert changed is True
+    assert binding.advertiser_id == "adv-2"
+    assert binding.store_id == "store-1"
+    assert schedule is not None
+    assert schedule.advertiser_id == "adv-2"
+    assert schedule.store_id == "store-1"
+    assert schedule.interval_minutes == 20
+    assert schedule.enabled is True
+
+
+def test_binding_status_rejects_requested_advertiser_outside_saved_scope(db_session):
+    db_session.add(
+        TTBBindingConfig(
+            workspace_id=7,
+            auth_id=11,
+            bc_id="bc-1",
+            advertiser_id="adv-1",
+            store_id="store-1",
+            auto_sync_products=False,
+        )
+    )
+    db_session.commit()
+
+    result = router_provider._build_binding_status(
+        db_session,
+        workspace_id=7,
+        auth_id=11,
+        store_id="store-1",
+        advertiser_id="adv-2",
+        bc_id="bc-1",
+    )
+
+    assert result.binding_ready is False
+    assert result.error_code == "binding_scope_mismatch"
+
+
+def test_auto_binding_continues_after_cached_advertiser_loses_authorization(db_session):
+    class _Client:
+        async def gmv_max_exclusive_authorization_get(self, request):
+            status = "EFFECTIVE" if request.advertiser_id == "adv-2" else "UNAUTHORIZED"
+            return SimpleNamespace(
+                request_id=f"auth-{request.advertiser_id}",
+                data=SimpleNamespace(authorization_status=status, is_authorized=status == "EFFECTIVE"),
+            )
+
+        async def gmv_max_store_shop_ad_usage_check(self, request):
+            return SimpleNamespace(
+                request_id=f"usage-{request.advertiser_id}",
+                data=SimpleNamespace(
+                    promote_all_products_allowed=True,
+                    is_running_custom_shop_ads=False,
+                ),
+            )
+
+        async def gmv_max_store_list(self, request):
+            store = SimpleNamespace(
+                store_id="store-1",
+                store_name="Store",
+                store_authorized_bc_id="bc-1",
+                advertiser_id=request.advertiser_id,
+                is_gmv_max_available=True,
+            )
+            return SimpleNamespace(
+                request_id=f"stores-{request.advertiser_id}",
+                data=SimpleNamespace(store_list=[store]),
+            )
+
+    db_session.add_all(
+        [
+            TTBBindingConfig(
+                workspace_id=7,
+                auth_id=11,
+                bc_id="bc-1",
+                advertiser_id="adv-1",
+                store_id="store-1",
+                auto_sync_products=False,
+            ),
+            TTBAdvertiser(workspace_id=7, auth_id=11, advertiser_id="adv-1", bc_id="bc-1"),
+            TTBAdvertiser(workspace_id=7, auth_id=11, advertiser_id="adv-2", bc_id="bc-1"),
+            TTBBCAdvertiserLink(
+                workspace_id=7,
+                auth_id=11,
+                bc_id="bc-1",
+                advertiser_id="adv-1",
+                relation_type="AUTHORIZED",
+            ),
+            TTBBCAdvertiserLink(
+                workspace_id=7,
+                auth_id=11,
+                bc_id="bc-1",
+                advertiser_id="adv-2",
+                relation_type="AUTHORIZED",
+            ),
+            TTBAdvertiserStoreLink(
+                workspace_id=7,
+                auth_id=11,
+                advertiser_id="adv-1",
+                store_id="store-1",
+                relation_type="AUTHORIZER",
+                store_authorized_bc_id="bc-1",
+            ),
+            TTBAdvertiserStoreLink(
+                workspace_id=7,
+                auth_id=11,
+                advertiser_id="adv-2",
+                store_id="store-1",
+                relation_type="AUTHORIZER",
+                store_authorized_bc_id="bc-1",
+            ),
+        ]
+    )
+    db_session.commit()
+    context = _context(db_session)
+    context.client = _Client()
+
+    result = asyncio.run(
+        router_provider.auto_bind_gmvmax_account(
+            7,
+            "tiktok-business",
+            11,
+            router_provider.AutoBindingRequest(store_id="store-1", persist=True),
+            me=SimpleNamespace(id=3),
+            context=context,
+        )
+    )
+
+    assert result.persisted is True
+    assert result.binding_changed is True
+    assert result.selected is not None
+    assert result.selected.advertiser_id == "adv-2"
+    assert {candidate.authorization_status for candidate in result.candidates} == {
+        "EFFECTIVE",
+        "UNAUTHORIZED",
+    }
+    binding = db_session.query(TTBBindingConfig).one()
+    assert binding.advertiser_id == "adv-2"
 
 
 def test_minute_beat_dispatches_due_persisted_account_schedule(

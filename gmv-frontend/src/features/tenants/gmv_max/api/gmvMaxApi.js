@@ -809,6 +809,64 @@ export async function syncAccountProducts(workspaceId, provider, authId, payload
   return post(`${accountPrefix(workspaceId, provider, authId)}/sync`, payload, config);
 }
 
+export async function getAccountSyncRun(workspaceId, provider, authId, runId, config) {
+  return get(
+    `${accountPrefix(workspaceId, provider, authId)}/sync-runs/${encode(runId)}`,
+    config,
+  );
+}
+
+function waitForDelay(delayMs, signal) {
+  if (!delayMs) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let timeoutId;
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    const abort = () => {
+      clearTimeout(timeoutId);
+      cleanup();
+      const error = new Error('同步状态查询已取消。');
+      error.name = 'AbortError';
+      reject(error);
+    };
+    timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    if (!signal) return;
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
+export async function waitForAccountSyncRun(
+  workspaceId,
+  provider,
+  authId,
+  runId,
+  options = {},
+) {
+  const {
+    timeoutMs = 120000,
+    pollIntervalMs = 750,
+    signal,
+  } = options;
+  const startedAt = Date.now();
+  while (true) {
+    const run = await getAccountSyncRun(workspaceId, provider, authId, runId, { signal });
+    const state = String(run?.status || '').trim().toLowerCase();
+    if (['success', 'failed', 'partial'].includes(state)) return run;
+    if (Date.now() - startedAt >= timeoutMs) {
+      const error = new Error('等待后台同步结果超时。');
+      error.code = 'ACCOUNT_SYNC_STATUS_TIMEOUT';
+      throw error;
+    }
+    await waitForDelay(pollIntervalMs, signal);
+  }
+}
+
 export async function getGmvMaxOptions(workspaceId, provider, authId, params, config) {
   const axiosConfig = mergeConfig(config, params);
   return get(`${accountPrefix(workspaceId, provider, authId)}/gmvmax/options`, axiosConfig);
@@ -1104,9 +1162,6 @@ export async function stopGmvMaxCreativeHeating(
     mode: 'STOP',
     ...payload,
   };
-  if (body.target_daily_budget === undefined && body.budget_delta === undefined) {
-    body.budget_delta = 0;
-  }
   return applyGmvMaxAction(workspaceId, provider, authId, campaignId, body, config);
 }
 

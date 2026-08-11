@@ -91,23 +91,19 @@ def _resolve_boost_budget(
     target_daily_budget: float | None,
     budget_delta: float | None,
 ) -> float:
+    """Resolve TikTok's independent creative-boost daily budget.
+
+    Creative boost budget is not a delta on top of the campaign budget. Keep
+    the legacy arguments in the service boundary for stored rows, but require
+    callers to provide the explicit target accepted by the official API.
+    """
+
     budget = _to_float(target_daily_budget)
-    if budget is not None:
-        return budget
-
-    delta = _to_float(budget_delta)
-    current_cents = getattr(campaign, "budget_cents", None)
-    if current_cents is None:
-        current_cents = getattr(campaign, "daily_budget_cents", None)
-    current = float(current_cents) / 100 if current_cents is not None else None
-    if current is None:
-        current = _to_float(getattr(campaign, "budget", None))
-
-    if current is not None and delta is not None:
-        return current + delta
-    if delta is not None and delta > 0:
-        return delta
-    raise ValueError("target_daily_budget or a positive budget_delta is required")
+    if budget is None:
+        raise ValueError("target_daily_budget is required for creative boost")
+    if budget < 10:
+        raise ValueError("creative boost daily budget must be at least 10")
+    return budget
 
 
 def _resolve_spu_id(heating: TTBGmvMaxCreativeHeating) -> str:

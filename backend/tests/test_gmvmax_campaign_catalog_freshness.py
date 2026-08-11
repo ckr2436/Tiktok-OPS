@@ -146,6 +146,7 @@ def test_old_sync_response_cannot_overwrite_later_local_disable_or_add_items(
 
 def test_in_flight_sync_started_before_disable_cannot_win_on_late_arrival(
     db_session,
+    monkeypatch,
 ) -> None:
     baseline = datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc)
     _upsert(
@@ -216,6 +217,12 @@ def test_in_flight_sync_started_before_disable_cannot_win_on_late_arrival(
             )
 
     client = _LateOldSnapshotClient()
+    reconciled: list[dict] = []
+    monkeypatch.setattr(
+        ttb_gmvmax,
+        "reconcile_manual_pause_from_official_catalog",
+        lambda *_, **kwargs: reconciled.append(kwargs),
+    )
     asyncio.run(
         sync_gmvmax_campaigns(
             db_session,
@@ -233,6 +240,7 @@ def test_in_flight_sync_started_before_disable_cannot_win_on_late_arrival(
     assert row.operation_status == "DISABLE"
     assert row.secondary_status == "CAMPAIGN_STATUS_DISABLE"
     assert db_session.query(GmvmaxProductCampaignItemGroup).count() == 0
+    assert reconciled == []
 
 
 def test_newer_sync_updates_catalog_and_item_groups(db_session) -> None:

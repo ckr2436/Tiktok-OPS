@@ -15,7 +15,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Collection, Dict, Literal, Optional, Tuple, Set, List
+from typing import Any, Collection, Dict, Literal, Mapping, Optional, Tuple, Set, List
 
 from fastapi import Depends, HTTPException, Query, Request, Response, status
 from fastapi.encoders import jsonable_encoder
@@ -230,6 +230,17 @@ class ProductItem(BaseModel):
     image_url: Optional[str]
     min_price: Optional[float]
     max_price: Optional[float]
+    effective_price: Optional[float] = None
+    effective_price_source: Optional[str] = None
+    effective_price_updated_at: Optional[str] = None
+    latest_transaction_price: Optional[float] = None
+    latest_transaction_at: Optional[str] = None
+    flash_sale_price: Optional[float] = None
+    flash_sale_observed_at: Optional[str] = None
+    flash_sale_status: Optional[str] = None
+    flash_sale_begin_at: Optional[str] = None
+    flash_sale_end_at: Optional[str] = None
+    listing_price: Optional[float] = None
     historical_sales: Optional[int]
     category: Optional[str]
     gmv_max_ads_status: Optional[str]
@@ -653,7 +664,10 @@ def _extract_product_updated_time(row: TTBProduct) -> Optional[str]:
 
 
 def _serialize_product(
-    row: TTBProduct, *, assigned_ids: Optional[Collection[str]] = None
+    row: TTBProduct,
+    *,
+    assigned_ids: Optional[Collection[str]] = None,
+    authoritative_price: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Serialize a product record, taking into account GMV Max assignment."""
     price_range = _extract_product_price_range(row)
@@ -664,6 +678,7 @@ def _serialize_product(
     gmv_status = "OCCUPIED" if assigned else _normalize_nullable_str(
         getattr(row, "gmv_max_ads_status", None)
     )
+    price_evidence = dict(authoritative_price or {})
     return {
         "product_id": row.product_id,
         "store_id": _as_str(row.store_id),
@@ -678,6 +693,17 @@ def _serialize_product(
         "image_url": _normalize_nullable_str(getattr(row, "image_url", None)),
         "min_price": float(row.min_price) if row.min_price is not None else None,
         "max_price": float(row.max_price) if row.max_price is not None else None,
+        "effective_price": price_evidence.get("effective_price"),
+        "effective_price_source": price_evidence.get("effective_price_source"),
+        "effective_price_updated_at": price_evidence.get("effective_price_updated_at"),
+        "latest_transaction_price": price_evidence.get("latest_transaction_price"),
+        "latest_transaction_at": price_evidence.get("latest_transaction_at"),
+        "flash_sale_price": price_evidence.get("flash_sale_price"),
+        "flash_sale_observed_at": price_evidence.get("flash_sale_observed_at"),
+        "flash_sale_status": price_evidence.get("flash_sale_status"),
+        "flash_sale_begin_at": price_evidence.get("flash_sale_begin_at"),
+        "flash_sale_end_at": price_evidence.get("flash_sale_end_at"),
+        "listing_price": price_evidence.get("listing_price"),
         "historical_sales": int(row.historical_sales) if row.historical_sales is not None else None,
         "category": _normalize_nullable_str(getattr(row, "category", None)),
         "gmv_max_ads_status": gmv_status,
@@ -710,40 +736,60 @@ def _enforce_products_limits(
     """Ensure that product syncs are not executed concurrently or too frequently."""
     now = datetime.now(timezone.utc)
     lookback = now - timedelta(days=1)
-    # Apply the account/store scope in SQL before considering recent runs.
-    # Limiting a workspace-wide prefix first lets unrelated stores hide an
-    # active or rate-limited target run.
+    # Scope discovery belongs on the comparatively small schedules table.  A
+    # direct schedule_runs -> schedules JSON join scanned the shared run table
+    # before evaluating the JSON predicates and took several minutes in
+    # production.  Materialising the matching schedule IDs first lets the run
+    # lookup use idx_runs_sched_time instead.
     params = Schedule.params_json
     options = params["options"]
     eligibility = func.lower(
         func.coalesce(options["product_eligibility"].as_string(), "")
     )
+    schedule_ids = [
+        int(schedule_id)
+        for schedule_id, in (
+            db.query(Schedule.id)
+            .filter(
+                Schedule.workspace_id == int(workspace_id),
+                Schedule.task_name == SYNC_TASKS["products"],
+                or_(
+                    params["auth_id"].as_integer() == int(auth_id),
+                    params["authId"].as_integer() == int(auth_id),
+                ),
+                options["advertiser_id"].as_string() == str(advertiser_id),
+                options["store_id"].as_string() == str(store_id),
+                eligibility.in_(("", "gmv_max")),
+            )
+            .all()
+        )
+    ]
+    if not schedule_ids:
+        return
+
     rows = (
-        db.query(ScheduleRun, Schedule)
-        .join(Schedule, Schedule.id == ScheduleRun.schedule_id)
+        db.query(
+            ScheduleRun.status,
+            ScheduleRun.enqueued_at,
+            ScheduleRun.scheduled_for,
+            ScheduleRun.created_at,
+        )
         .filter(
             ScheduleRun.workspace_id == int(workspace_id),
-            Schedule.task_name == SYNC_TASKS["products"],
-            ScheduleRun.created_at >= lookback,
-            or_(
-                params["auth_id"].as_integer() == int(auth_id),
-                params["authId"].as_integer() == int(auth_id),
-            ),
-            options["advertiser_id"].as_string() == str(advertiser_id),
-            options["store_id"].as_string() == str(store_id),
-            eligibility.in_(("", "gmv_max")),
+            ScheduleRun.schedule_id.in_(schedule_ids),
+            ScheduleRun.scheduled_for >= lookback,
         )
-        .order_by(ScheduleRun.created_at.desc())
+        .order_by(ScheduleRun.scheduled_for.desc())
         .all()
     )
-    for run, _schedule in rows:
-        if run.status in {"enqueued", "running"}:
+    for run_status, enqueued_at, scheduled_for, created_at in rows:
+        if run_status in {"enqueued", "running"}:
             raise APIError(
                 "SYNC_IN_PROGRESS",
                 "A GMV Max product sync is already running for this combination.",
                 status.HTTP_409_CONFLICT,
             )
-        ts = _coerce_utc(run.enqueued_at or run.scheduled_for or run.created_at)
+        ts = _coerce_utc(enqueued_at or scheduled_for or created_at)
         if ts and (now - ts) < timedelta(minutes=15):
             raise APIError(
                 "SYNC_RATE_LIMITED",

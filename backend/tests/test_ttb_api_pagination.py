@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -91,6 +92,81 @@ def test_numbered_pagination_obeys_totals_when_first_page_is_short() -> None:
 
     assert [row["id"] for row in rows] == ["one", "two", "three"]
     assert [call["params"]["page"] for call in client.calls] == [1, 2]
+
+
+def test_business_center_pagination_uses_nested_official_key() -> None:
+    client = StubTTBApiClient(
+        [
+            _payload(
+                [{"bc_info": {"bc_id": "bc-one", "name": "Primary"}}],
+                page_info={
+                    "page": 1,
+                    "page_size": 50,
+                    "total_number": 1,
+                    "total_page": 1,
+                },
+            )
+        ]
+    )
+
+    rows = asyncio.run(
+        _collect(
+            client._paged_by_page(
+                method="GET",
+                path="/bc/get/",
+                page_size=50,
+                extractor="list",
+            )
+        )
+    )
+
+    assert rows == [{"bc_info": {"bc_id": "bc-one", "name": "Primary"}}]
+
+
+def test_business_center_pagination_rejects_duplicate_nested_key() -> None:
+    client = StubTTBApiClient(
+        [
+            _payload(
+                [
+                    {"bc_info": {"bc_id": "bc-one", "name": "Primary"}},
+                    {"bc_info": {"bc_id": "bc-one", "name": "Duplicate"}},
+                ],
+                page_info={"page": 1, "total_number": 2, "total_page": 1},
+            ),
+        ]
+    )
+
+    with pytest.raises(TTBPaginationError) as exc_info:
+        asyncio.run(
+            _collect(
+                client._paged_by_page(
+                    method="GET",
+                    path="/bc/get/",
+                    page_size=50,
+                    extractor="list",
+                )
+            )
+        )
+
+    assert exc_info.value.code == "PAGINATION_ITEM_DUPLICATE"
+
+
+def test_httpx_request_log_redacts_tiktok_query_credentials() -> None:
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='HTTP Request: %s %s',
+        args=("GET", "https://example.test/path?app_id=public&secret=do-not-log"),
+        exc_info=None,
+    )
+
+    assert ttb_api._HttpxCredentialRedactionFilter().filter(record) is True
+    rendered = record.getMessage()
+    assert "do-not-log" not in rendered
+    assert "secret=<redacted>" in rendered
+    assert "app_id=public" in rendered
 
 
 def test_numbered_pagination_item_key_rejects_partial_page_overlap() -> None:
@@ -506,7 +582,7 @@ def test_numbered_pagination_does_not_stop_on_first_metadata_free_short_page() -
     assert [call["params"]["page"] for call in client.calls] == [1, 2, 3]
 
 
-def test_numbered_pagination_probes_unpaginated_oversized_response() -> None:
+def test_store_list_without_page_info_is_one_official_snapshot() -> None:
     client = StubTTBApiClient(
         [
             _payload(
@@ -517,7 +593,6 @@ def test_numbered_pagination_probes_unpaginated_oversized_response() -> None:
                 ],
                 key="stores",
             ),
-            _payload([], key="stores"),
         ]
     )
 
@@ -533,7 +608,7 @@ def test_numbered_pagination_probes_unpaginated_oversized_response() -> None:
     )
 
     assert len(rows) == 3
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
 
 def test_numbered_pagination_raises_when_safety_limit_is_reached(

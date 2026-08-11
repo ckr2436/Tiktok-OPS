@@ -778,7 +778,7 @@ class GMVMaxCampaignCreateRequest(BaseModel):
 class GMVMaxCampaignUpdateBody(BaseModel):
     campaign_id: str
     campaign_name: Optional[str] = None
-    budget: Optional[float] = None
+    budget: Optional[float] = Field(default=None, gt=0)
     roas_bid: Optional[float] = None
     schedule_type: Optional[str] = None
     schedule_end_time: Optional[str] = None
@@ -802,6 +802,8 @@ class GMVMaxCampaignUpdateBody(BaseModel):
             and not str(self.schedule_end_time or "").strip()
         ):
             raise ValueError("schedule_end_time is required for SCHEDULE_START_END")
+        if self.schedule_type == "SCHEDULE_FROM_NOW" and self.schedule_end_time is not None:
+            raise ValueError("schedule_end_time is invalid for SCHEDULE_FROM_NOW")
         return self
 
     model_config = ConfigDict(extra="forbid")

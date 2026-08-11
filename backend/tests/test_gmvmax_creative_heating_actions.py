@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from app.core.deps import SessionUser
@@ -20,6 +21,7 @@ from app.data.models.ttb_gmvmax import TTBGmvMaxCreativeHeating
 from app.data.models.workspaces import Workspace
 from app.features.tenants.ttb.gmv_max import router_provider
 from app.features.tenants.ttb.gmv_max.control import set_manual_pause_override
+from app.features.tenants.ttb.gmv_max.schemas import CreativeHeatingActionRequest
 from app.providers.tiktok_business.gmvmax_client import (
     GMVMaxResponse,
     GMVMaxSessionMutationData,
@@ -38,6 +40,40 @@ class DummySession:
 
     def flush(self) -> None:  # pragma: no cover - trivial
         self.flush_calls += 1
+
+
+def test_creative_boost_budget_is_an_explicit_independent_daily_budget():
+    campaign = SimpleNamespace(budget_cents=20000, daily_budget_cents=20000)
+
+    assert (
+        gmvmax_heating_actions._resolve_boost_budget(
+            campaign,
+            target_daily_budget=25,
+            budget_delta=1,
+        )
+        == 25
+    )
+    with pytest.raises(ValueError, match="target_daily_budget is required"):
+        gmvmax_heating_actions._resolve_boost_budget(
+            campaign,
+            target_daily_budget=None,
+            budget_delta=1,
+        )
+
+
+def test_creative_boost_request_rejects_delta_only_and_subminimum_budget():
+    base = {
+        "action_type": "BOOST_CREATIVE",
+        "creative_id": "creative-1",
+        "mode": "MANUAL",
+        "product_id": "product-1",
+        "item_id": "creative-1",
+    }
+
+    with pytest.raises(ValueError, match="target_daily_budget is required"):
+        CreativeHeatingActionRequest.model_validate({**base, "budget_delta": 10})
+    with pytest.raises(ValueError):
+        CreativeHeatingActionRequest.model_validate({**base, "target_daily_budget": 9.99})
 
 
 class _FakeMutation:
@@ -337,13 +373,33 @@ def test_legacy_creative_action_aliases_normalize_to_canonical_contract(monkeypa
         is_active=True,
     )
 
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            router_provider.apply_gmvmax_campaign_action_provider(
+                workspace_id=1,
+                provider="tiktok-business",
+                auth_id=2,
+                campaign_id="cmp-legacy",
+                payload={"type": "boost", "creative_id": "creative-1"},
+                advertiser_id=None,
+                me=me,
+                context=context,
+            )
+        )
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "GMVMAX_CREATIVE_HEATING_INVALID"
+
     started = asyncio.run(
         router_provider.apply_gmvmax_campaign_action_provider(
             workspace_id=1,
             provider="tiktok-business",
             auth_id=2,
             campaign_id="cmp-legacy",
-            payload={"type": "boost", "creative_id": "creative-1"},
+            payload={
+                "type": "boost",
+                "creative_id": "creative-1",
+                "target_daily_budget": 55,
+            },
             advertiser_id=None,
             me=me,
             context=context,

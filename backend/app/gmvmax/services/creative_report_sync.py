@@ -29,7 +29,9 @@ from app.gmvmax.services.gmvmax_value_parser import (
     to_decimal,
     to_int,
 )
+from app.gmvmax.creative_status import canonicalize_creative_delivery_status
 from app.services.gmvmax_creative_assets import (
+    backfill_missing_creative_assets_for_scope,
     resolve_store_authorized_bc_id,
     sync_creative_assets_for_scope,
 )
@@ -189,6 +191,13 @@ def _prepare_row(
         or fallback_stat_time_day
     )
 
+    creative_delivery_status = canonicalize_creative_delivery_status(
+        metrics.get("creative_delivery_status")
+    )
+    raw_metrics = dict(metrics)
+    if creative_delivery_status is not None:
+        raw_metrics["creative_delivery_status"] = creative_delivery_status
+
     return {
         "workspace_id": identifiers.workspace_id,
         "auth_id": identifiers.auth_id,
@@ -198,7 +207,7 @@ def _prepare_row(
         "item_group_id": str(item_group_id),
         "creative_id": str(creative_id),
         "stat_time_day": stat_time_day,
-        "creative_delivery_status": metrics.get("creative_delivery_status"),
+        "creative_delivery_status": creative_delivery_status,
         "cost_cents": money_to_cents(metrics.get("cost")),
         "net_cost_cents": money_to_cents(metrics.get("net_cost")),
         "orders": to_int(metrics.get("orders")),
@@ -219,7 +228,7 @@ def _prepare_row(
         "ad_video_view_rate_p50": to_decimal(metrics.get("ad_video_view_rate_p50"), scale=6),
         "ad_video_view_rate_p75": to_decimal(metrics.get("ad_video_view_rate_p75"), scale=6),
         "ad_video_view_rate_p100": to_decimal(metrics.get("ad_video_view_rate_p100"), scale=6),
-        "raw_metrics_json": dict(metrics),
+        "raw_metrics_json": raw_metrics,
     }
 
 
@@ -318,6 +327,7 @@ async def sync_product_creative_metrics(
     end_date: date,
     include_current_statuses: bool = False,
     refresh_creative_assets: bool = True,
+    backfill_missing_creative_assets: bool = False,
 ) -> int:
     clean_campaign_ids = list(dict.fromkeys(str(item) for item in campaign_ids if item))
     clean_item_group_ids = list(
@@ -573,7 +583,7 @@ async def sync_product_creative_metrics(
     # and freshness requirements.  Interactive/report-only callers can skip
     # the paginated identity + video/get scan; the dedicated creative refresh
     # path and the realtime creative worker remain responsible for inventory.
-    if creative_refs and refresh_creative_assets:
+    if creative_refs and (refresh_creative_assets or backfill_missing_creative_assets):
         store_authorized_bc_id = resolve_store_authorized_bc_id(
             session,
             workspace_id=int(identifiers.workspace_id),
@@ -583,7 +593,12 @@ async def sync_product_creative_metrics(
         )
         if store_authorized_bc_id:
             try:
-                asset_result = await sync_creative_assets_for_scope(
+                sync_assets = (
+                    sync_creative_assets_for_scope
+                    if refresh_creative_assets
+                    else backfill_missing_creative_assets_for_scope
+                )
+                asset_result = await sync_assets(
                     session,
                     client,
                     workspace_id=int(identifiers.workspace_id),
@@ -595,19 +610,20 @@ async def sync_product_creative_metrics(
                     item_group_ids=clean_item_group_ids,
                 )
                 logger.info(
-                    "gmvmax creative assets synced after daily metrics",
+                    "gmvmax creative assets enriched after daily metrics",
                     extra={
                         "workspace_id": identifiers.workspace_id,
                         "auth_id": identifiers.auth_id,
                         "advertiser_id": identifiers.advertiser_id,
                         "store_id": identifiers.store_id,
                         "campaign_ids": clean_campaign_ids[:5],
+                        "mode": "full" if refresh_creative_assets else "missing_only",
                         "asset_result": asset_result,
                     },
                 )
             except Exception:  # noqa: BLE001 - asset enrichment must not break metrics sync
                 logger.warning(
-                    "gmvmax creative asset sync failed after daily metrics",
+                    "gmvmax creative asset enrichment failed after daily metrics",
                     exc_info=True,
                     extra={
                         "workspace_id": identifiers.workspace_id,

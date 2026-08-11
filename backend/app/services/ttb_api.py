@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 import time
 import logging
 from dataclasses import dataclass
@@ -46,6 +47,36 @@ from app.services.ttb_http import build_url
 
 
 logger = logging.getLogger("gmv.ttb.http")
+
+_SENSITIVE_HTTP_QUERY_RE = re.compile(
+    r"(?i)([?&](?:secret|app_secret|client_secret|access_token|refresh_token)=)[^&\s\"']+"
+)
+
+
+def _redact_sensitive_http_query(value: Any) -> Any:
+    rendered = str(value)
+    redacted = _SENSITIVE_HTTP_QUERY_RE.sub(r"\1<redacted>", rendered)
+    return redacted if redacted != rendered else value
+
+
+class _HttpxCredentialRedactionFilter(logging.Filter):
+    """Prevent credential-bearing TikTok query parameters from reaching logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(_redact_sensitive_http_query(arg) for arg in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: _redact_sensitive_http_query(value)
+                for key, value in record.args.items()
+            }
+        record.msg = _redact_sensitive_http_query(record.msg)
+        return True
+
+
+_httpx_logger = logging.getLogger("httpx")
+if not any(isinstance(item, _HttpxCredentialRedactionFilter) for item in _httpx_logger.filters):
+    _httpx_logger.addFilter(_HttpxCredentialRedactionFilter())
 
 
 # --------------------------- 错误类型 ---------------------------
@@ -591,14 +622,33 @@ def _resource_pagination_key(
     return None
 
 
+def _business_center_pagination_key(item: Mapping[str, Any]) -> str | None:
+    """Match the nested and legacy flat shapes accepted by ``_upsert_bc``."""
+
+    nested = item.get("bc_info")
+    if isinstance(nested, Mapping):
+        nested_key = _resource_pagination_key(
+            nested,
+            ("bc_id", "business_center_id", "id"),
+        )
+        if nested_key:
+            return nested_key
+    return _resource_pagination_key(
+        item,
+        ("bc_id", "business_center_id", "id"),
+    )
+
+
 def _default_pagination_item_key(
     path: str,
 ) -> Callable[[Mapping[str, Any]], Any] | None:
     """Bind every persisted official resource to an endpoint-stable key."""
 
     normalized = f"/{str(path or '').strip('/')}/"
+    if normalized == "/bc/get/":
+        return _business_center_pagination_key
+
     fields_by_path: dict[str, tuple[str, ...]] = {
-        "/bc/get/": ("bc_id", "business_center_id", "id"),
         "/oauth2/advertiser/get/": ("advertiser_id", "id"),
         "/store/list/": ("store_id", "id"),
         "/store/product/get/": ("item_group_id", "product_id", "id"),
@@ -1309,6 +1359,7 @@ class TTBApiClient:
         item_key: Callable[[Mapping[str, Any]], Any] | None = None,
     ) -> AsyncIterator[dict]:
         page = 1
+        normalized_path = f"/{str(path or '').strip('/')}/"
         effective_item_key = item_key or _default_pagination_item_key(path)
         page_limit = _page_size_limit(path)
         size = _clamp_page_size(
@@ -1419,7 +1470,15 @@ class TTBApiClient:
                 if isinstance(it, dict):
                     yield it
 
-            if explicit_continuation is None:
+            if page_info is None and normalized_path == "/store/list/":
+                # The official store list currently returns the complete
+                # authorised-store snapshot without page_info and ignores the
+                # requested page. Probing page 2 therefore repeats page 1.
+                # Treat only this endpoint's metadata-free shape as terminal;
+                # products and other numbered resources retain fail-closed
+                # continuation checks.
+                has_more = False
+            elif explicit_continuation is None:
                 # A short page is not a reliable terminal signal: TikTok can
                 # return fewer rows than requested while more pages remain.
                 # Metadata-free numbered endpoints therefore probe until an

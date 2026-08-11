@@ -19,6 +19,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Path, Query, Request, UploadFile, status
+from pydantic import ValidationError
 from celery.result import AsyncResult
 from sqlalchemy import JSON as SAJSON
 from sqlalchemy import bindparam, case, func, literal, or_, select, text, union_all
@@ -183,6 +184,7 @@ from app.services.ttb_gmvmax import (
     upsert_campaign_from_api,
     update_gmvmax_campaign,
 )
+from app.gmvmax.creative_status import canonicalize_creative_delivery_status
 
 from .schemas import (
     ActionLogEntry,
@@ -1788,8 +1790,10 @@ def _build_creative_metrics_response(
             "item_id": metrics_data.get("item_id") or getattr(row, "item_id", None) or creative_id,
             "tt_account_authorization_type": metrics_data.get("tt_account_authorization_type"),
             "shop_content_type": metrics_data.get("shop_content_type"),
-            "creative_delivery_status": metrics_data.get("creative_delivery_status")
-            or getattr(row, "creative_status", None),
+            "creative_delivery_status": canonicalize_creative_delivery_status(
+                metrics_data.get("creative_delivery_status")
+                or getattr(row, "creative_status", None)
+            ),
             "cost": metrics_data.get("cost") or getattr(row, "cost", None),
             "orders": metrics_data.get("orders") or getattr(row, "orders", None),
             "cost_per_order": metrics_data.get("cost_per_order"),
@@ -3621,8 +3625,9 @@ def sync_gmvmax_manual(
         "campaign_ids": payload.campaign_ids,
         "item_group_ids": payload.item_group_ids,
         # Metrics refresh must not synchronously scan the paginated video
-        # library. Users can explicitly refresh that independent cache.
+        # library. Only backfill report creatives missing from the local cache.
         "refresh_creative_assets": False,
+        "backfill_missing_creative_assets": True,
         "refresh_catalog_details": True,
     }
 
@@ -3825,6 +3830,105 @@ def _dedupe_append(target: list[str], value: Optional[str], seen: set[str]) -> N
         target.append(normalized)
 
 
+def _persist_auto_binding(
+    context: GMVMaxRouteContext,
+    *,
+    candidate: AutoBindingCandidate,
+    actor_user_id: int | None,
+) -> bool:
+    """Atomically move every account-level scheduler to the selected binding."""
+
+    previous_advertiser = _normalize_identifier(context.advertiser_id)
+    previous_store = _normalize_identifier(context.store_id)
+    next_advertiser = _normalize_identifier(candidate.advertiser_id)
+    next_store = _normalize_identifier(candidate.store_id)
+    changed = previous_advertiser != next_advertiser or previous_store != next_store
+
+    upsert_binding_config(
+        context.db,
+        workspace_id=int(context.workspace_id),
+        auth_id=int(context.auth_id),
+        bc_id=candidate.store_authorized_bc_id,
+        advertiser_id=next_advertiser,
+        store_id=next_store,
+        auto_sync_products=True,
+        actor_user_id=actor_user_id,
+    )
+    existing_schedule = get_sync_schedule(
+        context.db,
+        workspace_id=context.workspace_id,
+        auth_id=context.auth_id,
+        provider=context.provider,
+    )
+    interval = int(
+        existing_schedule.interval_minutes
+        if existing_schedule is not None
+        else getattr(
+            app_settings,
+            "GMVMAX_SYNC_INTERVAL_MINUTES",
+            GMVMAX_SYNC_INTERVAL_OPTIONS[0],
+        )
+    )
+    if interval not in GMVMAX_SYNC_INTERVAL_OPTIONS:
+        interval = GMVMAX_SYNC_INTERVAL_OPTIONS[0]
+    upsert_sync_schedule(
+        context.db,
+        workspace_id=context.workspace_id,
+        auth_id=context.auth_id,
+        provider=context.provider,
+        advertiser_id=str(next_advertiser),
+        store_id=next_store,
+        interval_minutes=interval,
+        actor_user_id=actor_user_id,
+    )
+    _upsert_store_link(
+        context.db,
+        workspace_id=context.workspace_id,
+        auth_id=context.auth_id,
+        advertiser_id=str(next_advertiser),
+        store_id=str(next_store),
+        store_authorized_bc_id=candidate.store_authorized_bc_id,
+    )
+    context.db.commit()
+    return changed
+
+
+async def _refresh_auto_binding_candidate(
+    context: GMVMaxRouteContext,
+    candidate: AutoBindingCandidate,
+) -> AutoBindingCandidate:
+    request_ids: Dict[str, Optional[str]] = {}
+    auth_resp = await _call_tiktok(
+        context.client.gmv_max_exclusive_authorization_get,
+        GMVMaxExclusiveAuthorizationGetRequest(
+            advertiser_id=str(candidate.advertiser_id),
+            store_id=str(candidate.store_id),
+            store_authorized_bc_id=str(candidate.store_authorized_bc_id),
+        ),
+    )
+    request_ids["authorization"] = auth_resp.request_id
+    usage_resp = await _call_tiktok(
+        context.client.gmv_max_store_shop_ad_usage_check,
+        GMVMaxStoreAdUsageCheckRequest(
+            advertiser_id=str(candidate.advertiser_id),
+            store_id=str(candidate.store_id),
+        ),
+    )
+    request_ids["usage"] = usage_resp.request_id
+    return _build_auto_binding_candidate(
+        {
+            "store_id": candidate.store_id,
+            "store_name": candidate.store_name,
+            "store_authorized_bc_id": candidate.store_authorized_bc_id,
+            "advertiser_id": candidate.advertiser_id,
+        },
+        advertiser_id=candidate.advertiser_id,
+        authorization_data=auth_resp.data if auth_resp else None,
+        usage_data=usage_resp.data if usage_resp else None,
+        request_ids=request_ids,
+    ) or candidate
+
+
 def _build_binding_status(
     db: Session,
     *,
@@ -3852,6 +3956,18 @@ def _build_binding_status(
     if not binding or not has_binding:
         status.error_code = "binding_missing"
         status.error_message = "尚未完成 GMV Max 店铺-广告主绑定。"
+        return status
+
+    bound_store = _normalize_identifier(binding.store_id)
+    bound_advertiser = _normalize_identifier(binding.advertiser_id)
+    bound_bc = _normalize_identifier(binding.bc_id)
+    if (
+        normalized_store != bound_store
+        or normalized_adv != bound_advertiser
+        or (normalized_bc and bound_bc and normalized_bc != bound_bc)
+    ):
+        status.error_code = "binding_scope_mismatch"
+        status.error_message = "当前页面范围与已保存的 GMV Max 广告户绑定不一致，请重新绑定。"
         return status
 
     candidate = _select_binding_from_links(
@@ -3967,7 +4083,7 @@ def _select_binding_from_links(
     response_model=BindingStatusResponse,
     dependencies=[Depends(require_tenant_member)],
 )
-def get_gmvmax_binding_status(
+async def get_gmvmax_binding_status(
     workspace_id: int,
     provider: str,
     auth_id: int,
@@ -3975,7 +4091,7 @@ def get_gmvmax_binding_status(
     advertiser_id: Optional[str] = Query(default=None),
     context: GMVMaxRouteContext = Depends(get_optional_route_context),
 ) -> BindingStatusResponse:
-    """Report GMV Max binding readiness using stored links and cached configs."""
+    """Report binding readiness after verifying TikTok exclusive authorization."""
     provider = _ensure_provider(provider)
     status = _build_binding_status(
         context.db,
@@ -3985,6 +4101,37 @@ def get_gmvmax_binding_status(
         advertiser_id=advertiser_id or (context.binding.advertiser_id if context.binding else None),
         bc_id=context.binding.bc_id if context.binding else None,
     )
+    if status.binding_ready:
+        candidate = _select_binding_from_links(
+            context.db,
+            workspace_id=workspace_id,
+            auth_id=auth_id,
+            target_store=status.store_id,
+            target_advertiser=status.advertiser_id,
+            target_bc=status.bc_id,
+        )
+        if candidate is None:
+            status.binding_ready = False
+            status.error_code = "binding_not_found"
+            status.error_message = "未找到匹配的 GMV Max 授权记录，请重试绑定。"
+        else:
+            auth_resp = await _call_tiktok(
+                context.client.gmv_max_exclusive_authorization_get,
+                GMVMaxExclusiveAuthorizationGetRequest(
+                    advertiser_id=str(candidate.advertiser_id),
+                    store_id=str(candidate.store_id),
+                    store_authorized_bc_id=str(candidate.store_authorized_bc_id),
+                ),
+            )
+            official_status = str(
+                getattr(auth_resp.data, "authorization_status", None)
+                or getattr(auth_resp.data, "status", None)
+                or ""
+            ).upper()
+            if official_status != "EFFECTIVE":
+                status.binding_ready = False
+                status.error_code = "exclusive_authorization_changed"
+                status.error_message = "TikTok 已将 GMV Max 独家授权切换到其他广告户，系统正在重新识别。"
     logger.info(
         "gmvmax.binding_status fetched",
         extra={
@@ -4021,6 +4168,8 @@ async def rebind_gmvmax_binding(
         store_id=payload.store_id,
         persist=True,
     )
+    previous_advertiser = _normalize_identifier(context.advertiser_id)
+    previous_store = _normalize_identifier(context.store_id)
     response = await auto_bind_gmvmax_account(
         workspace_id,
         provider,
@@ -4029,6 +4178,53 @@ async def rebind_gmvmax_binding(
         me=me,
         context=context,
     )
+    selected = response.selected
+    response.binding_changed = bool(
+        response.persisted
+        and selected
+        and (
+            previous_advertiser != _normalize_identifier(selected.advertiser_id)
+            or previous_store != _normalize_identifier(selected.store_id)
+        )
+    )
+    if response.binding_changed and selected:
+        end = _resolve_advertiser_today(
+            context.db,
+            workspace_id=context.workspace_id,
+            auth_id=context.auth_id,
+            advertiser_id=selected.advertiser_id,
+        )
+        try:
+            async_result = _enqueue_owned_task(
+                context,
+                task_name="gmvmax.manual_sync_levels",
+                kwargs={
+                    "workspace_id": context.workspace_id,
+                    "auth_id": context.auth_id,
+                    "advertiser_id": selected.advertiser_id,
+                    "store_id": selected.store_id,
+                    "levels": ["OVERVIEW", "CAMPAIGN", "PRODUCT", "CREATIVE"],
+                    "start_date": (end - timedelta(days=2)).isoformat(),
+                    "end_date": end.isoformat(),
+                    "refresh_creative_assets": False,
+                    "backfill_missing_creative_assets": True,
+                    "refresh_catalog_details": True,
+                },
+                queue="gmvmax",
+                created_by_user_id=int(getattr(me, "id", 0) or 0) or None,
+            )
+            response.bootstrap_task_id = str(async_result.id)
+            response.bootstrap_enqueued = True
+        except HTTPException:
+            logger.exception(
+                "gmvmax.rebind_auto bootstrap enqueue failed after binding commit",
+                extra={
+                    "workspace_id": workspace_id,
+                    "auth_id": auth_id,
+                    "advertiser_id": selected.advertiser_id,
+                    "store_id": selected.store_id,
+                },
+            )
     logger.info(
         "gmvmax.rebind_auto completed",
         extra={
@@ -4066,6 +4262,7 @@ async def auto_bind_gmvmax_account(
     _dedupe_append(advertiser_candidates, payload.advertiser_id, seen_advertisers)
     _dedupe_append(advertiser_candidates, context.advertiser_id, seen_advertisers)
 
+    candidates: List[AutoBindingCandidate] = []
     db_candidate = _select_binding_from_links(
         context.db,
         workspace_id=workspace_id,
@@ -4075,94 +4272,36 @@ async def auto_bind_gmvmax_account(
         target_bc=target_bc,
     )
     if db_candidate:
-        request_ids: Dict[str, Optional[str]] = {}
-        auth_resp = await _call_tiktok(
-            context.client.gmv_max_exclusive_authorization_get,
-            GMVMaxExclusiveAuthorizationGetRequest(
-                advertiser_id=str(db_candidate.advertiser_id),
-                store_id=str(db_candidate.store_id),
-                store_authorized_bc_id=str(db_candidate.store_authorized_bc_id),
-            ),
-        )
-        request_ids["authorization"] = auth_resp.request_id
-        usage_resp = await _call_tiktok(
-            context.client.gmv_max_store_shop_ad_usage_check,
-            GMVMaxStoreAdUsageCheckRequest(
-                advertiser_id=str(db_candidate.advertiser_id),
-                store_id=str(db_candidate.store_id or ""),
-            ),
-        )
-        request_ids["usage"] = usage_resp.request_id
-
-        refreshed_candidate = _build_auto_binding_candidate(
-            {
-                "store_id": db_candidate.store_id,
-                "store_authorized_bc_id": db_candidate.store_authorized_bc_id,
-                "advertiser_id": db_candidate.advertiser_id,
-            },
-            advertiser_id=db_candidate.advertiser_id,
-            authorization_data=auth_resp.data if auth_resp else None,
-            usage_data=usage_resp.data if usage_resp else None,
-            request_ids=request_ids,
-        )
-        candidate = refreshed_candidate or db_candidate
-        if payload.persist and not _is_binding_candidate_ready(candidate):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Cached GMV Max binding is not EFFECTIVE in exclusive authorization; cannot persist binding."
-                ),
+        candidate = await _refresh_auto_binding_candidate(context, db_candidate)
+        candidates.append(candidate)
+        if _is_binding_candidate_ready(candidate):
+            persisted = False
+            changed = False
+            if payload.persist:
+                try:
+                    changed = _persist_auto_binding(
+                        context,
+                        candidate=candidate,
+                        actor_user_id=int(me.id),
+                    )
+                    persisted = True
+                except BindingConfigStorageNotReady as exc:
+                    context.db.rollback()
+                    raise HTTPException(
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=(
+                            "GMV Max binding configuration storage is not initialized; "
+                            "please run database migrations."
+                        ),
+                    ) from exc
+            return AutoBindingResponse(
+                selected=candidate,
+                candidates=[candidate],
+                persisted=persisted,
+                binding_changed=changed,
             )
-        persisted = False
-        if payload.persist:
-            try:
-                upsert_binding_config(
-                    context.db,
-                    workspace_id=int(workspace_id),
-                    auth_id=int(auth_id),
-                    bc_id=candidate.store_authorized_bc_id,
-                    advertiser_id=candidate.advertiser_id,
-                    store_id=candidate.store_id,
-                    auto_sync_products=True,
-                    actor_user_id=int(me.id),
-                )
-                _upsert_store_link(
-                    context.db,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    advertiser_id=candidate.advertiser_id,
-                    store_id=candidate.store_id,
-                    store_authorized_bc_id=candidate.store_authorized_bc_id,
-                )
-                context.db.commit()
-                persisted = True
-            except BindingConfigStorageNotReady as exc:
-                raise HTTPException(
-                    status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=(
-                        "GMV Max binding configuration storage is not initialized; "
-                        "please run database migrations."
-                    ),
-                ) from exc
-        else:
-            try:
-                _upsert_store_link(
-                    context.db,
-                    workspace_id=workspace_id,
-                    auth_id=auth_id,
-                    advertiser_id=candidate.advertiser_id,
-                    store_id=candidate.store_id,
-                    store_authorized_bc_id=candidate.store_authorized_bc_id,
-                )
-                context.db.commit()
-            except Exception:
-                context.db.rollback()
-                raise
-        return AutoBindingResponse(
-            selected=candidate,
-            candidates=[candidate],
-            persisted=persisted,
-        )
+        # A stale cached binding is expected after TikTok moves exclusive
+        # authorization. Continue scanning every advertiser linked to the store.
 
     if target_store:
         link_rows = (
@@ -4192,8 +4331,9 @@ async def auto_bind_gmvmax_account(
             detail="No advertisers available for GMV Max binding discovery",
         )
 
-    candidates: List[AutoBindingCandidate] = []
     for advertiser_id in advertiser_candidates:
+        if any(candidate.advertiser_id == str(advertiser_id) for candidate in candidates):
+            continue
         store_resp = await _call_tiktok(
             context.client.gmv_max_store_list,
             GMVMaxStoreListRequest(advertiser_id=str(advertiser_id)),
@@ -4276,6 +4416,7 @@ async def auto_bind_gmvmax_account(
         )
 
     persisted = False
+    changed = False
     if payload.persist and selected:
         if not _is_binding_candidate_ready(selected):
             raise HTTPException(
@@ -4290,25 +4431,11 @@ async def auto_bind_gmvmax_account(
                 detail="store_authorized_bc_id is required to persist GMV Max binding",
             )
         try:
-            upsert_binding_config(
-                context.db,
-                workspace_id=int(workspace_id),
-                auth_id=int(auth_id),
-                bc_id=selected.store_authorized_bc_id,
-                advertiser_id=selected.advertiser_id,
-                store_id=selected.store_id,
-                auto_sync_products=True,
+            changed = _persist_auto_binding(
+                context,
+                candidate=selected,
                 actor_user_id=int(me.id),
             )
-            _upsert_store_link(
-                context.db,
-                workspace_id=workspace_id,
-                auth_id=auth_id,
-                advertiser_id=selected.advertiser_id,
-                store_id=selected.store_id,
-                store_authorized_bc_id=selected.store_authorized_bc_id,
-            )
-            context.db.commit()
             persisted = True
         except BindingConfigStorageNotReady as exc:
             context.db.rollback()
@@ -4338,6 +4465,7 @@ async def auto_bind_gmvmax_account(
         selected=selected,
         candidates=candidates,
         persisted=persisted,
+        binding_changed=changed if payload.persist and selected else False,
     )
 
 
@@ -4583,6 +4711,7 @@ async def list_gmvmax_creative_assets_route(
     auth_id: int,
     store_id: str = Query(...),
     advertiser_id: Optional[str] = Query(None),
+    campaign_id: Optional[str] = Query(None),
     item_group_id: Optional[str] = Query(None),
     item_group_ids: Optional[List[str]] = Query(None),
     refresh: bool = Query(False),
@@ -4613,6 +4742,56 @@ async def list_gmvmax_creative_assets_route(
     if isinstance(item_group_id, str) and item_group_id.strip():
         requested_item_group_ids.append(item_group_id)
     normalized_item_group_ids = _sanitize_id_list(requested_item_group_ids)
+    normalized_campaign_id = str(campaign_id or "").strip() or None
+    if normalized_campaign_id:
+        campaign_exists = db.execute(
+            select(GmvmaxProductCampaignCatalog.id)
+            .where(GmvmaxProductCampaignCatalog.workspace_id == int(workspace_id))
+            .where(GmvmaxProductCampaignCatalog.auth_id == int(auth_id))
+            .where(GmvmaxProductCampaignCatalog.advertiser_id == str(effective_advertiser_id))
+            .where(GmvmaxProductCampaignCatalog.store_id == str(effective_store_id))
+            .where(GmvmaxProductCampaignCatalog.campaign_id == normalized_campaign_id)
+            .limit(1)
+        ).scalar_one_or_none()
+        if campaign_exists is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "campaign_not_found_in_scope",
+                    "message": "Campaign is not bound to the requested advertiser and store.",
+                },
+            )
+        campaign_item_group_ids = _sanitize_id_list(
+            db.execute(
+                select(GmvmaxProductCampaignItemGroup.item_group_id)
+                .where(GmvmaxProductCampaignItemGroup.workspace_id == int(workspace_id))
+                .where(GmvmaxProductCampaignItemGroup.auth_id == int(auth_id))
+                .where(GmvmaxProductCampaignItemGroup.advertiser_id == str(effective_advertiser_id))
+                .where(GmvmaxProductCampaignItemGroup.store_id == str(effective_store_id))
+                .where(GmvmaxProductCampaignItemGroup.campaign_id == normalized_campaign_id)
+            ).scalars().all()
+        )
+        if not campaign_item_group_ids:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "campaign_product_binding_missing",
+                    "message": "Campaign product binding is not available yet.",
+                },
+            )
+        outside_campaign = sorted(
+            set(normalized_item_group_ids) - set(campaign_item_group_ids)
+        )
+        if outside_campaign:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "code": "item_group_outside_campaign_scope",
+                    "message": "One or more products are not bound to this campaign.",
+                    "item_group_ids": outside_campaign,
+                },
+            )
+        normalized_item_group_ids = normalized_item_group_ids or campaign_item_group_ids
     metric_start_date = _resolve_advertiser_today(
         db,
         workspace_id=workspace_id,
@@ -4622,6 +4801,9 @@ async def list_gmvmax_creative_assets_route(
     has_item_group_filter = bool(normalized_item_group_ids)
     metric_item_filter = (
         "and item_group_id in :item_group_ids" if has_item_group_filter else ""
+    )
+    metric_campaign_filter = (
+        "and campaign_id=:campaign_id" if normalized_campaign_id else ""
     )
     partition_active_expression = (
         """
@@ -4688,6 +4870,7 @@ async def list_gmvmax_creative_assets_route(
                   and advertiser_id=:advertiser_id
                   and store_id=:store_id
                   and stat_time_day >= :metric_start_date
+                  {metric_campaign_filter}
                   {metric_item_filter}
                 group by creative_id
             )
@@ -4754,6 +4937,7 @@ async def list_gmvmax_creative_assets_route(
             "advertiser_id": str(effective_advertiser_id),
             "store_id": str(effective_store_id),
             "metric_start_date": metric_start_date,
+            "campaign_id": normalized_campaign_id,
             "item_group_ids": normalized_item_group_ids,
         },
     ).mappings().all()
@@ -4875,6 +5059,10 @@ async def list_gmvmax_creative_assets_route(
         },
         "upload_sync": upload_sync_result,
         "sync": sync_result,
+        "scope": {
+            "campaign_id": normalized_campaign_id,
+            "item_group_ids": normalized_item_group_ids,
+        },
         "manual_selection_ready": any(item.get("selectable") for item in candidates),
         "hermes": {
             **hermes_summary,
@@ -5901,6 +6089,11 @@ async def update_gmvmax_campaign_provider(
                 context.client.gmv_max_campaign_info, info_request
             )
             mutation.assert_current(context.db)
+            # The final ownership assertion acquires durable lease rows with
+            # SELECT ... FOR UPDATE. End that read transaction before the
+            # context manager releases the same generations in its dedicated
+            # session, otherwise MySQL waits on our own connection until 1205.
+            mutation.commit(context.db)
         except (TTBApiError, TTBHttpError) as exc:
             await _handle_tiktok_error(exc)
             raise
@@ -6928,8 +7121,10 @@ async def _query_gmvmax_metrics(
                 "ad_video_view_rate_p50": _coerce_rate("ad_video_view_rate_p50"),
                 "ad_video_view_rate_p75": _coerce_rate("ad_video_view_rate_p75"),
                 "ad_video_view_rate_p100": _coerce_rate("ad_video_view_rate_p100"),
-                "creative_delivery_status": getattr(row, "creative_delivery_status", None)
-                or getattr(row, "creative_status", None),
+                "creative_delivery_status": canonicalize_creative_delivery_status(
+                    getattr(row, "creative_delivery_status", None)
+                    or getattr(row, "creative_status", None)
+                ),
             }
             metrics_payload.update(creative_asset)
 
@@ -7003,7 +7198,7 @@ async def _query_gmvmax_metrics(
                         "title": "商品卡",
                         "item_id": "-1",
                         "shop_content_type": "PRODUCT_CARD",
-                        "creative_delivery_status": "NOT_DELIVERED",
+                        "creative_delivery_status": "NOT_DELIVERYING",
                         "spend": 0.0,
                         "cost": 0.0,
                         "net_cost": 0.0,
@@ -9282,15 +9477,6 @@ async def apply_gmvmax_campaign_action_provider(
         if (
             normalized_type == "BOOST_CREATIVE"
             and not is_stop
-            and candidate.get("target_daily_budget") is None
-            and candidate.get("budget_delta") is None
-        ):
-            derived_budget = _campaign_budget_for_creative_action(campaign_before)
-            if derived_budget is not None:
-                candidate["target_daily_budget"] = derived_budget
-        if (
-            normalized_type == "BOOST_CREATIVE"
-            and not is_stop
             and not candidate.get("product_id")
             and candidate.get("creative_id")
         ):
@@ -9301,7 +9487,17 @@ async def apply_gmvmax_campaign_action_provider(
             )
             if item_group_id:
                 candidate["product_id"] = item_group_id
-        heating_request = CreativeHeatingActionRequest.model_validate(candidate)
+        try:
+            heating_request = CreativeHeatingActionRequest.model_validate(candidate)
+        except ValidationError as exc:
+            first_error = next(iter(exc.errors()), {})
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "code": "GMVMAX_CREATIVE_HEATING_INVALID",
+                    "message": first_error.get("msg") or "Invalid creative heating request",
+                },
+            ) from exc
         with _manual_guard_mutation_lease(context) as mutation:
             fresh_campaign = _load_campaign_action_source(
                 context, normalized_campaign_id

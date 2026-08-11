@@ -2653,6 +2653,7 @@ def _run_manual_sync_levels_unlocked(
     item_group_ids: Optional[list[str]] = None,
     require_active_campaigns: bool = False,
     refresh_creative_assets: bool = False,
+    backfill_missing_creative_assets: bool = False,
     refresh_catalog_details: bool = True,
     execution_guard: Callable[[Session], None] | None = None,
 ) -> dict:
@@ -2746,6 +2747,7 @@ def _run_manual_sync_levels_unlocked(
             item_group_ids=item_group_ids,
             require_active_campaigns=bool(require_active_campaigns),
             refresh_creative_assets=bool(refresh_creative_assets),
+            backfill_missing_creative_assets=bool(backfill_missing_creative_assets),
         )
         errors = [
             {"level": level, **value["error"]}
@@ -2763,6 +2765,7 @@ def _run_manual_sync_levels_unlocked(
             "errors": errors,
             "require_active_campaigns": bool(require_active_campaigns),
             "refresh_creative_assets": bool(refresh_creative_assets),
+            "backfill_missing_creative_assets": bool(backfill_missing_creative_assets),
             "refresh_catalog_details": bool(refresh_catalog_details),
         }
         logger.info(
@@ -2803,6 +2806,7 @@ def manual_sync_levels_task(
     item_group_ids: Optional[list[str]] = None,
     require_active_campaigns: bool = False,
     refresh_creative_assets: bool = False,
+    backfill_missing_creative_assets: bool = False,
     refresh_catalog_details: bool = True,
 ) -> dict:
     """Serialize account-wide catalog and fact refreshes across all entrypoints."""
@@ -2871,6 +2875,7 @@ def manual_sync_levels_task(
             item_group_ids=item_group_ids,
             require_active_campaigns=bool(require_active_campaigns),
             refresh_creative_assets=bool(refresh_creative_assets),
+            backfill_missing_creative_assets=bool(backfill_missing_creative_assets),
             refresh_catalog_details=bool(refresh_catalog_details),
             execution_guard=fence.assert_current,
         )

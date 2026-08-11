@@ -48,6 +48,7 @@ from app.gmvmax.services.mutation_execution_lock import (
 )
 from app.services.commerce_orders import current_order_timing_signal
 from app.services.ttb_api import TTBBusinessError
+from app.services.gmvmax_product_price import load_authoritative_product_price
 from app.gmvmax.services.campaign_catalog_freshness import (
     catalog_observation_now,
 )
@@ -557,6 +558,34 @@ def _product_effective_price_basis(
     item_group_id: str,
     guard: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if bool(guard.get("use_effective_product_price", True)):
+        try:
+            official_price = load_authoritative_product_price(
+                db,
+                workspace_id=campaign.workspace_id,
+                store_id=campaign.store_id,
+                product_id=item_group_id,
+            )
+        except Exception:  # noqa: BLE001 - guard retains its bounded fallback chain
+            logger.exception(
+                "Unable to resolve TikTok Shop price campaign_id=%s product_id=%s",
+                campaign.campaign_id,
+                item_group_id,
+            )
+            official_price = None
+        cents = _optional_money_to_cents(
+            (official_price or {}).get("effective_price")
+        )
+        if cents:
+            return {
+                "cents": cents,
+                "source": (official_price or {}).get("effective_price_source")
+                or "tiktok_shop",
+                "item_group_id": item_group_id,
+                "observed_at": (official_price or {}).get(
+                    "effective_price_updated_at"
+                ),
+            }
     configured_prices = guard.get("product_effective_prices")
     if isinstance(configured_prices, Mapping):
         cents = _optional_money_to_cents(configured_prices.get(str(item_group_id)))

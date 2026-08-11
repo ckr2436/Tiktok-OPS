@@ -568,10 +568,15 @@ def test_account_creative_report_sync_does_not_refresh_video_inventory_by_defaul
     monkeypatch,
 ):
     service = GmvMaxSyncService()
-    observed: list[bool] = []
+    observed: list[tuple[bool, bool]] = []
 
     def _creative(*_args, **kwargs):
-        observed.append(bool(kwargs.get("refresh_creative_assets")))
+        observed.append(
+            (
+                bool(kwargs.get("refresh_creative_assets")),
+                bool(kwargs.get("backfill_missing_creative_assets")),
+            )
+        )
         return {"synced_rows": 1}
 
     monkeypatch.setattr(service, "_sync_creative_10min", _creative)
@@ -588,4 +593,17 @@ def test_account_creative_report_sync_does_not_refresh_video_inventory_by_defaul
     )
 
     assert result["CREATIVE"] == {"synced_rows": 1}
-    assert observed == [False]
+    assert observed == [(False, False)]
+
+    service.sync_levels_for_account(
+        workspace_id=3,
+        auth_id=3,
+        advertiser_id="advertiser-1",
+        store_id="store-1",
+        levels=["CREATIVE"],
+        start_date=date(2026, 7, 21),
+        end_date=date(2026, 7, 21),
+        campaign_ids=["campaign-1"],
+        backfill_missing_creative_assets=True,
+    )
+    assert observed[-1] == (False, True)

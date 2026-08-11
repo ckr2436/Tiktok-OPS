@@ -29,6 +29,7 @@ import {
 } from '../hooks/gmvMaxQueries.js';
 import {
   getGmvMaxOptions,
+  waitForAccountSyncRun,
 } from '../api/gmvMaxApi.js';
 import { loadScope, saveScope } from '../utils/scopeStorage.js';
 import { loadOverviewRange, saveOverviewRange } from '../utils/overviewRangeStorage.js';
@@ -162,7 +163,15 @@ const OVERVIEW_RANGE_OPTIONS = [
   { key: 'custom', label: '自定义' },
 ];
 
-function computeOverviewRange(rangeKey, customRange, timeZone) {
+function shiftDateKey(dateKey, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ''));
+  if (!match) return '';
+  const value = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  value.setUTCDate(value.getUTCDate() + Number(days || 0));
+  return value.toISOString().slice(0, 10);
+}
+
+export function computeOverviewRange(rangeKey, customRange, timeZone) {
   const normalizedTz = timezoneUtils.resolveTimezoneLabel(timeZone);
   const getAdvertiserTodayRange = timezoneUtils.getAdvertiserTodayRange
     || ((tz) => {
@@ -172,6 +181,7 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
       return { start, end: now, timeZone: tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' };
     });
   const todayRange = getAdvertiserTodayRange(normalizedTz);
+  const todayDate = timezoneUtils.formatRangeAsDateStrings(todayRange).end_date;
 
   if (rangeKey === 'custom') {
     if (customRange?.start && customRange?.end) {
@@ -181,30 +191,21 @@ function computeOverviewRange(rangeKey, customRange, timeZone) {
   }
 
   if (rangeKey === 'yesterday') {
-    const start = new Date(todayRange.start);
-    start.setUTCDate(start.getUTCDate() - 1);
-    const end = new Date(todayRange.start);
-    end.setUTCDate(end.getUTCDate() - 1);
-    return timezoneUtils.formatRangeAsDateStrings({ start, end, timeZone: normalizedTz });
+    const yesterday = shiftDateKey(todayDate, -1);
+    return { start_date: yesterday, end_date: yesterday };
   }
 
   if (rangeKey === '7d') {
-    return timezoneUtils.formatRangeAsDateStrings(
-      timezoneUtils.getAdvertiserRecentRange(7, normalizedTz),
-    );
+    return { start_date: shiftDateKey(todayDate, -6), end_date: todayDate };
   }
   if (rangeKey === '14d') {
-    return timezoneUtils.formatRangeAsDateStrings(
-      timezoneUtils.getAdvertiserRecentRange(14, normalizedTz),
-    );
+    return { start_date: shiftDateKey(todayDate, -13), end_date: todayDate };
   }
   if (rangeKey === '30d') {
-    return timezoneUtils.formatRangeAsDateStrings(
-      timezoneUtils.getAdvertiserRecentRange(30, normalizedTz),
-    );
+    return { start_date: shiftDateKey(todayDate, -29), end_date: todayDate };
   }
 
-  return timezoneUtils.formatRangeAsDateStrings(todayRange);
+  return { start_date: todayDate, end_date: todayDate };
 }
 
 export function formatOverviewRangeLabel(
@@ -402,6 +403,7 @@ export default function GmvMaxOverviewPage() {
   const [automationStatsCustomRange, setAutomationStatsCustomRange] = useState({ start: '', end: '' });
   const [selectedDailyReportDate, setSelectedDailyReportDate] = useState('');
   const autoOptionsRefreshAccounts = useRef(new Set());
+  const bindingReconcileAttempts = useRef(new Set());
   const syncInFlightRef = useRef(false);
   const balanceRefreshIntervalRef = useRef();
 
@@ -590,7 +592,13 @@ export default function GmvMaxOverviewPage() {
     advertiserId,
   });
 
-  const bindingStatusParams = useMemo(() => (storeId ? { store_id: storeId } : {}), [storeId]);
+  const bindingStatusParams = useMemo(
+    () => ({
+      store_id: storeId || undefined,
+      advertiser_id: advertiserId || undefined,
+    }),
+    [advertiserId, storeId],
+  );
   const bindingStatusQuery = useGmvMaxBindingStatusQuery(
     workspaceId,
     provider,
@@ -615,7 +623,7 @@ export default function GmvMaxOverviewPage() {
 
   useEffect(() => {
     if (!bindingConfig || !savedStoreId) return;
-    if (storeId && storeId !== savedStoreId) return;
+    if (storeId || advertiserId || businessCenterId) return;
 
     setScope((prev) => {
       const nextStoreId = savedStoreId || prev.storeId;
@@ -638,8 +646,8 @@ export default function GmvMaxOverviewPage() {
       };
     });
   }, [
-    advertiserId,
     bindingConfig,
+    businessCenterId,
     savedAdvertiserId,
     savedBusinessCenterId,
     savedStoreId,
@@ -940,20 +948,48 @@ export default function GmvMaxOverviewPage() {
   }, [advertiserTimezoneFromOptions]);
 
   const storeOptions = useMemo(() => {
-    if (aggregatedStoreOptions.length > 0) {
+    if (!authId && aggregatedStoreOptions.length > 0) {
       return aggregatedStoreOptions;
     }
     if (!authId) return [];
+    const linkedStoreIds = advertiserId
+      ? new Set(advertiserToStores.get(advertiserId) || [])
+      : null;
     const seen = new Set();
     return storeList
-      .map((store) => ({ value: getStoreId(store), label: getStoreLabel(store), data: store }))
+      .map((store) => {
+        const value = getStoreId(store);
+        const directAdvertiserId = getStoreAdvertiserId(store);
+        const effectiveAdvertiserId = advertiserId || directAdvertiserId || '';
+        const bcId = collectStoreBusinessCenterCandidates(store)[0]
+          || advertiserToBusinessCenter.get(effectiveAdvertiserId)
+          || businessCenterId
+          || '';
+        return {
+          value,
+          label: getStoreLabel(store),
+          data: store,
+          authId,
+          advertiserId: effectiveAdvertiserId,
+          bcId,
+        };
+      })
       .filter((option) => {
         if (!option.value) return false;
+        if (linkedStoreIds && !linkedStoreIds.has(option.value)) return false;
         if (seen.has(option.value)) return false;
         seen.add(option.value);
         return true;
       });
-  }, [aggregatedStoreOptions, authId, storeList]);
+  }, [
+    advertiserId,
+    advertiserToBusinessCenter,
+    advertiserToStores,
+    aggregatedStoreOptions,
+    authId,
+    businessCenterId,
+    storeList,
+  ]);
 
   useEffect(() => {
     if (authId || !storeId) return;
@@ -1394,18 +1430,43 @@ export default function GmvMaxOverviewPage() {
     if (!workspaceId || !provider || !authId || !storeId) return;
     setSyncError(null);
     try {
-      await rebindAutoMutation.mutateAsync({ store_id: storeId });
-      await Promise.all([bindingStatusQuery.refetch(), bindingConfigQuery.refetch()]);
-      setSyncNotice({ variant: 'success', message: '已重新尝试绑定，请稍后刷新绑定状态。' });
+      const response = await rebindAutoMutation.mutateAsync({
+        store_id: storeId,
+        advertiser_id: advertiserId || undefined,
+      });
+      const selected = response?.selected;
+      if (selected?.advertiser_id && selected?.store_id) {
+        setScope((prev) => ({
+          ...prev,
+          advertiserId: String(selected.advertiser_id),
+          storeId: String(selected.store_id),
+          bcId: selected.store_authorized_bc_id
+            ? String(selected.store_authorized_bc_id)
+            : prev.bcId,
+        }));
+      }
+      await Promise.all([
+        bindingConfigQuery.refetch(),
+        scopeOptionsQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['gmvMax', workspaceId, provider, authId] }),
+      ]);
+      setSyncNotice({
+        variant: 'success',
+        message: response?.bootstrap_enqueued
+          ? '已切换到官方有效广告户，正在补齐系列、商品和创意数据。'
+          : '已按 TikTok 官方独家授权重新绑定。',
+      });
     } catch (error) {
       setSyncError(formatError(error));
     }
   }, [
     authId,
+    advertiserId,
     bindingConfigQuery,
-    bindingStatusQuery,
     provider,
+    queryClient,
     rebindAutoMutation,
+    scopeOptionsQuery,
     storeId,
     workspaceId,
   ]);
@@ -1420,17 +1481,60 @@ export default function GmvMaxOverviewPage() {
     });
   }, []);
 
+  const handleBusinessCenterChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope((prev) => ({
+      ...prev,
+      bcId: value ? String(value) : null,
+      advertiserId: null,
+      storeId: null,
+    }));
+  }, []);
+
+  const handleAdvertiserChange = useCallback((event) => {
+    const value = event?.target?.value || '';
+    setScope((prev) => ({
+      ...prev,
+      advertiserId: value ? String(value) : null,
+      storeId: null,
+    }));
+  }, []);
+
   const handleStoreChange = useCallback((event) => {
     const value = event?.target?.value || '';
     const matched = storeOptions.find((option) => option.value === value);
     setScope((prev) => ({
       ...prev,
       accountAuthId: matched?.authId || prev.accountAuthId,
-      advertiserId: matched?.advertiserId ? String(matched.advertiserId) : null,
-      bcId: matched?.bcId ? String(matched.bcId) : null,
+      advertiserId: matched?.advertiserId
+        ? String(matched.advertiserId)
+        : prev.advertiserId,
+      bcId: matched?.bcId ? String(matched.bcId) : prev.bcId,
       storeId: value ? String(value) : null,
     }));
   }, [storeOptions]);
+
+  useEffect(() => {
+    if (![
+      'exclusive_authorization_changed',
+      'binding_scope_mismatch',
+    ].includes(bindingStatus?.error_code)) return;
+    if (!workspaceId || !provider || !authId || !storeId) return;
+    if (rebindAutoMutation.isPending) return;
+    const key = `${workspaceId}:${authId}:${storeId}:${advertiserId || ''}`;
+    if (bindingReconcileAttempts.current.has(key)) return;
+    bindingReconcileAttempts.current.add(key);
+    handleRebindBinding();
+  }, [
+    advertiserId,
+    authId,
+    bindingStatus?.error_code,
+    handleRebindBinding,
+    provider,
+    rebindAutoMutation.isPending,
+    storeId,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     if (selectedProductIds.size > 0) {
@@ -1582,6 +1686,7 @@ export default function GmvMaxOverviewPage() {
       start_date: overviewRangeParams.start_date,
       end_date: overviewRangeParams.end_date,
       store_id: overviewRangeParams.store_id,
+      advertiser_id: advertiserId || undefined,
       level: GmvMaxMetricsLevel.OVERVIEW,
     },
     {
@@ -1841,15 +1946,32 @@ export default function GmvMaxOverviewPage() {
     setIsSyncing(true);
     try {
       const deferredSteps = [];
+      const waitForFoundationResult = async (label, response) => {
+        const runId = response?.run_id;
+        if (!runId) return response;
+        const run = await waitForAccountSyncRun(
+          workspaceId,
+          provider,
+          authId,
+          runId,
+        );
+        const state = String(run?.status || '').trim().toLowerCase();
+        if (state === 'success') return run;
+        const detail = run?.error_message || run?.error_code || '后台任务未成功完成';
+        throw new Error(`${label}同步失败：${detail}`);
+      };
       const runFoundationStep = async (label, action) => {
         try {
-          await action();
+          const response = await action();
+          await waitForFoundationResult(label, response);
         } catch (error) {
           if (isSyncRateLimitedError(error)) {
             deferredSteps.push(label);
             return;
           }
-          throw error;
+          const detail = formatError(error) || '请求失败，请稍后再试。';
+          if (detail.startsWith(`${label}同步失败`)) throw error;
+          throw new Error(`${label}同步失败：${detail}`);
         }
       };
 
@@ -2215,6 +2337,40 @@ export default function GmvMaxOverviewPage() {
         </header>
         <div className="gmvmax-card__body">
           <div className="gmvmax-overview-scope__controls">
+            {accountOptions.length > 1 ? (
+              <FormField label="授权账户">
+                <select value={authId} onChange={handleAccountChange}>
+                  <option value="">选择授权账户</option>
+                  {accountOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </FormField>
+            ) : null}
+            <FormField label="Business Center">
+              <select
+                value={businessCenterId}
+                onChange={handleBusinessCenterChange}
+                disabled={!authId || businessCenterOptions.length === 0}
+              >
+                <option value="">选择 Business Center</option>
+                {businessCenterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="广告户">
+              <select
+                value={advertiserId}
+                onChange={handleAdvertiserChange}
+                disabled={!businessCenterId || advertiserOptions.length === 0}
+              >
+                <option value="">选择广告户</option>
+                {advertiserOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </FormField>
             <FormField label="店铺">
               <select
                 value={storeId}

@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import nullcontext
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -253,6 +254,82 @@ def test_campaign_sync_route_forces_path_campaign_scope(monkeypatch, db_session)
 
     assert response.task_id == "task-1"
     assert captured["payload"].campaign_ids == ["campaign-current"]
+
+
+def test_creative_asset_query_validates_campaign_products_and_filters_metrics(monkeypatch):
+    class _Result:
+        def __init__(self, values=None):
+            self.values = list(values or [])
+
+        def scalar_one_or_none(self):
+            return self.values[0] if self.values else None
+
+        def scalars(self):
+            return self
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return list(self.values)
+
+    class _Db:
+        def __init__(self):
+            self.metric_sql = ""
+
+        def execute(self, statement, _params=None):
+            sql = " ".join(str(statement).split()).lower()
+            if "from gmvmax_product_campaign_catalog" in sql:
+                return _Result([17])
+            if "from gmvmax_product_campaign_item_groups" in sql:
+                return _Result(["product-1"])
+            if "with metrics as" in sql:
+                self.metric_sql = sql
+                return _Result()
+            if "from gmvmax_manual_creative_uploads" in sql:
+                return _Result()
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+        def rollback(self):
+            return None
+
+    db = _Db()
+    context = _build_stub_context(db)
+    monkeypatch.setattr(
+        router_provider,
+        "_resolve_advertiser_today",
+        lambda *_args, **_kwargs: date(2026, 7, 24),
+    )
+    monkeypatch.setattr(
+        router_provider,
+        "_load_historical_removed_creatives",
+        lambda *_args, **_kwargs: [],
+    )
+
+    result = asyncio.run(
+        router_provider.list_gmvmax_creative_assets_route(
+            workspace_id=1,
+            provider="tiktok-business",
+            auth_id=1,
+            store_id="store-999",
+            advertiser_id="adv-123",
+            campaign_id="campaign-1",
+            item_group_id=None,
+            item_group_ids=["product-1"],
+            refresh=False,
+            lookback_days=30,
+            page=1,
+            page_size=100,
+            offset=None,
+            context=context,
+        )
+    )
+
+    assert "and campaign_id=:campaign_id" in db.metric_sql
+    assert result["scope"] == {
+        "campaign_id": "campaign-1",
+        "item_group_ids": ["product-1"],
+    }
 
 
 def test_campaign_metrics_route_forces_path_campaign_scope(monkeypatch, db_session):
@@ -1121,7 +1198,10 @@ def test_create_campaign_provider_resumes_frozen_intent_without_recreate(
 
 def test_update_campaign_provider_invokes_service(monkeypatch):
     stub_context = _build_stub_context()
-    calls: dict[str, object] = {}
+    calls: dict[str, object] = {"commits": 0}
+
+    def record_commit(*_args):
+        calls["commits"] += 1
 
     async def fake_update(
         db,
@@ -1154,7 +1234,7 @@ def test_update_campaign_provider_invokes_service(monkeypatch):
         lambda *_args, **_kwargs: nullcontext(
             SimpleNamespace(
                 assert_current=lambda *_: None,
-                commit=lambda *_: None,
+                commit=record_commit,
             )
         ),
     )
@@ -1197,3 +1277,24 @@ def test_update_campaign_provider_invokes_service(monkeypatch):
     assert auth_id == 1
     assert advertiser_id == "adv-123"
     assert getattr(body, "campaign_id", None) == "cmp-updated"
+    # One commit persists the accepted mutation and the second closes the
+    # final fenced readback transaction before the lease release session.
+    assert calls["commits"] == 2
+
+
+def test_update_campaign_request_matches_official_delivery_contract():
+    payload = UpdateCampaignRequest(daily_budget=200, roas_bid="1.86")
+
+    body = payload.to_client_body(campaign_id="cmp-1")
+
+    assert body.budget == 200
+    assert body.roas_bid == 1.9
+
+    with pytest.raises(ValueError, match="greater than 0"):
+        UpdateCampaignRequest(daily_budget=0)
+    with pytest.raises(ValueError, match="at least one campaign update field"):
+        UpdateCampaignRequest()
+    with pytest.raises(ValueError):
+        UpdateCampaignRequest.model_validate(
+            {"daily_budget": 10, "start_time": "2026-08-09T10:00:00"}
+        )

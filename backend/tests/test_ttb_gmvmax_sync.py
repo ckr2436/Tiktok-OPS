@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.features.tenants.ttb.gmv_max.control import set_manual_pause_override
 from app.data.models.gmvmax_campaign_catalog import GmvmaxProductCampaignCatalog
 from app.gmvmax.services.report_pagination import NumberedPaginationStalledError
 from app.providers.tiktok_business.gmvmax_client import (
@@ -15,6 +17,7 @@ from app.providers.tiktok_business.gmvmax_client import (
     PageInfo,
 )
 from app.services.ttb_gmvmax import sync_gmvmax_campaigns
+from app.services import ttb_gmvmax
 
 
 class _DummyCampaignClient:
@@ -184,6 +187,90 @@ def test_realtime_catalog_sync_can_skip_per_campaign_info_enrichment(db_session)
     row = db_session.query(GmvmaxProductCampaignCatalog).one()
     assert row.operation_status == "ENABLE"
     assert row.detail_raw_json == original_detail
+
+
+def test_two_newer_official_syncs_resume_guard_after_external_enable(
+    db_session, monkeypatch
+):
+    pause_at = datetime(2026, 7, 25, 1, 0, tzinfo=timezone.utc)
+    override = set_manual_pause_override(
+        db_session,
+        workspace_id=1,
+        auth_id=1,
+        advertiser_id="adv",
+        store_id="store-1",
+        campaign_id="camp-external-enable",
+        actor="operator@example.com",
+    )
+    override.override_started_at = pause_at.replace(tzinfo=None)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        ttb_gmvmax,
+        "_get_bound_store_id",
+        lambda *_, **__: "store-1",
+    )
+    clock = {"now": pause_at + timedelta(minutes=3)}
+    monkeypatch.setattr(
+        ttb_gmvmax,
+        "catalog_observation_now",
+        lambda: clock["now"].replace(tzinfo=None),
+    )
+
+    def _client():
+        return _DummyCampaignClient(
+            {
+                "STATUS_NOT_DELETE": [
+                    GMVMaxCampaignListData(
+                        list=[
+                            GMVMaxCampaign(
+                                campaign_id="camp-external-enable",
+                                operation_status="ENABLE",
+                                secondary_status="CAMPAIGN_STATUS_ENABLE",
+                                store_id="store-1",
+                                modify_time=(pause_at + timedelta(minutes=1)).isoformat(),
+                            )
+                        ],
+                        page_info=PageInfo(page=1, total_page=1),
+                    )
+                ],
+                "STATUS_DELETE": [
+                    GMVMaxCampaignListData(
+                        list=[],
+                        page_info=PageInfo(page=1, total_page=1),
+                    )
+                ],
+            }
+        )
+
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            _client(),
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="adv",
+            include_campaign_details=False,
+        )
+    )
+    db_session.commit()
+    assert override.active is True
+    assert override.external_enable_observation_count == 1
+
+    clock["now"] = pause_at + timedelta(minutes=4)
+    asyncio.run(
+        sync_gmvmax_campaigns(
+            db_session,
+            _client(),
+            workspace_id=1,
+            auth_id=1,
+            advertiser_id="adv",
+            include_campaign_details=False,
+        )
+    )
+    db_session.commit()
+    assert override.active is False
+    assert override.resolution_type == "EXTERNAL_ENABLE_CONFIRMED"
 
 
 def test_sync_campaigns_probes_when_effective_page_size_is_omitted(db_session):

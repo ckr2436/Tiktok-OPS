@@ -119,6 +119,7 @@ def test_creative_asset_product_filter_uses_relation_and_projects_requested_spu(
             auth_id=9,
             store_id="store-1",
             advertiser_id="advertiser-1",
+            campaign_id=None,
             item_group_id=None,
             item_group_ids=["product-c", "product-b"],
             refresh=False,

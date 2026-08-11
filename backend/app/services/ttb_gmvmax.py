@@ -67,6 +67,9 @@ from app.gmvmax.services.fact_freshness import (
     utc_now_naive,
 )
 from app.gmvmax.services.fact_reconciliation import StagedFactKeySet
+from app.gmvmax.services.manual_pause_reconciliation import (
+    reconcile_manual_pause_from_official_catalog,
+)
 from app.gmvmax.services.report_pagination import (
     OFFICIAL_REPORT_PAGE_SIZE,
     ReportPaginationState,
@@ -1807,6 +1810,7 @@ def _upsert_campaign_catalog_from_api(
         .first()
     )
     if row is not None and catalog_response_is_stale(row, observed_at):
+        setattr(row, "_gmvmax_catalog_response_applied", False)
         logger.info(
             "gmvmax campaign catalog ignored stale official response",
             extra={
@@ -1927,6 +1931,7 @@ def _upsert_campaign_catalog_from_api(
     if campaign_details:
         row.detail_synced_at = observed_at
     row.updated_at = ingested_at
+    setattr(row, "_gmvmax_catalog_response_applied", True)
     db.add(row)
 
     if not is_live and store_id:
@@ -2387,7 +2392,7 @@ async def sync_gmvmax_campaigns(
                     )
                     continue
 
-                _upsert_campaign_catalog_from_api(
+                catalog_row = _upsert_campaign_catalog_from_api(
                     db,
                     workspace_id=workspace_id,
                     auth_id=auth_id,
@@ -2399,6 +2404,31 @@ async def sync_gmvmax_campaigns(
                     promotion_type=promotion_type,
                     source_observed_at=snapshot_started_at,
                 )
+                if bool(
+                    getattr(
+                        catalog_row,
+                        "_gmvmax_catalog_response_applied",
+                        False,
+                    )
+                ):
+                    reconcile_manual_pause_from_official_catalog(
+                        db,
+                        workspace_id=workspace_id,
+                        auth_id=auth_id,
+                        advertiser_id=str(advertiser_id),
+                        store_id=getattr(catalog_row, "store_id", None),
+                        campaign_id=str(campaign_identifier),
+                        operation_status=getattr(
+                            catalog_row, "operation_status", None
+                        ),
+                        secondary_status=getattr(
+                            catalog_row, "secondary_status", None
+                        ),
+                        remote_modified_at=getattr(
+                            catalog_row, "modify_time_utc", None
+                        ),
+                        source_observed_at=snapshot_started_at,
+                    )
                 synced += 1
 
     # 第一轮：不传 primary_status（等价于 STATUS_NOT_DELETE，只返回未删除系列）

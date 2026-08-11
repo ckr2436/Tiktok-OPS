@@ -90,15 +90,16 @@ export const GmvMaxTexts = {
   operatorLabel: '操作者',
   timestampLabel: '时间',
   newActionNotification: '最新操作提醒',
-  creativeStatusDelivering: '投放中',
-  creativeStatusLearning: '学习中',
-  creativeStatusInQueue: '排队中',
-  creativeStatusNotDelivering: '未投放',
+  creativeStatusDelivering: '持续投放',
+  creativeStatusLearning: '探索中',
+  creativeStatusInQueue: '待探索',
+  creativeStatusNotDelivering: '未通过探索',
   creativeStatusAuthorizationNeeded: '需要授权',
   creativeStatusExcluded: '已排除',
   creativeStatusUnavailable: '不可用',
   creativeStatusRejected: '审核拒绝',
   creativeStatusNotActive: '不活跃',
+  creativeStatusUnknown: '未知官方状态',
 };
 
 export default GmvMaxTexts;

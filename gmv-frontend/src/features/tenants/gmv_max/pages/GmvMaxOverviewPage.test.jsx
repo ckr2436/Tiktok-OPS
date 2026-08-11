@@ -1,6 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatOverviewRangeLabel } from './GmvMaxOverviewPage.jsx';
+import { computeOverviewRange, formatOverviewRangeLabel } from './GmvMaxOverviewPage.jsx';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('computeOverviewRange advertiser calendar boundaries', () => {
+  it('does not lose or add a day when New York crosses daylight saving time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-09T12:00:00Z'));
+
+    expect(computeOverviewRange('yesterday', {}, 'America/New_York')).toEqual({
+      start_date: '2026-03-08',
+      end_date: '2026-03-08',
+    });
+    expect(computeOverviewRange('7d', {}, 'America/New_York')).toEqual({
+      start_date: '2026-03-03',
+      end_date: '2026-03-09',
+    });
+  });
+});
 
 describe('formatOverviewRangeLabel timezone provenance', () => {
   it('identifies an official advertiser timezone when metadata provides it', () => {

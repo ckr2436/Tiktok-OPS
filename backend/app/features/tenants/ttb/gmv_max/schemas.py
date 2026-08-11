@@ -372,14 +372,49 @@ class UpdateCampaignRequest(BaseModel):
 
     name: Optional[str] = None
     item_group_ids: Optional[List[str]] = Field(default=None, max_length=50)
-    daily_budget: Optional[float] = None
-    roas_bid: Optional[float] = None
+    daily_budget: Optional[float] = Field(default=None, gt=0)
+    roas_bid: Optional[float] = Field(default=None, gt=0)
     promotion_days: Optional[Dict[str, Any]] = None
     schedule_type: Optional[Literal["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]] = None
     end_time: Optional[datetime] = None
     affiliate_posts_enabled: Optional[bool] = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("name must not be blank")
+        return normalized
+
+    @field_validator("roas_bid", mode="before")
+    @classmethod
+    def _normalize_roas_bid(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return None
+        # TikTok's GMV Max update contract accepts a positive ROI target with
+        # at most one decimal place. Normalize at our public API boundary so
+        # the persisted local fact and the official request cannot diverge.
+        from decimal import Decimal, ROUND_HALF_UP
+
+        parsed = Decimal(str(value))
+        if parsed <= 0:
+            raise ValueError("roas_bid must be greater than 0")
+        return float(parsed.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+    @model_validator(mode="after")
+    def _validate_update(self) -> "UpdateCampaignRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("at least one campaign update field is required")
+        if self.schedule_type == "SCHEDULE_START_END" and self.end_time is None:
+            raise ValueError("end_time is required for SCHEDULE_START_END")
+        if self.schedule_type == "SCHEDULE_FROM_NOW" and self.end_time is not None:
+            raise ValueError("end_time is invalid for SCHEDULE_FROM_NOW")
+        return self
 
     def to_client_body(
         self,
@@ -643,7 +678,7 @@ class CreativeHeatingActionRequest(BaseModel):
     action: Optional[Literal["REMOVE", "ADD"]] = None
     operation_type: Optional[str] = None
     mode: Optional[str] = None
-    target_daily_budget: Optional[float] = None
+    target_daily_budget: Optional[float] = Field(default=None, ge=10)
     budget_delta: Optional[float] = None
     currency: Optional[str] = None
     max_duration_minutes: Optional[int] = Field(default=None, ge=1)
@@ -660,8 +695,10 @@ class CreativeHeatingActionRequest(BaseModel):
             return self
         if str(self.mode or "").upper() in {"STOP", "STOP_CREATIVE", "STOP_BOOST"}:
             return self
-        if self.target_daily_budget is None and self.budget_delta is None:
-            raise ValueError("target_daily_budget or budget_delta is required")
+        if self.target_daily_budget is None:
+            raise ValueError("target_daily_budget is required for creative boost")
+        if self.budget_delta is not None:
+            raise ValueError("budget_delta is not supported for creative boost")
         return self
 
 
@@ -858,6 +895,9 @@ class AutoBindingResponse(BaseModel):
     selected: Optional[AutoBindingCandidate] = None
     candidates: List[AutoBindingCandidate] = Field(default_factory=list)
     persisted: bool = False
+    binding_changed: bool = False
+    bootstrap_task_id: Optional[str] = None
+    bootstrap_enqueued: bool = False
 
 
 class BindingStatusResponse(BaseModel):

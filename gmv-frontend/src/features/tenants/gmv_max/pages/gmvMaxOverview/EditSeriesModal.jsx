@@ -27,6 +27,13 @@ const IDENTITY_LIMIT = 50;
 
 function toDateTimeInputValue(value) {
   if (!value) return '';
+  const raw = String(value).trim();
+  // TikTok returns campaign schedule values as advertiser-timezone wall time
+  // without an offset. Preserve that wall time instead of letting the browser
+  // reinterpret it in the operator device timezone.
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+    return raw.replace(' ', 'T').slice(0, 16);
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed?.getTime?.())) {
     return String(value).replace(' ', 'T').slice(0, 16);
@@ -366,8 +373,12 @@ export default function EditSeriesModal({
         : '',
     );
     setSelectedStoreId(String(detailCampaign?.store_id || detailCampaign?.storeId || storeId || ''));
-    setStartTime(toDateTimeInputValue(detailCampaign?.start_time || detailCampaign?.startTime));
-    setEndTime(toDateTimeInputValue(detailCampaign?.end_time || detailCampaign?.endTime));
+    setStartTime(toDateTimeInputValue(
+      detailCampaign?.schedule_start_time || detailCampaign?.start_time || detailCampaign?.startTime,
+    ));
+    setEndTime(toDateTimeInputValue(
+      detailCampaign?.schedule_end_time || detailCampaign?.end_time || detailCampaign?.endTime,
+    ));
     setSelectedIdentities(new Set(Array.from(initialIdentities)));
     setLocalSelectedIds(new Set(initialProductSet));
     setProductSearch('');
@@ -468,24 +479,37 @@ export default function EditSeriesModal({
       campaignPatch.name = trimmedName;
     }
     const budgetValue = parseOptionalFloat(budget);
+    if (budgetValue !== undefined && budgetValue <= 0) {
+      setSubmitError('每日预算必须大于 0。');
+      return;
+    }
     if (budgetValue !== undefined && budgetValue !== Number(detailCampaign?.budget)) {
       campaignPatch.daily_budget = budgetValue;
     }
     const roasValue = parseOptionalFloat(roasBid);
+    if (roasValue !== undefined && roasValue <= 0) {
+      setSubmitError('目标 ROI 必须大于 0。');
+      return;
+    }
     if (roasValue !== undefined && roasValue !== Number(detailCampaign?.roas_bid)) {
-      campaignPatch.roas_bid = roasValue;
+      campaignPatch.roas_bid = Math.round(roasValue * 10) / 10;
     }
-    if (startTime && startTime !== toDateTimeInputValue(detailCampaign?.start_time || detailCampaign?.startTime)) {
-      campaignPatch.start_time = startTime;
-    }
-    if (endTime !== toDateTimeInputValue(detailCampaign?.end_time || detailCampaign?.endTime)) {
-      campaignPatch.end_time = endTime || null;
+    const scheduleType = detailCampaign?.schedule_type || detailCampaign?.scheduleType;
+    const initialEndTime = toDateTimeInputValue(
+      detailCampaign?.schedule_end_time || detailCampaign?.end_time || detailCampaign?.endTime,
+    );
+    if (
+      scheduleType === 'SCHEDULE_START_END' &&
+      endTime !== initialEndTime
+    ) {
+      if (!endTime) {
+        setSubmitError('指定结束时间的系列不能清空结束时间。');
+        return;
+      }
+      campaignPatch.end_time = endTime;
     }
     if (productsChanged) {
       campaignPatch.item_group_ids = sortIds(localSelectedIds);
-    }
-    if (identitiesChanged && identityOptions.length > 0) {
-      campaignPatch.identity_list = buildIdentityList();
     }
 
     setSubmitError(null);
@@ -501,36 +525,32 @@ export default function EditSeriesModal({
       setSubmitError(formatError(error));
     }
   }, [
-    buildIdentityList,
     budget,
     campaignId,
     detailCampaign,
     endTime,
-    identitiesChanged,
-    identityOptions.length,
     localSelectedIds,
     name,
     onClose,
     onUpdated,
     productsChanged,
     roasBid,
-    startTime,
     updateCampaignMutation,
   ]);
 
   const isSaving = updateCampaignMutation.isPending;
-  const startChanged = Boolean(
-    startTime && startTime !== toDateTimeInputValue(detailCampaign?.start_time || detailCampaign?.startTime),
-  );
-  const endChanged = endTime !== toDateTimeInputValue(detailCampaign?.end_time || detailCampaign?.endTime);
+  const scheduleType = detailCampaign?.schedule_type || detailCampaign?.scheduleType;
+  const endChanged =
+    scheduleType === 'SCHEDULE_START_END' &&
+    endTime !== toDateTimeInputValue(
+      detailCampaign?.schedule_end_time || detailCampaign?.end_time || detailCampaign?.endTime,
+    );
   const canSubmit =
     Boolean(detail) &&
     (productsChanged ||
-      identitiesChanged ||
       (name.trim() && name.trim() !== detailCampaign?.campaign_name) ||
       (budget && parseOptionalFloat(budget) !== Number(detailCampaign?.budget)) ||
       (roasBid && parseOptionalFloat(roasBid) !== Number(detailCampaign?.roas_bid)) ||
-      startChanged ||
       endChanged);
 
   if (!open) return null;
@@ -544,11 +564,10 @@ export default function EditSeriesModal({
         <div className="gmvmax-modal-step">
           <section className="gmvmax-section">
             <h3>基础配置</h3>
-            <FormField label="店铺">
+            <FormField label="店铺（创建后不可更改）">
               <select
                 value={selectedStoreId}
-                onChange={(event) => setSelectedStoreId(event.target.value)}
-                disabled={storeOptions.length === 0}
+                disabled
               >
                 <option value="">选择店铺</option>
                 {storeOptions.map((option) => (
@@ -562,21 +581,23 @@ export default function EditSeriesModal({
               <input type="text" value={name} onChange={(event) => setName(event.target.value)} maxLength={128} />
             </FormField>
             <div className="gmvmax-modal-grid">
-              <FormField label="预算">
+              <FormField label="每日预算">
                 <input
                   type="number"
-                  min="0"
+                  inputMode="decimal"
+                  min="0.01"
                   step="0.01"
                   value={budget}
                   onChange={(event) => setBudget(event.target.value)}
                   placeholder="留空则保持不变"
                 />
               </FormField>
-              <FormField label="ROAS 出价">
+              <FormField label="目标 ROI">
                 <input
                   type="number"
-                  min="0"
-                  step="0.01"
+                  inputMode="decimal"
+                  min="0.1"
+                  step="0.1"
                   value={roasBid}
                   onChange={(event) => setRoasBid(event.target.value)}
                   placeholder="留空则保持不变"
@@ -584,11 +605,11 @@ export default function EditSeriesModal({
               </FormField>
             </div>
             <div className="gmvmax-modal-grid">
-              <FormField label="开始时间">
+              <FormField label="开始时间（创建后不可更改）">
                 <input
                   type="datetime-local"
                   value={startTime}
-                  onChange={(event) => setStartTime(event.target.value)}
+                  disabled
                 />
               </FormField>
               <FormField label="结束时间">
@@ -596,6 +617,7 @@ export default function EditSeriesModal({
                   type="datetime-local"
                   value={endTime}
                   onChange={(event) => setEndTime(event.target.value)}
+                  disabled={scheduleType !== 'SCHEDULE_START_END'}
                 />
               </FormField>
             </div>
@@ -607,7 +629,7 @@ export default function EditSeriesModal({
           </section>
 
           <section className="gmvmax-section">
-            <h3>身份</h3>
+            <h3>身份（创建后由官方管理）</h3>
             {identitiesQuery.isLoading ? <Loading text="身份加载中..." /> : null}
             {visibleIdentityOptions.length === 0 ? (
               <p className="gmvmax-placeholder">暂无可用身份</p>
@@ -619,11 +641,7 @@ export default function EditSeriesModal({
                       type="checkbox"
                       checked={selectedIdentities.has(identity.value)}
                       onChange={() => toggleIdentity(identity.value)}
-                      disabled={
-                        isSaving ||
-                        identitySelectionLocked ||
-                        (!selectedIdentities.has(identity.value) && selectedIdentities.size >= IDENTITY_LIMIT)
-                      }
+                      disabled
                     />
                     <span className="gmvmax-identity-option">
                       <span className="gmvmax-identity-avatar" aria-hidden="true">
@@ -643,7 +661,7 @@ export default function EditSeriesModal({
               </div>
             )}
             <div className="gmvmax-tip">
-              已选 {selectedIdentities.size} / {visibleIdentityOptions.length} 个身份
+              当前绑定 {selectedIdentities.size} / {visibleIdentityOptions.length} 个身份；官方系列更新接口不支持修改身份。
               {identitySelectionLocked ? '；候选身份暂未返回，保持当前绑定不变。' : ''}
             </div>
           </section>

@@ -68,6 +68,7 @@ from app.features.tenants.ttb.gmv_max.service import (
 )
 from app.services.ttb_client_factory import build_ttb_gmvmax_client
 from app.services.ttb_api import TTBBusinessError
+from app.services.gmvmax_product_price import load_authoritative_product_price
 
 logger = logging.getLogger("gmv.services.gmvmax.creative_guard")
 
@@ -1712,6 +1713,32 @@ def _decide_no_spend_reset(
 def _load_product_price_basis(db: Session, scope: CampaignScope, item_group_id: str | None) -> dict[str, Any]:
     if not item_group_id:
         return {"cents": None, "source": "missing_item_group_id"}
+
+    if bool(scope.config.get("use_effective_product_price", True)):
+        try:
+            official_price = load_authoritative_product_price(
+                db,
+                workspace_id=scope.workspace_id,
+                store_id=scope.store_id,
+                product_id=str(item_group_id),
+            )
+        except Exception:  # noqa: BLE001 - preserve the existing bounded fallback chain
+            logger.exception(
+                "Unable to resolve TikTok Shop price campaign_id=%s product_id=%s",
+                scope.campaign_id,
+                item_group_id,
+            )
+            official_price = None
+        cents = _money_to_cents((official_price or {}).get("effective_price"))
+        if cents and cents > 0:
+            return {
+                "cents": cents,
+                "source": (official_price or {}).get("effective_price_source")
+                or "tiktok_shop",
+                "observed_at": (official_price or {}).get(
+                    "effective_price_updated_at"
+                ),
+            }
 
     configured_prices = scope.config.get("product_effective_prices")
     if isinstance(configured_prices, Mapping):

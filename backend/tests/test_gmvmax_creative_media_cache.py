@@ -333,6 +333,70 @@ def test_official_pagination_failure_never_runs_creative_absence_reconciliation(
     assert reconciled == []
 
 
+def test_targeted_creative_backfill_queries_only_missing_exact_ids(monkeypatch):
+    queries = []
+    upserts = []
+
+    async def load_identities(*_args, **_kwargs):
+        return [{"identity_id": "identity-1"}]
+
+    async def iter_entries(*_args, **kwargs):
+        queries.append(dict(kwargs))
+        yield {
+            "item_id": "unrelated",
+            "spu_id_list": ["product-1"],
+            "video_info": {"video_id": "video-unrelated"},
+        }
+        yield {
+            "item_id": kwargs["keyword"],
+            "spu_id_list": ["product-1"],
+            "video_info": {"video_id": f"video-{kwargs['keyword']}"},
+        }
+
+    monkeypatch.setattr(creative_assets, "ensure_creative_asset_cache_table", lambda _session: None)
+    monkeypatch.setattr(
+        creative_assets,
+        "_cached_ids_with_media",
+        lambda *_args, **_kwargs: {"creative-cached"},
+    )
+    monkeypatch.setattr(creative_assets, "load_gmvmax_identity_filter", load_identities)
+    monkeypatch.setattr(creative_assets, "iter_gmvmax_video_entries", iter_entries)
+    monkeypatch.setattr(
+        creative_assets,
+        "_upsert_asset",
+        lambda *_args, **kwargs: upserts.append(kwargs["payload"]),
+    )
+
+    result = asyncio.run(
+        creative_assets._backfill_missing_creative_assets_for_scope_unlocked(
+            object(),
+            object(),
+            workspace_id=3,
+            auth_id=9,
+            advertiser_id="advertiser-1",
+            store_id="store-1",
+            store_authorized_bc_id="bc-1",
+            creative_refs=[
+                {"creative_id": "creative-cached", "item_group_id": "product-1"},
+                {"creative_id": "creative-missing", "item_group_id": "product-1"},
+                {"creative_id": "-1", "item_group_id": "product-1"},
+            ],
+            item_group_ids=["product-1"],
+        )
+    )
+
+    assert [query["keyword"] for query in queries] == ["creative-missing"]
+    assert [payload["item_id"] for payload in upserts] == ["creative-missing"]
+    assert result == {
+        "requested": 2,
+        "cached": 1,
+        "missing": 1,
+        "matched_requested": 2,
+        "upserted": 1,
+        "identities": 1,
+    }
+
+
 def test_media_download_does_not_retry_expired_or_invalid_sources():
     request = httpx.Request("GET", "https://example.test/video")
     forbidden = httpx.HTTPStatusError(

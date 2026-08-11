@@ -37,6 +37,7 @@ from . import common
 
 # Import identifier normalization utility from the original sync module
 from app.services.ttb_sync import _normalize_identifier
+from app.services.gmvmax_product_price import load_authoritative_product_prices
 
 
 # Subrouter for meta‑related endpoints.  Paths are defined relative to the
@@ -195,7 +196,6 @@ def _load_product_automation_stats(
                   and ig.advertiser_id=:advertiser_id
                   and ig.store_id=:store_id
                   and ig.item_group_id in :product_ids
-                  and (s.id is not null or r.strategy_id is not null)
             ), latest_managed as (
                 select *
                 from (
@@ -204,6 +204,13 @@ def _load_product_automation_stats(
                         row_number() over (
                             partition by mc.product_id
                             order by
+                                case
+                                    when mc.effective_operation_status='ENABLE' then 0
+                                    when mc.effective_operation_status='DISABLE' then 1
+                                    when mc.effective_operation_status='DELETE' then 2
+                                    else 3
+                                end,
+                                coalesce(mc.strategy_enabled, 0) desc,
                                 coalesce(mc.create_time_utc, mc.created_at) desc,
                                 mc.updated_at desc,
                                 mc.campaign_id desc
@@ -221,9 +228,9 @@ def _load_product_automation_stats(
                     coalesce(m.orders, 0) as orders,
                     m.source_observed_at
                 from gmv_product_metrics_daily m
-                join latest_managed lm
-                  on lm.product_id=m.item_group_id
-                 and lm.campaign_id=m.campaign_id
+                join managed_campaigns mc
+                  on mc.product_id=m.item_group_id
+                 and mc.campaign_id=m.campaign_id
                 where m.workspace_id=:workspace_id
                   and m.auth_id=:auth_id
                   and m.advertiser_id=:advertiser_id
@@ -239,9 +246,9 @@ def _load_product_automation_stats(
                     sum(coalesce(m.gross_revenue_cents, 0)) as gross_revenue_cents,
                     sum(coalesce(m.orders, 0)) as orders
                 from gmv_product_metrics_hourly m
-                join latest_managed lm
-                  on lm.product_id=m.item_group_id
-                 and lm.campaign_id=m.campaign_id
+                join managed_campaigns mc
+                  on mc.product_id=m.item_group_id
+                 and mc.campaign_id=m.campaign_id
                 where m.workspace_id=:workspace_id
                   and m.auth_id=:auth_id
                   and m.advertiser_id=:advertiser_id
@@ -274,6 +281,7 @@ def _load_product_automation_stats(
                     sum(coalesce(spend_cents, 0)) as spend_cents,
                     sum(coalesce(gross_revenue_cents, 0)) as gross_revenue_cents,
                     sum(coalesce(orders, 0)) as orders,
+                    count(distinct campaign_id) as contributing_campaign_count,
                     max(metric_date) as latest_metric_date
                 from metric_by_day
                 group by product_id
@@ -346,14 +354,11 @@ def _load_product_automation_stats(
             )
             select
                 mc.product_id,
-                count(distinct case
-                    when (:stats_start_utc is null or coalesce(mc.create_time_utc, mc.created_at) >= :stats_start_utc)
-                     and (:stats_end_utc_exclusive is null or coalesce(mc.create_time_utc, mc.created_at) < :stats_end_utc_exclusive)
-                    then mc.campaign_id end
-                ) as campaign_count,
+                count(distinct mc.campaign_id) as campaign_count,
                 count(distinct mc.campaign_id) as lifetime_campaign_count,
                 count(distinct case when mc.effective_operation_status='ENABLE' then mc.campaign_id end) as active_campaign_count,
                 count(distinct case when coalesce(mc.strategy_enabled, 0)=1 then mc.campaign_id end) as strategy_enabled_campaign_count,
+                count(distinct case when mc.effective_operation_status='ENABLE' and coalesce(mc.strategy_enabled, 0)=1 then mc.campaign_id end) as active_strategy_enabled_campaign_count,
                 min(coalesce(mc.create_time_utc, mc.created_at)) as first_campaign_created_at,
                 max(coalesce(mc.create_time_utc, mc.created_at)) as latest_campaign_created_at,
                 max(lm.campaign_id) as latest_campaign_id,
@@ -371,6 +376,7 @@ def _load_product_automation_stats(
                 coalesce(max(mt.spend_cents), 0) as spend_cents,
                 coalesce(max(mt.gross_revenue_cents), 0) as gross_revenue_cents,
                 coalesce(max(mt.orders), 0) as orders,
+                coalesce(max(mt.contributing_campaign_count), 0) as contributing_campaign_count,
                 max(mt.latest_metric_date) as latest_metric_date,
                 coalesce(max(et.guard_event_count), 0) as guard_event_count,
                 coalesce(max(et.pause_count), 0) as pause_count,
@@ -516,7 +522,7 @@ def _load_product_automation_stats(
                 or row.get('latest_catalog_status')
                 or row.get('latest_realtime_status')
             ),
-            'metric_scope': 'LATEST_CAMPAIGN_PRODUCT',
+            'metric_scope': 'ALL_CAMPAIGNS_PRODUCT',
             'reference_price': float(reference_price) if reference_price is not None else None,
             'daily_spend_cap': _money_from_cents(daily_cap_cents) if daily_cap_cents is not None else None,
             'daily_spend_cap_cents': int(daily_cap_cents) if daily_cap_cents is not None else None,
@@ -529,6 +535,8 @@ def _load_product_automation_stats(
             'lifetime_campaign_count': int(row.get('lifetime_campaign_count') or 0),
             'active_campaign_count': int(row.get('active_campaign_count') or 0),
             'strategy_enabled_campaign_count': int(row.get('strategy_enabled_campaign_count') or 0),
+            'active_strategy_enabled_campaign_count': int(row.get('active_strategy_enabled_campaign_count') or 0),
+            'contributing_campaign_count': int(row.get('contributing_campaign_count') or 0),
             'pause_count': int(row.get('pause_count') or 0),
             'resume_count': int(row.get('resume_count') or 0),
             'reset_count': int(row.get('reset_count') or 0),
@@ -1028,14 +1036,36 @@ def list_account_products(
         stats_start_date=automation_stats_start_date,
         stats_end_date=automation_stats_end_date,
     )
+    authoritative_prices = load_authoritative_product_prices(
+        db,
+        workspace_id=workspace_id,
+        store_id=normalized_store,
+        product_ids=product_ids,
+    )
     items = []
     for row in rows:
-        payload = common._serialize_product(row, assigned_ids=assigned_ids)
+        product_id = str(row.product_id)
+        authoritative_price = authoritative_prices.get(product_id)
+        payload = common._serialize_product(
+            row,
+            assigned_ids=assigned_ids,
+            authoritative_price=authoritative_price,
+        )
         if normalized_adv and str(row.product_id) not in assigned_ids:
             payload["gmv_max_ads_status"] = eligibility_statuses.get(
                 str(row.product_id)
             )
-        payload["gmvmax_automation_stats"] = automation_stats.get(str(row.product_id))
+        product_stats = automation_stats.get(product_id)
+        if product_stats is not None and authoritative_price is not None:
+            product_stats = dict(product_stats)
+            product_stats["reference_price"] = authoritative_price.get("effective_price")
+            product_stats["reference_price_source"] = authoritative_price.get(
+                "effective_price_source"
+            )
+            product_stats["reference_price_updated_at"] = authoritative_price.get(
+                "effective_price_updated_at"
+            )
+        payload["gmvmax_automation_stats"] = product_stats
         items.append(common.ProductItem(**payload))
     return common.ProductList(
         items=items,

@@ -3,7 +3,7 @@
   "url": "https://business-api.tiktok.com/portal/docs/run-a-gmv-max-campaign-report/v1.3",
   "endpoint": "https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/",
   "method": "GET",
-  "grabbedAt": "2026-07-17T05:23:35.349609Z",
+  "grabbedAt": "2026-07-31T03:25:08.013826Z",
   "request": {
     "headers": [
       {

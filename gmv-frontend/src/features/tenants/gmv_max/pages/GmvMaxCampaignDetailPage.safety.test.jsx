@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
   ensureFresh: vi.fn(),
   applyAction: vi.fn(),
+  updateStrategy: vi.fn(),
   startHeating: vi.fn(),
   stopHeating: vi.fn(),
   setSearchParams: vi.fn(),
@@ -23,9 +24,11 @@ const mocks = vi.hoisted(() => ({
   campaignRefetch: vi.fn(),
   strategyRefetch: vi.fn(),
   strategyData: { enabled: false },
+  strategyResponse: null,
   campaignData: null,
   metricsArgs: null,
   creativeAssetsParams: null,
+  creativeAssetsOptions: null,
 }));
 
 const campaignData = {
@@ -33,6 +36,10 @@ const campaignData = {
     campaign_id: 'campaign-1',
     campaign_name: '软糖投放',
     operation_status: 'ENABLE',
+    budget: 200,
+    roas_bid: 1.3,
+    deep_bid_type: 'VO_MIN_ROAS',
+    optimization_goal: 'VALUE',
     store_id: 'store-1',
     item_group_id: 'product-1',
   },
@@ -139,8 +146,9 @@ vi.mock('../hooks/gmvMaxQueries.js', () => ({
     isSuccess: true,
     refetch: mocks.campaignRefetch,
   }),
-  useGmvMaxCreativeAssetsQuery: (_workspaceId, _provider, _authId, _campaignId, params) => {
+  useGmvMaxCreativeAssetsQuery: (_workspaceId, _provider, _authId, _campaignId, params, options) => {
     mocks.creativeAssetsParams = params;
+    mocks.creativeAssetsOptions = options;
     return {
       data: { items: mocks.creativeAssets },
       isLoading: false,
@@ -153,7 +161,7 @@ vi.mock('../hooks/gmvMaxQueries.js', () => ({
     error: null,
   }),
   useGmvMaxStrategyQuery: () => ({
-    data: mocks.strategyData,
+    data: mocks.strategyResponse,
     isLoading: false,
     isFetching: false,
     error: null,
@@ -177,7 +185,7 @@ vi.mock('../hooks/gmvMaxQueries.js', () => ({
   }),
   useUpdateGmvMaxStrategyMutation: () => ({
     mutate: vi.fn(),
-    mutateAsync: vi.fn(),
+    mutateAsync: mocks.updateStrategy,
     isPending: false,
     error: null,
   }),
@@ -201,6 +209,7 @@ function configurePage({
   includeMultipleProductCards = false,
   missingProductBinding = false,
   advertiserTimezone,
+  selectedProductId,
 } = {}) {
   mocks.searchParams = new URLSearchParams({
     provider: 'tiktok-business',
@@ -209,6 +218,12 @@ function configurePage({
     storeId: 'store-1',
     tab,
   });
+  const resolvedSelectedProductId =
+    selectedProductId ??
+    (includeCreative || includeProductCard ? 'product-1' : '');
+  if (resolvedSelectedProductId) {
+    mocks.searchParams.set('productId', resolvedSelectedProductId);
+  }
   mocks.ensureFresh.mockResolvedValue(ensureFresh);
   mocks.advertisers = advertiserTimezone
     ? [{ advertiser_id: 'advertiser-1', display_timezone: advertiserTimezone }]
@@ -240,11 +255,17 @@ function configurePage({
         ],
       }
     : campaignData;
+  mocks.strategyResponse = {
+    ...mocks.strategyData,
+    campaign: mocks.campaignData?.campaign || campaignData.campaign,
+    recommendation: { budget: 200, roas_bid: 2 },
+  };
   mocks.creativeMetricsData = null;
   mocks.creativeAssets = includeCreative
     ? [
         {
           item_id: 'creative-1',
+          item_group_id: 'product-1',
           title: '软糖素材',
           creative_delivery_status: 'DELIVERING',
           currency: 'USD',
@@ -255,6 +276,7 @@ function configurePage({
     ? [
         {
           creative_id: 'creative-1',
+          product_id: 'product-1',
           creative_delivery_status: 'DELIVERING',
           metrics: {
             spend: 25,
@@ -356,7 +378,30 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
     vi.clearAllMocks();
     mocks.metricsArgs = null;
     mocks.creativeAssetsParams = null;
+    mocks.creativeAssetsOptions = null;
     configurePage();
+    mocks.updateStrategy.mockResolvedValue({ status: 'success' });
+  });
+
+  it('edits the official daily budget and target ROI directly from campaign detail', async () => {
+    render(<GmvMaxCampaignDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑投放参数' }));
+    const dialog = screen.getByRole('dialog', { name: '编辑投放参数' });
+    const budgetInput = within(dialog).getByLabelText('每日预算');
+    const roasInput = within(dialog).getByLabelText('目标 ROI');
+    expect(budgetInput).toHaveValue(200);
+    expect(roasInput).toHaveValue(1.3);
+
+    fireEvent.change(budgetInput, { target: { value: '250' } });
+    fireEvent.change(roasInput, { target: { value: '1.86' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存并同步官方' }));
+
+    await waitFor(() => {
+      expect(mocks.updateStrategy).toHaveBeenCalledWith({
+        campaign: { budget: 250, roas_bid: 1.9 },
+      });
+    });
   });
 
   it('does not submit a budget change when freshness cannot be proven', async () => {
@@ -378,6 +423,11 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
     render(<GmvMaxCampaignDetailPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '加热' }));
+    const dialog = screen.getByRole('dialog', { name: '设置创意加热' });
+    fireEvent.change(within(dialog).getByLabelText('每日加热预算'), {
+      target: { value: '25' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并开始加热' }));
 
     await waitFor(() => expect(mocks.ensureFresh).toHaveBeenCalledTimes(1));
     expect(mocks.startHeating).not.toHaveBeenCalled();
@@ -409,6 +459,11 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
     render(<GmvMaxCampaignDetailPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '加热' }));
+    const dialog = screen.getByRole('dialog', { name: '设置创意加热' });
+    fireEvent.change(within(dialog).getByLabelText('每日加热预算'), {
+      target: { value: '25' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并开始加热' }));
 
     await waitFor(() => {
       expect(mocks.startHeating).toHaveBeenCalledWith({
@@ -418,10 +473,28 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
           product_id: 'product-1',
           item_id: 'creative-1',
           currency: 'USD',
-          budget_delta: 2.5,
+          target_daily_budget: 25,
+          max_duration_minutes: 180,
         },
       });
     });
+  });
+
+  it('requires the operator to enter the independent daily heating budget', async () => {
+    configurePage({ tab: 'dashboard', ensureFresh: true, includeCreative: true });
+    render(<GmvMaxCampaignDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '加热' }));
+    const dialog = screen.getByRole('dialog', { name: '设置创意加热' });
+    expect(within(dialog).getByLabelText('每日加热预算')).toHaveValue(null);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并开始加热' }));
+
+    expect(
+      within(dialog).getByText('每日加热预算必须由用户填写，且不能低于 10。'),
+    ).toBeInTheDocument();
+    expect(mocks.ensureFresh).not.toHaveBeenCalled();
+    expect(mocks.startHeating).not.toHaveBeenCalled();
   });
 
   it('restarts a previously stopped creative with a positive MANUAL payload', async () => {
@@ -434,6 +507,14 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
     render(<GmvMaxCampaignDetailPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '加热' }));
+    const dialog = screen.getByRole('dialog', { name: '设置创意加热' });
+    fireEvent.change(within(dialog).getByLabelText('每日加热预算'), {
+      target: { value: '30' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('加热持续时间'), {
+      target: { value: '360' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并开始加热' }));
 
     await waitFor(() => {
       expect(mocks.startHeating).toHaveBeenCalledWith({
@@ -443,10 +524,27 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
           product_id: 'product-1',
           item_id: 'creative-1',
           currency: 'USD',
-          budget_delta: 2.5,
+          target_daily_budget: 30,
+          max_duration_minutes: 360,
         },
       });
     });
+  });
+
+  it('keeps the official creative status separate from the local heating workflow status', () => {
+    configurePage({ tab: 'dashboard', ensureFresh: true, includeCreative: true });
+    mocks.creativeHeating = [
+      {
+        creative_id: 'creative-1',
+        is_heating_active: true,
+        status: 'APPLIED',
+      },
+    ];
+    render(<GmvMaxCampaignDetailPage />);
+
+    expect(screen.getAllByText('持续投放').length).toBeGreaterThan(0);
+    expect(screen.getByTitle('加热中')).toBeInTheDocument();
+    expect(screen.queryByText(/未知官方状态：APPLIED/)).not.toBeInTheDocument();
   });
 
   it('sends creative and product identity when stopping an active boost', async () => {
@@ -519,40 +617,107 @@ describe('GmvMaxCampaignDetailPage mutation preflight safety', () => {
     expect(thumbnail).toHaveAttribute('fetchpriority', 'low');
   });
 
-  it('keeps product cards separate by product id in a multi-product campaign', () => {
-    configurePage({ tab: 'dashboard', includeMultipleProductCards: true });
+  it('shows only the selected product card in a multi-product campaign', () => {
+    configurePage({
+      tab: 'dashboard',
+      includeMultipleProductCards: true,
+      selectedProductId: 'product-1',
+    });
     render(<GmvMaxCampaignDetailPage />);
 
     const productA = screen.getByRole('img', {
       name: '商品卡 · 软糖 A',
     });
-    const productB = screen.getByRole('img', {
-      name: '商品卡 · 软糖 B',
-    });
     expect(productA).toHaveAttribute('src', 'https://cdn.example/product-a.jpg');
-    expect(productB).toHaveAttribute('src', 'https://cdn.example/product-b.jpg');
     expect(productA.closest('a')).toBeNull();
-    expect(productB.closest('a')).toBeNull();
     expect(within(productA.closest('tr')).getByText('$3.00')).toBeInTheDocument();
-    expect(within(productB.closest('tr')).getByText('$7.00')).toBeInTheDocument();
-    expect(screen.getAllByText('ID: 商品卡')).toHaveLength(2);
-    expect(mocks.metricsArgs.itemGroupIds).toEqual(['product-1', 'product-2']);
-    expect(mocks.creativeAssetsParams.item_group_ids).toEqual(['product-1', 'product-2']);
+    expect(screen.queryByRole('img', { name: '商品卡 · 软糖 B' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('ID: 商品卡')).toHaveLength(1);
+    expect(mocks.metricsArgs.itemGroupIds).toEqual(['product-1']);
+    expect(mocks.creativeAssetsParams.campaign_id).toBe('campaign-1');
+    expect(mocks.creativeAssetsParams.item_group_ids).toEqual(['product-1']);
   });
 
-  it('shows a binding error instead of silently rendering store-wide zero metrics', () => {
+  it('renders the product level first and opens a server-scoped product creative view', () => {
+    configurePage({ tab: 'dashboard', includeMultipleProductCards: true });
+    render(<GmvMaxCampaignDetailPage />);
+
+    expect(screen.getByRole('table', { name: '系列商品列表' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看创意：软糖 A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看创意：软糖 B' })).toBeInTheDocument();
+    expect(screen.queryByText('当前筛选合计（0）')).not.toBeInTheDocument();
+    expect(mocks.metricsArgs.creativeEnabled).toBe(false);
+    expect(mocks.metricsArgs.itemGroupIds).toEqual([]);
+    expect(mocks.creativeAssetsParams.item_group_ids).toBeUndefined();
+    expect(mocks.creativeAssetsOptions.enabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看创意：软糖 A' }));
+
+    expect(screen.getByRole('button', { name: /返回商品列表/ })).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: '系列商品列表' })).not.toBeInTheDocument();
+    expect(mocks.metricsArgs.itemGroupIds).toEqual(['product-1']);
+    expect(mocks.creativeAssetsParams.item_group_ids).toEqual(['product-1']);
+    expect(mocks.creativeAssetsOptions.enabled).toBe(true);
+    expect(mocks.setSearchParams).toHaveBeenCalledWith(
+      expect.objectContaining({}),
+      { replace: true },
+    );
+    const nextParams = mocks.setSearchParams.mock.calls.at(-1)[0];
+    expect(nextParams.get('productId')).toBe('product-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /返回商品列表/ }));
+    expect(screen.getByRole('table', { name: '系列商品列表' })).toBeInTheDocument();
+    const clearedParams = mocks.setSearchParams.mock.calls.at(-1)[0];
+    expect(clearedParams.has('productId')).toBe(false);
+  });
+
+  it('labels campaign creatives separately from same-product candidates', () => {
+    configurePage({ tab: 'dashboard', includeCreative: true });
+    mocks.creativeAssets.push({
+      item_id: 'candidate-1',
+      title: '同商品历史素材',
+      item_group_id: 'product-1',
+    });
+    render(<GmvMaxCampaignDetailPage />);
+
+    expect(screen.getByText(/当前系列投放创意 1 · 同商品候选素材 1/)).toBeInTheDocument();
+    expect(screen.getAllByText('同商品候选素材').length).toBeGreaterThan(0);
+    expect(mocks.creativeAssetsParams.campaign_id).toBe('campaign-1');
+  });
+
+  it('uses official exploration semantics and preserves an unknown upstream status', () => {
+    configurePage({ tab: 'dashboard', includeCreative: true });
+    mocks.creativeAssets[0].creative_delivery_status = 'LEARNING';
+    mocks.creativeMetrics[0].creative_delivery_status = 'LEARNING';
+    const { unmount } = render(<GmvMaxCampaignDetailPage />);
+
+    expect(screen.getAllByText('探索中').length).toBeGreaterThan(0);
+    expect(screen.queryByText('学习中')).not.toBeInTheDocument();
+    unmount();
+
+    configurePage({ tab: 'dashboard', includeCreative: true });
+    mocks.creativeAssets[0].creative_delivery_status = 'EXPLORING';
+    mocks.creativeMetrics[0].creative_delivery_status = 'EXPLORING';
+    render(<GmvMaxCampaignDetailPage />);
+
+    expect(screen.getByText('未知官方状态：EXPLORING')).toBeInTheDocument();
+    expect(screen.queryByText('同商品候选素材', { selector: '.gmvmax-status-pill' })).not.toBeInTheDocument();
+  });
+
+  it('shows no product rows instead of loading unscoped creative metrics when binding is absent', () => {
     configurePage({ tab: 'dashboard', missingProductBinding: true });
     render(<GmvMaxCampaignDetailPage />);
 
     expect(
-      screen.getByText(/商品关联未解析，已停止加载创意报表/),
+      screen.getByText(/暂无系列商品数据，请先同步系列详情/),
     ).toBeInTheDocument();
     expect(mocks.metricsArgs.itemGroupIds).toEqual([]);
     expect(mocks.creativeAssetsParams.item_group_ids).toBeUndefined();
+    expect(mocks.creativeAssetsOptions.enabled).toBe(false);
   });
 
   it('uses the product thumbnail for the production report.list response shape', () => {
-    configurePage({ tab: 'dashboard' });
+    configurePage({ tab: 'dashboard', selectedProductId: 'product-1' });
     mocks.products = [
       {
         product_id: 'product-1',

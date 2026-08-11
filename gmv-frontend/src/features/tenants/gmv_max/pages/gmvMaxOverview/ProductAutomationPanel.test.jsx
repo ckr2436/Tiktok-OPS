@@ -9,6 +9,7 @@ function renderPanel({
   includeCampaign = true,
   campaignCards: cardsOverride,
   omitAutomationStats = false,
+  productOverrides = {},
 }) {
   const product = {
     product_id: 'product-1',
@@ -22,6 +23,7 @@ function renderPanel({
             strategy_enabled: false,
           },
         }),
+    ...productOverrides,
   };
   const campaignCards = cardsOverride || (includeCampaign
     ? [
@@ -117,5 +119,49 @@ describe('ProductAutomationPanel campaign status', () => {
     expect(metricValues).toHaveLength(2);
     expect(within(summary).queryByText('$123.45')).not.toBeInTheDocument();
     expect(within(summary).queryByText('$987.65')).not.toBeInTheDocument();
+  });
+
+  it('treats an officially occupied product as ordinary advertising and forces its card open', () => {
+    window.localStorage.setItem(
+      'gmvmax.product-cards.expanded.v1:1:store-1',
+      JSON.stringify([]),
+    );
+    renderPanel({
+      includeCampaign: false,
+      omitAutomationStats: true,
+      productOverrides: {
+        gmv_max_ads_status: 'OCCUPIED',
+        effective_price: 14.99,
+        effective_price_source: 'tiktok_shop_latest_transaction',
+      },
+    });
+
+    expect(screen.getByText('普通投放中')).toBeInTheDocument();
+    expect(screen.queryByText('已占用')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起商品 测试商品' })).toBeInTheDocument();
+    expect(screen.getAllByText(/14\.99/).length).toBeGreaterThan(0);
+    expect(screen.getByText('TikTok Shop 最新成交价')).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton', { name: /参考成交价/ })).not.toBeInTheDocument();
+  });
+
+  it('uses all-campaign active counts when the active campaign is absent from the card list', () => {
+    renderPanel({
+      includeCampaign: false,
+      productOverrides: {
+        gmvmax_automation_stats: {
+          latest_campaign_id: 'campaign-active',
+          latest_campaign_name: '普通系列',
+          campaign_operation_status: 'ENABLE',
+          active_campaign_count: 1,
+          lifetime_campaign_count: 3,
+          strategy_enabled: false,
+          metric_scope: 'ALL_CAMPAIGNS_PRODUCT',
+        },
+      },
+    });
+
+    expect(screen.getByText('普通投放中')).toBeInTheDocument();
+    expect(screen.getByText('普通系列')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起商品 测试商品' })).toBeInTheDocument();
   });
 });

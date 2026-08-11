@@ -92,6 +92,16 @@ function getProductPrice(product) {
   );
 }
 
+function getProductPriceSourceLabel(product) {
+  const source = String(
+    product?.effective_price_source || product?.effectivePriceSource || '',
+  ).toLowerCase();
+  if (source === 'tiktok_shop_flash_sale') return 'TikTok Shop 闪购活动价';
+  if (source === 'tiktok_shop_latest_transaction') return 'TikTok Shop 最新成交价';
+  if (source === 'tiktok_shop_listing') return 'TikTok Shop 当前售价';
+  return source ? 'TikTok Shop 官方价格' : '等待 TikTok Shop 价格同步';
+}
+
 function shortId(value) {
   const text = String(value || '');
   if (text.length <= 14) return text;
@@ -566,7 +576,6 @@ export default function ProductAutomationPanel({
   onStatsRangeChange,
   onStatsCustomRangeChange,
 }) {
-  const [priceByProduct, setPriceByProduct] = useState({});
   const [dailyCapByProduct, setDailyCapByProduct] = useState({});
   const [pendingProductId, setPendingProductId] = useState('');
   const [notice, setNotice] = useState(null);
@@ -615,10 +624,20 @@ export default function ProductAutomationPanel({
       const campaign = resolveProductCampaign(id, campaignCards, automationStats?.latest_campaign_id);
       const campaignId = automationStats?.latest_campaign_id || campaignIdOf(campaign);
       const operationStatus = resolveProductCampaignOperationStatus(campaign, automationStats);
-      const enabled = isCampaignEnabledStatus(operationStatus);
-      const deleted = isDeletedCampaign(campaign, operationStatus) || Boolean(
-        automationStats?.latest_campaign_deleted || automationStats?.latestCampaignDeleted,
+      const canonicalActiveCount = Number(
+        automationStats?.active_campaign_count ?? automationStats?.activeCampaignCount ?? 0,
       );
+      const lifetimeCampaignCount = Number(
+        automationStats?.lifetime_campaign_count ?? automationStats?.lifetimeCampaignCount ?? 0,
+      );
+      const occupied = String(product?.gmv_max_ads_status || product?.gmvMaxAdsStatus || '').toUpperCase() === 'OCCUPIED';
+      const hasCampaign = lifetimeCampaignCount > 0 || Boolean(campaignId);
+      const enabled = canonicalActiveCount > 0 || isCampaignEnabledStatus(operationStatus) || (
+        occupied && !hasCampaign
+      );
+      const deleted = !enabled && (isDeletedCampaign(campaign, operationStatus) || Boolean(
+        automationStats?.latest_campaign_deleted || automationStats?.latestCampaignDeleted,
+      ));
       const automationStrategyEnabled = Boolean(
         automationStats?.strategy_enabled || automationStats?.strategyEnabled,
       );
@@ -628,24 +647,22 @@ export default function ProductAutomationPanel({
       const strategyEnabled = automationStats?.strategy_enabled ?? (campaign ? getStrategyEnabled(campaign) : false);
       const controlledTest = automationStats?.controlled_test || automationStats?.controlledTest || null;
       const controlledTestActive = Boolean(controlledTest?.active);
-      const occupied = String(product?.gmv_max_ads_status || product?.gmvMaxAdsStatus || '').toUpperCase() === 'OCCUPIED';
-      const label = deleted
-        ? '历史系列已删除'
-        : autoManaged && strategyEnabled && enabled && controlledTestActive
+      const hasAdvertising = enabled;
+      const label = autoManaged && strategyEnabled && hasAdvertising && controlledTestActive
         ? '受控测试中'
-        : autoManaged && strategyEnabled && enabled
+        : autoManaged && strategyEnabled && hasAdvertising
         ? '智能投放中'
         : autoManaged && strategyEnabled
           ? '智能暂停中'
           : autoManaged
             ? '智能已停止'
-            : enabled
+            : hasAdvertising
               ? '普通投放中'
-              : campaignId
+              : deleted
+                ? '历史系列已删除'
+              : hasCampaign
                 ? '普通投放已暂停'
-                : occupied
-                  ? '已占用'
-                  : '未开启';
+                : '未开启';
       map.set(String(id), {
         campaign,
         campaignId,
@@ -657,6 +674,8 @@ export default function ProductAutomationPanel({
         controlledTestActive,
         occupied,
         deleted,
+        hasCampaign,
+        hasAdvertising,
         recoverable: Boolean(campaignId && !deleted),
         label,
       });
@@ -677,14 +696,13 @@ export default function ProductAutomationPanel({
     }
     const validIds = new Set(productRows.map((product) => String(getProductIdentifier(product) || '')).filter(Boolean));
     const validRestored = restored.filter((id) => validIds.has(id));
-    if (hasStoredPreference) {
-      setExpandedProductOrder(validRestored);
-      return;
-    }
-    const activeIds = productRows
+    const advertisingIds = productRows
       .map((product) => String(getProductIdentifier(product) || ''))
-      .filter((id) => id && statusByProduct.get(id)?.enabled);
-    setExpandedProductOrder(activeIds);
+      .filter((id) => id && statusByProduct.get(id)?.hasAdvertising);
+    setExpandedProductOrder([
+      ...advertisingIds,
+      ...(hasStoredPreference ? validRestored : []),
+    ].filter((id, index, values) => values.indexOf(id) === index));
   }, [expandedStorageKey, productRows, statusByProduct]);
 
   const persistExpandedOrder = useCallback((nextOrder) => {
@@ -711,14 +729,11 @@ export default function ProductAutomationPanel({
         const rightId = String(getProductIdentifier(right.product) || '');
         const leftStatus = statusByProduct.get(leftId) || {};
         const rightStatus = statusByProduct.get(rightId) || {};
-        const rank = (status) => status.enabled ? 0 : status.recoverable ? 1 : 2;
+        const rank = (status) => status.hasAdvertising ? 0 : status.recoverable ? 1 : 2;
         return rank(leftStatus) - rank(rightStatus) || left.index - right.index;
       })
       .map(({ product }) => product);
   }, [productRows, statusByProduct]);
-  const updatePrice = (productId, value) => {
-    setPriceByProduct((prev) => ({ ...prev, [String(productId)]: value }));
-  };
   const updateDailyCap = (productId, value) => {
     setDailyCapByProduct((prev) => ({ ...prev, [String(productId)]: value }));
   };
@@ -913,10 +928,11 @@ export default function ProductAutomationPanel({
       : null;
     const finalizedCreatePayload = getFinalizedCampaignCreatePayload(createIntent);
     const automationStats = getAutomationStats(product);
-    const referencePriceValue = priceByProduct[productKey] ?? getRecommendedValue(
-      automationStats?.reference_price,
+    const referencePriceValue = getRecommendedValue(
       product?.effective_price,
       product?.effectivePrice,
+      automationStats?.reference_price,
+      automationStats?.referencePrice,
     );
     const dailyCapValue = dailyCapByProduct[productKey] ?? getRecommendedValue(
       automationStats?.daily_spend_cap,
@@ -925,7 +941,7 @@ export default function ProductAutomationPanel({
     const referencePrice = parseOptionalFloat(referencePriceValue);
     const manualDailyCap = parseOptionalFloat(dailyCapValue);
     if (!finalizedCreatePayload && automationEnabled && (!referencePrice || referencePrice <= 0)) {
-      setNotice({ type: 'error', message: '请先填写该商品的参考成交价。' });
+      setNotice({ type: 'error', message: 'TikTok Shop 暂未返回该商品的有效成交价，请先同步店铺商品和订单数据。' });
       return;
     }
     if (
@@ -1337,16 +1353,10 @@ export default function ProductAutomationPanel({
           const isPending = Boolean(pendingProductId) && (
             pendingProductId === key || pendingProductId === String(status.campaignId || '')
           );
-          const savedReferencePrice = getRecommendedValue(
-            automationStats?.reference_price,
-            product?.effective_price,
-            product?.effectivePrice,
-          );
           const savedDailyCap = getRecommendedValue(
             automationStats?.daily_spend_cap,
             automationStats?.dailySpendCap,
           );
-          const priceValue = priceByProduct[key] ?? (savedReferencePrice ?? '');
           const capValue = dailyCapByProduct[key] ?? (savedDailyCap ?? '');
           const isAutomationRunning = status.autoManaged && status.strategyEnabled && status.enabled;
           const launchMode = launchModeByProduct[key] || '';
@@ -1378,7 +1388,7 @@ export default function ProductAutomationPanel({
           const showSmartParameters = status.autoManaged || launchMode === LAUNCH_MODE_SMART || (
             !status.campaignId && launchMode !== LAUNCH_MODE_MANUAL
           );
-          const isIdleProduct = !status.enabled && !status.recoverable;
+          const isIdleProduct = !status.hasAdvertising && !status.recoverable;
           return (
             <article key={key} className={`gmvmax-auto-product-card ${isAutomationRunning ? 'is-active' : ''} ${isExpanded ? 'is-expanded' : ''} ${isIdleProduct ? 'is-idle' : ''}`}>
               <button
@@ -1394,7 +1404,7 @@ export default function ProductAutomationPanel({
                 </span>
                 <span className="gmvmax-auto-product-card__summary-main">
                   <strong title={name}>{truncateName(name, 48)}</strong>
-                  <small>ID {shortId(key)} · {price ? `标价 ${formatMoney(price)}` : '标价 —'}</small>
+                  <small>ID {shortId(key)} · {price ? `成交参考价 ${formatMoney(price)}` : '成交参考价待同步'}</small>
                   <span className={`gmvmax-status-pill ${isAutomationRunning ? 'gmvmax-status-pill--success' : status.enabled ? 'gmvmax-status-pill--warning' : 'gmvmax-status-pill--muted'}`}>
                     {status.label}
                   </span>
@@ -1447,18 +1457,11 @@ export default function ProductAutomationPanel({
                     恢复条件：{resumeCondition}
                   </div>
                 ) : null}
-                {showSmartParameters ? <label className="gmvmax-auto-product-card__price">
+                {showSmartParameters ? <div className="gmvmax-auto-product-card__price gmvmax-auto-product-card__price--readonly">
                   <span>参考成交价</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={priceValue}
-                    onChange={(event) => updatePrice(key, event.target.value)}
-                    placeholder="例如 10"
-                    disabled={isPending || !canOperate}
-                  />
-                </label> : null}
+                  <strong>{price ? formatMoney(price) : '待同步'}</strong>
+                  <small>{getProductPriceSourceLabel(product)}</small>
+                </div> : null}
                 {showSmartParameters ? <label className="gmvmax-auto-product-card__price">
                   <span>每日上限</span>
                   <input

@@ -27,6 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     select,
+    text,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
@@ -172,6 +173,26 @@ class GMVMaxCampaignManualOverride(Base):
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     actor: Mapped[str | None] = mapped_column(String(191), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    override_started_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime,
+        nullable=True,
+    )
+    external_enable_first_observed_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime,
+        nullable=True,
+    )
+    external_enable_last_observed_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime,
+        nullable=True,
+    )
+    external_enable_observation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    resolution_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime,
         nullable=False,
@@ -534,6 +555,7 @@ def set_manual_pause_override(
     reason: str | None = None,
     pending: bool = False,
 ) -> GMVMaxCampaignManualOverride:
+    now = utcnow_naive()
     row = db.execute(
         select(GMVMaxCampaignManualOverride).where(
             GMVMaxCampaignManualOverride.workspace_id == int(workspace_id),
@@ -561,6 +583,12 @@ def set_manual_pause_override(
     row.reason = reason
     row.actor = actor
     row.expires_at = None
+    row.override_started_at = now
+    row.external_enable_first_observed_at = None
+    row.external_enable_last_observed_at = None
+    row.external_enable_observation_count = 0
+    row.resolved_at = None
+    row.resolution_type = None
     db.flush()
     return row
 
@@ -573,6 +601,7 @@ def clear_manual_override(
     advertiser_id: str,
     store_id: str | None,
     campaign_id: str,
+    resolution_type: str = "CONTROL_PLANE_CLEAR",
 ) -> None:
     row = db.execute(
         select(GMVMaxCampaignManualOverride).where(
@@ -586,6 +615,8 @@ def clear_manual_override(
     ).scalar_one_or_none()
     if row is not None:
         row.active = False
+        row.resolved_at = utcnow_naive()
+        row.resolution_type = str(resolution_type or "CONTROL_PLANE_CLEAR")[:64]
         db.flush()
 
 
