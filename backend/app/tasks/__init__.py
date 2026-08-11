@@ -1,13 +1,8 @@
-# app/tasks/__init__.py
 from __future__ import annotations
 
-"""
-使 Celery worker 在导入 app.tasks 包时，显式注册任务模块。
-- 你已有 app.tasks.oauth_tasks
-- 新增 app.tasks.ttb_sync_tasks
-"""
+"""Celery task package.
 
-# 注册已有与新增任务模块（导入即完成任务注册）
-from . import oauth_tasks  # noqa: F401
-from . import ttb_sync_tasks  # noqa: F401
-
+Task registration is centralized in :mod:`app.celery_app`. Importing a task
+submodule must not eagerly import its siblings because that creates circular
+imports for workers, management commands, and isolated tests.
+"""

@@ -1,0 +1,11 @@
+{
+  "title": "Get filters for catalog product insights",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Insights"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

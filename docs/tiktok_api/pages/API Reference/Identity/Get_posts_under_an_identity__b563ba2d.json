@@ -1,0 +1,394 @@
+{
+  "title": "Get posts under an identity",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/identity/video/get/",
+  "method": "GET",
+  "category_path": [
+    "Identity"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "identity_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity ID."
+      },
+      {
+        "name": "identity_type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Identity type. Enum values: AUTH_CODE , TT_USER , BC_AUTH_TT . See Identities for details."
+      },
+      {
+        "name": "identity_authorized_bc_id Conditional",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "ID of the Business Center that a TikTok Account User in Business Center identity is associated with. Required when identity_type is BC_AUTH_TT ."
+      },
+      {
+        "name": "item_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of TikTok posts that you want to retrieve. Enum values: VIDEO : video post. CAROUSEL : photo post. Default value: VIDEO ."
+      },
+      {
+        "name": "keyword",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Valid only when identity_type is set to AUTH_CODE . Otherwise, an error will occur. The text or TikTok post ID as a keyword to search TikTok posts by. If you want to search for TikTok posts based on text, provide a text string with a maximum length of 500 characters. This search type supports searching in multiple languages and fuzzy matches. Example: \"summer\". If you want to search for TikTok posts based on item_id , provide a numeric string with a minimum length of 19 characters. This search type supports exact matches. Example: \"1234567891234567891\""
+      },
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Cursor for pagination."
+      },
+      {
+        "name": "count",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Number of TikTok posts you want to get. Value range: 1-20. If you specify a value greater than 20, this field will be ignored and a maximum of 20 TikTok posts associated with the identity will be returned."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id=ADVERTISER_ID\" \\\n--data-urlencode \"identity_id=IDENTITY_ID\" \\\n--data-urlencode \"identity_type=IDENTITY_TYPE\" \\\n--data-urlencode \"identity_authorized_bc_id=IDENTITY_AUTHORIZED_BC_ID\" \\\n--data-urlencode \"cursor=CURSOR\" \\\n--data-urlencode \"count=COUNT\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/identity/video/get/"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "cursor",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Timestamp cursor or cursor for pagination. If identity_type is TT_USER or BC_AUTH_TT , cursor is the time value of the last item returned according to the current request. You need to use this cursor value in your subsequent request to get the next posts. If identity_type is AUTH_CODE , cursor is the cursor for pagination. If has_more in the response is true , you need to use the returned cursor in the subsequent request to receive the next page of results."
+        },
+        {
+          "name": "has_more",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "bool",
+          "description": "Whether more data is available."
+        },
+        {
+          "name": "video_list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "List of posts."
+        },
+        {
+          "name": "item_type",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The type of TikTok post. Enum values: VIDEO : video post. CAROUSEL : photo post."
+        },
+        {
+          "name": "item_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "TikTok post ID."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Status of the TikTok post. Enum values: ITEM_STATUS_HESITATE_RECOMMEND : visible to all. STATUS_ONLY_FRIEND_SEE : visible to friends. ITEM_STATUS_ONLY_AUTHOR_SEE : private."
+        },
+        {
+          "name": "text",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Text for the TikTok post."
+        },
+        {
+          "name": "auth_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Authorization Information."
+        },
+        {
+          "name": "ad_auth_status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Authorization status."
+        },
+        {
+          "name": "auth_end_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the authorization code is valid from (UTC+0), in the format of 2017-01-01 00:00:00."
+        },
+        {
+          "name": "auth_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Time when the authorization code is valid from (time zone: UTC+0), in the format of 2017-01-01 00:00:00."
+        },
+        {
+          "name": "invite_start_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The time when the authorization starts (UTC+0), in the format of 2017-01-01 00:00:00."
+        },
+        {
+          "name": "anchor_list",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about anchors."
+        },
+        {
+          "name": "anchor_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor ID."
+        },
+        {
+          "name": "title",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor title."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor status. Enum values: CHECK_ING , CHECK_FAILED , CHECK_SUCCESS ."
+        },
+        {
+          "name": "url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Anchor URL."
+        },
+        {
+          "name": "product_regions",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Regions that the ad can be delivered to. This is a list of country or region codes. For example, [\"DE\"] ."
+        },
+        {
+          "name": "video_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the video post. Note : When item_type is CAROUSEL , the value of this field will be null."
+        },
+        {
+          "name": "bit_rate",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Bit rates, in bps."
+        },
+        {
+          "name": "duration",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Duration of the video, in seconds."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video size, in bytes."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video height."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "Video width."
+        },
+        {
+          "name": "poster_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "URL to the video poster. It is valid for an hour. When it expires, you need to call the endpoint again to get a new URL."
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "MD5 for the video file."
+        },
+        {
+          "name": "url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video preview link. It is valid for an hour. When it expires, you need to get a new URL."
+        },
+        {
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Format of the video."
+        },
+        {
+          "name": "carousel_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the photo post. Note : When item_type is VIDEO , the value of this field will be null."
+        },
+        {
+          "name": "image_info",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Information about the images used in the photo post. The images are returned in the same order as they are shown in the photo post."
+        },
+        {
+          "name": "image_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Image ID."
+        },
+        {
+          "name": "image_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the image. Validity period: 90 days."
+        },
+        {
+          "name": "image_height",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The height of the image, measured in pixels."
+        },
+        {
+          "name": "image_width",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The width of the image, measured in pixels."
+        },
+        {
+          "name": "music_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Information about the music used in the photo post. Note : If the photo post is directly published in the TikTok App without music, the value of this field will be null."
+        },
+        {
+          "name": "music_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Music ID."
+        },
+        {
+          "name": "music_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The URL of the music. Validity period: 90 days."
+        },
+        {
+          "name": "music_duration",
+          "required": false,
+          "type": "integer",
+          "raw_type": "integer",
+          "description": "The duration of the music, in seconds."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of the request, which uniquely identifies a request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"LOG_ID\",\n    \"data\": {\n        \"has_more\": true,\n        \"cursor\": \"1657313235\",\n        \"video_list\": [\n            {\n                \"auth_info\": AUTH_INFO,\n                \"anchor_list\": ANCHOR_LIST,\n                \"text\": TEXT,\n                \"status\": \"ITEM_STATUS_HESITATE_RECOMMEND\",\n                \"item_id\": ITEM_ID,\n                \"video_info\": {\n                    \"format\": \"mp4\",\n                    \"bit_rate\": 816171,\n                    \"height\": 360,\n                    \"signature\": SIGNATURE,\n                    \"duration\": 30.527,\n                    \"url\": URL,\n                    \"size\": 3114374,\n                    \"poster_url\": POSTER_URL,\n                    \"width\": 640\n                }\n            }\n        ]\n    }\n}"
+    }
+  }
+}

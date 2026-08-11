@@ -1,0 +1,12 @@
+{
+  "title": "Get the message event sets for ad creation",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "CTM Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

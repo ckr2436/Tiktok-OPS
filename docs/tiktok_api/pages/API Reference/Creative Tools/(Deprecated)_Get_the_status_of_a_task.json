@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Get the status of a task",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Creative Tools"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

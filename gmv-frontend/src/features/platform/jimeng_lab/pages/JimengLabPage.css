@@ -1,0 +1,23 @@
+.jimeng-lab { display: grid; gap: 18px; }
+.jimeng-lab__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.jimeng-lab__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.jimeng-lab__summary article { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--border-color, #dbe3ef); border-radius: 14px; background: #fff; }
+.jimeng-lab__summary span, .jimeng-lab__summary small { color: #64748b; }
+.jimeng-lab__summary strong { font-size: 20px; }
+.jimeng-lab__card { display: grid; gap: 16px; padding: 18px; }
+.jimeng-lab__notice { display: grid; gap: 6px; padding: 14px; border-radius: 12px; background: #eff6ff; color: #1e3a5f; }
+.jimeng-lab__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.jimeng-lab label { display: grid; gap: 7px; }
+.jimeng-lab__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.jimeng-lab__session, .jimeng-lab__test { display: grid; gap: 6px; padding: 14px; border: 1px solid #dbe3ef; border-radius: 12px; background: #f8fafc; }
+.jimeng-lab__session--ready, .jimeng-lab__test--complete { border-color: #86efac; background: #f0fdf4; }
+.jimeng-lab__session--failed, .jimeng-lab__test--failed { border-color: #fecaca; background: #fef2f2; }
+.jimeng-lab__test--waiting_upstream { border-color: #fde68a; background: #fffbeb; }
+.jimeng-lab__test--upstream_timeout { border-color: #fdba74; background: #fff7ed; }
+.jimeng-lab__prompt { display: grid; gap: 7px; }
+.jimeng-lab__prompt textarea { resize: vertical; min-height: 116px; }
+.jimeng-lab__test video { width: min(100%, 420px); max-height: 640px; border-radius: 12px; background: #0f172a; }
+.good { color: #15803d; }
+.bad { color: #b91c1c; }
+@media (max-width: 900px) { .jimeng-lab__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .jimeng-lab__header, .jimeng-lab__grid { grid-template-columns: 1fr; display: grid; } .jimeng-lab__summary { grid-template-columns: 1fr; } }

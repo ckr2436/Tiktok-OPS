@@ -1,0 +1,511 @@
+from __future__ import annotations
+
+from app.data.models.hermes_agent import (
+    HermesContentExecution,
+    HermesContentFactoryAsset,
+    HermesContentFactoryProject,
+    HermesContentFactoryStage,
+    HermesContentSeriesSlate,
+    HermesContentVariantRun,
+)
+from app.services.hermes_agent.content_factory import restart_project
+
+
+def test_single_video_series_restart_allocates_fresh_slate_version(db_session):
+    project = HermesContentFactoryProject(
+        project_key="cf_single_series_restart",
+        workspace_id=3,
+        user_id=6,
+        title="Single remake",
+        product_name="Product",
+        status="complete",
+        current_stage="COMPLETE",
+        config_json={
+            "video_count": 1,
+            "manual_paused": False,
+            "producer_intent_spec": {
+                "transformation_contract": {
+                    "execution_strategy": "full_regeneration",
+                },
+            },
+            "director_series_brief": {
+                "series_id": "cf_single_series_restart.series",
+                "series_version": 1,
+            },
+            "approved_series_slate_sha256": "old-slate",
+        },
+        state_json={
+            "approved_series_slate": {"slate_sha256": "old-slate"},
+            "source_transformation_revisions": [
+                {"execution_strategy": "local_edit", "video_asset_id": 99},
+            ],
+        },
+    )
+    db_session.add(project)
+    db_session.flush()
+    db_session.add(HermesContentSeriesSlate(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        series_id="cf_single_series_restart.series",
+        series_version=1,
+        status="approved",
+        brief_sha256="a" * 64,
+        slate_sha256="b" * 64,
+        brief_json={"series_version": 1},
+        slate_json={"series_version": 1},
+        attempts_json=[],
+        reviews_json=[],
+        reason="approved",
+    ))
+    db_session.flush()
+
+    restarted = restart_project(
+        db_session,
+        project,
+        stage="SERIES_DIRECTOR",
+        instruction="Create a fresh AI remake.",
+    )
+
+    assert restarted.config_json["director_series_brief"]["series_version"] == 2
+    allocation = restarted.state_json["series_director_version_allocation"]
+    assert allocation["latest_persisted_version"] == 1
+    assert allocation["allocated_version"] == 2
+    assert allocation["reason"] == "full_replan"
+    assert "source_transformation_revisions" not in restarted.state_json
+
+
+def test_restart_after_variant_attempt_rotates_execution_identity(db_session):
+    project = HermesContentFactoryProject(
+        project_key="cf_restart_execution",
+        workspace_id=3,
+        user_id=6,
+        title="Execution restart",
+        product_name="Product",
+        status="paused",
+        current_stage="PRODUCTION_PLAN",
+        config_json={
+            "video_count": 1,
+            "content_execution_key": "cf_restart_execution:production-v1",
+        },
+        state_json={},
+    )
+    db_session.add(project)
+    db_session.flush()
+    execution = HermesContentExecution(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        execution_key="cf_restart_execution:production-v1",
+        status="running",
+        target_count=1,
+        config_sha256="a" * 64,
+        meta_json={},
+    )
+    db_session.add(execution)
+    db_session.flush()
+    db_session.add(HermesContentVariantRun(
+        execution_id=execution.id,
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        variant_index=1,
+        deliverable_ordinal=1,
+        attempt=1,
+        state="failed",
+        media_manifest_sha256="b" * 64,
+        input_sha256="c" * 64,
+        meta_json={},
+    ))
+    db_session.flush()
+
+    restarted = restart_project(
+        db_session,
+        project,
+        stage="PRODUCTION_PLAN",
+        instruction="Create a genuinely new production attempt.",
+    )
+
+    new_key = restarted.config_json["content_execution_key"]
+    assert new_key.startswith("cf_restart_execution:run:")
+    assert new_key != execution.execution_key
+    audit = restarted.state_json["content_execution_restart"]
+    assert audit["previous_execution_id"] == execution.id
+    assert audit["previous_execution_key"] == execution.execution_key
+    assert audit["next_execution_key"] == new_key
+
+    # Retrying before the new execution has any variant work keeps the same
+    # identity and therefore remains idempotent.
+    restarted_again = restart_project(
+        db_session,
+        restarted,
+        stage="PRODUCTION_PLAN",
+        instruction="Retry after a transient planning failure.",
+    )
+    assert restarted_again.config_json["content_execution_key"] == new_key
+
+
+def test_series_restart_replans_only_missing_variants_and_preserves_completed(
+    db_session,
+    tmp_path,
+):
+    video = tmp_path / "v1.mp4"
+    video.write_bytes(b"video" * 400)
+    guide = tmp_path / "v1.md"
+    guide.write_text("guide", encoding="utf-8")
+    incomplete_image = tmp_path / "v2.png"
+    incomplete_image.write_bytes(b"image" * 400)
+
+    project = HermesContentFactoryProject(
+        project_key="cf_series_restart",
+        workspace_id=3,
+        user_id=6,
+        title="Series",
+        product_name="Product",
+        status="paused",
+        current_stage="DIRECTOR",
+        config_json={
+            "video_count": 3,
+            "manual_paused": False,
+            "director_series_brief": {
+                "series_id": "cf_series_restart.series",
+                "series_version": 2,
+                "objective": "Test continuation",
+                "platform": "short-video",
+                "locale": "en-US",
+                "audience": "Adults",
+                "target_count": 3,
+                "minimum_duration_seconds": 10,
+                "maximum_duration_seconds": 10,
+                "default_duration_seconds": 10,
+                "edit_headroom_seconds": 1,
+                "speech_rate_wpm": 150,
+                "aspect_ratio": "9:16",
+                "capability_catalog": [{
+                    "capability": "voiceover",
+                    "input_contract": "script",
+                    "output_contract": "spoken_audio",
+                    "policy": {},
+                }],
+                "copy_review_criteria": [{
+                    "criterion_id": "clarity",
+                    "instruction": "Be clear.",
+                    "minimum_score": 80,
+                    "blocking": True,
+                }],
+                "diversity_requirements": [{
+                    "dimension_id": "form",
+                    "instruction": "Vary form.",
+                    "minimum_unique_values": 1,
+                }],
+            },
+            "director_briefs_by_variant": {
+                "1": {"brief_id": "completed"},
+                "2": {"brief_id": "rejected"},
+                "3": {"brief_id": "unstarted"},
+            },
+            "approved_series_slate_sha256": "old-slate",
+        },
+        state_json={
+            "approved_series_slate": {"slate_sha256": "old-slate"},
+            "approved_director_artifacts_by_variant": {
+                "1": {"artifact": "keep"},
+                "2": {"artifact": "drop"},
+            },
+            "approved_production_plans_by_variant": {
+                "1": {"plan": "keep"},
+                "2": {"plan": "drop"},
+            },
+            "video_variant_pipeline": {
+                "target_count": 3,
+                "active_index": 2,
+                "completed_indices": [1],
+                "submitted_indices": [1, 2],
+                "failed_indices": [2],
+            },
+            "ai_video_groups": [],
+        },
+    )
+    db_session.add(project)
+    db_session.flush()
+
+    db_session.add(HermesContentSeriesSlate(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        series_id="cf_series_restart.series",
+        series_version=2,
+        status="approved",
+        brief_sha256="a" * 64,
+        slate_sha256="b" * 64,
+        brief_json={"series_version": 2},
+        slate_json={"series_version": 2},
+        attempts_json=[],
+        reviews_json=[],
+        reason="approved",
+    ))
+    db_session.flush()
+
+    completed_video = HermesContentFactoryAsset(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        stage="VIDEO_PROMPTS",
+        kind="video",
+        original_name="v1.mp4",
+        file_path=str(video),
+        mime_type="video/mp4",
+        size_bytes=video.stat().st_size,
+        meta_json={"content_factory_video_index": 1, "variant_index": 1},
+    )
+    completed_guide = HermesContentFactoryAsset(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        stage="EDIT_PACKAGE",
+        kind="edit_guidance",
+        original_name="v1.md",
+        file_path=str(guide),
+        mime_type="text/markdown",
+        size_bytes=guide.stat().st_size,
+        meta_json={"content_factory_video_index": 1, "variant_index": 1},
+    )
+    incomplete_asset = HermesContentFactoryAsset(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        stage="VISUAL_PREVIEW",
+        kind="generated_image",
+        original_name="v2.png",
+        file_path=str(incomplete_image),
+        mime_type="image/png",
+        size_bytes=incomplete_image.stat().st_size,
+        meta_json={"variant_index": 2},
+    )
+    completed_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        stage="DIRECTOR",
+        attempt=1,
+        status="success",
+        input_json={"variant_index": 1},
+    )
+    rejected_stage = HermesContentFactoryStage(
+        project_id=project.id,
+        workspace_id=3,
+        user_id=6,
+        stage="DIRECTOR",
+        attempt=2,
+        status="failed",
+        input_json={"variant_index": 2},
+    )
+    db_session.add_all([
+        completed_video,
+        completed_guide,
+        incomplete_asset,
+        completed_stage,
+        rejected_stage,
+    ])
+    db_session.flush()
+    keep_asset_ids = {completed_video.id, completed_guide.id}
+    drop_asset_id = incomplete_asset.id
+
+    restarted = restart_project(
+        db_session,
+        project,
+        stage="SERIES_DIRECTOR",
+        instruction="Replan only the missing videos.",
+        allowed_audio_modes=["spoken"],
+    )
+    db_session.flush()
+
+    assert restarted.status == "ready"
+    assert restarted.current_stage == "SERIES_DIRECTOR"
+    assert (
+        restarted.config_json["director_series_brief"]["series_version"]
+        == 3
+    )
+    assert restarted.config_json["director_series_brief"][
+        "allowed_audio_modes"
+    ] == ["spoken"]
+    assert restarted.state_json["series_audio_policy_override"][
+        "applies_to_variant_indices"
+    ] == [2, 3]
+    assert restarted.state_json["series_director_version_allocation"] == {
+        "series_id": "cf_series_restart.series",
+        "previous_configured_version": 2,
+        "latest_persisted_version": 2,
+        "allocated_version": 3,
+        "reason": "continuation_replan",
+        "at": restarted.state_json[
+            "series_director_version_allocation"
+        ]["at"],
+    }
+    assert set(restarted.config_json["director_briefs_by_variant"]) == {"1"}
+    assert "approved_series_slate_sha256" not in restarted.config_json
+    assert "approved_series_slate" not in restarted.state_json
+    assert set(
+        restarted.state_json["approved_director_artifacts_by_variant"]
+    ) == {"1"}
+    assert set(
+        restarted.state_json["approved_production_plans_by_variant"]
+    ) == {"1"}
+    pipeline = restarted.state_json["video_variant_pipeline"]
+    assert pipeline["active_index"] == 2
+    assert pipeline["submitted_indices"] == [1]
+    assert pipeline["failed_indices"] == []
+    assert pipeline["completion_blocked_missing_indices"] == [2, 3]
+    assert db_session.get(HermesContentFactoryStage, completed_stage.id).status == "success"
+    assert db_session.get(HermesContentFactoryStage, rejected_stage.id).status == "superseded"
+    assert {
+        asset.id
+        for asset in db_session.query(HermesContentFactoryAsset)
+        .filter(HermesContentFactoryAsset.project_id == project.id)
+        .all()
+    } == keep_asset_ids
+    assert db_session.get(HermesContentFactoryAsset, drop_asset_id) is None
+
+    # A retry before version 3 is persisted must keep the same allocation;
+    # otherwise transient failures would burn versions and invalidate any
+    # durable page checkpoint on every operator restart.
+    restarted_again = restart_project(
+        db_session,
+        restarted,
+        stage="SERIES_DIRECTOR",
+        instruction="Retry the same missing-video continuation.",
+    )
+    assert (
+        restarted_again.config_json["director_series_brief"][
+            "series_version"
+        ]
+        == 3
+    )
+
+
+def test_full_series_restart_replaces_completed_deliverables(
+    db_session,
+    tmp_path,
+):
+    video = tmp_path / "weak-v1.mp4"
+    video.write_bytes(b"video" * 400)
+    guide = tmp_path / "weak-v1.md"
+    guide.write_text("guide", encoding="utf-8")
+    project = HermesContentFactoryProject(
+        project_key="cf_full_series_restart",
+        workspace_id=3,
+        user_id=6,
+        title="Full series remake",
+        product_name="Product",
+        status="paused",
+        current_stage="VISUAL_PREVIEW",
+        config_json={
+            "video_count": 3,
+            "manual_paused": False,
+            "director_series_brief": {
+                "series_id": "cf_full_series_restart.series",
+                "series_version": 1,
+            },
+            "director_briefs_by_variant": {"1": {"brief_id": "weak"}},
+            "approved_series_slate_sha256": "old-slate",
+        },
+        state_json={
+            "approved_series_slate": {"slate_sha256": "old-slate"},
+            "approved_director_artifacts_by_variant": {"1": {"artifact": "weak"}},
+            "approved_production_plans_by_variant": {"1": {"plan": "weak"}},
+            "video_variant_pipeline": {
+                "target_count": 3,
+                "active_index": 2,
+                "completed_indices": [1],
+                "submitted_indices": [1],
+            },
+            "ai_video_groups": [],
+        },
+    )
+    db_session.add(project)
+    db_session.flush()
+    db_session.add_all([
+        HermesContentFactoryAsset(
+            project_id=project.id,
+            workspace_id=3,
+            user_id=6,
+            stage="VIDEO_PROMPTS",
+            kind="video",
+            original_name=video.name,
+            file_path=str(video),
+            mime_type="video/mp4",
+            size_bytes=video.stat().st_size,
+            meta_json={"content_factory_video_index": 1, "variant_index": 1},
+        ),
+        HermesContentFactoryAsset(
+            project_id=project.id,
+            workspace_id=3,
+            user_id=6,
+            stage="EDIT_PACKAGE",
+            kind="edit_guidance",
+            original_name=guide.name,
+            file_path=str(guide),
+            mime_type="text/markdown",
+            size_bytes=guide.stat().st_size,
+            meta_json={"content_factory_video_index": 1, "variant_index": 1},
+        ),
+        HermesContentFactoryStage(
+            project_id=project.id,
+            workspace_id=3,
+            user_id=6,
+            stage="DIRECTOR",
+            attempt=1,
+            status="success",
+            input_json={"variant_index": 1},
+        ),
+    ])
+    db_session.flush()
+
+    restarted = restart_project(
+        db_session,
+        project,
+        stage="SERIES_DIRECTOR",
+        instruction="Replace the weak opening across all three videos.",
+        replace_completed=True,
+    )
+    db_session.flush()
+
+    assert restarted.status == "ready"
+    assert restarted.current_stage == "SERIES_DIRECTOR"
+    assert restarted.state_json["last_restart"]["replace_completed"] is True
+    assert restarted.config_json["director_briefs_by_variant"] == {}
+    assert "approved_series_slate" not in restarted.state_json
+    assert "approved_series_slate_sha256" not in restarted.config_json
+    assert "approved_director_artifacts_by_variant" not in restarted.state_json
+    assert "approved_production_plans_by_variant" not in restarted.state_json
+    assert restarted.state_json["active_variant_index"] == 1
+    assert restarted.state_json["video_variant_pipeline"] == {
+        "target_count": 3,
+        "active_index": 1,
+        "submitted_indices": [],
+        "completed_indices": [],
+        "failed_indices": [],
+        "mode": "serial_one_complete_video_at_a_time",
+        "max_api_video_variants_in_flight": 1,
+        "started_at": restarted.state_json["video_variant_pipeline"][
+            "started_at"
+        ],
+        "restart_reason": "full_series_replacement",
+    }
+    # Files outside the project-owned storage root are deliberately not
+    # unlinked even when their database rows are retired.
+    assert video.exists() is True
+    assert guide.exists() is True
+    assert (
+        db_session.query(HermesContentFactoryAsset)
+        .filter(HermesContentFactoryAsset.project_id == project.id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(HermesContentFactoryStage)
+        .filter(HermesContentFactoryStage.project_id == project.id)
+        .one()
+        .status
+        == "superseded"
+    )

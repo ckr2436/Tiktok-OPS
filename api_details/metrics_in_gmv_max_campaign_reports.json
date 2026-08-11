@@ -1,0 +1,2001 @@
+{
+  "title": "Metrics in GMV Max Campaign reports",
+  "url": "https://business-api.tiktok.com/portal/docs?id=1824722485971009",
+  "doc_type": "reference",
+  "sections": [
+    {
+      "title": "Note",
+      "tables": [
+        {
+          "heading": "Note",
+          "headers": [
+            "Supported GMV Max Campaign type and metric level",
+            "Metric field",
+            "Description"
+          ],
+          "rows": [
+            {
+              "Supported GMV Max Campaign type and metric level": "Supported GMV Max Campaign type and metric level",
+              "Metric field": "Metric field",
+              "Description": "Description"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Campaign-level",
+              "Metric field": "campaign_id",
+              "Description": "Campaign ID"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "operation_status",
+              "Metric field": "Campaign on/off status"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "campaign_name",
+              "Metric field": "Campaign name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_type",
+              "Metric field": "Schedule type"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_start_time",
+              "Metric field": "Schedule start time"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_end_time",
+              "Metric field": "Schedule end time"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "target_roi_budget",
+              "Metric field": "Target ROI budget"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "bid_type",
+              "Metric field": "Optimization mode"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "max_delivery_budget",
+              "Metric field": "Max delivery budget"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Product-level",
+              "Metric field": "product_name",
+              "Description": "Product name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "item_group_id",
+              "Metric field": "Product SPU ID"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "product_image_url",
+              "Metric field": "Product image URL"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "bid_type",
+              "Metric field": "Optimization mode"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Creative-level",
+              "Metric field": "title",
+              "Description": "Creative name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "item_id",
+              "Metric field": "TikTok post ID"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "tt_account_name",
+              "Metric field": "TikTok account name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "tt_account_profile_image_url",
+              "Metric field": "TikTok account profile image URL"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "tt_account_authorization_type",
+              "Metric field": "Authorization type"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "shop_content_type",
+              "Metric field": "Shop content type"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Duration-level",
+              "Metric field": "bid_type",
+              "Description": "Optimization mode"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Campaign-level",
+              "Metric field": "campaign_id",
+              "Description": "Campaign ID"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "operation_status",
+              "Metric field": "Campaign on/off status"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "campaign_name",
+              "Metric field": "Campaign name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "tt_account_name",
+              "Metric field": "TikTok account name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "tt_account_profile_image_url",
+              "Metric field": "TikTok account profile image URL"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "identity_id",
+              "Metric field": "Identity ID (TikTok account ID)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "bid_type",
+              "Metric field": "Optimization mode"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_type",
+              "Metric field": "Schedule type"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_start_time",
+              "Metric field": "Schedule start time"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "schedule_end_time",
+              "Metric field": "Schedule end time"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "target_roi_budget",
+              "Metric field": "Target ROI budget"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "max_delivery_budget",
+              "Metric field": "Max delivery budget"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Livestream-level",
+              "Metric field": "live_name",
+              "Description": "LIVE name"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_status",
+              "Metric field": "Livestream status"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_launched_time",
+              "Metric field": "Livestream launched time"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_duration",
+              "Metric field": "Livestream duration"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Duration-level",
+              "Metric field": "bid_type",
+              "Description": "Optimization mode"
+            }
+          ]
+        },
+        {
+          "heading": "Note",
+          "headers": [
+            "Filter field",
+            "Required/Optional/Conditional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional/Conditional": "Required/Optional/Conditional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional/Conditional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a Product GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            },
+            {
+              "Filter field": "item_group_ids",
+              "Required/Optional/Conditional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of an SPU used in the Product GMV Max Campaign. To obtain such an ID, use the dimension item_group_id to query product-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            },
+            {
+              "Filter field": "creative_types to-be-deprecated",
+              "Required/Optional/Conditional": "Conditional",
+              "Max size": "1",
+              "Requirement": "Required when you filter one SPU ID using campaign_ids and item_group_ids . Not supported when you specify multiple IDs in the campaign_ids filter or item_group_ids filter or both, or specify multiple ID dimensions. Specify any of the following values: ADS_AND_ORGANIC : Ads and organic. ORGANIC : Organic only. REMOVED : Removed. Note : This filter cannot be used together with creative_delivery_statuses ."
+            },
+            {
+              "Filter field": "creative_delivery_statuses",
+              "Required/Optional/Conditional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "You can only use this filter in any of the following scenarios: When you specify multiple IDs in the campaign_ids filter or item_group_ids filter or both When you specify one ID in the campaign_ids filter or item_group_ids filter or both When you specify multiple ID dimensions This filter cannot be used together with creative_types . Specify one or more of the following values: IN_QUEUE : In queue. Post is ready to be tested for its conversion-driving potential. LEARNING : Learning. Post is being tested for its conversion-driving potential. DELIVERING : Delivering. Post is being regularly promoted as part of your campaign. NOT_DELIVERYING : Not delivering. Post didn't show strong conversion potential during testing and will not be regularly promoted as part of your campaign. AUTHORIZATION_NEEDED : Authorization needed. This video hasn't been authorized for use in ads. You can authorize your own videos from your TikTok account or request authorization from other creators. This status will be updated here within 20 minutes of authorization. EXCLUDED : Excluded. Post was manually removed and will not be regularly promoted as part of your campaign. You can add this post back to your campaign at any time. UNAVAILABLE : Unavailable. Private videos, rejected videos, deleted videos, or videos from suspended TikTok accounts can't be used in ads. In some cases, you may observe cost from unavailable videos because videos that are rejected by TikTok’s content review process part-way through the campaign may still be delivered. REJECTED : Rejected. The video has been rejected by the content moderation team. If you've appealed a rejection, the video status will be \"rejected\" until the appeal has been reviewed. NOT_ACTIVE : Not active. This post has been deprioritized because it was uploaded more than 30 days ago and hasn't earned any gross revenue in the past 30 days."
+            },
+            {
+              "Filter field": "search_word",
+              "Required/Optional/Conditional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "N/A"
+            }
+          ]
+        },
+        {
+          "heading": "Note",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "bid_type",
+              "Type": "string",
+              "Description": "Optimization mode",
+              "Detail": "Enum values: CUSTOM : Target ROI. NO_BID : Maximum delivery."
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "Total amount you've spent on your ads for this product during your Product GMV Max Campaign, in the currency of the ad account. Note that the data latency for this metric can be up to 11 hours. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign for this product, excluding SKU orders created from livestreams."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order",
+              "Detail": "Average ad cost for each order placed for this product in your Product GMV Max Campaign in the currency of the ad account, calculated by dividing your total ad cost by the number of SKU orders placed while your campaign is live. Note that the data latency for this metric can be up to 11 hours."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "Total gross revenue of paid and organic TikTok Shop orders placed during this Product GMV Max Campaign, in the currency of the ad account. It's the amount paid by users, plus TikTok Shop platform price subsidies provided to those users."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI",
+              "Detail": "Product ROI, which is calculated with all paid and organic sales attributed to an active GMV Max Campaign, excluding LIVE orders, divided by total ad cost. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        },
+        {
+          "heading": "Note",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "bid_type",
+              "Type": "string",
+              "Description": "Optimization mode",
+              "Detail": "Enum values: CUSTOM : Target ROI. NO_BID : Maximum delivery."
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "The estimated total amount you've spent on your ads during its schedule, in the currency of the ad account."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order (Current shop)",
+              "Detail": "The average cost incurred for each order placed, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (Current shop)",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue (Current shop)",
+              "Detail": "The total gross revenue of Shop orders attributed to your campaign. It's the amount the user pays, plus all Shop price subsidies provided to the user. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI (Current shop)",
+              "Detail": "The total return on investment (ROI) from all Shop orders attributed to your campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "all_shops_cost_per_order",
+              "Type": "double",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each LIVE order placed during this GMV Max Campaign in the currency of the ad account, calculated by dividing total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_orders",
+              "Type": "integer",
+              "Description": "Orders",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_gross_revenue",
+              "Type": "double",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop LIVE orders during your GMV Max Campaign, in the currency of the ad account. It's the amount paid by users, plus all TikTok Shop platform subsidies provided to those users. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_roi",
+              "Type": "double",
+              "Description": "ROI",
+              "Detail": "The total return on investment (ROI) from all paid and organic TikTok Shop LIVE orders during this GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Delivery metrics",
+      "tables": [
+        {
+          "heading": "Delivery metrics",
+          "headers": [
+            "Supported GMV Max Campaign type and metric level",
+            "Metric field",
+            "Description"
+          ],
+          "rows": [
+            {
+              "Supported GMV Max Campaign type and metric level": "Supported GMV Max Campaign type and metric level",
+              "Metric field": "Metric field",
+              "Description": "Description"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "All GMV Max Campaigns, Ad account-level",
+              "Metric field": "cost",
+              "Description": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders (SKU)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "net_cost",
+              "Metric field": "Net cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Campaign-level",
+              "Metric field": "roas_bid",
+              "Description": "Target ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost",
+              "Metric field": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "net_cost",
+              "Metric field": "Net cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders (SKU)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Product-level",
+              "Metric field": "product_status",
+              "Description": "Product status"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders (SKU)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Creative-level",
+              "Metric field": "creative_delivery_status",
+              "Description": "Status"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders (SKU)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "product_impressions",
+              "Metric field": "Product ad impressions"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "product_clicks",
+              "Metric field": "Product ad clicks"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "product_click_rate",
+              "Metric field": "Product ad click rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_click_rate",
+              "Metric field": "Ad click rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_conversion_rate",
+              "Metric field": "Ad conversion rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_2s",
+              "Metric field": "2-second ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_6s",
+              "Metric field": "6-second ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_p25",
+              "Metric field": "25% ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_p50",
+              "Metric field": "50% ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_p75",
+              "Metric field": "75% ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "ad_video_view_rate_p100",
+              "Metric field": "100% ad video view rate"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "Product GMV Max Campaign, Duration-level",
+              "Metric field": "cost",
+              "Description": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders (SKU)"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roas_bid",
+              "Metric field": "Target ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Campaign-level",
+              "Metric field": "cost",
+              "Description": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "net_cost",
+              "Metric field": "Net cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_views",
+              "Metric field": "LIVE views"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_live_view",
+              "Metric field": "Cost per LIVE view"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "10_second_live_views",
+              "Metric field": "10-second LIVE views"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_10_second_live_view",
+              "Metric field": "Cost per 10-second LIVE view"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_follows",
+              "Metric field": "LIVE follows"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Livestream-level",
+              "Metric field": "cost",
+              "Description": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "net_cost",
+              "Metric field": "Net cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_views",
+              "Metric field": "LIVE views"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_live_view",
+              "Metric field": "Cost per LIVE view"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "10_second_live_views",
+              "Metric field": "10-second LIVE views"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_10_second_live_view",
+              "Metric field": "Cost per 10-second LIVE view"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "live_follows",
+              "Metric field": "LIVE follows"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "LIVE GMV Max Campaign, Duration-level",
+              "Metric field": "cost",
+              "Description": "Cost"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "orders",
+              "Metric field": "Orders"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "cost_per_order",
+              "Metric field": "Cost per order"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "gross_revenue",
+              "Metric field": "Gross revenue"
+            },
+            {
+              "Supported GMV Max Campaign type and metric level": "roi",
+              "Metric field": "ROI"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Overview metrics",
+      "tables": [
+        {
+          "heading": "Overview metrics",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "gmv_max_promotion_types",
+              "Required/Optional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "Specify any of the following values: PRODUCT : Product GMV Max Campaign. LIVE : LIVE GMV Max Campaign."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Specify any of the following values: PRODUCT : Product GMV Max Campaign. LIVE : LIVE GMV Max Campaign.",
+      "tables": [
+        {
+          "heading": "Specify any of the following values: PRODUCT : Product GMV Max Campaign. LIVE : LIVE GMV Max Campaign.",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "The estimated total amount you've spent on your ads during its schedule, in the currency of the ad account."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual SKU orders completed during the GMV Max Campaign."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order",
+              "Detail": "The average cost incurred for each order placed, in the currency of the ad account. It's calculated by dividing the total ad cost by the number of orders generated within the ad schedule. (Cost/Orders)"
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of TikTok Shop orders attributed to your campaign, in the currency of the ad account. It's the amount the user pays, plus all TikTok Shop platform subsidies provided to the user."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI",
+              "Detail": "The total return on investment (ROI) from all TikTok Shop orders attributed to your campaign."
+            },
+            {
+              "Metric field": "net_cost",
+              "Type": "string",
+              "Description": "Net cost",
+              "Detail": "The amount spent, excluding ad credit or coupons used, in the currency of the ad account."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Campaign-level metrics (for Product GMV Max)",
+      "tables": [
+        {
+          "heading": "Campaign-level metrics (for Product GMV Max)",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "gmv_max_promotion_types",
+              "Required/Optional": "Required",
+              "Max size": "N/A",
+              "Requirement": "[\"PRODUCT\"]"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Optional",
+              "Max size": "100",
+              "Requirement": "Specify the IDs of Product GMV Max Campaigns. To obtain the IDs of Product GMV Max Campaigns, use /gmv_max/campaign/get/ . Set gmv_max_promotion_types to [\"PRODUCT_GMV_MAX\"] and specify the ID of the TikTok Shop via store_ids ."
+            },
+            {
+              "Filter field": "campaign_name",
+              "Required/Optional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "N/A"
+            },
+            {
+              "Filter field": "campaign_statuses",
+              "Required/Optional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "Specify any of the following values: STATUS_DELIVERY_OK : Active. STATUS_DISABLE : Inactive. STATUS_DELETE : Deleted. STATUS_NOT_DELIVERY : Not delivering. STATUS_ALL : All statuses."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Specify any of the following values: STATUS_DELIVERY_OK : Active. STATUS_DISABLE : Inactive. STATUS_DELETE : Deleted. STATUS_NOT_DELIVERY : Not delivering. STATUS_ALL : All statuses.",
+      "tables": [
+        {
+          "heading": "Specify any of the following values: STATUS_DELIVERY_OK : Active. STATUS_DISABLE : Inactive. STATUS_DELETE : Deleted. STATUS_NOT_DELIVERY : Not delivering. STATUS_ALL : All statuses.",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "campaign_id",
+              "Type": "string",
+              "Description": "Campaign ID",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "operation_status",
+              "Type": "string",
+              "Description": "Campaign on/off status",
+              "Detail": "Enum values: ENABLE : on. DISABLE : off."
+            },
+            {
+              "Metric field": "campaign_name",
+              "Type": "string",
+              "Description": "Campaign name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "schedule_type",
+              "Type": "string",
+              "Description": "Schedule type",
+              "Detail": "Enum value: Continuously : To run the campaign continuously after the scheduled start time."
+            },
+            {
+              "Metric field": "schedule_start_time",
+              "Type": "string",
+              "Description": "Schedule start time",
+              "Detail": "Time zone: UTC+0."
+            },
+            {
+              "Metric field": "schedule_end_time",
+              "Type": "string",
+              "Description": "Schedule end time",
+              "Detail": "Time zone: UTC+0."
+            },
+            {
+              "Metric field": "target_roi_budget",
+              "Type": "string",
+              "Description": "Target ROI budget",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "bid_type",
+              "Type": "string",
+              "Description": "Optimization mode",
+              "Detail": "Enum values: CUSTOM : Target ROI. NO_BID : Maximum delivery."
+            },
+            {
+              "Metric field": "max_delivery_budget",
+              "Type": "string",
+              "Description": "Max delivery budget",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "roas_bid",
+              "Type": "string",
+              "Description": "Target ROI",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "The estimated total amount you've spent on your ads during its schedule, in the currency of the ad account."
+            },
+            {
+              "Metric field": "net_cost",
+              "Type": "string",
+              "Description": "Net cost",
+              "Detail": "The amount spent, excluding ad credit or coupons used, in the currency of the ad account. Note that the data latency for this metric can be up to 11 hours. Campaign data for is metric is available starting September 1, 2023."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign, excluding SKU orders created from LIVE orders. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each order placed during this GMV Max Campaign in the currency of the ad account, excluding LIVE orders, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI",
+              "Detail": "Product ROI, calculated with all paid and organic sales attributed to an active GMV Max Campaign, excluding LIVE orders, divided by total ad cost. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Product-level metrics",
+      "tables": [
+        {
+          "heading": "Product-level metrics",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a Product GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Specify the ID of a Product GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first.",
+      "tables": [
+        {
+          "heading": "Specify the ID of a Product GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first.",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "product_name",
+              "Type": "string",
+              "Description": "Product name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "item_group_id",
+              "Type": "string",
+              "Description": "Product SPU ID",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "product_image_url",
+              "Type": "string",
+              "Description": "Product image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "product_status",
+              "Type": "string",
+              "Description": "Product status",
+              "Detail": "Enum values: available , unavailable . Example: available ."
+            },
+            {
+              "Metric field": "bid_type",
+              "Type": "string",
+              "Description": "Optimization mode",
+              "Detail": "Enum values: CUSTOM : Target ROI NO_BID : Maximum delivery."
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "Total amount you've spent on your ads for this product during your Product GMV Max Campaign. Note that the data latency for this metric can be up to 11 hours. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign for this product, excluding SKU orders created from LIVE orders."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each order placed for this product during this GMV Max Campaign, excluding LIVE orders, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI",
+              "Detail": "Product ROI is calculated with all paid and organic sales attributed to an active GMV Max Campaign, excluding LIVE orders, divided by total ad cost. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "For creatives with statuses",
+      "tables": [
+        {
+          "heading": "For creatives with statuses",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "title",
+              "Type": "string",
+              "Description": "Creative name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "item_id",
+              "Type": "string",
+              "Description": "TikTok post ID",
+              "Detail": "Note : The product card doesn't have an item ID. When shop_content_type is PRODUCT_CARD , the value of this metric will be -1 ."
+            },
+            {
+              "Metric field": "tt_account_name",
+              "Type": "string",
+              "Description": "TikTok account name",
+              "Detail": "Note : If your access token lacks permission for the TikTok account, the value of this metric will be 0 or -1 ."
+            },
+            {
+              "Metric field": "tt_account_profile_image_url",
+              "Type": "string",
+              "Description": "TikTok account profile image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_authorization_type",
+              "Type": "string",
+              "Description": "Authorization type",
+              "Detail": "Enum values: TTS_TT : TikTok Shop official account. AFFILIATE : Affiliate mass authorization. TT_USER : Business Account. BC_AUTH_TT : Business Center. AUTH_CODE : Video code. UNSET : N/A."
+            },
+            {
+              "Metric field": "shop_content_type",
+              "Type": "string",
+              "Description": "Shop content type",
+              "Detail": "Enum values: VIDEO : Video. PRODUCT_CARD : Product Card."
+            },
+            {
+              "Metric field": "creative_delivery_status",
+              "Type": "string",
+              "Description": "Status",
+              "Detail": "Enum values: IN_QUEUE : In queue. Post is ready to be tested for its conversion-driving potential. LEARNING : Learning. Post is being tested for its conversion-driving potential. DELIVERING : Delivering. Post is being regularly promoted as part of your campaign. NOT_DELIVERYING : Not delivering. Post didn't show strong conversion potential during testing and will not be regularly promoted as part of your campaign. AUTHORIZATION_NEEDED : Authorization needed. This video hasn't been authorized for use in ads. You can authorize your own videos from your TikTok account or request authorization from other creators. This status will be updated here within 20 minutes of authorization. EXCLUDED : Excluded. Post was manually removed and will not be regularly promoted as part of your campaign. You can add this post back to your campaign at any time. UNAVAILABLE : Unavailable. Private videos, rejected videos, deleted videos, or videos from suspended TikTok accounts can't be used in ads. In some cases, you may observe cost from unavailable videos because videos that are rejected by TikTok’s content review process part-way through the campaign may still be delivered. REJECTED : Rejected. The video has been rejected by the content moderation team. If you've appealed a rejection, the video status will be \"rejected\" until the appeal has been reviewed. NOT_ACTIVE : Not active. This post has been deprioritized because it was uploaded more than 30 days ago and hasn't earned any gross revenue in the past 30 days."
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "Total amount you've spent on your ads using this video during your Product GMV Max Campaign. Note that the data latency for this metric can be up to 11 hours. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign, excluding SKU orders created from LIVE orders."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each order placed during this GMV Max Campaign, excluding LIVE orders, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI",
+              "Detail": "Product ROI, which is calculated with all paid and organic sales attributed to an active GMV Max Campaign, excluding LIVE orders, divided by total ad cost. Your ROI combines organic and paid GMV results. High ad spend may lower overall ROI despite good performance. Use total gross revenue to assess video quality."
+            },
+            {
+              "Metric field": "product_impressions",
+              "Type": "string",
+              "Description": "Product ad impressions",
+              "Detail": "Total paid product views during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_clicks",
+              "Type": "string",
+              "Description": "Product ad clicks",
+              "Detail": "Total paid product clicks during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_click_rate",
+              "Type": "string",
+              "Description": "Product ad click rate",
+              "Detail": "Click rate for paid product clicks during your Product GMV Max Campaign for the selected product from this video, excluding LIVE clicks, calculated by dividing total number of product clicks by total product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_click_rate",
+              "Type": "string",
+              "Description": "Ad click rate",
+              "Detail": "Click-through rate of paid views from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE views, calculated by dividing total ad clicks by total ad views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_conversion_rate",
+              "Type": "string",
+              "Description": "Ad conversion rate",
+              "Detail": "Conversion rate of paid clicks from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE clicks, calculated by dividing total conversions by total clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_2s",
+              "Type": "string",
+              "Description": "2-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least two seconds during your GMV Max Campaign for the selected product, calculated by dividing two-second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_6s",
+              "Type": "string",
+              "Description": "6-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least six seconds during your GMV Max Campaign for the selected product, calculated by dividing six second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p25",
+              "Type": "string",
+              "Description": "25% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 25% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p50",
+              "Type": "string",
+              "Description": "50% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 50% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p75",
+              "Type": "string",
+              "Description": "75% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 75% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p100",
+              "Type": "string",
+              "Description": "100% ad video view rate",
+              "Detail": "Percentage of times your video was played at 100% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "To-be-deprecated",
+      "tables": [
+        {
+          "heading": "To-be-deprecated",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "title",
+              "Type": "string",
+              "Description": "Creative name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "item_id",
+              "Type": "string",
+              "Description": "TikTok post ID",
+              "Detail": "Note : The product card doesn't have an item ID. When shop_content_type is PRODUCT_CARD , the value of this metric will be -1 ."
+            },
+            {
+              "Metric field": "tt_account_name",
+              "Type": "string",
+              "Description": "TikTok account name",
+              "Detail": "Note : If your access token lacks permission for the TikTok account, the value of this metric will be 0 or -1 ."
+            },
+            {
+              "Metric field": "tt_account_profile_image_url",
+              "Type": "string",
+              "Description": "TikTok account profile image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_authorization_type",
+              "Type": "string",
+              "Description": "Authorization type",
+              "Detail": "Enum values: TTS_TT : TikTok Shop official account. AFFILIATE : Affiliate mass authorization. TT_USER : Business Account. BC_AUTH_TT : Business Center. AUTH_CODE : Video code. UNSET : N/A."
+            },
+            {
+              "Metric field": "shop_content_type",
+              "Type": "string",
+              "Description": "Shop content type",
+              "Detail": "Enum values: VIDEO : Video. PRODUCT_CARD : Product Card."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign, excluding SKU orders created from LIVE orders."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users."
+            },
+            {
+              "Metric field": "product_impressions",
+              "Type": "string",
+              "Description": "Product ad impressions",
+              "Detail": "Total organic and paid product views during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_clicks",
+              "Type": "string",
+              "Description": "Product ad clicks",
+              "Detail": "Total organic and paid product clicks during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_click_rate",
+              "Type": "string",
+              "Description": "Product ad click rate",
+              "Detail": "Click rate for organic and paid product clicks during your Product GMV Max Campaign for the selected product from this video, excluding LIVE clicks, calculated by dividing total number of product clicks by total product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_click_rate",
+              "Type": "string",
+              "Description": "Ad click rate",
+              "Detail": "Click-through rate of paid views from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE views, calculated by dividing total ad clicks by total ad views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_conversion_rate",
+              "Type": "string",
+              "Description": "Ad conversion rate",
+              "Detail": "Conversion rate of paid clicks from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE clicks, calculated by dividing total conversions by total clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_2s",
+              "Type": "string",
+              "Description": "2-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least two seconds during your GMV Max Campaign for the selected product, calculated by dividing two-second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_6s",
+              "Type": "string",
+              "Description": "6-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least six seconds during your GMV Max Campaign for the selected product, calculated by dividing six second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p25",
+              "Type": "string",
+              "Description": "25% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 25% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p50",
+              "Type": "string",
+              "Description": "50% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 50% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p75",
+              "Type": "string",
+              "Description": "75% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 75% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p100",
+              "Type": "string",
+              "Description": "100% ad video view rate",
+              "Detail": "Percentage of times your video was played at 100% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        },
+        {
+          "heading": "To-be-deprecated",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "title",
+              "Type": "string",
+              "Description": "Creative name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "item_id",
+              "Type": "string",
+              "Description": "TikTok post ID",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_name",
+              "Type": "string",
+              "Description": "TikTok account name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_profile_image_url",
+              "Type": "string",
+              "Description": "TikTok account profile image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "shop_content_type",
+              "Type": "string",
+              "Description": "Shop content type",
+              "Detail": "Enum value: VIDEO ：Video."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign, excluding SKU orders created from LIVE orders."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users."
+            }
+          ]
+        },
+        {
+          "heading": "To-be-deprecated",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "title",
+              "Type": "string",
+              "Description": "Creative name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "item_id",
+              "Type": "string",
+              "Description": "TikTok post ID",
+              "Detail": "Note : The product card doesn't have an item ID. When shop_content_type is PRODUCT_CARD , the value of this metric will be -1 ."
+            },
+            {
+              "Metric field": "tt_account_name",
+              "Type": "string",
+              "Description": "TikTok account name",
+              "Detail": "Note : If your access token lacks permission for the TikTok account, the value of this metric will be 0 or -1 ."
+            },
+            {
+              "Metric field": "tt_account_profile_image_url",
+              "Type": "string",
+              "Description": "TikTok account profile image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_authorization_type",
+              "Type": "string",
+              "Description": "Authorization type",
+              "Detail": "Enum values: TTS_TT : TikTok Shop official account. AFFILIATE : Affiliate mass authorization. TT_USER : Business Account. BC_AUTH_TT : Business Center. AUTH_CODE : Video code. UNSET : N/A."
+            },
+            {
+              "Metric field": "shop_content_type",
+              "Type": "string",
+              "Description": "Shop content type",
+              "Detail": "Enum values: VIDEO : Video. PRODUCT_CARD : Product Card."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (SKU)",
+              "Detail": "The number of individual paid and organic SKU orders completed during the GMV Max Campaign, excluding SKU orders created from LIVE orders."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop orders placed during your GMV Max Campaign in the currency of the ad account, excluding LIVE orders. It's the amount paid by users, plus all TikTok Shop platform product subsidies provided to those users."
+            },
+            {
+              "Metric field": "product_impressions",
+              "Type": "string",
+              "Description": "Product ad impressions",
+              "Detail": "Total organic and paid product views during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_clicks",
+              "Type": "string",
+              "Description": "Product ad clicks",
+              "Detail": "Total organic and paid product clicks during the Product GMV Max Campaign for the selected product from this video, excluding LIVE product clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "product_click_rate",
+              "Type": "string",
+              "Description": "Product ad click rate",
+              "Detail": "Click rate for organic and paid product clicks during your Product GMV Max Campaign for the selected product from this video, excluding LIVE clicks, calculated by dividing total number of product clicks by total product views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_click_rate",
+              "Type": "string",
+              "Description": "Ad click rate",
+              "Detail": "Click-through rate of paid views from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE views, calculated by dividing total ad clicks by total ad views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_conversion_rate",
+              "Type": "string",
+              "Description": "Ad conversion rate",
+              "Detail": "Conversion rate of paid clicks from this video during your Product GMV Max Campaign for the selected product, excluding paid LIVE clicks, calculated by dividing total conversions by total clicks. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_2s",
+              "Type": "string",
+              "Description": "2-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least two seconds during your GMV Max Campaign for the selected product, calculated by dividing two-second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_6s",
+              "Type": "string",
+              "Description": "6-second ad video view rate",
+              "Detail": "Percentage of times your video was played for at least six seconds during your GMV Max Campaign for the selected product, calculated by dividing six second video views by total video views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p25",
+              "Type": "string",
+              "Description": "25% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 25% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p50",
+              "Type": "string",
+              "Description": "50% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 50% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p75",
+              "Type": "string",
+              "Description": "75% ad video view rate",
+              "Detail": "Percentage of times your video was played at least 75% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "ad_video_view_rate_p100",
+              "Type": "string",
+              "Description": "100% ad video view rate",
+              "Detail": "Percentage of times your video was played at 100% of its runtime during your GMV Max Campaign for the selected product in paid views. For each video view, plays are counted separately and replays are excluded. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Duration-level metrics",
+      "tables": [
+        {
+          "heading": "Duration-level metrics",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a Product GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to campaign-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            },
+            {
+              "Filter field": "item_group_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of an SPU used in the Product GMV Max Campaign. To obtain such an ID, use the dimension item_group_id to query product-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            }
+          ]
+        },
+        {
+          "heading": "Duration-level metrics",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a LIVE GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            },
+            {
+              "Filter field": "room_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a livestream room used in the LIVE GMV Max Campaign. To obtain such an ID, use the dimension room_id to query livestream-level metrics first. Note : When you filter multiple IDs using this field, you cannot retrieve attribute metrics ."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Campaign-level metrics (for LIVE GMV Max)",
+      "tables": [
+        {
+          "heading": "Campaign-level metrics (for LIVE GMV Max)",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "gmv_max_promotion_types",
+              "Required/Optional": "Required",
+              "Max size": "N/A",
+              "Requirement": "[\"LIVE\"]"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Optional",
+              "Max size": "100",
+              "Requirement": "Specify the IDs of LIVE GMV Max Campaigns. To obtain the IDs of LIVE Max Campaigns, use /gmv_max/campaign/get/ . Set gmv_max_promotion_types to [\"LIVE_GMV_MAX\"] and specify the ID of the TikTok Shop via store_ids ."
+            },
+            {
+              "Filter field": "campaign_name",
+              "Required/Optional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "N/A"
+            },
+            {
+              "Filter field": "campaign_statuses",
+              "Required/Optional": "Optional",
+              "Max size": "N/A",
+              "Requirement": "Specify any of the following values: STATUS_DELIVERY_OK : Active. STATUS_DISABLE : Inactive. STATUS_DELETE : Deleted. STATUS_NOT_DELIVERY : Not delivering. STATUS_ALL : All statuses."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Table",
+      "tables": [
+        {
+          "heading": "Table",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "campaign_id",
+              "Type": "string",
+              "Description": "Campaign ID.",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "operation_status",
+              "Type": "string",
+              "Description": "Campaign on/off status",
+              "Detail": "Enum values: ENABLE : on. DISABLE : off."
+            },
+            {
+              "Metric field": "campaign_name",
+              "Type": "string",
+              "Description": "Campaign name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "tt_account_name",
+              "Type": "string",
+              "Description": "TikTok account name",
+              "Detail": "Note : If your access token lacks permission for the TikTok account, the value of this metric will be 0 or -1 ."
+            },
+            {
+              "Metric field": "tt_account_profile_image_url",
+              "Type": "string",
+              "Description": "TikTok account profile image URL",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "identity_id",
+              "Type": "string",
+              "Description": "Identity ID (TikTok account ID)",
+              "Detail": "Note : If your access token lacks permission for the TikTok account, the value of this metric will be 0 or -1 ."
+            },
+            {
+              "Metric field": "bid_type",
+              "Type": "string",
+              "Description": "Optimization mode",
+              "Detail": "Enum values: CUSTOM : Target ROI. NO_BID : Maximum delivery."
+            },
+            {
+              "Metric field": "schedule_type",
+              "Type": "string",
+              "Description": "Schedule type.",
+              "Detail": "Enum value: Continuously : To run the campaign continuously after the scheduled start time."
+            },
+            {
+              "Metric field": "schedule_start_time",
+              "Type": "string",
+              "Description": "Schedule start time",
+              "Detail": "Time zone: UTC+0."
+            },
+            {
+              "Metric field": "schedule_end_time",
+              "Type": "string",
+              "Description": "Schedule end time",
+              "Detail": "Time zone: UTC+0."
+            },
+            {
+              "Metric field": "target_roi_budget",
+              "Type": "string",
+              "Description": "Target ROI budget",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "max_delivery_budget",
+              "Type": "string",
+              "Description": "Max delivery budget",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "roas_bid",
+              "Type": "string",
+              "Description": "Target ROI",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "The estimated total amount you've spent on your ads during its schedule, in the currency of the ad account."
+            },
+            {
+              "Metric field": "net_cost",
+              "Type": "string",
+              "Description": "Net cost",
+              "Detail": "The amount spent, excluding ad credit or coupons used, in the currency of the ad account. Note that the data latency for this metric can be up to 11 hours. Campaign data for is metric is available starting September 1, 2023."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order (Current shop)",
+              "Detail": "The average cost incurred for each order placed, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (Current shop)",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue (Current shop)",
+              "Detail": "The total gross revenue of Shop orders attributed to your campaign. It's the amount the user pays, plus all Shop price subsidies provided to the user. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI (Current shop)",
+              "Detail": "The total return on investment (ROI) from all Shop orders attributed to your campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "all_shops_cost_per_order",
+              "Type": "double",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each LIVE order placed during this GMV Max Campaign in the currency of the ad account, calculated by dividing total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_orders",
+              "Type": "integer",
+              "Description": "Orders",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_gross_revenue",
+              "Type": "double",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop LIVE orders during your GMV Max Campaign, in the currency of the ad account. It's the amount paid by users, plus all TikTok Shop platform subsidies provided to those users. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_roi",
+              "Type": "double",
+              "Description": "ROI",
+              "Detail": "The total return on investment (ROI) from all paid and organic TikTok Shop LIVE orders during this GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "live_views",
+              "Type": "string",
+              "Description": "LIVE views",
+              "Detail": "Number of times your LIVE was viewed during your GMV Max Campaign. Multiple views from the same user are counted separately. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "cost_per_live_view",
+              "Type": "string",
+              "Description": "Cost per LIVE view",
+              "Detail": "Average cost for each LIVE view during your GMV Max Campaign in the currency of the ad account, calculated by dividing total cost by total live views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "10_second_live_views",
+              "Type": "string",
+              "Description": "10-second LIVE views",
+              "Detail": "Number of times your LIVE was viewed for at least 10 seconds from the GMV Max Campaign. Multiple views from the same user are counted separately. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "cost_per_10_second_live_view",
+              "Type": "string",
+              "Description": "Cost per 10-second LIVE view",
+              "Detail": "Average cost for each 10-second LIVE view in the currency of the ad account, calculated by dividing total cost by total number of 10-second LIVE views. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "live_follows",
+              "Type": "string",
+              "Description": "LIVE follows",
+              "Detail": "Total number of users who followed your profile during your LIVE. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Livestream-level metrics",
+      "tables": [
+        {
+          "heading": "Livestream-level metrics",
+          "headers": [
+            "Filter field",
+            "Required/Optional",
+            "Max size",
+            "Requirement"
+          ],
+          "rows": [
+            {
+              "Filter field": "Filter field",
+              "Required/Optional": "Required/Optional",
+              "Max size": "Max size",
+              "Requirement": "Requirement"
+            },
+            {
+              "Filter field": "campaign_ids",
+              "Required/Optional": "Required",
+              "Max size": "100",
+              "Requirement": "Specify the ID of a LIVE GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Specify the ID of a LIVE GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first.",
+      "tables": [
+        {
+          "heading": "Specify the ID of a LIVE GMV Max Campaign. To obtain such an ID, use the dimension campaign_id to query campaign-level metrics first.",
+          "headers": [
+            "Metric field",
+            "Type",
+            "Description",
+            "Detail"
+          ],
+          "rows": [
+            {
+              "Metric field": "Metric field",
+              "Type": "Type",
+              "Description": "Description",
+              "Detail": "Detail"
+            },
+            {
+              "Metric field": "live_name",
+              "Type": "string",
+              "Description": "LIVE name",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "live_status",
+              "Type": "string",
+              "Description": "Livestream status",
+              "Detail": "Enum values: ONGOING : Ongoing. END : Ended."
+            },
+            {
+              "Metric field": "live_launched_time",
+              "Type": "string",
+              "Description": "Livestream launched time",
+              "Detail": "Time zone: ad account time zone."
+            },
+            {
+              "Metric field": "live_duration",
+              "Type": "string",
+              "Description": "Livestream duration",
+              "Detail": "N/A"
+            },
+            {
+              "Metric field": "cost",
+              "Type": "string",
+              "Description": "Cost",
+              "Detail": "The estimated total amount you've spent on your ads during its schedule, in the currency of the ad account."
+            },
+            {
+              "Metric field": "net_cost",
+              "Type": "string",
+              "Description": "Net cost",
+              "Detail": "The amount spent, excluding ad credit or coupons used, in the currency of the ad account. Note that the data latency for this metric can be up to 11 hours. Campaign data for is metric is available starting September 1, 2023."
+            },
+            {
+              "Metric field": "cost_per_order",
+              "Type": "string",
+              "Description": "Cost per order (Current shop)",
+              "Detail": "The average cost incurred for each order placed, calculated by dividing the total ad cost by the number of orders generated within the ad schedule. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "orders",
+              "Type": "string",
+              "Description": "Orders (Current shop)",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "gross_revenue",
+              "Type": "string",
+              "Description": "Gross revenue (Current shop)",
+              "Detail": "The total gross revenue of Shop orders attributed to your campaign. It's the amount the user pays, plus all Shop price subsidies provided to the user. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "roi",
+              "Type": "string",
+              "Description": "ROI (Current shop)",
+              "Detail": "The total return on investment (ROI) from all Shop orders attributed to your campaign. Only orders from your current shop are included, even if the livestream promoted products from other shops."
+            },
+            {
+              "Metric field": "all_shops_cost_per_order",
+              "Type": "double",
+              "Description": "Cost per order",
+              "Detail": "The average ad cost for each LIVE order placed during this GMV Max Campaign in the currency of the ad account, calculated by dividing total ad cost by the number of orders generated within the ad schedule. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_orders",
+              "Type": "integer",
+              "Description": "Orders",
+              "Detail": "The number of individual paid and organic SKU LIVE orders during the GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_gross_revenue",
+              "Type": "double",
+              "Description": "Gross revenue",
+              "Detail": "The total gross revenue of paid and organic TikTok Shop LIVE orders during your GMV Max Campaign, in the currency of the ad account. It's the amount paid by users, plus all TikTok Shop platform subsidies provided to those users. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "all_shops_roi",
+              "Type": "double",
+              "Description": "ROI",
+              "Detail": "The total return on investment (ROI) from all paid and organic TikTok Shop LIVE orders during this GMV Max Campaign. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "live_views",
+              "Type": "string",
+              "Description": "LIVE views",
+              "Detail": "Number of times your LIVE was viewed during your GMV Max Campaign. Multiple views from the same user are counted separately. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "cost_per_live_view",
+              "Type": "string",
+              "Description": "Cost per LIVE view",
+              "Detail": "Average cost for each LIVE view during your GMV Max Campaign in the currency of the ad account, calculated by dividing total live views by total cost. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "10_second_live_views",
+              "Type": "string",
+              "Description": "10-second LIVE views",
+              "Detail": "Number of times your LIVE was viewed for at least 10 seconds from the GMV Max Campaign. Multiple views from the same user are counted separately. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "cost_per_10_second_live_view",
+              "Type": "string",
+              "Description": "Cost per 10-second LIVE view",
+              "Detail": "Average cost for each 10-second LIVE view in the currency of the ad account, calculated by dividing total number of 10-second LIVE views by total cost. Campaign data for this metric is available starting September 27, 2024."
+            },
+            {
+              "Metric field": "live_follows",
+              "Type": "string",
+              "Description": "LIVE follows",
+              "Detail": "Total number of users who followed your profile during your LIVE. Campaign data for this metric is available starting September 27, 2024."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "grabbedAt": "2026-07-17T09:35:55.970839Z",
+  "examples": {
+    "request": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"advertiser_id\", \"stat_time_day\"]&metrics=[\"cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\", \"net_cost\"]&page=1&page_size=1000' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"campaign_id\", \"stat_time_day\"]&metrics=[\"campaign_id\", \"operation_status\", \"campaign_name\", \"schedule_type\", \"schedule_start_time\", \"schedule_end_time\", \"target_roi_budget\", \"bid_type\", \"max_delivery_budget\", \"roas_bid\", \"cost\", \"net_cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\"]&filtering={\"gmv_max_promotion_types\": [\"PRODUCT\"]}&page=1&page_size=1000' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "Example",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"item_group_id\",\"stat_time_day\"]&metrics=[\"product_name\", \"item_group_id\", \"product_image_url\", \"product_status\", \"bid_type\",\"cost\",\"orders\",\"cost_per_order\", \"gross_revenue\", \"roi\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"]}&page=1&page_size=1000' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "For creatives with statuses",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&metrics=[\"creative_delivery_status\",\"cost\",\"orders\",\"cost_per_order\",\"gross_revenue\",\"roi\",\"product_impressions\",\"product_clicks\",\"product_click_rate\",\"ad_click_rate\",\"ad_conversion_rate\",\"ad_video_view_rate_2s\",\"ad_video_view_rate_6s\",\"ad_video_view_rate_p25\",\"ad_video_view_rate_p50\",\"ad_video_view_rate_p75\",\"ad_video_view_rate_p100\"]&dimensions=[\"campaign_id\",\"item_group_id\",\"item_id\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"],\"item_group_ids\":[\"{{item_group_id}}\",\"{{item_group_id}}\"]}&page=1&page_size=1000' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For ads and organic creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"item_id\"]&metrics=[\"title\",\"item_id\",\"tt_account_name\",\"tt_account_profile_image_url\",\"tt_account_authorization_type\",\"shop_content_type\",\"orders\",\"gross_revenue\",\"product_impressions\",\"product_clicks\",\"product_click_rate\",\"ad_click_rate\",\"ad_conversion_rate\",\"ad_video_view_rate_2s\",\"ad_video_view_rate_6s\",\"ad_video_view_rate_p25\",\"ad_video_view_rate_p50\",\"ad_video_view_rate_p75\",\"ad_video_view_rate_p100\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"], \"item_group_ids\": [\"{{item_group_id}}\"], \"creative_types\": [\"ADS_AND_ORGANIC\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For organic only creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"item_id\"]&metrics=[\"title\",\"item_id\",\"tt_account_name\",\"tt_account_profile_image_url\",\"shop_content_type\",\"orders\",\"gross_revenue\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"], \"item_group_ids\": [\"{{item_group_id}}\"], \"creative_types\": [\"ORGANIC\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For removed creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"item_id\"]&metrics=[\"title\",\"item_id\",\"tt_account_name\",\"tt_account_profile_image_url\",\"tt_account_authorization_type\",\"shop_content_type\",\"orders\",\"gross_revenue\",\"product_impressions\",\"product_clicks\",\"product_click_rate\",\"ad_click_rate\",\"ad_conversion_rate\",\"ad_video_view_rate_2s\",\"ad_video_view_rate_6s\",\"ad_video_view_rate_p25\",\"ad_video_view_rate_p50\",\"ad_video_view_rate_p75\",\"ad_video_view_rate_p100\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"], \"item_group_ids\": [\"{{item_group_id}}\"], \"creative_types\": [\"REMOVED\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For removed creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"duration\"]&metrics=[\"bid_type\", \"cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"], \"item_group_ids\": [\"{{item_group_id}}\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For removed creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"campaign_id\",\"stat_time_day\"]&metrics=[\"campaign_id\", \"operation_status\", \"campaign_name\", \"tt_account_name\", \"tt_account_profile_image_url\", \"identity_id\", \"bid_type\", \"schedule_type\", \"schedule_start_time\", \"schedule_end_time\", \"target_roi_budget\", \"max_delivery_budget\", \"roas_bid\", \"cost\", \"net_cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\", \"live_views\", \"cost_per_live_view\", \"10_second_live_views\", \"cost_per_10_second_live_view\", \"live_follows\"]&filtering={\"gmv_max_promotion_types\": [\"LIVE\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For removed creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"room_id\",\"stat_time_day\"]&metrics=[\"live_name\", \"live_status\", \"live_launched_time\", \"live_duration\", \"cost\", \"net_cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\", \"live_views\", \"cost_per_live_view\", \"10_second_live_views\", \"cost_per_10_second_live_view\", \"live_follows\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      },
+      {
+        "title": "(To-be-deprecated) For removed creatives",
+        "curl": "curl --location --request GET 'https://business-api.tiktok.com/open_api/v1.3/gmv_max/report/get/?advertiser_id={{advertiser_id}}&store_ids=[\"{{store_id}}\"]&start_date={{start_date}}&end_date={{end_date}}&dimensions=[\"duration\"]&metrics=[\"bid_type\", \"cost\", \"orders\", \"cost_per_order\", \"gross_revenue\", \"roi\"]&filtering={\"campaign_ids\":[\"{{campaign_id}}\"],\"room_ids\":[\"{{room_id}}\"]}&page_size=1000&page=1' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ],
+    "response": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"list\": [\n            {\n                \"dimensions\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"stat_time_day\": \"{{stat_time_day}}\"\n                },\n                \"metrics\": {\n                    \"cost\": \"9387.58\",\n                    \"cost_per_order\": \"1.41\",\n                    \"gross_revenue\": \"43117.68\",\n                    \"net_cost\": \"6550.08\",\n                    \"orders\": \"6674\",\n                    \"roi\": \"4.59\"\n                }\n            },\n            {\n                \"dimensions\": {\n                    \"advertiser_id\": \"{{advertiser_id}}\",\n                    \"stat_time_day\": \"{{stat_time_day}}\"\n                },\n                \"metrics\": {\n                    \"cost\": \"7230.56\",\n                    \"cost_per_order\": \"1.44\",\n                    \"gross_revenue\": \"31547.59\",\n                    \"net_cost\": \"7230.56\",\n                    \"orders\": \"5036\",\n                    \"roi\": \"4.36\"\n                }\n            }\n        ],\n        \"page_info\": {\n            \"page\": 1,\n            \"page_size\": 1000,\n            \"total_number\": 2,\n            \"total_page\": 1\n        }\n    }\n}"
+    }
+  }
+}

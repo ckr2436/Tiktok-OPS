@@ -49,10 +49,15 @@ def _mark_mutated(sess: ORMSession) -> None:
     sess.info["has_writes"] = True
 
 
-# 每个事务一开始就重置，避免上一事务的标记串味
-@event.listens_for(ORMSession, "after_begin")
-def _on_tx_begin(sess: ORMSession, tx, connection) -> None:
-    _reset_mutation_flag(sess)
+# 根事务结束后重置，避免上一事务的标记串味，同时保留嵌套事务中的写入标记。
+@event.listens_for(ORMSession, "after_transaction_end")
+def _on_tx_end(sess: ORMSession, tx) -> None:
+    # Keep the write marker across root transaction startup and nested
+    # savepoints. Reset it only after the root transaction has actually ended.
+    # Otherwise a first-statement DML or DML inside begin_nested() can be
+    # mistaken for a read-only request and rolled back by get_db().
+    if getattr(tx, "parent", None) is None:
+        _reset_mutation_flag(sess)
 
 
 # ORM flush 产生 new/dirty/deleted 即认为有写
@@ -60,6 +65,92 @@ def _on_tx_begin(sess: ORMSession, tx, connection) -> None:
 def _on_after_flush(sess: ORMSession, ctx) -> None:
     if sess.new or sess.dirty or sess.deleted:
         _mark_mutated(sess)
+
+
+@event.listens_for(ORMSession, "before_flush")
+def _capture_content_provider_task_changes(sess: ORMSession, ctx, instances) -> None:
+    """Collect task ids whose transport projection must change atomically.
+
+    This hook intentionally recognizes model names instead of importing the
+    content models at database bootstrap time.  It keeps ``app.data.db`` free
+    from a circular dependency while every API/worker Session still receives
+    the same transaction boundary.
+    """
+
+    if sess.info.get("content_transport_projection_running"):
+        return
+    task_ids = set(sess.info.get("content_transport_task_ids") or set())
+    for row in (*sess.new, *sess.dirty, *sess.deleted):
+        model_name = row.__class__.__name__
+        if model_name == "KieTask":
+            row_id = getattr(row, "id", None)
+            if row_id is not None:
+                task_ids.add(int(row_id))
+        elif model_name == "KieFile":
+            task_id = getattr(row, "task_id", None)
+            if task_id is not None:
+                task_ids.add(int(task_id))
+    if task_ids:
+        sess.info["content_transport_task_ids"] = task_ids
+
+
+@event.listens_for(ORMSession, "after_flush_postexec")
+def _project_content_provider_task_changes(sess: ORMSession, ctx) -> None:
+    task_ids = set(sess.info.pop("content_transport_task_ids", set()) or set())
+    if not task_ids or sess.info.get("content_transport_projection_running"):
+        return
+    sess.info["content_transport_projection_running"] = True
+    try:
+        from app.services.hermes_agent.content_runtime import (
+            sync_content_provider_tasks,
+        )
+
+        sync_content_provider_tasks(sess, task_ids=task_ids)
+    except Exception:
+        # Projection is part of the same transaction: never commit a provider
+        # state that could not be represented by the execution ledger.
+        logger.exception(
+            "Content Factory transport projection failed",
+            extra={"provider_task_ids": sorted(task_ids)},
+        )
+        raise
+    finally:
+        sess.info.pop("content_transport_projection_running", None)
+
+
+@event.listens_for(ORMSession, "after_commit")
+def _publish_content_runtime_outbox(sess: ORMSession) -> None:
+    if not sess.info.pop("hermes_runtime_events_pending", False):
+        return
+    try:
+        from app.celery_app import celery_app
+
+        celery_app.send_task(
+            "hermes_content_factory.process_runtime_events",
+            kwargs={"limit": 200},
+            queue=str(
+                getattr(
+                    settings,
+                    "HERMES_AGENT_TASK_QUEUE",
+                    "gmv.tasks.hermes_agent",
+                )
+            ),
+        )
+    except Exception:
+        # The transactional outbox row is already durable.  The maintenance
+        # reconciler will republish it; a broker interruption cannot roll back
+        # the provider result that created the event.
+        logger.exception("Unable to publish Content Factory runtime outbox wakeup")
+
+
+@event.listens_for(ORMSession, "after_rollback")
+def _clear_content_runtime_projection_state(sess: ORMSession) -> None:
+    for key in (
+        "content_transport_task_ids",
+        "content_transport_projection_running",
+        "hermes_runtime_events_pending",
+    ):
+        sess.info.pop(key, None)
 
 
 # 任何非 SELECT 的 ORM 语句（insert/update/delete/merge 等）都视为写
@@ -123,4 +214,3 @@ def get_db() -> Generator[ORMSession, None, None]:
             raise
     finally:
         db.close()
-

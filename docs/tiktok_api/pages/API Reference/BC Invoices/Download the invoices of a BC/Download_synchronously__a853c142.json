@@ -1,0 +1,69 @@
+{
+  "title": "Download synchronously",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/invoice/download/",
+  "method": "GET",
+  "category_path": [
+    "BC Invoices",
+    "Download the invoices of a BC"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "invoice_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Invoice ID."
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log id of the request, which uniquely identifies a request."
+      }
+    ],
+    "data": {
+      "fields": [],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": []
+  }
+}

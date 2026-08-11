@@ -1,31 +1,95 @@
-# app/tasks/ttb_sync_tasks.py
+# backend/app/tasks/ttb_sync_tasks.py
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Dict
+import time
+from uuid import uuid4
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, List
 
 from celery import Task
 from celery.utils.log import get_task_logger
-from celery.result import AsyncResult
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
-from app.data.db import get_db
 from app.core.config import settings
-from app.core.errors import APIError
+from app.data.db import get_db
+from app.data.models.oauth_ttb import OAuthAccountTTB
+from app.data.models.scheduling import ScheduleRun, Schedule
+from app.services.audit import log_event
+from app.services.db_locks import binding_action_lock_key, mysql_advisory_lock
+from app.services.redis_locks import RedisDistributedLock
+from app.services.provider_registry import load_builtin_providers, provider_registry
+from app.services.providers.tiktok_business import ProviderExecutionError
+from app.services.ttb_binding_config import record_products_sync_result
 
-from app.services.oauth_ttb import (
-    get_access_token_for_auth_id,      # ✅ 保持不变
-    get_credentials_for_auth_id,       # ✅ 使用统一命名
-)
-from app.services.ttb_api import TTBApiClient
-from app.services.ttb_sync import TTBSyncService
-from app.services.db_locks import mysql_advisory_lock, binding_action_lock_key
+# 确保 provider 在 worker 启动时完成注册
+load_builtin_providers()
 
 logger = get_task_logger(__name__)
 
 
+# -----------------------------
+# 数据结构
+# -----------------------------
+@dataclass(slots=True)
+class EnvelopeMeta:
+    run_id: Optional[int]
+    schedule_id: Optional[int]
+    idempotency_key: Optional[str]
+
+
+@dataclass(slots=True)
+class ProviderEnvelope:
+    version: int
+    provider: str
+    scope: str
+    workspace_id: int
+    auth_id: int
+    options: Dict[str, Any]
+    meta: EnvelopeMeta
+
+
+# -----------------------------
+# 工具：上下文日志
+# -----------------------------
+class _ContextLogger:
+    """携带 envelope 关键信息的结构化日志器。"""
+
+    def __init__(self, envelope: ProviderEnvelope):
+        self._envelope = envelope
+
+    def info(self, message: str, *, extra: Optional[Dict[str, Any]] = None) -> None:
+        payload = _log_payload(self._envelope, extra or {})
+        logger.info(message, extra=payload)
+
+    def warning(self, message: str, *, extra: Optional[Dict[str, Any]] = None) -> None:
+        payload = _log_payload(self._envelope, extra or {})
+        logger.warning(message, extra=payload)
+
+    def error(self, message: str, *, extra: Optional[Dict[str, Any]] = None) -> None:
+        payload = _log_payload(self._envelope, extra or {})
+        logger.error(message, extra=payload)
+
+
+def _log_payload(envelope: ProviderEnvelope, extra: Dict[str, Any]) -> Dict[str, Any]:
+    payload = {
+        "provider": envelope.provider,
+        "scope": envelope.scope,
+        "workspace_id": envelope.workspace_id,
+        "auth_id": envelope.auth_id,
+        "run_id": envelope.meta.run_id,
+    }
+    payload.update(extra)
+    return payload
+
+
+# -----------------------------
+# DB 会话管理（与 get_db() 兼容）
+# -----------------------------
 def _db_session() -> Session:
     gen = get_db()
     db = next(gen)
@@ -33,7 +97,7 @@ def _db_session() -> Session:
     return db
 
 
-def _db_close(db: Session):
+def _db_close(db: Session) -> None:
     gen = getattr(db, "__GEN__", None)
     with contextlib.suppress(Exception):
         if gen:
@@ -42,158 +106,752 @@ def _db_close(db: Session):
         db.close()
 
 
-def _push_recent_job(workspace_id: int, auth_id: int, task_id: str, max_len: int = 200):
+# -----------------------------
+# 最近任务列表（便于 UI 追踪）
+# -----------------------------
+def _push_recent_job(envelope: ProviderEnvelope, task_id: str, max_len: int = 200) -> None:
     backend = getattr(celery_app, "backend", None)
     client = getattr(backend, "client", None)
     if not client:
         return
     try:
-        key = f"jobs:ttb:{workspace_id}:{auth_id}"
+        key = f"jobs:{envelope.provider}:{envelope.workspace_id}:{envelope.auth_id}"
         client.lpush(key, task_id)
         client.ltrim(key, 0, max_len - 1)
-    except Exception:
+    except Exception:  # noqa: BLE001
+        # 后端不可用时静默忽略
         pass
 
 
-class BindingTask(Task):
+# -----------------------------
+# Envelope & Run 工具
+# -----------------------------
+def _extract_envelope(params: Optional[Dict[str, Any]]) -> ProviderEnvelope:
+    """
+    严格从 params['envelope'] 提取，未提供则抛错（避免歧义）。
+    """
+    if not params or "envelope" not in params:
+        raise ValueError("missing params.envelope")
+    envelope = params.get("envelope") or {}
+    if not isinstance(envelope, dict):
+        raise ValueError("params.envelope must be a dict")
+    meta = envelope.get("meta") or {}
+    return ProviderEnvelope(
+        version=int(envelope.get("envelope_version") or envelope.get("version") or 1),
+        provider=str(envelope.get("provider") or "").strip(),
+        scope=str(envelope.get("scope") or "").strip(),
+        workspace_id=int(envelope.get("workspace_id")),
+        auth_id=int(envelope.get("auth_id")),
+        options=dict(envelope.get("options") or {}),
+        meta=EnvelopeMeta(
+            run_id=int(meta.get("run_id")) if meta.get("run_id") is not None else None,
+            schedule_id=int(meta.get("schedule_id")) if meta.get("schedule_id") is not None else None,
+            idempotency_key=meta.get("idempotency_key"),
+        ),
+    )
+
+
+def _get_run(
+    db: Session,
+    *,
+    run_id: Optional[int],
+    idempotency_key: Optional[str],
+) -> Optional[ScheduleRun]:
+    if run_id:
+        return db.get(ScheduleRun, int(run_id))
+    if idempotency_key:
+        stmt = (
+            select(ScheduleRun)
+            .where(ScheduleRun.idempotency_key == idempotency_key)
+            .order_by(ScheduleRun.id.desc())
+            .limit(1)
+        )
+        return db.execute(stmt).scalar_one_or_none()
+    return None
+
+
+def _merge_stats(run: ScheduleRun, extra: Dict[str, Any]) -> None:
+    current = dict(run.stats_json or {})
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(current.get(key), dict):
+            merged = dict(current[key])
+            merged.update(value)
+            current[key] = merged
+        else:
+            current[key] = value
+    run.stats_json = current
+
+
+def _record_products_summary(
+    db: Session,
+    *,
+    envelope: ProviderEnvelope,
+    processed: Dict[str, Any],
+    run: Optional[ScheduleRun],
+) -> None:
+    summary = processed.get("summary") if isinstance(processed, dict) else None
+    if not isinstance(summary, dict):
+        return
+
+    options = envelope.options or {}
+    advertiser_id = options.get("advertiser_id")
+    store_id = options.get("store_id")
+    if not advertiser_id or not store_id:
+        return
+
+    triggered_by_auto = False
+    if run and run.schedule_id:
+        schedule = db.get(Schedule, int(run.schedule_id))
+        if schedule and schedule.schedule_type != "oneoff":
+            triggered_by_auto = True
+
+    record_products_sync_result(
+        db,
+        workspace_id=envelope.workspace_id,
+        auth_id=envelope.auth_id,
+        advertiser_id=str(advertiser_id),
+        store_id=str(store_id),
+        summary=summary,
+        triggered_by_auto=triggered_by_auto,
+    )
+
+
+def _mark_run_running(
+    db: Session,
+    *,
+    run_id: Optional[int],
+    idempotency_key: Optional[str],
+    broker_id: str,
+) -> Optional[ScheduleRun]:
+    run = _get_run(db, run_id=run_id, idempotency_key=idempotency_key)
+    if run:
+        run.status = "running"
+        run.broker_msg_id = broker_id
+        if not run.enqueued_at:
+            run.enqueued_at = datetime.now(timezone.utc)
+        db.add(run)
+    return run
+
+
+def _finish_run(
+    run: Optional[ScheduleRun],
+    *,
+    status: str,
+    duration_ms: int,
+    retries: int,
+    processed: Optional[Dict[str, Any]] = None,
+    errors: Optional[List[Dict[str, Any]]] = None,
+    error_code: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    if not run:
+        return
+    run.status = status
+    run.duration_ms = duration_ms
+    run.error_code = error_code
+    run.error_message = error_message[:512] if error_message else None
+
+    payload: Dict[str, Any] = {"retries": retries}
+    if processed is not None:
+        processed_payload = dict(processed)
+        summary = dict(processed_payload.get("summary") or {})
+        if errors:
+            summary["partial"] = True
+        else:
+            summary.setdefault("partial", False)
+        processed_payload["summary"] = summary
+        payload["processed"] = processed_payload
+    if errors is not None:
+        payload["errors"] = errors
+
+    _merge_stats(run, payload)
+
+
+def _audit_event(
+    db: Session,
+    *,
+    envelope: ProviderEnvelope,
+    event: str,
+    schedule_run_id: Optional[int],
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload = {
+        "auth_id": int(envelope.auth_id),
+        "provider": envelope.provider,
+        "scope": envelope.scope,
+    }
+    if schedule_run_id:
+        payload["schedule_run_id"] = int(schedule_run_id)
+    if details:
+        payload.update(details)
+    log_event(
+        db,
+        action=event,
+        resource_type="ttb_sync",
+        resource_id=schedule_run_id,
+        actor_workspace_id=int(envelope.workspace_id),
+        workspace_id=int(envelope.workspace_id),
+        details=payload,
+    )
+
+
+def _should_mark_invalid(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    status = getattr(exc, "status", None)
+    if isinstance(status, int) and status in (401, 403):
+        return True
+    if isinstance(code, str) and code.lower() in {"token_not_found", "token_invalid", "unauthorized", "auth_failed"}:
+        return True
+    return False
+
+
+def _mark_account_invalid(db: Session, envelope: ProviderEnvelope, reason: Optional[str] = None) -> None:
+    acc = db.get(OAuthAccountTTB, int(envelope.auth_id))
+    if not acc or acc.status == "invalid":
+        return
+    acc.status = "invalid"
+    db.add(acc)
+
+
+def _build_processed_stats(phases: List[Dict[str, Any]]) -> Dict[str, Any]:
+    counts: Dict[str, Dict[str, int]] = {}
+    cursors: Dict[str, Any] = {}
+    timings: Dict[str, Dict[str, int]] = {}
+    summary: Dict[str, int] = {}
+    total = 0
+    for phase in phases:
+        scope = str(phase.get("scope") or "").strip() or "unknown"
+        stats = phase.get("stats") or {}
+        duration = int(phase.get("duration_ms") or 0)
+        total += max(duration, 0)
+        timings[scope] = {"duration_ms": max(duration, 0)}
+        counts[scope] = {
+            "fetched": int(stats.get("fetched") or 0),
+            "upserts": int(stats.get("upserts") or 0),
+            "skipped": int(stats.get("skipped") or 0),
+        }
+        summary[f"{scope}_count"] = counts[scope]["upserts"]
+        if stats.get("cursor") is not None:
+            cursors[scope] = stats["cursor"]
+    summary.setdefault("partial", False)
+    return {
+        "counts": counts,
+        "summary": summary,
+        "cursors": cursors,
+        "timings": {"total_ms": total, "phases": timings},
+    }
+
+
+def _serialize_error(stage: str, exc: Exception) -> Dict[str, Any]:
+    code = getattr(exc, "code", None) or exc.__class__.__name__
+    status = getattr(exc, "status", None)
+    return {
+        "stage": stage,
+        "code": str(code),
+        "message": str(exc)[:512],
+        "status": status,
+    }
+
+
+def _completion_status(errors: List[Dict[str, Any]]) -> str:
+    """Never advertise a provider result containing errors as fully successful."""
+
+    return "partial" if errors else "success"
+
+
+def _envelope_to_dict(envelope: ProviderEnvelope) -> Dict[str, Any]:
+    return {
+        "envelope_version": envelope.version,
+        "provider": envelope.provider,
+        "scope": envelope.scope,
+        "workspace_id": envelope.workspace_id,
+        "auth_id": envelope.auth_id,
+        "options": envelope.options,
+        "meta": {
+            "run_id": envelope.meta.run_id,
+            "schedule_id": envelope.meta.schedule_id,
+            "idempotency_key": envelope.meta.idempotency_key,
+        },
+    }
+
+
+# -----------------------------
+# options 规范化（关键修复点）
+# -----------------------------
+_ALLOWED_MODES = {"full", "incremental"}
+_LIMIT_MIN, _LIMIT_MAX = 1, 2000
+
+def _normalize_mode(value: Any) -> str:
+    s = str(value or "").strip().lower()
+    return s if s in _ALLOWED_MODES else "incremental"
+
+def _normalize_and_sanitize_options(options: Dict[str, Any], expected_scope: str) -> Dict[str, Any]:
+    """
+    统一规范：
+    - mode 归一；
+    - 将 limit 映射为 page_size（全局生效，且不覆盖已有 page_size），随后无条件移除 limit，
+      这样无论 provider 如何透传 **options，都不会把 limit 传进 sync_* 导致 TypeError。
+    """
+    out: Dict[str, Any] = dict(options or {})
+
+    # mode
+    out["mode"] = _normalize_mode(out.get("mode"))
+
+    # limit -> page_size（适用于所有 scope）
+    if "limit" in out:
+        try:
+            lim = int(out["limit"])
+            lim = max(_LIMIT_MIN, min(_LIMIT_MAX, lim))
+            out.setdefault("page_size", lim)  # 已有 page_size 时不覆盖
+        except Exception:
+            pass
+        finally:
+            out.pop("limit", None)
+
+    return out
+
+# -----------------------------
+# Celery Task 基类
+# -----------------------------
+class TTBSyncTask(Task):
+    abstract = True
+    # 避免瞬时抖动导致丢失：默认对所有异常自动重试
     autoretry_for = (Exception,)
     retry_backoff = True
     retry_backoff_max = 60
     retry_jitter = True
 
-    def set_progress(self, meta: Dict):
+    def on_retry(self, exc, task_id, args, kwargs, einfo):  # type: ignore[override]
+        params = kwargs.get("params") if isinstance(kwargs, dict) else None
         try:
-            self.update_state(state="PROGRESS", meta=meta)
-        except Exception:
-            pass
+            envelope = _extract_envelope(params)
+        except Exception:  # noqa: BLE001
+            return super().on_retry(exc, task_id, args, kwargs, einfo)
 
-
-@celery_app.task(name="tenant.ttb.sync.bc", base=BindingTask, queue="gmv.tasks.events")
-def task_sync_bc(workspace_id: int, auth_id: int, params: Dict):
-    _push_recent_job(workspace_id, auth_id, task_sync_bc.request.id)
-    db = _db_session()
-    try:
-        lock_key = binding_action_lock_key(workspace_id, auth_id, "bc")
-        with mysql_advisory_lock(db, lock_key, wait_seconds=1) as got:
-            if not got:
-                return {"error": "another bc job running for this binding"}
-            token = get_access_token_for_auth_id(db, int(auth_id))
-            client = TTBApiClient(access_token=token, qps=float(getattr(settings, "TTB_QPS", 10.0)))
-            svc = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
-            task_sync_bc.update_state(state="STARTED", meta={"progress": {"phase": "bc"}})
-            data = asyncio.run(svc.sync_bc(limit=int(params.get("limit") or 200)))
-            db.commit()
-            return {"result": data}
-    except APIError:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        _db_close(db)
-
-
-@celery_app.task(name="tenant.ttb.sync.advertisers", base=BindingTask, queue="gmv.tasks.events")
-def task_sync_advertisers(workspace_id: int, auth_id: int, params: Dict):
-    _push_recent_job(workspace_id, auth_id, task_sync_advertisers.request.id)
-    db = _db_session()
-    try:
-        lock_key = binding_action_lock_key(workspace_id, auth_id, "advertisers")
-        with mysql_advisory_lock(db, lock_key, wait_seconds=1) as got:
-            if not got:
-                return {"error": "another advertisers job running for this binding"}
-            # ✅ 对齐你的 oauth_ttb.py：分别取 token 与 app 的 client_id/secret
-            token = get_access_token_for_auth_id(db, int(auth_id))
-            app_id, secret, _redirect_uri = get_credentials_for_auth_id(db, int(auth_id))
-
-            client = TTBApiClient(access_token=token, qps=float(getattr(settings, "TTB_QPS", 10.0)))
-            svc = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
-            task_sync_advertisers.update_state(state="STARTED", meta={"progress": {"phase": "advertisers"}})
-            data = asyncio.run(
-                svc.sync_advertisers(limit=int(params.get("limit") or 200), app_id=app_id, secret=secret)
+        db = _db_session()
+        retry_count: Optional[int] = None
+        try:
+            run = _get_run(
+                db,
+                run_id=envelope.meta.run_id,
+                idempotency_key=envelope.meta.idempotency_key,
+            )
+            if run:
+                retry_count = int((run.stats_json or {}).get("retries", 0)) + 1
+                _merge_stats(run, {"retries": retry_count, "last_error": str(exc)[:256]})
+                run.status = "enqueued"
+                db.add(run)
+            _audit_event(
+                db,
+                envelope=envelope,
+                event=f"ttb.sync.{envelope.scope}.retry",
+                schedule_run_id=run.id if run else envelope.meta.run_id,
+                details={"error": str(exc)[:256], "retry": retry_count},
             )
             db.commit()
-            return {"result": data}
-    except APIError:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        _db_close(db)
-
-
-@celery_app.task(name="tenant.ttb.sync.shops", base=BindingTask, queue="gmv.tasks.events")
-def task_sync_shops(workspace_id: int, auth_id: int, params: Dict):
-    _push_recent_job(workspace_id, auth_id, task_sync_shops.request.id)
-    db = _db_session()
-    try:
-        lock_key = binding_action_lock_key(workspace_id, auth_id, "shops")
-        with mysql_advisory_lock(db, lock_key, wait_seconds=1) as got:
-            if not got:
-                return {"error": "another shops job running for this binding"}
-            token = get_access_token_for_auth_id(db, int(auth_id))
-            client = TTBApiClient(access_token=token, qps=float(getattr(settings, "TTB_QPS", 10.0)))
-            svc = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
-            task_sync_shops.update_state(state="STARTED", meta={"progress": {"phase": "shops"}})
-            data = asyncio.run(svc.sync_shops(limit=int(params.get("limit") or 200)))
-            db.commit()
-            return {"result": data}
-    except APIError:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        _db_close(db)
-
-
-@celery_app.task(name="tenant.ttb.sync.products", base=BindingTask, queue="gmv.tasks.events")
-def task_sync_products(workspace_id: int, auth_id: int, params: Dict):
-    _push_recent_job(workspace_id, auth_id, task_sync_products.request.id)
-    db = _db_session()
-    try:
-        lock_key = binding_action_lock_key(workspace_id, auth_id, "products")
-        with mysql_advisory_lock(db, lock_key, wait_seconds=1) as got:
-            if not got:
-                return {"error": "another products job running for this binding"}
-            token = get_access_token_for_auth_id(db, int(auth_id))
-            client = TTBApiClient(access_token=token, qps=float(getattr(settings, "TTB_QPS", 10.0)))
-            svc = TTBSyncService(db, client, workspace_id=workspace_id, auth_id=auth_id)
-            task_sync_products.update_state(state="STARTED", meta={"progress": {"phase": "products"}})
-            data = asyncio.run(
-                svc.sync_products(limit=int(params.get("limit") or 200), shop_id=params.get("shop_id"))
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception(
+                "ttb sync retry hook failed",
+                extra=_log_payload(envelope, {"task": self.name}),
             )
-            db.commit()
-            return {"result": data}
-    except APIError:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        _db_close(db)
+        finally:
+            _db_close(db)
+        super().on_retry(exc, task_id, args, kwargs, einfo)
 
 
-@celery_app.task(name="tenant.ttb.sync.bootstrap_orchestrator", base=BindingTask, queue="gmv.tasks.default")
-def task_bootstrap(workspace_id: int, auth_id: int, idempotency_key: str):
-    _push_recent_job(workspace_id, auth_id, task_bootstrap.request.id)
-    plan = [
-        ("tenant.ttb.sync.bc", {}),
-        ("tenant.ttb.sync.advertisers", {}),
-        ("tenant.ttb.sync.shops", {}),
-        ("tenant.ttb.sync.products", {}),
-    ]
-    enqueued = []
-    for task_name, kwargs in plan:
-        sig = celery_app.signature(
-            task_name, kwargs={"workspace_id": workspace_id, "auth_id": auth_id, "params": kwargs}
+# -----------------------------
+# 执行器
+# -----------------------------
+def _execute_task(
+    self: TTBSyncTask,
+    *,
+    expected_scope: str,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]],
+    run_id: Optional[int],
+    idempotency_key: Optional[str],
+) -> Dict[str, Any]:
+    envelope = _extract_envelope(params)
+    if envelope.scope != expected_scope:
+        raise ValueError(f"envelope scope {envelope.scope} mismatch for task {expected_scope}")
+
+    # —— 核心修复：规范化 + 针对 bc 的不兼容参数剔除（如 limit）
+    envelope.options = _normalize_and_sanitize_options(envelope.options, expected_scope)
+
+    context_logger = _ContextLogger(envelope)
+    _push_recent_job(envelope, self.request.id)
+
+    db = _db_session()
+    run: Optional[ScheduleRun] = None
+    started_ns = time.perf_counter_ns()
+    processed: Dict[str, Any] | None = None
+    errors: List[Dict[str, Any]] = []
+
+    try:
+        run = _mark_run_running(
+            db,
+            run_id=envelope.meta.run_id,
+            idempotency_key=envelope.meta.idempotency_key,
+            broker_id=self.request.id,
         )
-        res = sig.apply_async(queue="gmv.tasks.events")
-        enqueued.append({"task": task_name, "job_id": res.id})
-    return {"result": {"enqueued": enqueued}}
+        _audit_event(
+            db,
+            envelope=envelope,
+            event=f"ttb.sync.{expected_scope}.start",
+            schedule_run_id=run.id if run else envelope.meta.run_id,
+            details={"schedule_id": envelope.meta.schedule_id},
+        )
 
+        requested_snapshot = {
+            "provider": envelope.provider,
+            "auth_id": int(envelope.auth_id),
+            "workspace_id": int(envelope.workspace_id),
+            "lock_env": settings.LOCK_ENV,
+            "run_id": envelope.meta.run_id,
+            "idempotency_key": envelope.meta.idempotency_key,
+            # 记录规范化后的 options 便于追踪
+            "options": envelope.options,
+        }
+        if run:
+            _merge_stats(run, {"requested": {k: v for k, v in requested_snapshot.items() if v is not None}})
+            db.add(run)
+
+        def _handle_lock_not_acquired(lock_key: str, owner_token: str) -> Dict[str, Any]:
+            msg = "another sync job running for this binding"
+            context_logger.warning(
+                "ttb sync skipped due to concurrent job",
+                extra={
+                    "reason": msg,
+                    "lock_key": lock_key,
+                    "lock_owner": owner_token,
+                },
+            )
+            duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
+            _finish_run(
+                run,
+                status="failed",
+                duration_ms=duration_ms,
+                retries=self.request.retries,
+                processed={
+                    "counts": {},
+                    "summary": {"skipped": True},
+                    "cursors": {},
+                    "timings": {"total_ms": duration_ms, "phases": {}},
+                },
+                errors=[
+                    {
+                        "stage": expected_scope,
+                        "code": "lock_not_acquired",
+                        "message": msg,
+                        "lock_key": lock_key,
+                    }
+                ],
+                error_code="lock_not_acquired",
+                error_message=msg,
+            )
+            if run:
+                db.add(run)
+            _audit_event(
+                db,
+                envelope=envelope,
+                event=f"ttb.sync.{expected_scope}.failed",
+                schedule_run_id=run.id if run else envelope.meta.run_id,
+                details={"reason": msg},
+            )
+            db.commit()
+            return {"error": msg, "code": "CONCURRENT_JOB_SKIPPED"}
+
+        def _run_provider_scope() -> None:
+            nonlocal processed, errors
+            handler = provider_registry.get(envelope.provider)
+            try:
+                # provider handler 负责在必要时拆多阶段并产出 phases
+                result = asyncio.run(
+                    handler.run_scope(
+                        db=db,
+                        envelope=_envelope_to_dict(envelope),  # 已带入“净化后的” options
+                        scope=expected_scope,
+                        logger=context_logger,
+                    )
+                )
+                phases = result.get("phases") or []
+                processed = _build_processed_stats(phases)
+                meta_summary = result.get("summary") if isinstance(result, dict) else None
+                if meta_summary:
+                    summary_block = dict(processed.get("summary") or {})
+                    summary_block["meta"] = meta_summary
+                    processed["summary"] = summary_block
+                errors.extend(result.get("errors") or [])
+            except ProviderExecutionError as exc:
+                phases = [
+                    {"scope": phase.scope, "stats": phase.stats, "duration_ms": phase.duration_ms}
+                    for phase in exc.phases
+                ]
+                processed = _build_processed_stats(phases)
+                original = exc.original
+                errors.append(_serialize_error(exc.stage, original))
+                if _should_mark_invalid(original):
+                    _mark_account_invalid(db, envelope, reason=str(original))
+            except Exception as exc:
+                errors.append(_serialize_error(expected_scope, exc))
+                if _should_mark_invalid(exc):
+                    _mark_account_invalid(db, envelope, reason=str(exc))
+                raise
+
+        # --- 并发保护：优先 DB advisory，其次 Redis 分布式锁 ---
+        if settings.TTB_SYNC_USE_DB_LOCKS:
+            lock_key = binding_action_lock_key(envelope.workspace_id, envelope.auth_id, expected_scope)
+            with mysql_advisory_lock(db, lock_key, wait_seconds=5) as got:
+                if not got:
+                    return _handle_lock_not_acquired(lock_key, "mysql-advisory")
+                _run_provider_scope()
+        else:
+            lock_key = (
+                f"{settings.TTB_SYNC_LOCK_PREFIX}{settings.LOCK_ENV}:sync:"
+                f"{envelope.provider}:{envelope.workspace_id}:{envelope.auth_id}"
+            )
+            owner_parts = [
+                str(envelope.meta.run_id) if envelope.meta.run_id is not None else None,
+                str(self.request.id),
+                uuid4().hex,
+            ]
+            owner_token = ":".join(part for part in owner_parts if part)
+            redis_lock = RedisDistributedLock(
+                key=lock_key,
+                owner_token=owner_token,
+                ttl_seconds=settings.TTB_SYNC_LOCK_TTL_SECONDS,
+                heartbeat_interval=settings.TTB_SYNC_LOCK_HEARTBEAT_SECONDS,
+            )
+            got = redis_lock.acquire()
+            if not got:
+                return _handle_lock_not_acquired(lock_key, owner_token)
+            try:
+                _run_provider_scope()
+            finally:
+                # 失败安全释放
+                try:
+                    redis_lock.release()
+                except Exception:  # noqa: BLE001
+                    context_logger.error(
+                        "failed to release redis lock",
+                        extra={
+                            "key": lock_key,
+                            "lock_owner": owner_token,
+                        },
+                    )
+                    logger.exception(
+                        "redis lock release failed",
+                        extra={"key": lock_key, "lock_owner": owner_token},
+                    )
+
+        # --- 完成与审计 ---
+        duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
+        status = _completion_status(errors)
+        processed_payload = processed or _build_processed_stats([])
+        first_error = errors[0] if errors else {}
+        _finish_run(
+            run,
+            status=status,
+            duration_ms=duration_ms,
+            retries=self.request.retries,
+            processed=processed_payload,
+            errors=errors,
+            error_code=str(first_error.get("code") or "") or None,
+            error_message=str(first_error.get("message") or "") or None,
+        )
+        if expected_scope == "products":
+            _record_products_summary(
+                db,
+                envelope=envelope,
+                processed=processed_payload,
+                run=run,
+            )
+        if run:
+            db.add(run)
+        _audit_event(
+            db,
+            envelope=envelope,
+            event=f"ttb.sync.{expected_scope}.{status}",
+            schedule_run_id=run.id if run else envelope.meta.run_id,
+            details={"processed": processed, "errors": errors},
+        )
+        log_completion = context_logger.warning if errors else context_logger.info
+        log_completion("ttb sync completed", extra={"status": status})
+        db.commit()
+        return {
+            "status": status,
+            "processed": processed_payload,
+            "errors": errors,
+        }
+    except Exception as exc:
+        db.rollback()
+        duration_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000)
+        error_code = getattr(exc, "code", None) or exc.__class__.__name__
+        error_message = str(exc)
+        _finish_run(
+            run,
+            status="failed",
+            duration_ms=duration_ms,
+            retries=self.request.retries,
+            processed=processed,
+            errors=errors or [_serialize_error(expected_scope, exc)],
+            error_code=str(error_code),
+            error_message=error_message,
+        )
+        if run:
+            try:
+                db.add(run)
+                db.commit()
+            except Exception:
+                db.rollback()
+        context_logger.error(
+            "ttb sync task failed",
+            extra={"error": error_message, "code": error_code},
+        )
+        raise
+    finally:
+        _db_close(db)
+
+
+# -----------------------------
+# 具体任务（保持你原有 task 名称 / 队列）
+# -----------------------------
+@celery_app.task(name="ttb.sync.meta", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_meta(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="meta",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@celery_app.task(name="ttb.sync.bc", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_bc(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="bc",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@celery_app.task(name="ttb.sync.advertisers", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_advertisers(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="advertisers",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@celery_app.task(name="ttb.sync.stores", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_stores(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="stores",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@celery_app.task(name="ttb.sync.products", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_products(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="products",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@celery_app.task(name="ttb.sync.all", base=TTBSyncTask, bind=True, queue="gmv.tasks.events")
+def task_sync_all(
+    self,
+    workspace_id: int,
+    auth_id: int,
+    scope: str,
+    params: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    return _execute_task(
+        self,
+        expected_scope="all",
+        workspace_id=workspace_id,
+        auth_id=auth_id,
+        scope=scope,
+        params=params,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )

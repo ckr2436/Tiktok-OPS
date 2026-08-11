@@ -1,0 +1,107 @@
+{
+  "title": "Disable an ad account",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/disable/",
+  "method": "POST",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The content type of the request. Allowed value: \"application/json\""
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID."
+      },
+      {
+        "name": "advertiser_ids",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "IDs of the ad accounts in the Business Center that you want to disable. Max size =1. Important : If an account in the Business Center is disabled, the balance of the ad account will be transferred to the Business Center that the ad account belongs to."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST ' https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/disable/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"advertiser_ids\": [\"{{advertiser_id}}\"]\n}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix - Return Codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "disabled_advertiser_ids",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "IDs of the ad accounts that have been successfully disabled."
+        },
+        {
+          "name": "failed_infos",
+          "required": false,
+          "type": "string",
+          "raw_type": "map",
+          "description": "Information about the ad accounts that have not been successfully disabled. Key: The ID of the ad account ( advertiser_id ) that has not been successfully disabled. Value: The reason or reasons why the attempt to disable the ad account failed. Enum values: DELIVERING : The ad account has ads that are being delivered within 3 days. UNPAID_BILL : The ad account has unpaid bills. SUSPENDED : The ad account is being suspended. UNFINISHED_TRANSFER : The ad account has unfinished transfers. AUTOPAY_UNBILLED : The ad account whose Payment Method is Automatic Payment has unbilled cost."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log ID of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

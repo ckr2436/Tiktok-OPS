@@ -1,0 +1,11 @@
+{
+  "title": "Update a feed",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Feeds"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

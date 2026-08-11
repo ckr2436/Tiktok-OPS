@@ -1,0 +1,184 @@
+{
+  "title": "Get qualifications within a Business Center",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/qualification/get/",
+  "method": "GET",
+  "category_path": [
+    "BC Assets"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Business Center ID. To obtain the list of Business Centers that you have access to, use /bc/get/ ."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filtering conditions."
+      },
+      {
+        "name": "verified",
+        "required": false,
+        "type": "boolean",
+        "raw_type": "boolean",
+        "description": "Whether the qualifications are verified or not."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "integer",
+        "raw_type": "int",
+        "description": "Current number of pages. Default value: 1 . Value range : ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "integer",
+        "raw_type": "int",
+        "description": "Page size. Default value: 10 . Value range: 1-100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location -g --request GET 'https://business-api.tiktok.com/open_api/v1.3/bc/advertiser/qualification/get/?bc_id={{bc_id}}&filtering={\"verified\": true}' \\\n--header 'Access-Token: {{Access-Token}}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return codes ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix-Return codes ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Return data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "qualifications",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "Qualification information."
+        },
+        {
+          "name": "qualification_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Qualification id."
+        },
+        {
+          "name": "company_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Company name."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Qualifications verification status. Enum values： VERIFIED , UNVERIFIED ."
+        },
+        {
+          "name": "owner_advertiser_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Advertiser ID of the qualifications owner."
+        },
+        {
+          "name": "linked_advertiser_count",
+          "required": false,
+          "type": "integer",
+          "raw_type": "int",
+          "description": "Number of linked advertiser accounts."
+        },
+        {
+          "name": "region_code",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Country or region code. For example, \"DE\"."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information"
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number"
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size"
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results"
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results"
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "",
+      "body": ""
+    }
+  }
+}

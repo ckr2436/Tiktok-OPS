@@ -1,0 +1,11 @@
+{
+  "title": "Get the available regions for a Showcase via identity",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Showcase"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

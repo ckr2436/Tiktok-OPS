@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Update the name of a video package",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Video Templates"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

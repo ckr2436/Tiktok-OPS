@@ -1,0 +1,146 @@
+{
+  "title": "Save a playable creative",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/playable/save/",
+  "method": "POST",
+  "category_path": [
+    "Playable Ads"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request Message Type Allowable value: application/json"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID"
+      },
+      {
+        "name": "playable_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Playable creative ID."
+      },
+      {
+        "name": "playable_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Playable creative name."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl -H \"Access-Token:xxx\" -H \"Content-Type:application/json\" -X POST \\\n-d '{\n    \"advertiser_id\": \"ADVERTISER_ID\", \n    \"playable_id\": \"PLAYABLE_ID\", \n    \"playable_name\": \"PLAYABLE_NAME\"\n}' \\\nhttps://business-api.tiktok.com/open_api/v1.3/playable/save/"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code. For the complete list of response codes and descriptions, see Appendix-Return code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return message. For details, see Appendix-Return information ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "playable_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative ID."
+        },
+        {
+          "name": "playable_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative name."
+        },
+        {
+          "name": "playable_orientation",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative direction. Enum values: BOTH , LANDSCAPE , PORTRAIT ."
+        },
+        {
+          "name": "playable_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative URL."
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Playable creative state. Enum values: AUDIT_FAIL , AUDIT_SUCCESS , VALIDATE_FAIL , VALIDATE_SUCCESS , VALIDATING ."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "status": "AUDIT_SUCCESS",
+          "playable_id": "4009",
+          "playable_url": "https://sf-tk-sg.ibytedtos.com/obj/union-fe-sg/playable/f0fbcba5acc86a0e22ec0d9fca194d09/index.html",
+          "playable_name": "my_playable.zip",
+          "playable_orientation": "BOTH"
+        },
+        "request_id": "202009241012350101160350397899622"
+      }
+    }
+  }
+}

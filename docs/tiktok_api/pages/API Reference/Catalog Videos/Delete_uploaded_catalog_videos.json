@@ -1,0 +1,11 @@
+{
+  "title": "Delete uploaded catalog videos",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Videos"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

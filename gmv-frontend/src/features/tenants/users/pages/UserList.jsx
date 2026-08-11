@@ -1,5 +1,6 @@
 // src/features/tenants/users/pages/UserList.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useAppSelector } from '../../../../app/hooks'
 import { listTenantUsers, getTenantMeta, updateTenantUser } from '../service'
@@ -29,43 +30,45 @@ export default function UserList() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [size] = useState(20)
-  const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [err, setErr] = useState('')
   const [companyName, setCompanyName] = useState(`公司 ${wid || ''}`)
+
+  const queryClient = useQueryClient()
+
+  const metaQuery = useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: !!wid,
+    onSuccess: meta => {
+      if (meta?.name) {
+        setCompanyName(meta.name)
+      } else if (wid) {
+        setCompanyName(`公司 ${wid}`)
+      }
+    },
+    onError: () => {
+      if (wid) setCompanyName(`公司 ${wid}`)
+    },
+  })
+
+  const usersQuery = useQuery({
+    queryKey: ['tenant-users', wid, q, page, size],
+    queryFn: () => listTenantUsers({ wid, q, page, size }),
+    enabled: !!wid,
+    keepPreviousData: true,
+  })
+
+  const rows = usersQuery.data?.items || []
+  const total = usersQuery.data?.total || 0
+  const err = usersQuery.error ? (usersQuery.error.message || '加载失败') : ''
+  const loading = usersQuery.isLoading || usersQuery.isFetching
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((total || 0) / size)), [total, size])
 
   useEffect(() => {
-    let abort = false
-    async function loadMeta() {
-      if (!wid) return
-      try {
-        const meta = await getTenantMeta(wid)
-        if (!abort && meta?.name) setCompanyName(meta.name)
-      } catch {
-        if (!abort) setCompanyName(`公司 ${wid}`)
-      }
+    if (!metaQuery.isFetching && !metaQuery.data && wid) {
+      setCompanyName(`公司 ${wid}`)
     }
-    loadMeta()
-    return () => { abort = true }
-  }, [wid])
-
-  async function load() {
-    if (!wid) return
-    setLoading(true); setErr('')
-    try {
-      const data = await listTenantUsers({ wid, q, page, size })
-      setRows(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      setErr(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [wid, q, page, size])
+  }, [metaQuery.data, metaQuery.isFetching, wid])
 
   function canToggleActive(t) {
     if (!t) return false
@@ -73,12 +76,26 @@ export default function UserList() {
     return isOwner || (isAdmin && t.role === 'member')
   }
 
+  const toggleMutation = useMutation({
+    mutationFn: ({ userId, isActive }) => updateTenantUser(wid, userId, { is_active: isActive }),
+    onSuccess: (updated, variables) => {
+      queryClient.setQueryData(['tenant-users', wid, q, page, size], old => {
+        if (!old) return old
+        const items = (old.items || []).map(item =>
+          item.id === variables.userId ? { ...item, ...updated } : item
+        )
+        return { ...old, items }
+      })
+    },
+  })
+
   async function onToggleActive(target) {
-    if (!canToggleActive(target)) return
+    if (!canToggleActive(target) || toggleMutation.isPending) return
     try {
-      const updated = await updateTenantUser(wid, target.id, { is_active: !target.is_active })
-      setRows(list => list.map(x => x.id === target.id ? { ...x, ...updated } : x))
-    } catch (e) { alert(e?.message || '切换状态失败') }
+      await toggleMutation.mutateAsync({ userId: target.id, isActive: !target.is_active })
+    } catch (e) {
+      alert(e?.message || '切换状态失败')
+    }
   }
 
   return (

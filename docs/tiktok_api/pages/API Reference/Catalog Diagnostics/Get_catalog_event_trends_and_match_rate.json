@@ -1,0 +1,11 @@
+{
+  "title": "Get catalog event trends and match rate",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Diagnostics"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

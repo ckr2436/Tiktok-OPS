@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Get all videos",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "(Deprecated) Dynamic Scene"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

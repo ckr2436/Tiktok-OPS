@@ -1,0 +1,210 @@
+{
+  "title": "Upload catalog videos via a file URL",
+  "url": "https://business-api.tiktok.com/portal/docs/upload-catalog-videos-via-a-file-url/v1.3",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/catalog/video/file/",
+  "method": "POST",
+  "grabbedAt": "2026-07-09T05:04:15.358172Z",
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      },
+      {
+        "name": "Content-Type",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Request message type. Allowed format: application/json ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "bc_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Business Center ID. To obtain the list of Business Centers that you have access to, use /bc/get/ ."
+      },
+      {
+        "name": "catalog_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Catalog ID. To obtain the list of E-commerce catalogs within a Business Center, use /catalog/get/ and retrieve catalog_id values with catalog_type as ECOM . You need to have Catalog Management permission for the catalog. To obtain the catalogs for which you have Catalog Management permission, use /bc/asset/get/ . Set asset_type to CATALOG to retrieve asset_id values with catalog_role as ADMIN ."
+      },
+      {
+        "name": "file_url",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The download URL of the CSV file. The CSV catalog video template is accessible via catalog_video_template . To find a detailed description of each catalog video parameter, see Catalog video parameters ."
+      },
+      {
+        "name": "advertiser_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The IDs of the ad accounts that you want to sync the videos to. Once synced, the videos will be available in the creative library of those ad accounts. If you don't want to sync the catalog videos to any ad accounts, do not pass this field. Max size: 100. The ad account and the catalog ( catalog_id ) must be within the same Business Center ( bc_id ) and you need to have Admin or Operator permission for the ad account. Ineligible ad accounts will be ignored. To obtain the ad accounts for which you have Admin or Operator permission, use /bc/asset/get/ . Set asset_type to ADVERTISER to retrieve asset_id values with advertiser_role as ADMIN or OPERATOR ."
+      },
+      {
+        "name": "video_name",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The name of the video. Length limit: 500 characters."
+      },
+      {
+        "name": "video_link",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The URL of the video file. File size limit: 100 MB. For TikTok placement: Aspect ratio requirements: Horizontal(16:9) / Square(1:1) / Vertical(9: 16) Resolution: Horizontal (minimum 960*540) / Square (minimum 640*640) / Vertical (minimum 540*960) Bitrate: > 516.00 kbps Duration: 5-60s Safe zone: From left: 44 px, From right: 140px, From top: 130px, From bottom:483-484px For Global App Bundle and Pangle placements: Recommended duration: 5-60s Example: https://www.tiktok.com/tiktok_t_shirt.mp4"
+      },
+      {
+        "name": "sku_id_list",
+        "required": true,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "The SKU ID list of E-commerce catalog products to associate the video ( video_link ) with. Max size: 20. To specify multiple SKU IDs, separate them with commas. Example: SKU_ID_1,SKU_ID_2,SKU_ID_3,SKU_ID_4 . To obtain E-commerce catalog products that can be used in ads, use /catalog/product/get/ . If the returned ad_creation_eligible for the product is AVAILABLE , you can use the product in ads."
+      },
+      {
+        "name": "category",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The product category for the video. Length limit: 500 characters. If the value exceeds the limit, the value will be overwritten with null. Example: Apparel & Accessories> Clothing> Shirts ."
+      },
+      {
+        "name": "brand",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The brand name for the video. Length limit: 500 characters. If the value exceeds the limit, the value will be overwritten with null. Example: TikTok."
+      },
+      {
+        "name": "creator",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The creator of the video. Length limit: 500 characters. If the value exceeds the limit, the value will be overwritten with null. Example: TikTok Creator."
+      },
+      {
+        "name": "video_type",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The type of the video. Length limit: 500 characters. If the value exceeds the limit, the value will be overwritten with null. Example: Promotional video."
+      },
+      {
+        "name": "description",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "A short description of the video. Length limit: 500 characters. If the value exceeds the limit, the value will be overwritten with null."
+      },
+      {
+        "name": "landing_page_url",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "URL of the landing page where you can view and purchase the products that are associated with the video. Example: https://www.landingpage.com"
+      },
+      {
+        "name": "custom_label_0",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional information about the video. No length limit."
+      },
+      {
+        "name": "custom_label_1",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional information about the video. No length limit."
+      },
+      {
+        "name": "custom_label_2",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional information about the video. No length limit."
+      },
+      {
+        "name": "custom_label_3",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional information about the video. No length limit."
+      },
+      {
+        "name": "custom_label_4",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Additional information about the video. No length limit."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --location --request POST 'https://business-api.tiktok.com/open_api/v1.3/catalog/video/file/' \\\n--header 'Access-Token: {{Access-Token}}' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"bc_id\": \"{{bc_id}}\",\n    \"catalog_id\": \"{{catalog_id}}\",\n    \"advertiser_ids\": [\"{{advertiser_id}}\"],\n    \"file_url\": \"{{file_url}}\"\n}'"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Response code. For the complete list of response codes and descriptions, see Appendix-Return Code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Response message. For details, see Appendix - Return Codes ."
+      },
+      {
+        "name": "request_id",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "The log ID of a request, which uniquely identifies the request."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "feed_log_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Catalog video handling log ID. To check the processing status and final results of the upload, use /catalog/video/log/ ."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": "{\n    \"code\": 0,\n    \"message\": \"OK\",\n    \"request_id\": \"{{request_id}}\",\n    \"data\": {\n        \"feed_log_id\": \"{{feed_log_id}}\"\n    }\n}"
+    }
+  }
+}

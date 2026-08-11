@@ -1,0 +1,12 @@
+{
+  "title": "Supported metrics in Video Insights reports",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Creative Reports",
+    "Video Insights reports"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

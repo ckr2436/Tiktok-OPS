@@ -1,0 +1,11 @@
+{
+  "title": "Get locations and currencies",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Management"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

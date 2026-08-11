@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import String, text, UniqueConstraint
+from sqlalchemy import String, text, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import BigInteger as _BigInteger
 from sqlalchemy.dialects.mysql import BIGINT as MySQL_BIGINT
@@ -18,6 +18,7 @@ class Workspace(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
         UniqueConstraint("company_code", name="uq_workspaces_company_code"),
+        Index("idx_workspaces_deleted_at", "deleted_at"),
     )
 
     id: Mapped[int] = mapped_column(UBigInt, primary_key=True, autoincrement=True)
@@ -36,4 +37,5 @@ class Workspace(Base):
         server_onupdate=text("CURRENT_TIMESTAMP(6)"),
         nullable=False,
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(MySQL_DATETIME(fsp=6), default=None, index=True)
 

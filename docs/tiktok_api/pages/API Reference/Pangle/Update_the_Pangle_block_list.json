@@ -1,0 +1,11 @@
+{
+  "title": "Update the Pangle block list",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Pangle"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

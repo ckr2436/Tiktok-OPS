@@ -1,1 +1,5 @@
 Generic single-database configuration.
+
+0052_drop_gmv_campaign_sync_snapshots removes the unused ``gmv_campaign_sync_snapshots`` table now that campaign lifecycle is sourced directly from ``gmv_campaigns``.
+
+0053_drop_gmv_campaign_primary_status removes the obsolete ``primary_status`` column from ``gmv_campaigns``. TikTok ``primary_status`` remains a request-side filter/hint for sync but is no longer persisted; lifecycle continues to rely on ``status``/``secondary_status`` plus derived ``is_deleted``/``deleted_at``.

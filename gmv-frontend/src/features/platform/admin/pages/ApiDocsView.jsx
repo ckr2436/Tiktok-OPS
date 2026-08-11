@@ -46,6 +46,15 @@ export default function ApiDocsView(){
             ReDoc
           </button>
           <a
+            className="btn ghost"
+            href="/api/admin-docs/redoc#tag/Platform"
+            target="_blank"
+            rel="noopener"
+            title="跳转至平台策略文档"
+          >
+            平台策略 API
+          </a>
+          <a
             className="btn"
             href="/api/admin-docs/openapi.json"
             target="_blank"

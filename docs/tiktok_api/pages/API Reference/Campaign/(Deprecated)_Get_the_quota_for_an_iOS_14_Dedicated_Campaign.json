@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Get the quota for an iOS 14 Dedicated Campaign",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Campaign"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

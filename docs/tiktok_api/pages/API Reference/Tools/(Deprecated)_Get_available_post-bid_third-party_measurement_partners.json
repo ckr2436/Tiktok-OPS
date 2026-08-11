@@ -1,0 +1,11 @@
+{
+  "title": "(Deprecated) Get available post-bid third-party measurement partners",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Tools"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

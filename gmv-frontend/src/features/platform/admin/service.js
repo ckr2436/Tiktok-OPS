@@ -24,9 +24,75 @@ export async function updatePlatformAdminDisplayName(userId, display_name) {
   return res?.data ?? res
 }
 
+export async function listPolicyProviders() {
+  return []
+}
+
+function policyHeaders(domainOverride) {
+  const domain = domainOverride ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
+  const headers = {}
+  if (domain) {
+    headers['x-policy-domain'] = domain.toLowerCase()
+  }
+  return headers
+}
+
+export async function listPolicies(params = {}) {
+  const query = { ...params }
+  if (query.enabled !== undefined) {
+    query.status = query.enabled
+    delete query.enabled
+  }
+  const res = await http.get('/admin/platform/policies', { params: query })
+  return res?.data ?? res
+}
+
+export async function createPolicy(payload, { domain } = {}) {
+  const res = await http.post('/admin/platform/policies', payload, {
+    headers: policyHeaders(domain),
+  })
+  return res?.data ?? res
+}
+
+export async function updatePolicy(id, payload, { domain } = {}) {
+  const res = await http.put(`/admin/platform/policies/${id}`, payload, {
+    headers: policyHeaders(domain),
+  })
+  return res?.data ?? res
+}
+
+export async function togglePolicy(id, is_enabled, { domain } = {}) {
+  const action = is_enabled ? 'enable' : 'disable'
+  const res = await http.post(`/admin/platform/policies/${id}/${action}`, null, {
+    headers: policyHeaders(domain),
+  })
+  return res?.data ?? res
+}
+
+export async function deletePolicy(id, { domain } = {}) {
+  const res = await http.delete(`/admin/platform/policies/${id}`, {
+    headers: policyHeaders(domain),
+  })
+  return res?.data ?? res
+}
+
+export async function dryRunPolicy(id, payload = {}, { domain } = {}) {
+  const res = await http.post(`/admin/platform/policies/${id}/dry-run`, payload, {
+    headers: policyHeaders(domain),
+  })
+  return res?.data ?? res
+}
+
 export default {
   listPlatformAdmins,
   deletePlatformAdmin,
   updatePlatformAdminDisplayName,
+  listPolicyProviders,
+  listPolicies,
+  createPolicy,
+  updatePolicy,
+  togglePolicy,
+  deletePolicy,
+  dryRunPolicy,
 }
 

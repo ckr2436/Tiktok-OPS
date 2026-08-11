@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "models": [
+    {
+      "model_id": "omni_flash",
+      "aliases": [
+        "gemini_omni_flash_preview"
+      ],
+      "label": "Omni Flash",
+      "provider": "dynamic",
+      "provider_key": "dynamic",
+      "task_model": "omni_flash",
+      "provider_prompt_max_characters": 12000,
+      "reference_image_minimum": 3,
+      "reference_image_default": 7,
+      "reference_image_maximum": 7,
+      "reference_video_maximum": 1,
+      "segment_duration_minimum_seconds": 4,
+      "segment_duration_maximum_seconds": 10,
+      "allowed_segment_durations_seconds": [
+        4,
+        6,
+        8,
+        10
+      ],
+      "recommended_project_variant_parallelism": 2,
+      "maximum_project_variant_parallelism": 4,
+      "allows_human_face_references": true,
+      "human_face_reference_mode": "allowed",
+      "supports_native_spoken_audio": true,
+      "preferred_spoken_delivery": "provider_dialogue",
+      "native_spoken_audio_notes": "Generate the approved spoken performance in the same video request. Preserve one speaker identity, emotional delivery, and the declared lip-sync or character-voiceover relationship across adjacent segments.",
+      "hard_rules": [
+        "Every segment must receive character, scene, and key-action anchors in that order where distinct images are available.",
+        "In the final provider prompt, refer to files strictly by local multipart order as @image1, @image2, @image3, and so on.",
+        "Keep each segment within the selected reference image limit.",
+        "A reference video may be used only as motion, camera, rhythm, or composition guidance; do not copy its identity, text, watermark, or branding."
+      ]
+    },
+    {
+      "model_id": "seedance_2_0_mini",
+      "aliases": [
+        "seedance_2_0",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao_seedance_2_0_mini_260615"
+      ],
+      "label": "Seedance 2.0 Mini",
+      "provider": "volcengine",
+      "provider_key": "volcengine",
+      "task_model": "seedance_2_0_mini",
+      "provider_prompt_max_characters": 495,
+      "reference_image_minimum": 1,
+      "reference_image_default": 10,
+      "reference_image_maximum": 10,
+      "reference_video_maximum": 1,
+      "segment_duration_minimum_seconds": 4,
+      "segment_duration_maximum_seconds": 15,
+      "allowed_segment_durations_seconds": [],
+      "recommended_project_variant_parallelism": 2,
+      "maximum_project_variant_parallelism": 4,
+      "allows_human_face_references": true,
+      "human_face_reference_mode": "stylized_animation_only",
+      "supports_native_spoken_audio": true,
+      "preferred_spoken_delivery": "provider_dialogue",
+      "native_spoken_audio_notes": "Seedance receives the approved English spoken copy together with concise Chinese visual direction. Prefer native expressive speech; local dubbing is a bounded fallback after native-audio failure or an explicit user request.",
+      "hard_rules": [
+        "Preserve the user-confirmed reference image order and use @image1, @image2, and later numbers only for the matching uploaded image.",
+        "Human faces in references must be unmistakably fictional stylized animation; photorealistic, hyperreal, live-action, or real-person-looking faces are not provider-safe.",
+        "Use human, character, product, scene, and action references only when they are relevant to the current segment.",
+        "Keep each segment within the selected reference image limit.",
+        "A reference video may be used only as motion, camera, rhythm, or composition guidance; do not copy its identity, text, watermark, or branding."
+      ]
+    }
+  ]
+}

@@ -110,7 +110,7 @@ class CompanyListResponse(BaseModel):
 @router.get("", response_model=CompanyListResponse)
 def list_companies(me: SessionUser = Depends(require_platform_admin),
                    db: Session = Depends(get_db), q: str | None = None, page: int = 1, size: int = 20):
-    stmt = select(Workspace)
+    stmt = select(Workspace).where(Workspace.deleted_at.is_(None))
     if q:
         like = f"%{q}%"
         stmt = stmt.where(Workspace.name.like(like) | (Workspace.company_code.like(like)))
@@ -132,19 +132,22 @@ def delete_company(workspace_id: int, http: Request,
                    me: SessionUser = Depends(require_platform_owner),
                    db: Session = Depends(get_db)):
     ws = db.get(Workspace, int(workspace_id))
-    if not ws:
+    if not ws or ws.deleted_at is not None:
         raise APIError("NOT_FOUND", "Workspace not found.", 404)
     if ws.company_code == "0000":
         raise APIError("FORBIDDEN", "Cannot delete platform workspace.", 403)
 
-    # 软删所有用户（deleted_at），再删除工作区
+    # 软删公司和该公司下所有未删除用户。
+    # 不再 db.delete(ws)，避免被用户、审计日志、OAuth、同步数据等外键引用导致物理删除失败或数据丢失。
     from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     users = db.execute(select(User).where(User.workspace_id == ws.id, User.deleted_at.is_(None))).scalars().all()
     for u in users:
-        u.deleted_at = datetime.now(timezone.utc)
+        u.deleted_at = now
         db.add(u)
+    ws.deleted_at = now
+    db.add(ws)
     db.flush()
-    db.delete(ws)
 
     log_event(
         db,

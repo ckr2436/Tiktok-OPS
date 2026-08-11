@@ -1,0 +1,11 @@
+{
+  "title": "Set or update the Brand Safety Hub settings of an ad account",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Brand Safety"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

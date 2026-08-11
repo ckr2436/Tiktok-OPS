@@ -1,113 +1,191 @@
-// src/features/tenants/integrations/tiktok_business/service.js
+// TikTok Business integration service helpers
 
-const prefix = (wid) =>
-  `/api/v1/tenants/${encodeURIComponent(wid)}/oauth/tiktok-business`;
+import { apiRoot } from '@/core/config.js';
 
-/* ---------- 公司信息 ---------- */
-export async function getTenantMeta(wid) {
-  const r = await fetch(`/api/v1/tenants/${encodeURIComponent(wid)}/meta`, {
-    credentials: 'include',
+export function normProvider(p) {
+  const raw = (p && String(p).trim()) || 'tiktok-business';
+  return raw.toLowerCase().replace(/_/g, '-');
+}
+
+const tenantPrefix = (wid) => `${apiRoot}/tenants/${encodeURIComponent(wid)}`;
+const oauthPrefix = (wid) => `${tenantPrefix(wid)}/oauth/tiktok-business`;
+const providerPrefix = (wid, provider) => `${tenantPrefix(wid)}/providers/${encodeURIComponent(normProvider(provider))}`;
+const accountsPrefix = (wid, provider) => `${providerPrefix(wid, provider)}/accounts`;
+
+function appendQuery(url, params = {}) {
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value) !== '') {
+      search.append(key, value);
+    }
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json(); // { id, name, company_code }
+  const qs = search.toString();
+  return qs ? `${url}?${qs}` : url;
 }
 
-/* ---------- Provider Apps / 授权会话 ---------- */
-
-/** GET /provider-apps -> { items: [...] } */
-export async function listProviderApps(wid) {
-  const r = await fetch(`${prefix(wid)}/provider-apps`, { credentials: 'include' });
+async function apiGet(url, { signal } = {}) {
+  const r = await fetch(url, { credentials: 'include', signal });
   if (!r.ok) throw new Error(await r.text());
-  const data = await r.json();
-  return Array.isArray(data?.items) ? data.items : [];
+  return r.json();
 }
 
-/** POST /authz -> { state, auth_url, expires_at } */
-export async function createAuthz(wid, { provider_app_id, alias, return_to }) {
-  const r = await fetch(`${prefix(wid)}/authz`, {
+async function apiPost(url, body) {
+  const init = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({
-      provider_app_id,
-      alias: alias ?? null,        // 前端叫“名称”，后端字段是 alias
-      return_to: return_to ?? null,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function apiPatch(url, body) {
+  const r = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 
-/* ---------- 绑定列表 ---------- */
+async function apiDelete(url) {
+  const r = await fetch(url, { method: 'DELETE', credentials: 'include' });
+  if (r.status === 204) return null;
+  const text = await r.text();
+  if (!r.ok) throw new Error(text || 'Request failed');
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    return null;
+  }
+}
 
-/** GET /bindings -> { items: [...] } */
-export async function listBindings(wid) {
-  const r = await fetch(`${prefix(wid)}/bindings`, { credentials: 'include' });
-  if (!r.ok) throw new Error(await r.text());
-  const data = await r.json();
+/* ---------- 公司信息 ---------- */
+export async function getTenantMeta(wid) {
+  return apiGet(`${tenantPrefix(wid)}/meta`);
+}
+
+/* ---------- Provider Apps / 授权会话 ---------- */
+export async function listProviderApps(wid) {
+  const data = await apiGet(`${oauthPrefix(wid)}/provider-apps`);
   return Array.isArray(data?.items) ? data.items : [];
 }
 
-/** 详情页没有独立接口，这里前端通过列表过滤 */
+export async function createAuthz(wid, { provider_app_id, alias, return_to }) {
+  return apiPost(`${oauthPrefix(wid)}/authz`, {
+    provider_app_id,
+    alias: alias ?? null,
+    return_to: return_to ?? null,
+  });
+}
+
+export async function createTikTokAccountAuthz(wid, { provider_app_id, alias, return_to, scopes }) {
+  return apiPost(`${oauthPrefix(wid)}/tiktok-accounts/authz`, {
+    provider_app_id,
+    alias: alias ?? null,
+    return_to: return_to ?? null,
+    scopes: Array.isArray(scopes) && scopes.length > 0 ? scopes : null,
+  });
+}
+
+export async function listTikTokAccounts(wid) {
+  const data = await apiGet(`${oauthPrefix(wid)}/tiktok-accounts`);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export async function revokeTikTokAccount(wid, accountId, remote = true) {
+  return apiPost(
+    `${oauthPrefix(wid)}/tiktok-accounts/${encodeURIComponent(accountId)}/revoke?remote=${remote ? 'true' : 'false'}`
+  );
+}
+
+export async function hardDeleteTikTokAccount(wid, accountId) {
+  return apiDelete(`${oauthPrefix(wid)}/tiktok-accounts/${encodeURIComponent(accountId)}`);
+}
+
+/* ---------- 绑定列表 ---------- */
+export async function listBindings(wid) {
+  const data = await apiGet(`${oauthPrefix(wid)}/bindings`);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
 export async function getBindingById(wid, auth_id) {
   const list = await listBindings(wid);
   return list.find((x) => String(x.auth_id) === String(auth_id)) || null;
 }
 
 /* ---------- 撤销 / 删除 ---------- */
-
-/** POST /bindings/{auth_id}/revoke?remote=true -> { removed_advertisers } */
 export async function revokeBinding(wid, auth_id, remote = true) {
-  const r = await fetch(
-    `${prefix(wid)}/bindings/${encodeURIComponent(auth_id)}/revoke?remote=${remote ? 'true' : 'false'}`,
-    { method: 'POST', credentials: 'include' }
+  return apiPost(
+    `${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}/revoke?remote=${remote ? 'true' : 'false'}`
   );
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
-/** DELETE /bindings/{auth_id} -> { removed_advertisers, removed_accounts } */
 export async function hardDeleteBinding(wid, auth_id) {
-  const r = await fetch(`${prefix(wid)}/bindings/${encodeURIComponent(auth_id)}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return apiDelete(`${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}`);
+}
+
+export async function triggerBindingSync(wid, payload = {}) {
+  return apiPost(`${oauthPrefix(wid)}/bind`, payload);
 }
 
 /* ---------- 广告主相关（只读 + 设置主） ---------- */
-
-/** GET /bindings/{auth_id}/advertisers -> [ ... ] */
-export async function advertisersOf(wid, auth_id) {
-  const r = await fetch(`${prefix(wid)}/bindings/${encodeURIComponent(auth_id)}/advertisers`, {
-    credentials: 'include',
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+export async function advertisersOf(
+  wid,
+  auth_id,
+  provider = 'tiktok-business',
+  params = {},
+  options = {}
+) {
+  const url = appendQuery(
+    `${accountsPrefix(wid, provider)}/${encodeURIComponent(auth_id)}/advertisers`,
+    params,
+  );
+  const data = await apiGet(url, options);
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data)) return data;
+  return [];
 }
 
-/** POST /bindings/{auth_id}/set-primary -> { count } */
 export async function setPrimary(wid, auth_id, advertiser_id) {
-  const r = await fetch(`${prefix(wid)}/bindings/${encodeURIComponent(auth_id)}/set-primary`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ advertiser_id }),
+  return apiPost(`${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}/set-primary`, {
+    advertiser_id,
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
-/** PATCH /bindings/{auth_id}/alias -> { auth_id, alias } */
 export async function updateAlias(wid, auth_id, alias) {
-  const r = await fetch(`${prefix(wid)}/bindings/${encodeURIComponent(auth_id)}/alias`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ alias: alias ?? null }),
+  return apiPatch(`${oauthPrefix(wid)}/bindings/${encodeURIComponent(auth_id)}/alias`, {
+    alias: alias ?? null,
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
+/* ---------- 新业务 / 同步域 ---------- */
+export async function listProviderAccounts(wid, provider, params = {}, options = {}) {
+  return apiGet(appendQuery(accountsPrefix(wid, provider), params), options);
+}
+
+export async function triggerSync(wid, provider, authId, scope = 'all', payload = {}) {
+  return apiPost(`${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync`, {
+    scope,
+    ...payload,
+  });
+}
+
+export async function getSyncRun(wid, provider, authId, runId, options = {}) {
+  return apiGet(
+    `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/sync-runs/${encodeURIComponent(runId)}`,
+    options
+  );
+}
+
+export async function listEntities(wid, provider, authId, entity, params = {}, options = {}) {
+  const base = `${accountsPrefix(wid, provider)}/${encodeURIComponent(authId)}/${encodeURIComponent(entity)}`;
+  return apiGet(appendQuery(base, params), options);
+}

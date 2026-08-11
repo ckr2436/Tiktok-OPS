@@ -1,7 +1,7 @@
 # app/features/tenants/oauth_ttb/router.py
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Request, Response, Query, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -14,12 +14,17 @@ from app.data.db import get_db
 from app.data.models.oauth_ttb import (
     OAuthProviderApp,
     OAuthAccountTTB,
+    OAuthTikTokAccount,
 )
 from app.services.oauth_ttb import (
     create_authz_session,
+    create_tiktok_account_authz_session,
+    ensure_tiktok_account_oauth_tables,
+    revoke_tiktok_account_oauth,
     update_oauth_account_alias,
     revoke_oauth_account,
 )
+from app.services.ttb_sync_dispatch import SYNC_TASKS, dispatch_sync
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/tenants" + "/{workspace_id}/oauth/tiktok-business",
@@ -109,6 +114,152 @@ def create_authz(
     )
 
 
+class TikTokAccountAuthzCreateReq(BaseModel):
+    provider_app_id: int = Field(gt=0)
+    return_to: str | None = Field(default=None, max_length=512)
+    alias: str | None = Field(default=None, max_length=128)
+    scopes: list[str] | None = Field(default=None)
+
+
+class TikTokAccountAuthzCreateResp(BaseModel):
+    state: str
+    auth_url: str
+    expires_at: str
+
+
+@router.post("/tiktok-accounts/authz", response_model=TikTokAccountAuthzCreateResp)
+def create_tiktok_account_authz(
+    workspace_id: int,
+    req: TikTokAccountAuthzCreateReq,
+    http: Request,
+    response: Response,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    sess, url = create_tiktok_account_authz_session(
+        db=db,
+        workspace_id=int(workspace_id),
+        provider_app_id=int(req.provider_app_id),
+        created_by_user_id=int(me.id),
+        client_ip=client_ip(http),
+        user_agent=http.headers.get("user-agent"),
+        return_to=req.return_to,
+        alias=req.alias,
+        scopes=req.scopes,
+    )
+    response.set_cookie(
+        "gmv_tiktok_account_oauth_state",
+        sess.state,
+        max_age=int(getattr(settings, "OAUTH_SESSION_TTL_SECONDS", 3600)),
+        path="/api/oauth/tiktok-business/callback",
+        secure=bool(getattr(settings, "COOKIE_SECURE", True)),
+        httponly=True,
+        samesite=str(getattr(settings, "COOKIE_SAMESITE", "lax") or "lax"),
+    )
+    return TikTokAccountAuthzCreateResp(
+        state=sess.state,
+        auth_url=url,
+        expires_at=sess.expires_at.isoformat() if sess.expires_at else "",
+    )
+
+
+class TikTokAccountItem(BaseModel):
+    account_id: int
+    provider_app_id: int
+    alias: str | None
+    open_id: str
+    creator_id: str | None = None
+    status: str
+    scope: str | None = None
+    expires_at: str | None = None
+    refresh_expires_at: str | None = None
+    created_at: str
+
+
+class TikTokAccountListResp(BaseModel):
+    items: list[TikTokAccountItem]
+
+
+@router.get("/tiktok-accounts", response_model=TikTokAccountListResp)
+def list_tiktok_accounts(
+    workspace_id: int,
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    ensure_tiktok_account_oauth_tables(db)
+    accounts = (
+        db.execute(
+            select(OAuthTikTokAccount)
+            .where(
+                OAuthTikTokAccount.workspace_id == int(workspace_id),
+                OAuthTikTokAccount.status == "active",
+            )
+            .order_by(OAuthTikTokAccount.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    items: list[TikTokAccountItem] = []
+    for acc in accounts:
+        scope_json = acc.scope_json if isinstance(acc.scope_json, dict) else {}
+        items.append(
+            TikTokAccountItem(
+                account_id=int(acc.id),
+                provider_app_id=int(acc.provider_app_id),
+                alias=acc.alias,
+                open_id=str(acc.open_id),
+                creator_id=acc.creator_id,
+                status=acc.status,
+                scope=scope_json.get("value") if isinstance(scope_json, dict) else None,
+                expires_at=acc.expires_at.isoformat() if acc.expires_at else None,
+                refresh_expires_at=acc.refresh_expires_at.isoformat() if acc.refresh_expires_at else None,
+                created_at=acc.created_at.isoformat() if acc.created_at else "",
+            )
+        )
+    return TikTokAccountListResp(items=items)
+
+
+class TikTokAccountRevokeResp(BaseModel):
+    removed_accounts: int
+
+
+@router.post("/tiktok-accounts/{account_id}/revoke", response_model=TikTokAccountRevokeResp)
+async def revoke_tiktok_account(
+    workspace_id: int,
+    account_id: int,
+    remote: bool = Query(True),
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    result = await revoke_tiktok_account_oauth(
+        db=db,
+        workspace_id=int(workspace_id),
+        account_id=int(account_id),
+        remote=bool(remote),
+    )
+    return TikTokAccountRevokeResp(**result)
+
+
+@router.delete("/tiktok-accounts/{account_id}", response_model=TikTokAccountRevokeResp)
+def hard_delete_tiktok_account(
+    workspace_id: int,
+    account_id: int,
+    _: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    ensure_tiktok_account_oauth_tables(db)
+    removed = (
+        db.execute(
+            delete(OAuthTikTokAccount).where(
+                OAuthTikTokAccount.id == int(account_id),
+                OAuthTikTokAccount.workspace_id == int(workspace_id),
+            )
+        ).rowcount
+        or 0
+    )
+    return TikTokAccountRevokeResp(removed_accounts=int(removed))
+
+
 # ----------- 绑定列表（仅租户管理员）-----------
 class BindingItem(BaseModel):
     auth_id: int
@@ -183,6 +334,66 @@ def update_alias(
     return AliasUpdateResp(auth_id=int(acc.id), alias=acc.alias)
 
 
+# ----------- 绑定后触发同步（仅租户管理员）-----------
+class BindingSyncReq(BaseModel):
+    auth_id: int = Field(gt=0)
+    scope: str | None = Field(default=None, description="bc|advertisers|stores|products|all")
+    mode: str | None = Field(default=None, description="incremental|full")
+    idempotency_key: str | None = Field(default=None, max_length=128)
+
+
+class BindingSyncResp(BaseModel):
+    run_id: int
+    schedule_id: int
+    task_name: str
+    task_id: str | None
+    status: str
+    idempotent: bool = False
+
+
+@router.post("/bind", response_model=BindingSyncResp, status_code=status.HTTP_202_ACCEPTED)
+def trigger_binding_sync(
+    workspace_id: int,
+    req: BindingSyncReq,
+    http: Request,
+    me: SessionUser = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    account = db.get(OAuthAccountTTB, int(req.auth_id))
+    if not account or account.workspace_id != int(workspace_id):
+        raise HTTPException(status_code=404, detail="binding not found")
+    if account.status not in {"active", "invalid"}:
+        raise HTTPException(status_code=400, detail=f"binding status {account.status} cannot be synced")
+
+    scope = (req.scope or "all").lower()
+    if scope not in SYNC_TASKS:
+        raise HTTPException(status_code=400, detail="invalid scope")
+
+    params = {
+        "mode": (req.mode or "full"),
+    }
+    result = dispatch_sync(
+        db,
+        workspace_id=int(workspace_id),
+        provider="tiktok-business",
+        auth_id=int(account.id),
+        scope=scope,
+        params=params,
+        actor_user_id=int(me.id),
+        actor_workspace_id=int(me.workspace_id),
+        actor_ip=client_ip(http),
+        idempotency_key=req.idempotency_key,
+    )
+    return BindingSyncResp(
+        run_id=int(result.run.id),
+        schedule_id=int(result.run.schedule_id),
+        task_name=SYNC_TASKS[scope],
+        task_id=result.task_id,
+        status=result.status,
+        idempotent=result.idempotent,
+    )
+
+
 # ----------- 取消授权（撤销长期令牌；仅租户管理员）-----------
 class RevokeResp(BaseModel):
     removed_advertisers: int
@@ -250,4 +461,3 @@ def hard_delete_all_bindings(
     ).rowcount or 0
 
     return HardDeleteResp(removed_advertisers=int(del_advs), removed_accounts=int(del_acc))
-

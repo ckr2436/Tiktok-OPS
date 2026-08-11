@@ -1,0 +1,215 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-08-11T20:50:00+08:00",
+  "repository": "/opt/gmv/GMV-OPS",
+  "runtime": {
+    "python": "/opt/gmv/python3.13/bin/python",
+    "codex": [
+      "/opt/apps/codex/codex",
+      "/usr/local/bin/codex"
+    ],
+    "ffmpeg": "/opt/apps/bin/ffmpeg",
+    "frontend_source": "/opt/gmv/GMV-OPS/gmv-frontend",
+    "frontend_deployed": "/opt/gmv/GMV-OPS/frontend",
+    "content_storage": "/data/gmv_ops/hermes_content_factory",
+    "bridge_executable": "/opt/gmv/GMV-OPS/backend/assets/MYUPONA-HermesBridge.exe"
+  },
+  "ai_routing": {
+    "gateway": "http://127.0.0.1:8650/v1",
+    "provider_policy": ["sub2api", "toapis", "coultra"],
+    "openrouter_automatic_routing": false,
+    "role_policy": "ops/hermes-unified-routing/routing-policy.json",
+    "hermes_upstream_credentials": "gateway_only",
+    "logical_roles": [
+      "gmv-hermes-general-v1",
+      "gmv-hermes-general-aux-v1",
+      "gmv-hermes-general-vision-v1",
+      "gmv-ads-realtime-v1",
+      "gmv-ads-review-v1",
+      "gmv-shop-video-analyst-v1"
+    ]
+  },
+  "services": [
+    "gmv-api.service",
+    "gmv-nginx.service",
+    "gmv-celerybeat.service",
+    "gmv-celery-worker@gmv.tasks.hermes_agent.service",
+    "gmv-celery-worker@gmv.tasks.hermes_maintenance.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.api.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.browser.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.browser_poll.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.download.service",
+    "gmv-celery-worker@gmv.tasks.ai_video.maintenance.service",
+    "gmv-celery-worker@openai_whisper.service",
+    "gmv-celery-worker@gmvmax.service",
+    "gmv-celery-worker@gmvmax_sync.service",
+    "gmv-celery-worker@website_ads_media.service"
+  ],
+  "content_factory": {
+    "active_variant_stages": [
+      "DIRECTOR",
+      "PRODUCTION_PLAN",
+      "VISUAL_PREVIEW",
+      "CREATIVE_REVIEW",
+      "FINAL_ASSETS",
+      "VIDEO_PROMPTS"
+    ],
+        "asynchronous_completion": [
+            "PROVIDER_POLL",
+            "LOCAL_DOWNLOAD",
+            "SEGMENT_COMPOSITION",
+            "EDIT_PACKAGE",
+            "TARGET_RECONCILIATION"
+        ],
+        "completion_authority": "project_owned_local_video_assets_with_existing_raid_files",
+        "parallel_mode": "browser_serial_api_video_bounded_parallel",
+        "segment_parallel_mode": "director_owned_dependency_graph",
+        "segment_release_quality_gate": [
+            "local_file",
+            "duration",
+            "dimensions_and_aspect",
+            "required_audio",
+            "product_visual_when_required"
+        ],
+        "producer_intake": "api_only_intent_compiler_with_async_public_benchmark_multimodal_analysis",
+        "producer_prompt_version": "content_producer_v19_fast_product_grounding",
+        "producer_benchmark_url_flow": "safe_https_yt_dlp_to_whisper_to_full_contact_sheets_to_multimodal_to_idempotent_hermes_turn",
+        "producer_benchmark_source_policy": "analysis_only_unless_explicit_supported_video_to_video_confirmation",
+        "producer_deliverable_contract": "signed_creative_intent_manifest_with_evidence_and_observable_checks",
+        "member_project_creation": "producer_conversation_only_no_direct_create_route",
+        "intent_manifest_schema": "2.0",
+        "intent_execution_chain": "producer_requirement_to_director_mapping_to_production_coordinates_to_segment_contract",
+        "final_intent_guardian": "composed_output_semantic_evidence_with_targeted_segment_repair",
+        "producer_browser_authorized": false,
+        "producer_media_authorized_before_confirmation": false,
+        "project_deletion": "durable_tombstone_then_provider_drain_and_physical_cleanup",
+        "provider_task_recovery_scope": "workspace_user_and_project_ledger",
+        "browser_local_draft_scope": "workspace_and_user",
+        "upload_limit_authority": "server_counted_stream_bytes",
+        "asset_download_scope": "resolved_content_repository_path_only",
+        "complete_waiting_bridge_repair": "normalize_to_complete_without_deletion",
+        "provider_terminal_states": "success_failure_cancel_superseded_or_downloaded",
+        "test_storage_isolation": "CONTENT_FACTORY_STORAGE_ROOT_must_point_to_disposable_test_directory",
+        "manual_resume_restores_global_video_waiter": "pending_tasks_only",
+        "api_only_browser_slot_mode": "dormant",
+        "api_slot_dormancy_uses_latest_active_stage_backend": true,
+        "browser_fallback_return_to_api_rehibernates_sticky_slot": true,
+        "semantic_exhaustion_policy": "api_only_replan_then_automatic_quality_pause",
+        "self_heal_policy_version": 108,
+        "recovery_supervisor": "stateless_logical_role_with_deterministic_atomic_executor",
+        "recovery_supervisor_policy_version": "content-recovery-supervisor-v5-single-writer-probes",
+        "recovery_supervisor_browser_capability_failures": [
+            "upload_zero",
+            "login_required",
+            "browser_offline"
+        ],
+        "recovery_supervisor_safe_fallback": "prefer_cooled_api_retry_inside_allowed_action_envelope",
+        "creative_replay_context_includes_diversity_lane": true,
+        "partial_visual_repair_preserves_passed_references": true,
+        "partial_visual_repair_uses_reference_one_identity_anchor": true,
+        "editor_guidance_authority": "matching_completed_local_video_and_existing_local_guide",
+    "semantic_exhaustion_browser_fallback": false,
+    "workflow_generation": "director_production_plan_v2_only"
+  },
+  "providers": {
+    "sub2api": {
+      "models": [
+        "gpt-5.6",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-image-2",
+        "omni_flash"
+      ],
+      "text_multimodal_priority": 1,
+      "content_factory_visual_priority": 1,
+      "omni_priority": 1,
+      "omni_reference_limit": 7,
+      "image_execution": "durable_async_task_with_private_object_storage"
+    },
+    "flow2api": {
+      "models": ["nano_banana_pro"],
+      "content_factory_visual_priority": 5,
+      "image_execution": "self_hosted_account_pool"
+    },
+    "bandianwa": {
+      "models": ["omni_flash", "gpt-image-2"],
+      "omni_priority": 10,
+      "omni_reference_limit": 7
+    },
+    "google-gemini": {
+      "models": ["omni_flash"],
+      "omni_priority": 1000,
+      "omni_reference_limit": 7
+    },
+    "kyy": {
+      "models": ["omni_flash"],
+      "omni_priority": 30,
+      "omni_reference_limit": 5
+    },
+    "toapis": {
+      "models": ["omni_flash"],
+      "omni_priority": 40,
+      "omni_reference_limit": 3,
+      "omni_default_enabled": false
+    },
+    "doubao": {
+      "models": ["seedance_2_0_mini"],
+      "seedance_priority": 10,
+      "seedance_reference_limit": 10,
+      "durations": "pool_clamped_4_to_15_seconds"
+    },
+    "volcengine": {
+      "models": ["seedance_2_0_mini"],
+      "seedance_priority": 10,
+      "seedance_reference_limit": 9
+    },
+    "openrouter": {
+      "models": [],
+      "capabilities": ["text", "image", "multimodal"]
+    }
+  },
+  "high_risk_files": [
+    "backend/app/tasks/hermes_agent/content_factory_tasks.py",
+    "backend/app/services/hermes_agent/direct_browser.py",
+    "backend/app/services/hermes_agent/content_factory.py",
+    "backend/app/services/hermes_agent/content_factory_api.py",
+    "backend/app/services/sub2api/client.py",
+    "backend/app/features/tenants/hermes_agent/router.py",
+    "backend/app/tasks/ai_video/video_tasks.py",
+    "backend/app/services/ai_video/accounts.py",
+    "backend/app/data/models/hermes_agent.py",
+    "backend/app/data/models/kie_api.py",
+    "gmv-frontend/src/features/tenants/hermes_agent/pages/ContentFactoryPage.jsx"
+  ],
+  "focused_tests": [
+    "backend/tests/test_content_factory_api_prompts.py",
+    "backend/tests/test_content_factory_stage_routing.py",
+    "backend/tests/test_sub2api_image_client.py",
+    "backend/tests/test_content_factory_variant_cleanup.py",
+    "backend/tests/test_content_factory_video_dependency_guard.py",
+    "backend/tests/test_hermes_browser_devices.py",
+    "backend/tests/test_hermes_browser_recovery.py",
+    "backend/tests/test_hermes_chatgpt_popups.py",
+    "backend/tests/test_hermes_segment_only_prompts.py",
+    "backend/tests/test_hermes_self_heal_state.py",
+    "backend/tests/test_hermes_slot_wait_recovery_contract.py",
+    "backend/tests/test_storyboard_split.py",
+    "backend/tests/test_ai_video_adapters.py",
+    "backend/tests/test_ai_video_download_state_machine.py",
+    "backend/tests/test_ai_video_legacy_cleanup.py",
+    "backend/tests/test_ai_video_model_routing.py",
+    "backend/tests/test_bandianwa_video.py"
+  ],
+  "historical_verified_incident": {
+    "project_id": 166,
+    "project_key": "cf_e64eaf7b1b894012b893",
+    "workspace_id": 3,
+    "user_id": 6,
+    "status": "automatic_quality_paused_after_drain",
+    "completed_indices": [1],
+    "target_count": 2,
+    "local_video": "模仿1-1-v01-1.mp4",
+    "local_guide": "模仿1-1-v01-1-editor-guide.md"
+  }
+}

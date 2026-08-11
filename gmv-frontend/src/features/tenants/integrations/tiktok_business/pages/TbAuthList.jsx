@@ -1,12 +1,16 @@
-// src/features/tenants/integrations/tiktok_business/pages/TbAuthList.jsx
+// TikTok Business authorization list page
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
 import {
   getTenantMeta,
   listBindings,
   listProviderApps,
   createAuthz,
+  createTikTokAccountAuthz,
+  listTikTokAccounts,
   hardDeleteBinding,
+  hardDeleteTikTokAccount,
 } from '../service.js';
 
 /* 英文状态 -> 中文展示 */
@@ -44,24 +48,62 @@ const BTN = { width: 104, height: 32, gap: 12 };
 
 export default function TbAuthList() {
   const { wid } = useParams();
+  const queryClient = useQueryClient();
 
-  const [companyName, setCompanyName] = useState('');
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const [providers, setProviders] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPid, setNewPid] = useState('');
 
   const title = useMemo(() => 'TikTok Business 授权', []);
 
-  /* 读取公司名（不从 session 取） */
+  const metaQuery = useQuery({
+    queryKey: ['tenant-meta', wid],
+    queryFn: () => getTenantMeta(wid),
+    enabled: !!wid,
+  });
+
+  const bindingsQuery = useQuery({
+    queryKey: ['tb-bindings', wid],
+    queryFn: async () => {
+      const list = await listBindings(wid);
+      if (!Array.isArray(list)) return [];
+      return list.map((x) => ({
+        auth_id: x.auth_id,
+        provider_app_id: x.provider_app_id,
+        name: x.alias || '-',
+        status: x.status,
+        created_at: x.created_at,
+      }));
+    },
+    enabled: !!wid,
+  });
+
+  const providersQuery = useQuery({
+    queryKey: ['tb-provider-apps', wid],
+    queryFn: async () => {
+      const items = await listProviderApps(wid);
+      return Array.isArray(items) ? items : [];
+    },
+    enabled: !!wid,
+  });
+
+  const tiktokAccountsQuery = useQuery({
+    queryKey: ['tb-tiktok-accounts', wid],
+    queryFn: async () => {
+      const list = await listTikTokAccounts(wid);
+      return Array.isArray(list) ? list : [];
+    },
+    enabled: !!wid,
+  });
+
   useEffect(() => {
-    getTenantMeta(wid)
-      .then((m) => setCompanyName(m?.name || ''))
-      .catch(() => setCompanyName(''));
-  }, [wid]);
+    const providers = providersQuery.data || [];
+    if (providers.length === 1) {
+      setNewPid((prev) => prev || String(providers[0].id ?? ''));
+    } else if (!showNew) {
+      setNewPid('');
+    }
+  }, [providersQuery.data, showNew]);
 
   /* 回调参数提示并刷新 */
   useEffect(() => {
@@ -72,44 +114,11 @@ export default function TbAuthList() {
       alert(msg.trim());
       const url = window.location.origin + window.location.pathname;
       window.history.replaceState({}, '', url);
-      refresh();
+      bindingsQuery.refetch();
+      tiktokAccountsQuery.refetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      const list = await listBindings(wid);
-      const safe = list.map((x) => ({
-        auth_id: x.auth_id,
-        provider_app_id: x.provider_app_id,
-        name: x.alias || '-',             // alias -> 名称
-        status: x.status,
-        created_at: x.created_at,
-      }));
-      setRows(safe);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    refresh();
-    listProviderApps(wid)
-      .then((items) => {
-        setProviders(items || []);
-        if (items && items.length === 1) {
-          setNewPid(String(items[0].id)); // 只有 1 个时自动选中且在 UI 隐藏选择器
-        } else {
-          setNewPid('');
-        }
-      })
-      .catch(() => {
-        setProviders([]);
-        setNewPid('');
-      });
-  }, [wid]);
 
   /* 打开“新建授权”弹窗（可复用某行的 provider 与名称） */
   function openNewAuthDialog(prefill) {
@@ -122,16 +131,52 @@ export default function TbAuthList() {
     setShowNew(true);
   }
 
+  const createAuthzMutation = useMutation({
+    mutationFn: (payload) => createAuthz(wid, payload),
+  });
+
+  const createTikTokAccountAuthzMutation = useMutation({
+    mutationFn: (payload) => createTikTokAccountAuthz(wid, payload),
+  });
+
+  const hardDeleteMutation = useMutation({
+    mutationFn: (authId) => hardDeleteBinding(wid, authId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-bindings', wid] });
+    },
+  });
+
+  const hardDeleteTikTokAccountMutation = useMutation({
+    mutationFn: (accountId) => hardDeleteTikTokAccount(wid, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tb-tiktok-accounts', wid] });
+    },
+  });
+
   async function handleCreateSubmit() {
+    const providers = providersQuery.data || [];
     const pid = Number(newPid || (providers[0]?.id ?? 0));
     if (!pid) return;
-    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok_business`;
-    const { auth_url } = await createAuthz(wid, {
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
+    const { auth_url } = await createAuthzMutation.mutateAsync({
       provider_app_id: pid,
       return_to,
       alias: newName.trim() || null,
     });
     // 当前页跳转，回调后返回 return_to
+    window.location.assign(auth_url);
+  }
+
+  async function handleCreateTikTokAccountAuth() {
+    const providers = providersQuery.data || [];
+    const pid = Number(newPid || (providers[0]?.id ?? 0));
+    if (!pid) return;
+    const return_to = `${window.location.origin}/tenants/${encodeURIComponent(wid)}/tiktok-business`;
+    const { auth_url } = await createTikTokAccountAuthzMutation.mutateAsync({
+      provider_app_id: pid,
+      return_to,
+      alias: 'TikTok 账号',
+    });
     window.location.assign(auth_url);
   }
 
@@ -143,11 +188,21 @@ export default function TbAuthList() {
   /* 取消授权：直接硬删记录 */
   async function handleCancel(row) {
     if (!confirm('确定要取消授权吗？此操作会删除该授权记录。')) return;
-    await hardDeleteBinding(wid, row.auth_id);
-    await refresh();
+    await hardDeleteMutation.mutateAsync(row.auth_id);
   }
 
+  async function handleCancelTikTokAccount(row) {
+    if (!confirm('确定要移除该 TikTok 账号授权吗？')) return;
+    await hardDeleteTikTokAccountMutation.mutateAsync(row.account_id);
+  }
+
+  const rows = bindingsQuery.data || [];
+  const tiktokAccounts = tiktokAccountsQuery.data || [];
+  const loading = bindingsQuery.isLoading || bindingsQuery.isFetching;
+  const error = bindingsQuery.error ? (bindingsQuery.error.message || '加载失败') : '';
+  const providers = providersQuery.data || [];
   const onlyOneProvider = providers.length === 1;
+  const companyName = metaQuery.data?.name || '';
 
   return (
     <div className="p-4 md:p-6 space-y-12">
@@ -162,17 +217,104 @@ export default function TbAuthList() {
             </div>
           </div>
           <div className="flex items-center" style={{ columnGap: 14 }}>
-            <button className="btn ghost" onClick={refresh}>刷新</button>
-            <button className="btn" onClick={() => openNewAuthDialog()}>
-              新建授权
+            <Link
+              className="btn ghost"
+              to={`/tenants/${encodeURIComponent(wid)}/integrations/tiktok-business/accounts`}
+            >
+              查看数据
+            </Link>
+            <button className="btn ghost" onClick={() => bindingsQuery.refetch()} disabled={bindingsQuery.isRefetching}>
+              {bindingsQuery.isRefetching ? '刷新中…' : '刷新'}
+            </button>
+            <button
+              className="btn ghost"
+              onClick={handleCreateTikTokAccountAuth}
+              disabled={createTikTokAccountAuthzMutation.isPending || providers.length === 0}
+            >
+              {createTikTokAccountAuthzMutation.isPending ? '跳转中…' : '授权 TikTok 账号（短期 Token）'}
+            </button>
+            <button className="btn" onClick={() => openNewAuthDialog()} disabled={createAuthzMutation.isPending}>
+              授权广告账户（长期 Token）
             </button>
           </div>
         </div>
       </div>
 
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-base font-semibold">TikTok 账号授权（短期 Token）</div>
+            <div className="small-muted">
+              用于发布视频、上传草稿、Only show in ads 和账号素材能力。Callback 可与广告主授权共用，系统按 state 自动识别。
+            </div>
+          </div>
+          <button
+            className="btn ghost"
+            onClick={() => tiktokAccountsQuery.refetch()}
+            disabled={tiktokAccountsQuery.isFetching}
+          >
+            {tiktokAccountsQuery.isFetching ? '刷新中…' : '刷新'}
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="oauth-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <thead>
+              <tr>
+                <th className="px-2 py-2" style={{ textAlign: 'left' }}>账号</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 220 }}>Open ID</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 180 }}>Token 到期</th>
+                <th className="px-2 py-2" style={{ textAlign: 'left', width: 120 }}>状态</th>
+                <th className="px-2 py-2" style={{ textAlign: 'center', width: 160 }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiktokAccountsQuery.isLoading ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center small-muted">加载中…</td>
+                </tr>
+              ) : tiktokAccounts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center small-muted">
+                    暂无 TikTok 账号授权。请先点击“授权 TikTok 账号”。
+                  </td>
+                </tr>
+              ) : (
+                tiktokAccounts.map((row) => (
+                  <tr key={row.account_id} className="border-t border-gray-200">
+                    <td className="px-2 py-3">
+                      <div className="font-medium">{row.alias || 'TikTok 账号'}</div>
+                      <div className="small-muted">ID：{row.account_id}</div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <span title={row.open_id}>{String(row.open_id || '').slice(0, 10)}…</span>
+                    </td>
+                    <td className="px-2 py-3">{fmt(row.expires_at)}</td>
+                    <td className="px-2 py-3">{cnStatus(row.status)}</td>
+                    <td className="px-2 py-3" style={{ textAlign: 'center' }}>
+                      <button
+                        className="btn danger"
+                        style={{ width: BTN.width, height: BTN.height }}
+                        onClick={() => handleCancelTikTokAccount(row)}
+                        disabled={hardDeleteTikTokAccountMutation.isPending}
+                      >
+                        {hardDeleteTikTokAccountMutation.isPending ? '处理中…' : '移除授权'}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 列表卡片 */}
       <div className="card">
-        <div className="text-base font-semibold mb-3">授权列表</div>
+        <div className="text-base font-semibold mb-3">广告账户授权（长期 Token）</div>
+
+        {error && (
+          <div className="alert alert--error mb-3">{error}</div>
+        )}
 
         <div className="table-wrap">
           <table className="oauth-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -194,126 +336,112 @@ export default function TbAuthList() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
+              {loading ? (
                 <tr>
-                  <td className="px-2 py-3" colSpan={COLUMNS.length}>加载中…</td>
+                  <td colSpan={COLUMNS.length} className="py-6 text-center small-muted">
+                    加载中…
+                  </td>
                 </tr>
-              )}
-
-              {!loading && rows.length === 0 && (
+              ) : rows.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-6 small-muted" colSpan={COLUMNS.length}>暂无授权</td>
+                  <td colSpan={COLUMNS.length} className="py-6 text-center small-muted">
+                    暂无授权记录
+                  </td>
                 </tr>
+              ) : (
+                rows.map(row => (
+                  <tr key={row.auth_id} className="border-t border-gray-200">
+                    <td className="px-2 py-3">
+                      <div className="font-medium">{row.name}</div>
+                      <div className="small-muted">
+                        ID：{row.auth_id}
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">{cnStatus(row.status)}</td>
+                    <td className="px-2 py-3">{fmt(row.created_at)}</td>
+                    <td className="px-2 py-3">
+                      <div className="flex flex-wrap items-center justify-center" style={{ gap: BTN.gap }}>
+                        <button
+                          className="btn ghost"
+                          style={{ width: BTN.width, height: BTN.height }}
+                          onClick={() => handleReauth(row)}
+                        >
+                          重新授权
+                        </button>
+                        <Link
+                          className="btn ghost"
+                          style={{ width: BTN.width, height: BTN.height }}
+                          to={`/tenants/${encodeURIComponent(wid)}/tiktok-business/${encodeURIComponent(row.auth_id)}`}
+                        >
+                          查看详情
+                        </Link>
+                        <button
+                          className="btn danger"
+                          style={{ width: BTN.width, height: BTN.height }}
+                          onClick={() => handleCancel(row)}
+                          disabled={hardDeleteMutation.isPending}
+                        >
+                          {hardDeleteMutation.isPending ? '处理中…' : '取消授权'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-
-              {!loading && rows.map((r) => (
-                <tr key={r.auth_id}>
-                  {/* 名称 */}
-                  <td
-                    className="px-2 py-2 truncate"
-                    style={{ textAlign: COLUMNS[0].align }}
-                    title={r.name || '-'}
-                  >
-                    {r.name || '-'}
-                  </td>
-                  {/* 状态 */}
-                  <td className="px-2 py-2" style={{ textAlign: COLUMNS[1].align }}>
-                    {cnStatus(r.status)}
-                  </td>
-                  {/* 时间 */}
-                  <td className="px-2 py-2" style={{ textAlign: COLUMNS[2].align, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(r.created_at)}
-                  </td>
-                  {/* 操作 */}
-                  <td className="px-2 py-2" style={{ textAlign: COLUMNS[3].align }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center' }}>
-                      <button
-                        className="btn sm ghost"
-                        style={{ width: BTN.width, height: BTN.height, marginRight: BTN.gap }}
-                        onClick={() => handleReauth(r)}
-                      >
-                        重新授权
-                      </button>
-                      <button
-                        className="btn sm danger"
-                        style={{ width: BTN.width, height: BTN.height }}
-                        onClick={() => handleCancel(r)}
-                      >
-                        取消授权
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 新建授权：弹窗（Provider 只有一个时隐藏选择器） */}
+      {/* 新建授权弹窗 */}
       {showNew && (
-        <div className="modal-backdrop" onClick={() => setShowNew(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal__header">
-              <div className="modal__title">新建授权</div>
-              <button className="modal__close" onClick={() => setShowNew(false)}>关闭</button>
+        <div className="dialog-backdrop">
+          <div className="dialog">
+            <div className="dialog-header">
+              <div className="dialog-title">授权广告账户（长期 Token）</div>
+              <button className="btn ghost" onClick={() => setShowNew(false)}>
+                关闭
+              </button>
             </div>
-            <div className="modal__body">
-              <div className="form">
-                <div className="form-field">
-                  <label className="form-field__label">名称</label>
-                  <div className="form-field__control">
-                    <input
-                      className="input"
-                      placeholder="给此次授权取个名称（可选）"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                    />
-                  </div>
+            <div className="dialog-body space-y-4">
+              {!onlyOneProvider && (
+                <div>
+                  <div className="small-muted mb-1">选择 Provider</div>
+                  <select
+                    className="input"
+                    value={newPid}
+                    onChange={(e) => setNewPid(e.target.value)}
+                  >
+                    <option value="">选择 provider-app</option>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name || `App ${p.id}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-
-                <div className="form-field">
-                  <label className="form-field__label">Provider App</label>
-                  {onlyOneProvider ? (
-                    <div className="input" style={{ display: 'flex', alignItems: 'center' }}>
-                      <span className="truncate">{providers[0]?.name || '-'}</span>
-                    </div>
-                  ) : (
-                    <div className="form-field__control">
-                      <select
-                        className="input"
-                        value={newPid}
-                        onChange={(e) => setNewPid(e.target.value)}
-                      >
-                        <option value="">请选择</option>
-                        {providers.map((p) => (
-                          <option key={p.id} value={String(p.id)}>
-                            {p.name}（App ID: {p.client_id}）
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
+              )}
+              <div>
+                <div className="small-muted mb-1">授权名称（可选）</div>
+                <input
+                  className="input"
+                  placeholder="输入名称"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
               </div>
-
-              <div className="actions mt-4" style={{ display: 'flex', columnGap: BTN.gap }}>
-                <button
-                  className="btn"
-                  style={{ width: BTN.width, height: BTN.height }}
-                  disabled={(providers.length > 1 && !newPid) || providers.length === 0}
-                  onClick={handleCreateSubmit}
-                >
-                  去授权
-                </button>
-                <button
-                  className="btn ghost"
-                  style={{ width: BTN.width, height: BTN.height }}
-                  onClick={() => setShowNew(false)}
-                >
-                  取消
-                </button>
-              </div>
+            </div>
+            <div className="dialog-footer">
+              <button className="btn ghost" onClick={() => setShowNew(false)}>
+                取消
+              </button>
+              <button
+                className="btn"
+                onClick={handleCreateSubmit}
+                disabled={createAuthzMutation.isPending || (!onlyOneProvider && !newPid)}
+              >
+                {createAuthzMutation.isPending ? '跳转中…' : '去授权'}
+              </button>
             </div>
           </div>
         </div>
@@ -321,4 +449,3 @@ export default function TbAuthList() {
     </div>
   );
 }
-

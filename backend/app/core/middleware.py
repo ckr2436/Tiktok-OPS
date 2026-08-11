@@ -55,7 +55,7 @@ def install_middleware(app: FastAPI) -> None:
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
     # 2) Host 白名单（从环境变量读取；未在 Settings 中定义也没关系）
-    #   .env 建议：ALLOWED_HOSTS=["gmv.drafyn.com","drafyn.com","www.drafyn.com","127.0.0.1","localhost"]
+    #   .env 建议：ALLOWED_HOSTS=["gmv.myupona.com","myupona.com","www.myupona.com","127.0.0.1","localhost"]
     allowed_hosts = _parse_list_like(os.getenv("ALLOWED_HOSTS", ""))
 
     # 默认兜底（生产尽量在 .env 填写，避免走默认）
@@ -63,12 +63,12 @@ def install_middleware(app: FastAPI) -> None:
         if settings.DEBUG:
             allowed_hosts = ["*", "127.0.0.1", "localhost"]
         else:
-            allowed_hosts = ["gmv.drafyn.com", "drafyn.com", "www.drafyn.com", "127.0.0.1", "localhost"]
+            allowed_hosts = ["gmv.myupona.com", "myupona.com", "www.myupona.com", "127.0.0.1", "localhost"]
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
     # 3) CORS 白名单
-    #   .env 已有：CORS_ORIGINS=["https://gmv.drafyn.com","https://drafyn.com","https://www.drafyn.com"]
+    #   .env 已有：CORS_ORIGINS=["https://gmv.myupona.com","https://myupona.com","https://www.myupona.com"]
     cors_origins = _parse_list_like(getattr(settings, "CORS_ORIGINS", []))
 
     # 若允许带 Cookie，不能使用 "*"
@@ -80,7 +80,7 @@ def install_middleware(app: FastAPI) -> None:
         if settings.DEBUG:
             cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
         else:
-            cors_origins = ["https://gmv.drafyn.com", "https://drafyn.com", "https://www.drafyn.com"]
+            cors_origins = ["https://gmv.myupona.com", "https://myupona.com", "https://www.myupona.com"]
 
     app.add_middleware(
         CORSMiddleware,

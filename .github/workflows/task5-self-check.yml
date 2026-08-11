@@ -1,0 +1,44 @@
+name: Task5 Self Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  task5-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Verify Content Factory legacy guard
+        run: bash scripts/verify_content_factory_legacy_guard.sh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build FE
+        run: |
+          cd gmv-frontend
+          npm ci
+          npm run build
+
+      - name: Verify FE API prefix
+        run: bash scripts/verify_fe_api_prefix.sh
+
+      - name: Task5 self-check
+        run: scripts/verify_task5.sh

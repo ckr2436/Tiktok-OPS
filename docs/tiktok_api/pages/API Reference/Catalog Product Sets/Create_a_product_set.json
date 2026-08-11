@@ -1,0 +1,11 @@
+{
+  "title": "Create a product set",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Product Sets"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

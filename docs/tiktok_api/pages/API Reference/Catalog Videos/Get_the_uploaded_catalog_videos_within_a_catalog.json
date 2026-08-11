@@ -1,0 +1,11 @@
+{
+  "title": "Get the uploaded catalog videos within a catalog",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Catalog Videos"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

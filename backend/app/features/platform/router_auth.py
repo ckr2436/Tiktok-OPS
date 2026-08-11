@@ -206,20 +206,22 @@ def login(req: LoginRequest, resp: Response, http: Request, db: Session = Depend
 def logout(
     resp: Response,
     http: Request,
-    me: SessionUser = Depends(require_session),
     db: Session = Depends(get_db),
 ):
-    clear_session(resp)
-    log_event(
-        db,
-        action="auth.logout",
-        resource_type="user",
-        resource_id=int(me.id),
-        actor_user_id=int(me.id),
-        actor_workspace_id=int(me.workspace_id),
-        actor_ip=client_ip(http),
-        user_agent=http.headers.get("user-agent"),
-    )
+    data = read_session_from_request(http)
+    user = db.get(User, int(data["id"])) if data and data.get("id") else None
+    clear_session(resp, http)
+    if user is not None:
+        log_event(
+            db,
+            action="auth.logout",
+            resource_type="user",
+            resource_id=int(user.id),
+            actor_user_id=int(user.id),
+            actor_workspace_id=int(user.workspace_id),
+            actor_ip=client_ip(http),
+            user_agent=http.headers.get("user-agent"),
+        )
     return {"ok": True}
 
 
@@ -253,4 +255,3 @@ def discover_tenants(req: DiscoverTenantsRequest, db: Session = Depends(get_db))
         for (wid, code, name) in rows
     ]
     return DiscoverTenantsResponse(items=items)
-

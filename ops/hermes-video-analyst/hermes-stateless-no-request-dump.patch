@@ -1,0 +1,12 @@
+diff --git a/run_agent.py b/run_agent.py
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -4241,6 +4241,8 @@ class AIAgent:
+         like timeout). Intended for debugging provider-side 4xx failures where
+         retries are not useful.
+         """
++        if not self.persist_session:
++            return None
+         try:
+             body = copy.deepcopy(api_kwargs)
+             body.pop("timeout", None)

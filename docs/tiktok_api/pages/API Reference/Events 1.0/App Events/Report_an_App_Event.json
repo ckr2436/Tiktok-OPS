@@ -1,0 +1,12 @@
+{
+  "title": "Report an App Event",
+  "endpoint": "",
+  "method": "",
+  "category_path": [
+    "Events 1.0",
+    "App Events"
+  ],
+  "official_only": true,
+  "request": {},
+  "response": {}
+}

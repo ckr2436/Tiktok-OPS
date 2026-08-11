@@ -287,7 +287,9 @@ def _update_user(
         workspace_id=int(workspace_id),
         details=changed,
     )
-    db.refresh(target)
+    # SessionLocal disables autoflush.  Persist the pending user changes before
+    # building the response; refreshing here would reload and discard them.
+    db.flush()
 
     return _to_item(target)  # type: ignore[return-value]
 
@@ -413,4 +415,3 @@ def reset_password(
         details={"target_role": target.role, "target_email": target.email},
     )
     return ResetPasswordResponse(ok=True)
-

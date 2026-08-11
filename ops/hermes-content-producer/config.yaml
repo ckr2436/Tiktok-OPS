@@ -1,0 +1,41 @@
+model:
+  default: gmv-content-director-v1
+  provider: custom:gmv_ai_gateway
+  base_url: http://127.0.0.1:8650/v1
+  api_mode: chat_completions
+  max_tokens: 16384
+providers:
+  gmv_ai_gateway:
+    name: GMV AI Gateway
+    base_url: http://127.0.0.1:8650/v1
+    key_env: GMV_AI_GATEWAY_KEY
+    transport: chat_completions
+    default_model: gmv-content-director-v1
+    models:
+      gmv-content-director-v1: {}
+fallback_providers: []
+platform_toolsets:
+  cli: []
+  api_server: []
+platforms:
+  api_server:
+    extra:
+      host: 127.0.0.1
+      port: 8648
+      model_name: gmv-ops-hermes-content-producer
+agent:
+  max_turns: 4
+  gateway_timeout: 180
+  api_max_retries: 2
+# Built-in MEMORY.md/USER.md are process-global, not tenant-scoped. Keep them
+# off. Session continuity uses the isolated Responses store and a scoped
+# conversation key; the GMV database working brief is authoritative.
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+  provider: ''
+skills:
+  guard_agent_created: true
+  disabled: []
+curator:
+  enabled: false

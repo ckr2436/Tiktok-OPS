@@ -1,0 +1,30 @@
+{
+  "roles": {
+    "director": {
+      "logical_model_id": "gmv-content-director-v1",
+      "capability": "multimodal",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-terra", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-luna", "priority": 2000},
+        {"logical_model_id": "gpt-5.4-mini", "priority": 3000}
+      ]
+    },
+    "critic": {
+      "logical_model_id": "gmv-content-critic-v1",
+      "capability": "multimodal",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-terra", "priority": 1000},
+        {"logical_model_id": "gpt-5.6-luna", "priority": 2000},
+        {"logical_model_id": "gpt-5.4-mini", "priority": 3000}
+      ]
+    },
+    "visual_inspector": {
+      "logical_model_id": "gmv-content-visual-inspector-v1",
+      "capability": "multimodal",
+      "sources": [
+        {"logical_model_id": "gpt-5.6-luna", "priority": 1000},
+        {"logical_model_id": "gpt-5.4-mini", "priority": 2000}
+      ]
+    }
+  }
+}

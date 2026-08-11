@@ -1,0 +1,46 @@
+.flow-pool { padding: 4px 0 32px; }
+.flow-pool__header { align-items: flex-start; gap: 18px; }
+.flow-pool__actions, .flow-pool__row-actions, .flow-pool__modal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.flow-pool__notice { margin: 14px 0; }
+.flow-pool__summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.flow-pool__summary article { display: flex; flex-direction: column; min-height: 112px; padding: 16px; border: 1px solid #dfe5ee; border-radius: 12px; background: #fff; }
+.flow-pool__summary span { color: #667085; font-size: 13px; }
+.flow-pool__summary strong { margin: 8px 0 4px; font-size: 23px; color: #101828; }
+.flow-pool__summary small { color: #98a2b3; }
+.flow-pool .good { color: #067647; }
+.flow-pool .bad { color: #b42318; }
+.flow-pool__safety { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin-bottom: 16px; padding: 14px 16px; border: 1px solid #b2ddff; border-radius: 10px; background: #eff8ff; color: #175cd3; }
+.flow-pool__safety em { grid-column: 2; color: #b54708; font-style: normal; font-size: 13px; }
+.flow-pool__device-capacity { grid-column: 2; display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.flow-pool__device-capacity span { display: flex; flex-wrap: wrap; gap: 8px; color: #344054; font-size: 13px; }
+.flow-pool__device-capacity span.is-full { color: #b42318; }
+.flow-pool__inline-action { margin: 0 4px; padding: 0; border: 0; background: transparent; color: #175cd3; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.flow-pool__table-card { overflow: hidden; }
+.flow-pool__proxy-card { overflow: hidden; margin-bottom: 16px; }
+.flow-pool__proxy-card .card__header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.flow-pool__proxy-table { min-width: 760px; }
+.flow-pool__table { min-width: 1180px; }
+.flow-account { display: flex; align-items: flex-start; gap: 10px; min-width: 210px; }
+.flow-account div { display: flex; flex-direction: column; gap: 3px; }
+.flow-account small, .flow-pool__table td > small { display: block; margin-top: 3px; color: #667085; }
+.flow-account__dot { width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: #98a2b3; box-shadow: 0 0 0 3px #f2f4f7; }
+.flow-account__dot.is-healthy { background: #12b76a; box-shadow: 0 0 0 3px #d1fadf; }
+.flow-account__dot.is-warning { background: #f79009; box-shadow: 0 0 0 3px #fef0c7; }
+.flow-pool__credit { margin-top: 5px; color: #175cd3; font-weight: 600; }
+.flow-pool__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 5px; }
+.flow-pool__chips span { padding: 3px 7px; border-radius: 999px; font-size: 12px; }
+.flow-pool__chips .on { color: #067647; background: #ecfdf3; }
+.flow-pool__chips .off { color: #667085; background: #f2f4f7; }
+.flow-pool__row-actions { min-width: 210px; }
+.flow-pool__form { display: flex; flex-direction: column; gap: 16px; min-width: min(640px, 76vw); }
+.flow-pool__form label { display: flex; flex-direction: column; gap: 6px; }
+.flow-pool__form textarea { width: 100%; resize: vertical; border: 1px solid #d0d5dd; border-radius: 8px; padding: 10px 12px; font-family: ui-monospace, monospace; }
+.flow-pool__form small { color: #667085; }
+.flow-pool__session { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border: 1px solid #b2ddff; border-radius: 9px; background: #eff8ff; color: #175cd3; }
+.flow-pool__session--ready { border-color: #abefc6; background: #ecfdf3; color: #067647; }
+.flow-pool__session--failed, .flow-pool__session--cancelled { border-color: #fecdca; background: #fef3f2; color: #b42318; }
+.flow-pool__form-grid { display: grid; grid-template-columns: 1fr 120px; gap: 12px 20px; align-items: center; }
+.flow-pool__form .flow-pool__check { flex-direction: row; align-items: center; }
+.flow-pool__modal-actions { justify-content: flex-end; padding-top: 6px; }
+@media (max-width: 1100px) { .flow-pool__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .flow-pool__summary { grid-template-columns: 1fr; } .flow-pool__safety { grid-template-columns: 1fr; } .flow-pool__safety em, .flow-pool__device-capacity { grid-column: 1; } .flow-pool__form { min-width: 0; } }

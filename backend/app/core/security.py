@@ -100,16 +100,46 @@ def write_session(
     )
 
 
-def clear_session(resp: Response) -> None:
+def _cookie_delete_domains(req: Request | None = None) -> list[str | None]:
+    domains: list[str | None] = [settings.COOKIE_DOMAIN or None]
+    for legacy_domain in (".myupona.com",):
+        if legacy_domain not in domains:
+            domains.append(legacy_domain)
+    if req is not None:
+        host = (req.headers.get("host") or "").split(":", 1)[0].strip().lower()
+        if host:
+            candidates = [host]
+            parts = host.split(".")
+            if len(parts) >= 2:
+                candidates.append(f".{'.'.join(parts[-2:])}")
+            for domain in candidates:
+                if domain not in domains:
+                    domains.append(domain)
+    return domains
+
+
+def clear_session(resp: Response, req: Request | None = None) -> None:
+    for domain in _cookie_delete_domains(req):
+        resp.delete_cookie(
+            key=settings.COOKIE_NAME,
+            domain=domain,
+            path="/",
+            secure=bool(settings.COOKIE_SECURE),
+            httponly=True,
+            samesite=str(settings.COOKIE_SAMESITE).lower(),
+        )
+
     resp.delete_cookie(
         key=settings.COOKIE_NAME,
-        domain=settings.COOKIE_DOMAIN or None,
+        domain=None,
         path="/",
+        secure=bool(settings.COOKIE_SECURE),
+        httponly=True,
+        samesite=str(settings.COOKIE_SAMESITE).lower(),
     )
 
 
-def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
-    raw = req.cookies.get(settings.COOKIE_NAME)
+def read_session_from_cookie(raw: str | None) -> Optional[Dict[str, Any]]:
     if not raw or "." not in raw:
         return None
     p64, sig = raw.split(".", 1)
@@ -122,6 +152,10 @@ def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
         return payload
     except Exception:
         return None
+
+
+def read_session_from_request(req: Request) -> Optional[Dict[str, Any]]:
+    return read_session_from_cookie(req.cookies.get(settings.COOKIE_NAME))
 
 
 def _clean_ip(value: str | None) -> str | None:
@@ -148,4 +182,3 @@ def client_ip(req: Request) -> str | None:
     if req.client:
         return _clean_ip(getattr(req.client, "host", None))
     return None
-

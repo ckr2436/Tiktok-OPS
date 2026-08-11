@@ -1,0 +1,334 @@
+{
+  "title": "Search for videos",
+  "endpoint": "https://business-api.tiktok.com/open_api/v1.3/file/video/ad/search/",
+  "method": "GET",
+  "category_path": [
+    "Video"
+  ],
+  "official_only": true,
+  "request": {
+    "headers": [
+      {
+        "name": "Access-Token",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Authorized access token. For details, see Authentication ."
+      }
+    ],
+    "parameters": [
+      {
+        "name": "advertiser_id",
+        "required": true,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Advertiser ID."
+      },
+      {
+        "name": "filtering",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Filters on the data. This parameter is an array of filter objects."
+      },
+      {
+        "name": "video_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of video IDs. Max size: 100. Note : If the video cannot be used in ads, the video ID will be ignored. If this filter field is not passed, and multiple video IDs have been generated for the same video due to multiple uploads, only one valid video ID will be returned for the video."
+      },
+      {
+        "name": "material_ids",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "A list of material IDs. Max size: 20."
+      },
+      {
+        "name": "video_name",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Video name. You can perform a fuzzy search by entering the video name."
+      },
+      {
+        "name": "video_material_sources",
+        "required": false,
+        "type": "array",
+        "raw_type": "string[]",
+        "description": "List of video material sources. You can search for videos based on their material sources. Enum values: UPLOADED_TO_TIKTOK_ADS_MANAGER : Uploaded to TikTok Ads Manager. UPLOADED_TO_CATALOG : Uploaded to Catalog. CREATIVE_TOOL_SMART_VIDEO : Creative Tool - Smart Video. CREATIVE_TOOL_QUICK_OPTIMIZATION : Creative Tool - Quick Optimization. CREATIVE_TOOL_VIDEO_TEMPLATE : Creative Tool - Video Template. CREATIVE_TOOL_SMART_VIDEO_SOUNDTRACK : Creative Tool - Smart Video Soundtrack. CREATIVE_TOOL_TIKTOK_VIDEO_EDITOR : Creative Tool - TikTok Video Editor. TIKTOK_CREATIVE_EXCHANGE : TikTok Creative Exchange. CATALOG_VIDEO_TEMPLATE : Catalog Video Template. DYNAMIC_VIDEO_EDITOR : Dynamic Video Editor. CREATIVE_CHALLENGE : Creative challenge. AUTOMATED_CREATIVE_OPTIMIZATION : Automated Creative Optimization. OTHER : Other. QUICK_GENERATION : Quick Generation. CREATIVE_CENTER_VIDEO_UPLOAD : Creative Center - Video upload. CREATIVE_CENTER_TIKTOK_VIDEO_EDITOR ：Creative Center - TikTok video editor. CREATIVE_CENTER_VIDEO_TEMPLATE ：Creative Center - Video template. DYNAMIC_SCENE ：Dynamic Scene. SMART_OPTIMIZATION_TOOL : Smart Optimization Tool."
+      },
+      {
+        "name": "page",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Current page number. Default value: 1. Value range: ≥ 1."
+      },
+      {
+        "name": "page_size",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Page size. Default value: 20. Value range: 1-100."
+      }
+    ],
+    "examples": [
+      {
+        "title": "Example",
+        "curl": "curl --get -H \"Access-Token:xxx\" \\\n--data-urlencode \"advertiser_id={advertiser_id}\" \\\n--data-urlencode \"filtering={\\\"width\\\": \\\"{width}\\\", \\\"video_ids\\\": [\\\"{video_ids}\\\"], \\\"ratio\\\": [\\\"{ratio}\\\"], \\\"height\\\": \\\"{height}\\\"}\" \\\n--data-urlencode \"page={page}\" \\\n--data-urlencode \"page_size={page_size}\" \\\nhttps://business-api.tiktok.com/open_api/v1.3/file/video/ad/search/"
+      }
+    ]
+  },
+  "response": {
+    "top_fields": [
+      {
+        "name": "code",
+        "required": false,
+        "type": "number",
+        "raw_type": "number",
+        "description": "Return code, see Appendix-Return code ."
+      },
+      {
+        "name": "message",
+        "required": false,
+        "type": "string",
+        "raw_type": "string",
+        "description": "Return Message, see Appendix-Return Information ."
+      },
+      {
+        "name": "data",
+        "required": false,
+        "type": "object",
+        "raw_type": "object",
+        "description": "Returned data."
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "name": "list",
+          "required": false,
+          "type": "array",
+          "raw_type": "object[]",
+          "description": "A list of video information."
+        },
+        {
+          "name": "video_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video ID, which can be used to create ads. Note : If the filter field video_ids is not passed, and multiple video IDs have been generated for the same video due to multiple uploads, only one valid video ID will be returned for the video."
+        },
+        {
+          "name": "video_cover_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Temporary URL for video cover, valid for six hours and needs to be re-acquired after expiration. The expiration time is included in the URL after the x-expires parameter, in the format of an Epoch/Unix timestamp in seconds. Example: http://p16-sign-sg.tiktokcdn.com/v0201/b99a388e3709470be5c~tplv-noop.image?x-expires= 1671742348 &x-signature=FziJhvED9NDTDmPofv3I%3D ."
+        },
+        {
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "video Format"
+        },
+        {
+          "name": "preview_url",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video preview link, valid for six hours and needs to be re-acquired after expiration. To find out the expiration time of the preview link, see preview_url_expire_time ."
+        },
+        {
+          "name": "preview_url_expire_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The expiration time of the video preview link, in the format of YYYY-MM-DD HH:MM:SS (UTC+0)."
+        },
+        {
+          "name": "duration",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Video duration, in seconds."
+        },
+        {
+          "name": "height",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video height."
+        },
+        {
+          "name": "width",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video width."
+        },
+        {
+          "name": "bit_rate",
+          "required": false,
+          "type": "number",
+          "raw_type": "float",
+          "description": "Bit rate, in bps"
+        },
+        {
+          "name": "signature",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "MD5 of the video file."
+        },
+        {
+          "name": "size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Video size."
+        },
+        {
+          "name": "material_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Material ID."
+        },
+        {
+          "name": "allowed_placements",
+          "required": false,
+          "type": "array",
+          "raw_type": "string[]",
+          "description": "Available placements. Due to music copyright, some materials generated by creative tools can only be shown on TikTok. It won't pass when they are created on other placements. For enum values, see Enumerations-Ad Management-Placement ."
+        },
+        {
+          "name": "allow_download",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether the video is downloadable. Due to the music copyright, some materials generated by creative tools are only allowed to preview. It is prohibited to download and disseminate them."
+        },
+        {
+          "name": "file_name",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Video name."
+        },
+        {
+          "name": "create_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Creation time. UTC time. Format: 2020-06-10T07:39:14Z."
+        },
+        {
+          "name": "modify_time",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "Modification time. UTC time. Format: 2020-06-10T07:39:14Z"
+        },
+        {
+          "name": "displayable",
+          "required": false,
+          "type": "boolean",
+          "raw_type": "boolean",
+          "description": "Whether it can be displayed on the platform."
+        },
+        {
+          "name": "page_info",
+          "required": false,
+          "type": "object",
+          "raw_type": "object",
+          "description": "Pagination information."
+        },
+        {
+          "name": "page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Current page number."
+        },
+        {
+          "name": "page_size",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Page size."
+        },
+        {
+          "name": "total_number",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total number of results."
+        },
+        {
+          "name": "total_page",
+          "required": false,
+          "type": "number",
+          "raw_type": "number",
+          "description": "Total pages of results."
+        },
+        {
+          "name": "request_id",
+          "required": false,
+          "type": "string",
+          "raw_type": "string",
+          "description": "The log id of a request, which uniquely identifies the request."
+        }
+      ],
+      "list": {
+        "item_fields": []
+      }
+    },
+    "other_tables": [],
+    "example": {
+      "status_line": "HTTPS/1.1 200 OK",
+      "body": {
+        "message": "OK",
+        "code": 0,
+        "data": {
+          "page_info": {
+            "total_number": 1,
+            "page": 1,
+            "page_size": 20,
+            "total_page": 1
+          },
+          "list": [
+            {
+              "video_cover_url": "http://p16-sign-sg.tiktokcdn.com/v0201/94ebe1a3e6734559a16f3e81c43787ec~tplv-noop.image?x-expires=1607260002&x-signature=falvnSNOT94w4gjeB8PGGFyAdys%3D",
+              "format": "mp4",
+              "preview_url": "http://v16m-default.akamaized.net/64d28cac783ab57b70c2d91c30fb1b5d/5fccd762/video/tos/alisg/tos-alisg-v-0000/9a0033884eab42248ad6b46f7b11e44c/?a=0&br=3114&bt=1557&cd=0%7C0%7C0&cr=0&cs=0&dr=0&ds=3&er=&l=2020120607063701011517615517A19974&lr=ad&mime_type=video_mp4&qs=0&rc=anNlbnRuOWU2eDMzZjYzM0Apdjh3ZHJuOWZzZTMzNDY6eWdwMnFebGgzYG1fLS0uMDRzc2RtX2huaDNfMHItLWAwLS06Yw%3D%3D&vl=&vr=",
+              "file_name": "wanfadong_test.mp4",
+              "displayable": true,
+              "height": 720,
+              "width": 1280,
+              "bit_rate": 1594584,
+              "create_time": "2020-11-16T08:19:57Z",
+              "modify_time": "2020-11-16T08:19:57Z",
+              "signature": "b24f08f569b73a33eec93edb8f4423e2",
+              "duration": 5.312,
+              "video_id": "v070331c0000bup3cb66kkoqaktb5psg",
+              "material_id": "6895633277416374000",
+              "allowed_placements": [
+                "PLACEMENT_TOPBUZZ",
+                "PLACEMENT_TIKTOK",
+                "PLACEMENT_HELO",
+                "PLACEMENT_PANGLE"
+              ],
+              "allow_download": true,
+              "size": 1058804
+            }
+          ]
+        },
+        "request_id": "2020120607063701011517615517A19974"
+      }
+    }
+  }
+}
