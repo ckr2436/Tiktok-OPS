@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import select
+import secrets
 import shlex
 import shutil
 import signal
@@ -29,18 +30,15 @@ from app.core.config import settings
 from app.core.security import read_session_from_cookie
 from app.data.db import SessionLocal
 from app.data.models.users import User
+from app.features.platform.webshell_su import RootSu, install_frame_log_redaction
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/platform/webshell",
     tags=["Platform / WebShell"],
 )
 
-legacy_router = APIRouter(
-    prefix="/api/platform/webshell",
-    tags=["Platform / WebShell"],
-)
-
 logger = logging.getLogger(__name__)
+install_frame_log_redaction()
 
 _ALLOWED_SHELL_ARGS = {"-i", "-l", "-li", "-il", "--login"}
 _CLOSE_POLICY_VIOLATION = 1008
@@ -57,6 +55,21 @@ class _ActiveSession:
 
 _ACTIVE_SESSIONS: dict[str, _ActiveSession] = {}
 _ACTIVE_LOCK = asyncio.Lock()
+_ROOT_ATTEMPTS: dict[int, list[float]] = {}
+
+
+async def _allow_root_attempt(user_id: int) -> bool:
+    async with _ACTIVE_LOCK:
+        now = time.monotonic()
+        for key in list(_ROOT_ATTEMPTS):
+            _ROOT_ATTEMPTS[key] = [t for t in _ROOT_ATTEMPTS[key] if now - t < 300]
+            if not _ROOT_ATTEMPTS[key]:
+                _ROOT_ATTEMPTS.pop(key, None)
+        attempts = _ROOT_ATTEMPTS.setdefault(user_id, [])
+        if len(attempts) >= 3 or (attempts and now - attempts[-1] < 30):
+            return False
+        attempts.append(now)
+        return True
 
 
 async def _send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
@@ -65,7 +78,7 @@ async def _send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
 
 async def _safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
     with suppress(Exception):
-        await _send_json(websocket, payload)
+        await asyncio.wait_for(_send_json(websocket, payload), timeout=5)
 
 
 def _client_ip(websocket: WebSocket) -> str | None:
@@ -341,6 +354,22 @@ def _waitpid_returncode(pid: int) -> int | None:
     return None
 
 
+async def _poll_child_returncode(pid: int) -> int | None:
+    # Cancellable polling avoids an executor thread blocked forever in waitpid.
+    while True:
+        try:
+            done, status = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return None
+        if done:
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            if os.WIFSIGNALED(status):
+                return -int(os.WTERMSIG(status))
+            return None
+        await asyncio.sleep(0.05)
+
+
 async def _register_session(session: _ActiveSession) -> bool:
     max_sessions = max(0, int(_setting_int("WEBSHELL_MAX_SESSIONS", 2)))
     max_per_user = max(0, int(_setting_int("WEBSHELL_MAX_SESSIONS_PER_USER", 1)))
@@ -389,7 +418,12 @@ async def _audit(action: str, websocket: WebSocket, user: User | None, details: 
     safe_details.pop("input", None)
     safe_details.pop("data", None)
     safe_details.pop("data_b64", None)
-    await asyncio.to_thread(_write_audit, action, websocket, user, safe_details)
+    safe_details.pop("secret", None)
+    safe_details.pop("password", None)
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_write_audit, action, websocket, user, safe_details), timeout=3)
+    except asyncio.TimeoutError:
+        logger.warning("WebShell audit timeout: action=%s", action)
 
 
 async def _receive_init(websocket: WebSocket) -> dict[str, Any]:
@@ -413,9 +447,8 @@ async def _receive_init(websocket: WebSocket) -> dict[str, Any]:
 
 
 async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_output: bool = False, pty_spawner=None) -> None:
-    # Dedicated private service app may inject authoritative identity loading.
-    # Browser route keeps its cookie/RBAC/Origin behavior and legacy output.
     load_admin = admin_loader or _load_platform_admin
+    spawn_pty = pty_spawner or _spawn_pty
     session_id = uuid.uuid4().hex
     client_ip = _client_ip(websocket)
 
@@ -440,6 +473,16 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
     bytes_in = 0
     bytes_out = 0
     close_reason = "disconnect"
+    root_session: RootSu | None = None
+    credential_intent: str | None = None
+    credential_deadline = 0.0
+    shutting_down = False
+    mode = "gmv"
+    mode_epoch = 0
+    mode_token = uuid.uuid4().hex
+    mode_v1 = False
+    background_output = bytearray()
+    background_truncated = False
 
     try:
         if not _setting_bool("WEBSHELL_ENABLED", False):
@@ -482,12 +525,14 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
             return
 
         init_payload = await _receive_init(websocket)
+        mode_v1 = init_payload.get("control_version") in (1, 2)
+        root_enabled = init_payload.get("control_version") == 2 and _setting_bool("WEBSHELL_ROOT_SU_ENABLED", False)
         cols, rows = _clamp_resize(init_payload.get("cols"), init_payload.get("rows"))
         argv = _resolve_shell(str(init_payload.get("shell") or _setting_str("WEBSHELL_DEFAULT_SHELL", "/bin/bash -li")))
         cwd = _webshell_cwd()
         env = _webshell_env(argv[0], session_id)
 
-        pid, master_fd = (pty_spawner or _spawn_pty)(argv, cwd=cwd, env=env)
+        pid, master_fd = spawn_pty(argv, cwd=cwd, env=env)
         with suppress(Exception):
             _set_winsize(master_fd, cols, rows)
 
@@ -495,12 +540,16 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
             websocket,
             {
                 "type": "connected",
-                "output_encoding": "base64" if raw_output else "utf8_replace",
-                "runtime_uid": os.getuid(), "runtime_gid": os.getgid(),
                 "session_id": session_id,
                 "shell": os.path.basename(argv[0]),
                 "cols": cols,
                 "rows": rows,
+                "root_enabled": root_enabled,
+                "output_encoding": "base64" if raw_output else "utf-8-replace",
+                "runtime_uid": os.getuid(), "runtime_gid": os.getgid(),
+                "execution_host": os.uname().nodename,
+                "mode": "gmv", "mode_epoch": mode_epoch,
+                "mode_token": mode_token if mode_v1 else None,
             },
         )
         await _audit(
@@ -518,9 +567,158 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
 
         close_event = asyncio.Event()
         child_done = asyncio.Event()
+        output_drained = asyncio.Event()
+
+        async def send_mode(state: str = "ready") -> None:
+            await _safe_send_json(websocket, {"type": "mode", "mode": mode,
+                "state": state, "mode_epoch": mode_epoch,
+                "execution_uid": 0 if mode == "root" else os.getuid() if mode == "gmv" else None})
+
+        async def root_ready() -> None:
+            nonlocal mode, mode_epoch
+            mode = "root"
+            mode_epoch += 1
+            await send_mode()
+            await _audit("webshell.root.started", websocket, user, {"session_id": session_id})
+
+        async def send_output(data: bytes) -> None:
+            payload = ({"type": "data_b64", "data_b64": base64.b64encode(data).decode("ascii")}
+                if raw_output else {"type": "data", "data": data.decode("utf-8", errors="replace")})
+            await asyncio.wait_for(_send_json(websocket, payload), timeout=5)
+
+        async def root_data(data: bytes) -> None:
+            nonlocal bytes_out
+            bytes_out += len(data)
+            await send_output(data)
+
+        async def root_exit(reason: str) -> None:
+            nonlocal root_session, mode, mode_epoch, background_truncated, credential_intent, credential_deadline
+            root_session = None
+            credential_intent = None
+            credential_deadline = 0.0
+            mode = "gmv"
+            mode_epoch += 1
+            await _audit("webshell.root.closed", websocket, user, {"session_id": session_id, "reason": reason})
+            if shutting_down:
+                return
+            if reason == "root_cleanup_failed":
+                close_event.set()
+                await websocket.close(code=_CLOSE_INTERNAL_ERROR)
+                return
+            await send_mode()
+            if reason in {"root_auth_failed", "root_failed"}:
+                await _safe_send_json(websocket, {"type": "mode_error", "code": "root_failed"})
+            if background_truncated:
+                await send_output("\r\n[gmv 后台输出超出缓存，已省略较早部分]\r\n".encode())
+                background_truncated = False
+            if background_output:
+                data = bytes(background_output)
+                background_output.clear()
+                await send_output(data)
+
+        async def switch_mode(payload: dict[str, Any]) -> None:
+            nonlocal root_session, mode, mode_epoch, credential_intent, credential_deadline
+            if not root_enabled or payload.get("mode_token") != mode_token or payload.get("mode_epoch") != mode_epoch:
+                await _safe_send_json(websocket, {"type": "mode_error", "code": "mode_denied"})
+                await send_mode("switching" if mode == "switching" else "ready")
+                return
+            target = payload.get("target")
+            if target == "gmv":
+                if root_session:
+                    await root_session.close()
+                elif credential_intent is not None or mode == "switching":
+                    await root_exit("credential_entry_canceled")
+                else:
+                    await send_mode()
+                return
+            # A cookie alone is insufficient: require a valid browser Origin on elevation.
+            origin = websocket.headers.get("origin") or ""
+            if target != "root" or mode != "gmv" or root_session or urlparse(origin).scheme != "https" or not _origin_allowed(websocket):
+                await _safe_send_json(websocket, {"type": "mode_error", "code": "mode_denied"})
+                await send_mode("switching" if mode == "switching" else "ready")
+                return
+            if not await validate_admin():
+                await _safe_send_json(websocket, {"type": "mode_error", "code": "mode_denied"})
+                await send_mode()
+                return
+            # Human credential collection is a separate, non-secret phase.
+            # No su/PAM process exists until Submit; the system-auth clock remains 30s.
+            credential_intent = secrets.token_hex(32)
+            credential_deadline = time.monotonic() + 600
+            mode = "switching"
+            mode_epoch += 1
+            await send_mode("switching")
+            await _audit("webshell.root.entry_requested", websocket, user, {"session_id": session_id})
+            await _safe_send_json(websocket, {"type": "elevation_auth", "phase": "credential_entry",
+                "attempt_id": credential_intent, "expires_in": 600, "mode_epoch": mode_epoch})
+
+        async def submit_elevation_secret(payload: dict[str, Any]) -> None:
+            nonlocal root_session, credential_intent, credential_deadline
+            secret = payload.pop("secret", None)
+            intent = credential_intent
+            epoch = mode_epoch
+            target = None
+            waiters = []
+            try:
+                if (not root_enabled or mode != "switching" or intent is None or root_session
+                    or payload.get("attempt_id") != intent
+                    or payload.get("mode_token") != mode_token or payload.get("mode_epoch") != epoch
+                    or not await validate_admin()
+                    or credential_intent != intent or root_session or mode != "switching"
+                    or mode_epoch != epoch or time.monotonic() >= credential_deadline):
+                    await _safe_send_json(websocket, {"type": "mode_error", "code": "auth_unavailable"})
+                    return
+                # Consume this intent once. Nothing is reused in any future attempt.
+                credential_intent = None
+                credential_deadline = 0.0
+                if (not isinstance(secret, str) or not secret or any(c in secret for c in ("\r", "\n", "\x00"))
+                    or len(secret.encode("utf-8")) > 1024):
+                    await root_exit("root_auth_failed")
+                    return
+                if not await _allow_root_attempt(user.id):
+                    await root_exit("root_rate_limited")
+                    await _safe_send_json(websocket, {"type": "mode_error", "code": "root_rate_limited"})
+                    return
+                await _audit("webshell.root.auth_requested", websocket, user, {"session_id": session_id})
+                auth_ready = asyncio.Event()
+                verified = asyncio.Event()
+                async def on_auth(_attempt, _expires):
+                    auth_ready.set()
+                async def on_verified():
+                    verified.set()  # UID nonce already verified; slow transport/audit is not authentication.
+                    await root_ready()
+                target = RootSu(spawn_pty, env, cwd, on_verified, root_data, root_exit,
+                    session_id=session_id, on_auth=on_auth)
+                root_session = target
+                target.start(cols, rows)  # The 30-second su authentication clock starts HERE.
+                waiters = [asyncio.create_task(auth_ready.wait()), asyncio.create_task(verified.wait())]
+                await asyncio.wait([*waiters, target.task], timeout=5, return_when=asyncio.FIRST_COMPLETED)
+                if verified.is_set():
+                    return  # PAM may legitimately grant entry without needing this secret.
+                if (not auth_ready.is_set() or root_session is not target or mode != "switching"
+                    or mode_epoch != epoch or target.closed):
+                    if root_session is target:
+                        await target.close()
+                        await _safe_send_json(websocket, {"type": "mode_error", "code": "root_failed"})
+                    return
+                # RootSu again checks its actual prompt, ECHO-off, deadline and one-shot state.
+                await target.submit_secret(target.auth_attempt, secret)
+            except (OSError, ValueError):
+                if target is not None and root_session is target:
+                    await target.close()
+                elif mode == "switching":
+                    await root_exit("root_auth_failed")
+                await _safe_send_json(websocket, {"type": "mode_error", "code": "root_failed"})
+            finally:
+                secret = None
+                payload.clear()
+                for waiter in waiters:
+                    waiter.cancel()
+                if waiters:
+                    await asyncio.gather(*waiters, return_exceptions=True)
 
         async def stream_output() -> None:
-            nonlocal bytes_out, close_reason
+            nonlocal bytes_out, close_reason, background_truncated
             assert master_fd is not None
             chunk_size = max(512, min(int(_setting_int("WEBSHELL_READ_CHUNK_BYTES", 4096)), 65536))
             while not close_event.is_set():
@@ -535,14 +733,18 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                         break
                     continue
                 bytes_out += len(chunk)
-                await asyncio.wait_for(
-                    _send_json(websocket, ({"type": "data_b64", "data_b64": base64.b64encode(chunk).decode("ascii")} if raw_output else {"type": "data", "data": chunk.decode("utf-8", errors="replace")})),
-                    timeout=5,
-                )
+                if mode != "gmv":
+                    background_output.extend(chunk)
+                    if len(background_output) > 262144:
+                        del background_output[:-262144]
+                        background_truncated = True
+                    continue
+                await send_output(chunk)
+            output_drained.set()
             close_reason = close_reason or "output_closed"
 
         async def read_client_input() -> None:
-            nonlocal bytes_in, last_input_at, close_reason
+            nonlocal bytes_in, last_input_at, close_reason, cols, rows
             assert master_fd is not None
             idle_timeout = max(30.0, float(_setting_float("WEBSHELL_IDLE_TIMEOUT_SECONDS", 600.0)))
             session_timeout = max(idle_timeout, float(_setting_float("WEBSHELL_SESSION_TIMEOUT_SECONDS", 1800.0)))
@@ -550,6 +752,9 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
 
             while not close_event.is_set():
                 now = time.monotonic()
+                if credential_intent is not None and now >= credential_deadline:
+                    await root_exit("credential_entry_expired")
+                    await _safe_send_json(websocket, {"type": "mode_error", "code": "auth_unavailable"})
                 if now - started_at > session_timeout:
                     close_reason = "session_timeout"
                     await _safe_send_json(websocket, {"type": "exit", "reason": close_reason})
@@ -570,11 +775,20 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                     payload = json.loads(message)
                 except json.JSONDecodeError:
                     continue
+                message = ""  # Drop the raw frame; credentials are never logged or retained.
                 if not isinstance(payload, dict):
                     continue
 
                 msg_type = payload.get("type")
-                if msg_type in {"input", "input_b64"}:
+                if msg_type == "elevation_secret":
+                    await submit_elevation_secret(payload)
+                elif msg_type == "switch_mode":
+                    await switch_mode(payload)
+                    last_input_at = time.monotonic()
+                elif msg_type in {"input", "input_b64"}:
+                    if mode == "switching" or (mode_v1 and payload.get("mode_epoch") != mode_epoch):
+                        await _safe_send_json(websocket, {"type": "mode_error", "code": "stale_input"})
+                        continue
                     try:
                         encoded = _decode_terminal_input_bytes(payload)
                     except ValueError:
@@ -589,11 +803,22 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                         break
                     bytes_in += len(encoded)
                     last_input_at = time.monotonic()
-                    await asyncio.to_thread(os.write, master_fd, encoded)
+                    if mode == "root":
+                        if root_session and root_session.ready:
+                            try:
+                                await asyncio.wait_for(root_session.write(encoded), timeout=2)
+                            except (asyncio.TimeoutError, OSError, ValueError):
+                                if root_session:
+                                    await root_session.close()
+                                await _safe_send_json(websocket, {"type": "mode_error", "code": "root_input_failed"})
+                    else:
+                        await asyncio.to_thread(os.write, master_fd, encoded)
                 elif msg_type == "resize":
                     cols, rows = _clamp_resize(payload.get("cols"), payload.get("rows"))
                     with suppress(Exception):
                         await asyncio.to_thread(_set_winsize, master_fd, cols, rows)
+                        if root_session:
+                            root_session.resize(cols, rows)
                 elif msg_type == "pong":
                     last_input_at = time.monotonic()
                 elif msg_type == "close":
@@ -601,42 +826,44 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                     close_event.set()
                     break
 
-        output_done = asyncio.Event()
-        original_stream_output = stream_output
-
-        async def drain_output() -> None:
-            try:
-                await original_stream_output()
-            finally:
-                output_done.set()
-            await close_event.wait()
-
-        async def validate_service_identity() -> None:
-            while not close_event.is_set():
-                await asyncio.sleep(2)
-                db = SessionLocal()
-                try:
-                    current = load_admin(db, websocket)
-                finally:
-                    db.close()
-                if not current or current.id != user.id:
-                    close_event.set()
-                    await websocket.close(code=_CLOSE_POLICY_VIOLATION)
-                    return
-
         async def wait_child() -> None:
             nonlocal returncode, close_reason
             assert pid is not None
-            returncode = await asyncio.to_thread(_waitpid_returncode, pid)
+            returncode = await _poll_child_returncode(pid)
             child_done.set()
-            try:
-                await asyncio.wait_for(output_done.wait(), timeout=3)
-            except asyncio.TimeoutError:
-                close_reason = "output_drain_timeout"
             if not close_event.is_set():
-                close_reason = close_reason if close_reason == "output_drain_timeout" else "process_exit"
+                try:
+                    await asyncio.wait_for(output_drained.wait(), timeout=3)
+                    close_reason = "process_exit"
+                except asyncio.TimeoutError:
+                    close_reason = "process_exit_output_incomplete"
                 await _safe_send_json(websocket, {"type": "exit", "reason": close_reason, "returncode": returncode})
                 close_event.set()
+
+        async def validate_admin() -> bool:
+            def check() -> bool:
+                db = SessionLocal()
+                try:
+                    current_user = load_admin(db, websocket)
+                    return bool(current_user and current_user.id == user.id)
+                finally:
+                    db.close()
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(check), timeout=3)
+            except Exception:
+                return False
+
+        async def auth_watchdog() -> None:
+            nonlocal close_reason
+            # Revocation terminates ALL modes, including any active root auth attempt.
+            interval = max(2.0, min(_setting_float("WEBSHELL_AUTH_RECHECK_SECONDS", 5.0), 30.0))
+            while not close_event.is_set():
+                await asyncio.sleep(interval)
+                if not await validate_admin():
+                    close_reason = "auth_revoked"
+                    close_event.set()
+                    await websocket.close(code=_CLOSE_POLICY_VIOLATION)
+                    break
 
         async def ping_client() -> None:
             interval = max(10.0, float(_setting_float("WEBSHELL_PING_INTERVAL_SECONDS", 25.0)))
@@ -645,14 +872,13 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                 await _safe_send_json(websocket, {"type": "ping", "session_id": session_id, "ts": int(time.time())})
 
         tasks = [
-            asyncio.create_task(drain_output()),
+            asyncio.create_task(stream_output()),
             asyncio.create_task(read_client_input()),
             asyncio.create_task(wait_child()),
             asyncio.create_task(ping_client()),
+            asyncio.create_task(auth_watchdog()),
         ]
 
-        if admin_loader is not None:
-            tasks.append(asyncio.create_task(validate_service_identity()))
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             with suppress(WebSocketDisconnect):
@@ -673,45 +899,56 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
         with suppress(Exception):
             await websocket.close(code=_CLOSE_INTERNAL_ERROR)
     finally:
-        if pid is not None:
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(pid, signal.SIGTERM)
-            with suppress(Exception):
-                await asyncio.wait_for(asyncio.to_thread(_waitpid_returncode, pid), timeout=2)
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(pid, signal.SIGKILL)
-        if master_fd is not None:
-            with suppress(Exception):
-                os.close(master_fd)
-        if registered:
-            await _unregister_session(session_id)
+        shutting_down = True
+        async def finish_session() -> None:
+            if root_session:
+                with suppress(Exception):
+                    await root_session.close()
+            if pid is not None:
+                with suppress(ProcessLookupError, PermissionError):
+                    os.killpg(pid, signal.SIGTERM)
+                with suppress(Exception):
+                    await asyncio.wait_for(_poll_child_returncode(pid), timeout=2)
+                with suppress(ProcessLookupError, PermissionError):
+                    os.killpg(pid, signal.SIGKILL)
+                with suppress(Exception):
+                    await asyncio.wait_for(_poll_child_returncode(pid), timeout=1)
+            if master_fd is not None:
+                with suppress(Exception):
+                    os.close(master_fd)
+            if registered:
+                await _unregister_session(session_id)
 
-        duration_ms = int((time.monotonic() - started_at) * 1000)
-        await _audit(
-            "webshell.closed",
-            websocket,
-            user,
-            {
-                "session_id": session_id,
-                "reason": close_reason,
-                "returncode": returncode,
-                "duration_ms": duration_ms,
-                "bytes_in": bytes_in,
-                "bytes_out": bytes_out,
-            },
-        )
-        with suppress(Exception):
-            await websocket.close()
-        logger.info(
-            "WebShell WS closed: session_id=%s user_id=%s reason=%s returncode=%s duration_ms=%s bytes_in=%s bytes_out=%s",
-            session_id,
-            getattr(user, "id", None),
-            close_reason,
-            returncode,
-            duration_ms,
-            bytes_in,
-            bytes_out,
-        )
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            await _audit(
+                "webshell.closed",
+                websocket,
+                user,
+                {
+                    "session_id": session_id,
+                    "reason": close_reason,
+                    "returncode": returncode,
+                    "duration_ms": duration_ms,
+                    "bytes_in": bytes_in,
+                    "bytes_out": bytes_out,
+                },
+            )
+            with suppress(Exception):
+                await websocket.close()
+            logger.info(
+                "WebShell WS closed: session_id=%s user_id=%s reason=%s returncode=%s duration_ms=%s bytes_in=%s bytes_out=%s",
+                session_id,
+                getattr(user, "id", None),
+                close_reason,
+                returncode,
+                duration_ms,
+                bytes_in,
+                bytes_out,
+            )
+        # Ensure browser disconnect cannot interrupt cleanup halfway through.
+        cleanup_task = asyncio.create_task(finish_session())
+        with suppress(asyncio.CancelledError):
+            await asyncio.shield(cleanup_task)
 
 
 def _upgrade_hint_detail(path: str) -> dict[str, Any]:
@@ -732,18 +969,7 @@ async def webshell_proxy(websocket: WebSocket) -> None:
     await _webshell_proxy_impl(websocket)
 
 
-@legacy_router.websocket("/ws")
-async def legacy_webshell_proxy(websocket: WebSocket) -> None:
-    logger.warning("WebShell WS legacy path hit: %s", websocket.url.path)
-    await _webshell_proxy_impl(websocket)
-
-
 @router.get("/ws")
 async def webshell_ws_upgrade_hint() -> JSONResponse:
     raise HTTPException(status_code=426, detail=_upgrade_hint_detail(f"{settings.API_PREFIX}/platform/webshell/ws"))
-
-
-@legacy_router.get("/ws")
-async def legacy_webshell_ws_upgrade_hint() -> JSONResponse:
-    raise HTTPException(status_code=426, detail=_upgrade_hint_detail("/api/platform/webshell/ws"))
 

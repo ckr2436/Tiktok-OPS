@@ -1,0 +1,7 @@
+# Existing production WebShell compatibility
+
+This updates Draft PR417 to match slkSrv's actual deployed, dirty WebShell source (SHA256 a4942f9dd8005a20ed6e065ce96b66306b701b8864a345bb75177046cce1bb05) before applying optional service-auth/raw-output hooks. The root-switch logic and webshell_su.py are imported verbatim from the existing production implementation, rather than newly developed here. No production checkout/release file is overwritten.
+
+The deployed normal_shell.SavedCredentialEnvelope and credentials.load_password already perform user/workspace-scoped saved-credential lookup and existing RootSu/PAM verification. Their live hashes and the reversible router overlay are pinned in server-ops-control PR6's ops/mcp-webshell/production-manifest.json and production/upstream/live-compatibility.patch. This PR does not introduce another root Broker, credential store or PTY design.
+
+Only the router's optional admin-loader/spawner/raw-output hooks, explicit mode identity metadata, and bounded output-tail drain are new adaptations. Browser defaults retain cookie/Origin/RBAC and current normal-wrapper v2 login revocation. Production S2S delegation uses that same original WebShell process and session registry via a private Unix listener; its implementation, deployment/rollback, schemas and audit evidence are in https://github.com/ckr2436/server-ops-control/pull/6 . Keep both PRs Draft; root ChatGPT acceptance must be reported from actual correlated receipts, not inferred from local tests. A17 is outside this change.
