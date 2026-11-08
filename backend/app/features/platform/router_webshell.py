@@ -370,9 +370,9 @@ async def _poll_child_returncode(pid: int) -> int | None:
         await asyncio.sleep(0.05)
 
 
-async def _register_session(session: _ActiveSession) -> bool:
-    max_sessions = max(0, int(_setting_int("WEBSHELL_MAX_SESSIONS", 2)))
-    max_per_user = max(0, int(_setting_int("WEBSHELL_MAX_SESSIONS_PER_USER", 1)))
+async def _register_session(session: _ActiveSession, limits=None) -> bool:
+    max_sessions = max(0, int((limits or {}).get("max_sessions", _setting_int("WEBSHELL_MAX_SESSIONS", 2))))
+    max_per_user = max(0, int((limits or {}).get("max_per_user", _setting_int("WEBSHELL_MAX_SESSIONS_PER_USER", 1))))
     async with _ACTIVE_LOCK:
         if max_sessions and len(_ACTIVE_SESSIONS) >= max_sessions:
             return False
@@ -446,7 +446,7 @@ async def _receive_init(websocket: WebSocket) -> dict[str, Any]:
     return {}
 
 
-async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_output: bool = False, pty_spawner=None) -> None:
+async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_output: bool = False, pty_spawner=None, session_limits=None, delivery_ack=None) -> None:
     load_admin = admin_loader or _load_platform_admin
     spawn_pty = pty_spawner or _spawn_pty
     session_id = uuid.uuid4().hex
@@ -516,7 +516,7 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
             user_id=getattr(user, "id", None),
             client_ip=client_ip,
         )
-        registered = await _register_session(active_session)
+        registered = await _register_session(active_session, session_limits)
         if not registered:
             close_reason = "too_many_sessions"
             await _safe_send_json(websocket, {"type": "error", "message": "WebShell 会话数已达到上限，请关闭其他会话后重试。"})
@@ -572,7 +572,8 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
         async def send_mode(state: str = "ready") -> None:
             await _safe_send_json(websocket, {"type": "mode", "mode": mode,
                 "state": state, "mode_epoch": mode_epoch,
-                "execution_uid": 0 if mode == "root" else os.getuid() if mode == "gmv" else None})
+                "execution_uid": 0 if mode == "root" else os.getuid() if mode == "gmv" else None,
+                "root_su_pid": root_session.pid if root_session else None, "controller_pid": os.getpid()})
 
         async def root_ready() -> None:
             nonlocal mode, mode_epoch
@@ -733,6 +734,10 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                         break
                     continue
                 bytes_out += len(chunk)
+                if mode != "gmv" and raw_output and session_limits is not None:
+                    # Durable service journals background bytes immediately, without the browser cache cap.
+                    await send_output(chunk)
+                    continue
                 if mode != "gmv":
                     background_output.extend(chunk)
                     if len(background_output) > 262144:
@@ -748,6 +753,9 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
             assert master_fd is not None
             idle_timeout = max(30.0, float(_setting_float("WEBSHELL_IDLE_TIMEOUT_SECONDS", 600.0)))
             session_timeout = max(idle_timeout, float(_setting_float("WEBSHELL_SESSION_TIMEOUT_SECONDS", 1800.0)))
+            if session_limits is not None:
+                idle_timeout = session_limits.get("idle_timeout", idle_timeout)
+                session_timeout = session_limits.get("session_timeout", session_timeout)
             max_input_bytes = max(1, int(_setting_int("WEBSHELL_MAX_INPUT_BYTES", 8192)))
 
             while not close_event.is_set():
@@ -755,12 +763,12 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                 if credential_intent is not None and now >= credential_deadline:
                     await root_exit("credential_entry_expired")
                     await _safe_send_json(websocket, {"type": "mode_error", "code": "auth_unavailable"})
-                if now - started_at > session_timeout:
+                if session_timeout and now - started_at > session_timeout:
                     close_reason = "session_timeout"
                     await _safe_send_json(websocket, {"type": "exit", "reason": close_reason})
                     close_event.set()
                     break
-                if now - last_input_at > idle_timeout:
+                if idle_timeout and now - last_input_at > idle_timeout:
                     close_reason = "idle_timeout"
                     await _safe_send_json(websocket, {"type": "exit", "reason": close_reason})
                     close_event.set()
@@ -788,6 +796,7 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                 elif msg_type in {"input", "input_b64"}:
                     if mode == "switching" or (mode_v1 and payload.get("mode_epoch") != mode_epoch):
                         await _safe_send_json(websocket, {"type": "mode_error", "code": "stale_input"})
+                        if delivery_ack:await delivery_ack(payload.get("_delivery_id"), "rejected_stale_mode")
                         continue
                     try:
                         encoded = _decode_terminal_input_bytes(payload)
@@ -813,6 +822,7 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
                                 await _safe_send_json(websocket, {"type": "mode_error", "code": "root_input_failed"})
                     else:
                         await asyncio.to_thread(os.write, master_fd, encoded)
+                    if delivery_ack:await delivery_ack(payload.get("_delivery_id"), "written_to_pty_not_command_completion")
                 elif msg_type == "resize":
                     cols, rows = _clamp_resize(payload.get("cols"), payload.get("rows"))
                     with suppress(Exception):
@@ -856,7 +866,7 @@ async def _webshell_proxy_impl(websocket: WebSocket, *, admin_loader=None, raw_o
         async def auth_watchdog() -> None:
             nonlocal close_reason
             # Revocation terminates ALL modes, including any active root auth attempt.
-            interval = max(2.0, min(_setting_float("WEBSHELL_AUTH_RECHECK_SECONDS", 5.0), 30.0))
+            interval = 2.0 if session_limits is not None else max(2.0, min(_setting_float("WEBSHELL_AUTH_RECHECK_SECONDS", 5.0), 30.0))
             while not close_event.is_set():
                 await asyncio.sleep(interval)
                 if not await validate_admin():
